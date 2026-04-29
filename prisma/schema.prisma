@@ -1,0 +1,104 @@
+generator client { provider = "prisma-client-js" }
+datasource db { provider = "postgresql" url = env("DATABASE_URL") }
+
+enum AccountType { LIQUOR_AGENCY BAR_RESTAURANT CHAIN_GROUP OTHER }
+enum AlertStatus { OPEN SNOOZED DISMISSED RESOLVED }
+enum PhotoType { SHELF DISPLAY MENU BACK_BAR COMPETITOR OTHER }
+enum EventSource { MANUAL EVENTBRITE GOOGLE_SHEET }
+
+model Account {
+  id              String   @id @default(cuid())
+  externalId      String?  @unique
+  agencyId        String?  @unique
+  licenseeId      String?
+  type            AccountType
+  name            String
+  address         String?
+  city            String?
+  county          String?
+  state           String?  @default("OH")
+  zip             String?
+  phone           String?
+  d8Permit        Boolean  @default(false)
+  ownerUserId     String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  tags            AccountTag[]
+  notes           Note[]
+  photos          Photo[]
+  tasks           Task[]
+  alerts          Alert[]
+  salesFacts      SalesFact[]
+  inventoryFacts  InventoryFact[]
+  visits          Visit[]
+}
+
+model Sku {
+  id          String @id @default(cuid())
+  itemCode    String @unique
+  brand       String?
+  name        String
+  category    String?
+  active      Boolean @default(true)
+  recipes     Recipe[]
+  salesFacts  SalesFact[]
+  inventoryFacts InventoryFact[]
+}
+
+model Tag { id String @id @default(cuid()) name String @unique color String? accounts AccountTag[] }
+model AccountTag { accountId String tagId String reason String? createdAt DateTime @default(now()) account Account @relation(fields:[accountId], references:[id]) tag Tag @relation(fields:[tagId], references:[id]) @@id([accountId, tagId]) }
+
+model SalesFact {
+  id String @id @default(cuid())
+  accountId String
+  skuId String
+  periodMonth DateTime
+  retailBottles Int @default(0)
+  retailAmount Decimal @default(0)
+  wholesaleBottles Int @default(0)
+  wholesaleAmount Decimal @default(0)
+  account Account @relation(fields:[accountId], references:[id])
+  sku Sku @relation(fields:[skuId], references:[id])
+  @@unique([accountId, skuId, periodMonth])
+}
+
+model InventoryFact {
+  id String @id @default(cuid())
+  accountId String
+  skuId String
+  snapshotDate DateTime @default(now())
+  coverageStatus String?
+  minFlag Boolean @default(false)
+  inventoryBottles Int @default(0)
+  sales12MoBottles Int @default(0)
+  lastArrivalDate DateTime?
+  account Account @relation(fields:[accountId], references:[id])
+  sku Sku @relation(fields:[skuId], references:[id])
+  @@unique([accountId, skuId, snapshotDate])
+}
+
+model Alert {
+  id String @id @default(cuid())
+  accountId String
+  skuId String?
+  type String
+  title String
+  detail String?
+  status AlertStatus @default(OPEN)
+  dueDate DateTime?
+  snoozedUntil DateTime?
+  resolvedAt DateTime?
+  dismissedAt DateTime?
+  account Account @relation(fields:[accountId], references:[id])
+  notes Note[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Note { id String @id @default(cuid()) accountId String alertId String? body String createdBy String? createdAt DateTime @default(now()) account Account @relation(fields:[accountId], references:[id]) alert Alert? @relation(fields:[alertId], references:[id]) }
+model Task { id String @id @default(cuid()) accountId String title String dueDate DateTime? completedAt DateTime? ownerUserId String? account Account @relation(fields:[accountId], references:[id]) }
+model Visit { id String @id @default(cuid()) accountId String visitDate DateTime @default(now()) summary String? createdBy String? account Account @relation(fields:[accountId], references:[id]) photos Photo[] }
+model Photo { id String @id @default(cuid()) accountId String visitId String? type PhotoType url String caption String? takenAt DateTime @default(now()) account Account @relation(fields:[accountId], references:[id]) visit Visit? @relation(fields:[visitId], references:[id]) }
+
+model EventShift { id String @id @default(cuid()) source EventSource @default(MANUAL) externalId String? title String startsAt DateTime endsAt DateTime? location String? accountId String? assignedUserId String? status String @default("open") createdAt DateTime @default(now()) }
+model Recipe { id String @id @default(cuid()) name String skuId String? season String? flavorProfile String? complexity String? glassware String? ingredients Json instructions String garnish String? notes String? sku Sku? @relation(fields:[skuId], references:[id]) }
