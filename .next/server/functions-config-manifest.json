@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "functions": {
+    "/": {},
+    "/accounts": {},
+    "/alerts": {},
+    "/api/health": {},
+    "/events": {},
+    "/recipes": {}
+  }
+}
