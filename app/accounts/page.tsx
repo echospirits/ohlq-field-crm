@@ -1,4 +1,4 @@
-export const dynamic = 'force-dynamic';
+﻿export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 import { revalidatePath } from 'next/cache';
@@ -158,7 +158,6 @@ async function importAccounts(formData: FormData) {
 export default async function Accounts({ searchParams }: { searchParams?: Promise<{ status?: string; count?: string; q?: string }> }) {
   const params = (await searchParams) ?? {};
   const q = (params.q ?? '').trim();
-
   const accounts = await prisma.account.findMany({
     take: 200,
     where: q
@@ -169,6 +168,9 @@ export default async function Accounts({ searchParams }: { searchParams?: Promis
             { primaryContact: { contains: q, mode: 'insensitive' } },
             { phone: { contains: q, mode: 'insensitive' } },
             { primaryContactPhone: { contains: q, mode: 'insensitive' } },
+            { agencyId: { contains: q, mode: 'insensitive' } },
+            { agencyRefId: { contains: q, mode: 'insensitive' } },
+            { licenseeId: { contains: q, mode: 'insensitive' } },
             { city: { contains: q, mode: 'insensitive' } },
           ],
         }
@@ -180,8 +182,6 @@ export default async function Accounts({ searchParams }: { searchParams?: Promis
   return <>
     <h1>Accounts</h1>
     <p className="muted">Import full liquor agency and account files; matching records are upserted by primary key.</p>
-    <AccountsSearch initialQuery={q} />
-
     {params.status === 'created' ? <p className="pill">Account created.</p> : null}
     {params.status === 'imported' ? <p className="pill">Imported/updated {params.count ?? '0'} accounts.</p> : null}
     {params.status === 'invalid' ? <p className="pill">Name and valid account type are required.</p> : null}
@@ -195,13 +195,10 @@ export default async function Accounts({ searchParams }: { searchParams?: Promis
         <form action={createAccount}>
           <label htmlFor="name">Account name</label><input id="name" name="name" required />
           <label htmlFor="type">Account type</label>
-          <select id="type" name="type" required>
-            {TYPE_OPTIONS.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}
-          </select>
+          <select id="type" name="type" required>{TYPE_OPTIONS.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}</select>
           <button type="submit">Create account</button>
         </form>
       </div>
-
       <div className="card">
         <h2>Import agencies/accounts CSV</h2>
         <p className="muted">Supports both files. Full-file import updates existing rows by AgencyID or LicenseeID.</p>
@@ -213,33 +210,8 @@ export default async function Accounts({ searchParams }: { searchParams?: Promis
       </div>
     </div>
 
-    <table>
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>Type</th>
-          <th>Address</th>
-          <th>City</th>
-          <th>Agency ID</th>
-          <th>Licensee ID</th>
-          <th>Tags</th>
-          <th>Recent bottles</th>
-        </tr>
-      </thead>
-      <tbody>
-        {accounts.map((a) => (
-          <tr key={a.id}>
-            <td><a href={`/accounts/${a.id}`}>{a.name}</a></td>
-            <td>{a.type}</td>
-            <td>{a.address}</td>
-            <td>{a.city}</td>
-            <td>{a.agencyId ?? a.agencyRefId}</td>
-            <td>{a.licenseeId}</td>
-            <td>{a.tags.map((t) => <span className="pill" key={t.tagId}>{t.tag.name}</span>)}</td>
-            <td>{a.salesFacts.reduce((s, f) => s + f.retailBottles + f.wholesaleBottles, 0)}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <AccountsSearch initialQuery={q} />
+
+    <table><thead><tr><th>Name</th><th>Type</th><th>Address</th><th>City</th><th>Agency ID</th><th>Licensee ID</th><th>Tags</th><th>Recent bottles</th></tr></thead><tbody>{accounts.map((a) => <tr key={a.id}><td><a href={`/accounts/${a.id}`}>{a.name}</a></td><td>{a.type}</td><td>{a.address}</td><td>{a.city}</td><td>{a.agencyId ?? a.agencyRefId}</td><td>{a.licenseeId}</td><td>{a.tags.map((t) => <span className="pill" key={t.tagId}>{t.tag.name}</span>)}</td><td>{a.salesFacts.reduce((s, f) => s + f.retailBottles + f.wholesaleBottles, 0)}</td></tr>)}</tbody></table>
   </>;
 }

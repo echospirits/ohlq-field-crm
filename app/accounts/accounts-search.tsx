@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
@@ -27,7 +27,7 @@ export default function AccountsSearch({ initialQuery }: { initialQuery: string 
         id="accountSearch"
         value={value}
         onChange={(e) => setValue(e.target.value)}
-        placeholder="Type name, address, primary contact, phone..."
+        placeholder="Type name, address, contact, phone, agency id, or licensee id..."
       />
       <p className="muted" style={{ margin: '8px 0 0 0' }}>Results update as you type.</p>
     </div>
