@@ -71,8 +71,7 @@ model Account {
   salesFacts          SalesFact[]
   inventoryFacts      InventoryFact[]
   visits              Visit[]
-}
-model Sku {
+}model Sku {
   id             String          @id @default(cuid())
   itemCode       String          @unique
   brand          String?
