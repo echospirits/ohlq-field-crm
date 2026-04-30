@@ -116,7 +116,7 @@ async function importAccounts(formData: FormData) {
 
       const createData: Prisma.AccountCreateInput = {
         licenseeId,
-        agencyId: toOptional(row.agencyid),
+        agencyRefId: toOptional(row.agencyid),
         type: 'BAR_RESTAURANT',
         name: toOptional(row.dba) ?? `Licensee ${licenseeId}`,
         address: toOptional(row.address),
@@ -130,7 +130,7 @@ async function importAccounts(formData: FormData) {
       };
 
       const updateData: Prisma.AccountUpdateInput = {
-        agencyId: createData.agencyId,
+        agencyRefId: createData.agencyRefId,
         name: createData.name,
         address: createData.address,
         city: createData.city,
@@ -193,6 +193,6 @@ export default async function Accounts({ searchParams }: { searchParams?: Promis
       </div>
     </div>
 
-    <table><thead><tr><th>Name</th><th>Type</th><th>City</th><th>Agency ID</th><th>Licensee ID</th><th>Tags</th><th>Recent bottles</th></tr></thead><tbody>{accounts.map((a) => <tr key={a.id}><td>{a.name}</td><td>{a.type}</td><td>{a.city}</td><td>{a.agencyId}</td><td>{a.licenseeId}</td><td>{a.tags.map((t) => <span className="pill" key={t.tagId}>{t.tag.name}</span>)}</td><td>{a.salesFacts.reduce((s, f) => s + f.retailBottles + f.wholesaleBottles, 0)}</td></tr>)}</tbody></table>
+    <table><thead><tr><th>Name</th><th>Type</th><th>Address</th><th>City</th><th>Agency ID</th><th>Licensee ID</th><th>Tags</th><th>Recent bottles</th></tr></thead><tbody>{accounts.map((a) => <tr key={a.id}><td><a href={`/accounts/${a.id}`}>{a.name}</a></td><td>{a.type}</td><td>{a.address}</td><td>{a.city}</td><td>{a.agencyId ?? a.agencyRefId}</td><td>{a.licenseeId}</td><td>{a.tags.map((t) => <span className="pill" key={t.tagId}>{t.tag.name}</span>)}</td><td>{a.salesFacts.reduce((s, f) => s + f.retailBottles + f.wholesaleBottles, 0)}</td></tr>)}</tbody></table>
   </>;
 }

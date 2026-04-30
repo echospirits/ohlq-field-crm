@@ -1,8 +1,18 @@
-.vercel
-.env*.local
+# dependencies
 node_modules/
+
+# next.js build output
 .next/
 out/
+
+# local env
 .env
 .env.local
 .env.*.local
+
+# logs
+npm-debug.log*
+
+# OS/editor
+.DS_Store
+.vscode/
