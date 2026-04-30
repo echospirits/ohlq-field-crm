@@ -13,11 +13,8 @@
     "import:sample": "tsx scripts/import-sample-data.ts"
   },
   "dependencies": {
-<<<<<<< Updated upstream
-    "@prisma/client": "6.16.2",
-=======
+
     "@prisma/client": "6.19.3",
->>>>>>> Stashed changes
     "next": "^16.2.4",
     "papaparse": "5.4.1",
     "prisma": "^6.19.3",
