@@ -1,3 +1,0 @@
-module.exports=[33290,a=>{"use strict";var b=a.i(7997);a.s(["default",0,function({children:a}){return(0,b.jsx)("html",{lang:"en",children:(0,b.jsxs)("body",{children:[(0,b.jsxs)("aside",{children:[(0,b.jsx)("h2",{children:"Echo Field CRM"}),(0,b.jsx)("a",{href:"/",children:"Dashboard"}),(0,b.jsx)("a",{href:"/accounts",children:"Accounts"}),(0,b.jsx)("a",{href:"/alerts",children:"Worklist"}),(0,b.jsx)("a",{href:"/events",children:"Events"}),(0,b.jsx)("a",{href:"/recipes",children:"Recipes"}),(0,b.jsx)("a",{href:"/import",children:"Imports"})]}),(0,b.jsx)("main",{children:a})]})})}])},70864,a=>{a.n(a.i(33290))}];
-
-//# sourceMappingURL=app_layout_tsx_13yf0ls._.js.map
