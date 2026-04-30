@@ -13,19 +13,19 @@
     "import:sample": "tsx scripts/import-sample-data.ts"
   },
   "dependencies": {
-    "@prisma/client": "latest",
-    "next": "latest",
-    "papaparse": "latest",
-    "prisma": "latest",
-    "react": "latest",
-    "react-dom": "latest",
-    "zod": "latest"
+    "@prisma/client": "6.16.2",
+    "next": "14.2.5",
+    "papaparse": "5.4.1",
+    "prisma": "6.16.2",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "zod": "3.23.8"
   },
   "devDependencies": {
-    "@types/node": "latest",
-    "@types/react": "latest",
-    "@types/react-dom": "latest",
-    "tsx": "latest",
-    "typescript": "latest"
+    "@types/node": "20.16.5",
+    "@types/react": "18.3.5",
+    "@types/react-dom": "18.3.0",
+    "tsx": "4.19.1",
+    "typescript": "5.6.2"
   }
 }
