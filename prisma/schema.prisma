@@ -37,32 +37,40 @@ enum EventSource {
 }
 
 model Account {
-  id             String          @id @default(cuid())
-  externalId     String?         @unique
-  agencyId       String?         @unique
-  licenseeId     String?
-  type           AccountType
-  name           String
-  address        String?
-  city           String?
-  county         String?
-  state          String?         @default("OH")
-  zip            String?
-  phone          String?
-  d8Permit       Boolean         @default(false)
-  ownerUserId    String?
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  tags           AccountTag[]
-  notes          Note[]
-  photos         Photo[]
-  tasks          Task[]
-  alerts         Alert[]
-  salesFacts     SalesFact[]
-  inventoryFacts InventoryFact[]
-  visits         Visit[]
+  id                  String          @id @default(cuid())
+  externalId          String?         @unique
+  agencyId            String?         @unique
+  licenseeId          String?         @unique
+  type                AccountType
+  name                String
+  address             String?
+  city                String?
+  county              String?
+  state               String?         @default("OH")
+  zip                 String?
+  phone               String?
+  d8Permit            Boolean         @default(false)
+  ownership           String?
+  districtId          String?
+  warehouse           String?
+  orderDay            String?
+  orderWeek           String?
+  deliveryDay         String?
+  primaryContact      String?
+  primaryContactPhone String?
+  wholesaleStatus     String?
+  ownerUserId         String?
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+  tags                AccountTag[]
+  notes               Note[]
+  photos              Photo[]
+  tasks               Task[]
+  alerts              Alert[]
+  salesFacts          SalesFact[]
+  inventoryFacts      InventoryFact[]
+  visits              Visit[]
 }
-
 model Sku {
   id             String          @id @default(cuid())
   itemCode       String          @unique
