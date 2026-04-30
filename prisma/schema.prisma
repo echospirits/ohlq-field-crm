@@ -1,4 +1,4 @@
-generator client {
+﻿generator client {
   provider = "prisma-client-js"
 }
 
@@ -220,4 +220,43 @@ model Recipe {
   garnish       String?
   notes         String?
   sku           Sku?    @relation(fields: [skuId], references: [id])
+}
+model Agency {
+  id                  String   @id @default(cuid())
+  agencyId            String   @unique
+  name                String
+  address             String?
+  city                String?
+  county              String?
+  state               String?  @default("OH")
+  zip                 String?
+  phone               String?
+  d8Permit            Boolean  @default(false)
+  warehouse           String?
+  orderDay            String?
+  orderWeek           String?
+  deliveryDay         String?
+  primaryContact      String?
+  primaryContactPhone String?
+  wholesaleStatus     String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+model WholesaleAccount {
+  id           String   @id @default(cuid())
+  licenseeId   String   @unique
+  agencyId     String?
+  ownership    String?
+  name         String
+  address      String?
+  city         String?
+  county       String?
+  state        String?  @default("OH")
+  zip          String?
+  districtId   String?
+  deliveryDay  String?
+  phone        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
