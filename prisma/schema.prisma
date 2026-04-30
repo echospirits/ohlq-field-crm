@@ -1,10 +1,36 @@
-generator client { provider = "prisma-client-js" }
-datasource db { provider = "postgresql" url = env("DATABASE_URL") }
+generator client {
+  provider = "prisma-client-js"
+}
 
-enum AccountType { LIQUOR_AGENCY BAR_RESTAURANT CHAIN_GROUP OTHER }
-enum AlertStatus { OPEN SNOOZED DISMISSED RESOLVED }
-enum PhotoType { SHELF DISPLAY MENU BACK_BAR COMPETITOR OTHER }
-enum EventSource { MANUAL EVENTBRITE GOOGLE_SHEET }
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AccountType {
+LIQUOR_AGENCY
+BAR_RESTAURANT
+CHAIN_GROUP
+OTHER
+}
+enum AlertStatus {
+OPEN
+SNOOZED
+DISMISSED
+RESOLVED
+}
+enum PhotoType {
+SHELF
+DISPLAY
+MENU
+BACK_BAR
+COMPETITOR
+OTHER
+}
+enum EventSource {
+MANUAL
+EVENTBRITE
+GOOGLE_SHEET }
 
 model Account {
   id              String   @id @default(cuid())
