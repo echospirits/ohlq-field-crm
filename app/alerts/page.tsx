@@ -159,7 +159,7 @@ export default async function Alerts({
     ];
   }
 
-  const [items, agencyOptions, wholesaleOptions, contacts, users] = await Promise.all([
+  const [items, agencyOptions, wholesaleOptions, contacts, users, tags] = await Promise.all([
     prisma.worklistItem.findMany({
       where,
       take: 300,
@@ -210,6 +210,14 @@ export default async function Alerts({
       },
     }),
     prisma.user.findMany({ orderBy: [{ name: 'asc' }, { email: 'asc' }] }),
+    prisma.tag.findMany({
+      orderBy: { name: 'asc' },
+      select: {
+        id: true,
+        name: true,
+        color: true,
+      },
+    }),
   ]);
 
   const agencyMap = Object.fromEntries(agencyOptions.map((agency) => [agency.id, agency.name]));
@@ -380,6 +388,7 @@ export default async function Alerts({
                             agencyId: item.agencyId,
                             wholesaleAccountId: item.wholesaleAccountId,
                           }}
+                          tags={tags}
                           updateStatusAction={updateWorklistStatus}
                           wholesaleAccounts={wholesaleOptions}
                         />

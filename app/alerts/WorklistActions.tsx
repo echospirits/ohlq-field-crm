@@ -5,6 +5,7 @@ import {
   LogVisitForm,
   type VisitFormAgencyOption,
   type VisitFormContactOption,
+  type VisitFormTagOption,
   type VisitFormWholesaleOption,
   type VisitLocationType,
 } from '../visits/LogVisitForm';
@@ -28,6 +29,7 @@ type WorklistActionsProps = {
   agencies: VisitFormAgencyOption[];
   wholesaleAccounts: VisitFormWholesaleOption[];
   contacts: VisitFormContactOption[];
+  tags: VisitFormTagOption[];
   createVisitAction: (formData: FormData) => void | Promise<void>;
   updateStatusAction: (formData: FormData) => void | Promise<void>;
 };
@@ -46,6 +48,7 @@ export function WorklistActions({
   agencies,
   wholesaleAccounts,
   contacts,
+  tags,
   createVisitAction,
   updateStatusAction,
 }: WorklistActionsProps) {
@@ -102,6 +105,7 @@ export function WorklistActions({
                 summary: initialSummary,
               }}
               submitLabel="Log visit and complete item"
+              tags={tags}
               wholesaleAccounts={wholesaleAccounts}
               worklistItemId={item.id}
             />

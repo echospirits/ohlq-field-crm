@@ -2,14 +2,28 @@
 export const runtime = 'nodejs';
 
 import { revalidatePath } from 'next/cache';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { requireUser } from '../../lib/auth';
 import { prisma } from '../../lib/prisma';
+import { TagBadges } from '../tags/TagBadges';
 
 const toOptional = (value: string | undefined) => {
   const trimmed = (value ?? '').trim();
   return trimmed.length > 0 ? trimmed : null;
 };
+
+const formatDate = (date: Date | null | undefined) => (date ? new Date(date).toLocaleDateString() : '');
+
+const getSelectedTagIds = (formData: FormData) =>
+  Array.from(
+    new Set(
+      formData
+        .getAll('tagId')
+        .map((value) => String(value ?? '').trim())
+        .filter(Boolean),
+    ),
+  );
 
 async function createWholesale(formData: FormData) {
   'use server';
@@ -22,7 +36,8 @@ async function createWholesale(formData: FormData) {
     redirect('/wholesale?status=invalid');
   }
 
-  await prisma.wholesaleAccount.upsert({
+  const tagIds = getSelectedTagIds(formData);
+  const account = await prisma.wholesaleAccount.upsert({
     where: { licenseeId },
     create: {
       licenseeId,
@@ -52,7 +67,20 @@ async function createWholesale(formData: FormData) {
     },
   });
 
+  if (tagIds.length > 0) {
+    await prisma.locationTag.createMany({
+      data: tagIds.map((tagId) => ({
+        tagId,
+        wholesaleAccountId: account.id,
+        note: 'Applied from wholesale account form',
+        createdByUserId: user.id,
+      })),
+      skipDuplicates: true,
+    });
+  }
+
   revalidatePath('/wholesale');
+  revalidatePath('/tags');
   revalidatePath('/visits/new');
   redirect('/wholesale?status=saved');
 }
@@ -67,21 +95,53 @@ export default async function WholesalePage({
   const params = (await searchParams) ?? {};
   const q = (params.q ?? '').trim();
 
-  const accounts = await prisma.wholesaleAccount.findMany({
-    take: 300,
-    where: q
-      ? {
-          OR: [
-            { name: { contains: q, mode: 'insensitive' } },
-            { licenseeId: { contains: q, mode: 'insensitive' } },
-            { agencyId: { contains: q, mode: 'insensitive' } },
-            { address: { contains: q, mode: 'insensitive' } },
-            { phone: { contains: q, mode: 'insensitive' } },
-          ],
-        }
-      : undefined,
-    orderBy: [{ name: 'asc' }, { licenseeId: 'asc' }],
-  });
+  const [accounts, tags] = await Promise.all([
+    prisma.wholesaleAccount.findMany({
+      take: 300,
+      include: {
+        tags: {
+          include: { tag: true },
+          orderBy: { createdAt: 'desc' },
+        },
+      },
+      where: q
+        ? {
+            OR: [
+              { name: { contains: q, mode: 'insensitive' } },
+              { licenseeId: { contains: q, mode: 'insensitive' } },
+              { agencyId: { contains: q, mode: 'insensitive' } },
+              { address: { contains: q, mode: 'insensitive' } },
+              { phone: { contains: q, mode: 'insensitive' } },
+              { tags: { some: { tag: { name: { contains: q, mode: 'insensitive' } } } } },
+            ],
+          }
+        : undefined,
+      orderBy: [{ name: 'asc' }, { licenseeId: 'asc' }],
+    }),
+    prisma.tag.findMany({ orderBy: [{ name: 'asc' }] }),
+  ]);
+  const accountIds = accounts.map((account) => account.id);
+  const visitStats =
+    accountIds.length > 0
+      ? await prisma.loggedVisit.groupBy({
+          by: ['wholesaleAccountId'],
+          where: {
+            locationType: 'wholesale',
+            wholesaleAccountId: { in: accountIds },
+          },
+          _count: { _all: true },
+          _max: { visitAt: true },
+        })
+      : [];
+  const visitStatMap = Object.fromEntries(
+    visitStats.map((stat) => [
+      stat.wholesaleAccountId ?? '',
+      {
+        count: stat._count._all,
+        lastVisitAt: stat._max.visitAt,
+      },
+    ]),
+  );
 
   return (
     <>
@@ -103,6 +163,20 @@ export default async function WholesalePage({
             <input name="ownership" placeholder="Ownership" />
             <input name="districtId" placeholder="District ID" />
             <input name="deliveryDay" placeholder="Delivery Day" />
+            {tags.length > 0 ? (
+              <fieldset>
+                <legend>Tags</legend>
+                <div className="tag-checkbox-grid">
+                  {tags.map((tag) => (
+                    <label className="tag-checkbox" key={tag.id}>
+                      <input name="tagId" type="checkbox" value={tag.id} />
+                      <span className="tag-swatch" style={{ backgroundColor: tag.color ?? '#7c9cff' }} />
+                      <span>{tag.name}</span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+            ) : null}
             <button type="submit">Save wholesale account</button>
           </form>
         </div>
@@ -123,19 +197,35 @@ export default async function WholesalePage({
             <th>Address</th>
             <th>City</th>
             <th>Phone</th>
+            <th>Tags</th>
+            <th>Logged Visits</th>
+            <th>Most Recent Visit</th>
           </tr>
         </thead>
         <tbody>
-          {accounts.map((account) => (
-            <tr key={account.id}>
-              <td data-label="Licensee ID">{account.licenseeId}</td>
-              <td data-label="Name">{account.name}</td>
-              <td data-label="Agency ID">{account.agencyId}</td>
-              <td data-label="Address">{account.address}</td>
-              <td data-label="City">{account.city}</td>
-              <td data-label="Phone">{account.phone}</td>
-            </tr>
-          ))}
+          {accounts.map((account) => {
+            const stats = visitStatMap[account.id] ?? { count: 0, lastVisitAt: null };
+
+            return (
+              <tr key={account.id}>
+                <td data-label="Licensee ID">{account.licenseeId}</td>
+                <td data-label="Name">
+                  <Link className="table-link" href={`/wholesale/${account.id}`}>
+                    {account.name}
+                  </Link>
+                </td>
+                <td data-label="Agency ID">{account.agencyId}</td>
+                <td data-label="Address">{account.address}</td>
+                <td data-label="City">{account.city}</td>
+                <td data-label="Phone">{account.phone}</td>
+                <td data-label="Tags">
+                  <TagBadges tags={account.tags.map((assignment) => assignment.tag)} />
+                </td>
+                <td data-label="Logged Visits">{stats.count}</td>
+                <td data-label="Most Recent Visit">{formatDate(stats.lastVisitAt)}</td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </>

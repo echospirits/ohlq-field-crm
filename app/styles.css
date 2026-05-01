@@ -71,6 +71,105 @@ main { padding: 22px; max-width: 1280px; width: 100%; }
   box-shadow: 0 8px 24px #0000003d;
 }
 .dashboard-section { margin-top: 24px; }
+.account-summary-grid { margin-bottom: 18px; }
+.account-detail-list {
+  gap: 8px;
+}
+.account-detail-list h3 {
+  margin: 0 0 4px;
+}
+.account-detail-list p {
+  display: grid;
+  grid-template-columns: 130px minmax(0, 1fr);
+  gap: 10px;
+  margin: 0;
+  padding-top: 7px;
+  border-top: 1px solid #24304f;
+}
+.account-detail-list p:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+.account-detail-list span {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.activity-empty {
+  padding: 12px 0;
+}
+.tag-badge-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.tag-badge,
+.tag-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.tag-badge {
+  width: fit-content;
+  max-width: 100%;
+  color: #d9e3ff;
+  text-decoration: none;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.tag-badge:hover {
+  color: #ffffff;
+}
+.tag-swatch {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 12px;
+  border: 1px solid #ffffff66;
+  border-radius: 3px;
+}
+.tag-checkbox-grid,
+.tag-idea-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.tag-checkbox,
+.tag-idea-list span {
+  width: auto;
+  min-height: 34px;
+  padding: 7px 9px;
+  border: 1px solid #344364;
+  border-radius: 8px;
+  background: #0f172a;
+  color: #d9e3ff;
+  font-size: 13px;
+}
+.tag-checkbox input {
+  width: auto;
+  min-height: auto;
+  margin: 0;
+}
+.account-tag-panel {
+  align-content: start;
+}
+.tag-apply-form {
+  max-width: none;
+}
+.tag-audit-list {
+  display: grid;
+  gap: 8px;
+}
+.tag-audit-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+  padding-top: 9px;
+  border-top: 1px solid #24304f;
+}
+.tag-audit-row p {
+  margin: 5px 0 0;
+}
 .performance-grid { grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
 .metric-card {
   display: grid;
@@ -144,6 +243,13 @@ tr:hover td { background: #121e36; }
 
 a { color: #a9c2ff; }
 a:hover { color: #c7d7ff; }
+.table-link {
+  color: #d9e3ff;
+  font-weight: 700;
+}
+.page-actions {
+  margin-bottom: 14px;
+}
 
 button, .btn {
   background: linear-gradient(180deg, var(--accent), #5b7ff3);
@@ -368,6 +474,17 @@ button:disabled {
   .card { border-radius: 12px; padding: 14px; }
   .metric-card-wide { grid-column: auto; }
   .metric-value { font-size: 34px; }
+  .account-detail-list p {
+    grid-template-columns: 1fr;
+    gap: 3px;
+  }
+  .tag-audit-row {
+    grid-template-columns: 1fr;
+  }
+  .tag-audit-row form,
+  .tag-audit-row button {
+    width: 100%;
+  }
   .user-metric-row {
     grid-template-columns: 1fr;
     gap: 4px;

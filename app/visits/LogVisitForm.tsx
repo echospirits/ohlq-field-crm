@@ -41,6 +41,12 @@ export type VisitFormContactOption = {
   wholesaleAccountId: string | null;
 };
 
+export type VisitFormTagOption = {
+  id: string;
+  name: string;
+  color: string | null;
+};
+
 type VisitFormInitialValues = {
   locationType?: VisitLocationType;
   agencyId?: string | null;
@@ -56,6 +62,7 @@ type LogVisitFormProps = {
   agencies: VisitFormAgencyOption[];
   wholesaleAccounts: VisitFormWholesaleOption[];
   contacts: VisitFormContactOption[];
+  tags?: VisitFormTagOption[];
   actorName: string;
   formOrigin?: 'visits' | 'worklist';
   worklistItemId?: string;
@@ -78,6 +85,7 @@ export function LogVisitForm({
   agencies,
   wholesaleAccounts,
   contacts,
+  tags = [],
   actorName,
   formOrigin = 'visits',
   worklistItemId,
@@ -243,7 +251,7 @@ export function LogVisitForm({
 
       {locationType === 'wholesale' ? (
         <fieldset>
-          <legend>Create wholesale account on the fly</legend>
+          <legend>Create / tag wholesale account</legend>
           <div className="form-grid">
             <input name="newWholesaleLicenseeId" placeholder="Licensee ID" />
             <input name="newWholesaleName" placeholder="Account name" />
@@ -257,6 +265,20 @@ export function LogVisitForm({
             <input name="newWholesaleDistrictId" placeholder="District ID" />
             <input name="newWholesaleDeliveryDay" placeholder="Delivery Day" />
           </div>
+          {tags.length > 0 ? (
+            <>
+              <label>Tags</label>
+              <div className="tag-checkbox-grid">
+                {tags.map((tag) => (
+                  <label className="tag-checkbox" key={tag.id}>
+                    <input name="newWholesaleTagId" type="checkbox" value={tag.id} />
+                    <span className="tag-swatch" style={{ backgroundColor: tag.color ?? '#7c9cff' }} />
+                    <span>{tag.name}</span>
+                  </label>
+                ))}
+              </div>
+            </>
+          ) : null}
         </fieldset>
       ) : null}
 

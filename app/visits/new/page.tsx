@@ -21,7 +21,7 @@ export default async function NewVisitPage({
 }: {
   searchParams?: Promise<{ status?: string }>;
 }) {
-  const [params, user, agencies, wholesaleAccounts, contacts] = await Promise.all([
+  const [params, user, agencies, wholesaleAccounts, contacts, tags] = await Promise.all([
     (await searchParams) ?? {},
     requireUser(),
     prisma.agency.findMany({
@@ -62,6 +62,14 @@ export default async function NewVisitPage({
         wholesaleAccountId: true,
       },
     }),
+    prisma.tag.findMany({
+      orderBy: { name: 'asc' },
+      select: {
+        id: true,
+        name: true,
+        color: true,
+      },
+    }),
   ]);
 
   return (
@@ -75,6 +83,7 @@ export default async function NewVisitPage({
           actorName={getUserDisplayName(user)}
           agencies={agencies}
           contacts={contacts}
+          tags={tags}
           wholesaleAccounts={wholesaleAccounts}
         />
       </div>

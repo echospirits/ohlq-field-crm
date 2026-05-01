@@ -2,10 +2,12 @@
 export const runtime = 'nodejs';
 
 import Papa from 'papaparse';
+import Link from 'next/link';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { requireUser } from '../../lib/auth';
 import { prisma } from '../../lib/prisma';
+import { TagBadges } from '../tags/TagBadges';
 
 type CsvRow = Record<string, string | undefined>;
 
@@ -16,6 +18,8 @@ const toOptional = (value: string | undefined) => {
 
 const parseBool = (value: string | undefined) =>
   ['1', 'true', 'yes', 'y'].includes((value ?? '').trim().toLowerCase());
+
+const formatDate = (date: Date | null | undefined) => (date ? new Date(date).toLocaleDateString() : '');
 
 async function importAgencies(formData: FormData) {
   'use server';
@@ -116,6 +120,12 @@ export default async function AgenciesPage({
 
   const agencies = await prisma.agency.findMany({
     take: 250,
+    include: {
+      tags: {
+        include: { tag: true },
+        orderBy: { createdAt: 'desc' },
+      },
+    },
     where: q
       ? {
           OR: [
@@ -125,11 +135,34 @@ export default async function AgenciesPage({
             { primaryContactPhone: { contains: q, mode: 'insensitive' } },
             { phone: { contains: q, mode: 'insensitive' } },
             { agencyId: { contains: q, mode: 'insensitive' } },
+            { tags: { some: { tag: { name: { contains: q, mode: 'insensitive' } } } } },
           ],
         }
       : undefined,
     orderBy: [{ name: 'asc' }, { agencyId: 'asc' }],
   });
+  const agencyIds = agencies.map((agency) => agency.id);
+  const visitStats =
+    agencyIds.length > 0
+      ? await prisma.loggedVisit.groupBy({
+          by: ['agencyId'],
+          where: {
+            locationType: 'agency',
+            agencyId: { in: agencyIds },
+          },
+          _count: { _all: true },
+          _max: { visitAt: true },
+        })
+      : [];
+  const visitStatMap = Object.fromEntries(
+    visitStats.map((stat) => [
+      stat.agencyId ?? '',
+      {
+        count: stat._count._all,
+        lastVisitAt: stat._max.visitAt,
+      },
+    ]),
+  );
 
   return (
     <>
@@ -157,20 +190,36 @@ export default async function AgenciesPage({
             <th>Primary Contact</th>
             <th>Contact Phone</th>
             <th>Agency Phone</th>
+            <th>Tags</th>
+            <th>Logged Visits</th>
+            <th>Most Recent Visit</th>
           </tr>
         </thead>
         <tbody>
-          {agencies.map((agency) => (
-            <tr key={agency.id}>
-              <td data-label="Agency ID">{agency.agencyId}</td>
-              <td data-label="Name">{agency.name}</td>
-              <td data-label="Address">{agency.address}</td>
-              <td data-label="City">{agency.city}</td>
-              <td data-label="Primary Contact">{agency.primaryContact}</td>
-              <td data-label="Contact Phone">{agency.primaryContactPhone}</td>
-              <td data-label="Agency Phone">{agency.phone}</td>
-            </tr>
-          ))}
+          {agencies.map((agency) => {
+            const stats = visitStatMap[agency.id] ?? { count: 0, lastVisitAt: null };
+
+            return (
+              <tr key={agency.id}>
+                <td data-label="Agency ID">{agency.agencyId}</td>
+                <td data-label="Name">
+                  <Link className="table-link" href={`/agencies/${agency.id}`}>
+                    {agency.name}
+                  </Link>
+                </td>
+                <td data-label="Address">{agency.address}</td>
+                <td data-label="City">{agency.city}</td>
+                <td data-label="Primary Contact">{agency.primaryContact}</td>
+                <td data-label="Contact Phone">{agency.primaryContactPhone}</td>
+                <td data-label="Agency Phone">{agency.phone}</td>
+                <td data-label="Tags">
+                  <TagBadges tags={agency.tags.map((assignment) => assignment.tag)} />
+                </td>
+                <td data-label="Logged Visits">{stats.count}</td>
+                <td data-label="Most Recent Visit">{formatDate(stats.lastVisitAt)}</td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </>

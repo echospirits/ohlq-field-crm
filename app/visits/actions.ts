@@ -36,6 +36,16 @@ const toPhotoType = (value: FormDataEntryValue | undefined) => {
 const getFormOrigin = (formData: FormData): FormOrigin =>
   toOptional(formData.get('formOrigin')) === 'worklist' ? 'worklist' : 'visits';
 
+const getSelectedTagIds = (formData: FormData) =>
+  Array.from(
+    new Set(
+      formData
+        .getAll('newWholesaleTagId')
+        .map((value) => String(value ?? '').trim())
+        .filter(Boolean),
+    ),
+  );
+
 const redirectWithStatus = (formOrigin: FormOrigin, status: string): never => {
   redirect(formOrigin === 'worklist' ? `/alerts?notice=${status}` : `/visits/new?status=${status}`);
 };
@@ -94,6 +104,7 @@ export async function createVisit(formData: FormData) {
   const outcomes = toOptional(formData.get('outcomes'));
   const nextStep = toOptional(formData.get('nextStep'));
   const followUpDate = toDate(formData.get('followUpDate'));
+  const selectedTagIds = getSelectedTagIds(formData);
   const pendingPhotos = collectPhotos(formData, formOrigin);
 
   if (locationType === 'agency' && !agencyId) {
@@ -139,6 +150,18 @@ export async function createVisit(formData: FormData) {
       });
 
       wholesaleAccountId = wholesaleAccount.id;
+    }
+
+    if (locationType === 'wholesale' && wholesaleAccountId && selectedTagIds.length > 0) {
+      await tx.locationTag.createMany({
+        data: selectedTagIds.map((tagId) => ({
+          tagId,
+          wholesaleAccountId,
+          note: 'Applied during visit logging',
+          createdByUserId: user.id,
+        })),
+        skipDuplicates: true,
+      });
     }
 
     let contactId = toOptional(formData.get('contactId'));
@@ -284,6 +307,8 @@ export async function createVisit(formData: FormData) {
   revalidatePath('/visits');
   revalidatePath('/visits/new');
   revalidatePath('/alerts');
+  revalidatePath('/agencies');
   revalidatePath('/wholesale');
+  revalidatePath('/tags');
   redirect(worklistItemId ? '/alerts?notice=visit-logged' : '/visits?status=logged');
 }
