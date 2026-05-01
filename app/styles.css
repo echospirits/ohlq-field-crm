@@ -38,6 +38,29 @@ aside a {
 }
 aside a:hover { background: #1a2440; }
 main { padding: 22px; max-width: 1280px; width: 100%; }
+.public-main {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  max-width: none;
+}
+.login-panel {
+  width: min(460px, calc(100vw - 32px));
+  background: color-mix(in oklab, var(--panel) 88%, black 12%);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 18px 48px #0008;
+}
+.login-panel h1 { margin-top: 0; }
+.user-card {
+  display: grid;
+  gap: 8px;
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.user-card form { max-width: none; }
 
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; }
 .card {
@@ -142,6 +165,68 @@ legend {
   color: #d4dcf5;
 }
 .preserve-lines { white-space: pre-line; margin-top: 6px; }
+.item-meta { margin-top: 8px; font-size: 12px; }
+.thumbnail-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 120px;
+}
+.thumbnail-button {
+  width: 58px;
+  height: 58px;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid #344364;
+  border-radius: 8px;
+  background: #0f172a;
+  cursor: pointer;
+}
+.thumbnail-button img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.photo-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+.photo-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  background: #030711cc;
+}
+.photo-modal-panel {
+  position: relative;
+  z-index: 1;
+  width: min(980px, calc(100vw - 40px));
+  max-height: calc(100vh - 40px);
+  display: grid;
+  gap: 10px;
+  background: #0f172a;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px;
+}
+.photo-modal-panel img {
+  max-width: 100%;
+  max-height: calc(100vh - 150px);
+  object-fit: contain;
+  justify-self: center;
+}
+.photo-modal-panel p { margin: 0; }
+.photo-modal-close {
+  justify-self: end;
+  padding: 8px 10px;
+}
 
 @media (max-width: 900px) {
   body { display: block; }

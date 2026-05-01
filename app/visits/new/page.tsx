@@ -4,9 +4,9 @@ export const runtime = 'nodejs';
 import { PhotoType, WorklistCategory, WorklistSource, WorklistStatus } from '@prisma/client';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
+import { requireUser, getUserDisplayName } from '../../../lib/auth';
+import { uploadVisitPhoto, validateVisitPhotoFile } from '../../../lib/blob';
 import { prisma } from '../../../lib/prisma';
-
-const PHOTO_UPLOAD_LIMIT_BYTES = 5 * 1024 * 1024;
 
 const photoTypes = [
   { value: PhotoType.DISPLAY, label: 'Display' },
@@ -19,6 +19,15 @@ const statusMessages: Record<string, string> = {
   'invalid-wholesale': 'Select an existing wholesale account or create one before logging a wholesale visit.',
   'invalid-photo': 'Photos must be image files.',
   'photo-too-large': 'Each uploaded photo must be 5 MB or smaller.',
+  'storage-not-configured': 'Photo object storage is not configured yet.',
+  'photo-upload-failed': 'The visit was saved, but one or more photos could not be uploaded.',
+};
+
+type PendingPhoto = {
+  type: PhotoType;
+  file: File | null;
+  url: string | null;
+  caption: string | null;
 };
 
 const toOptional = (value: FormDataEntryValue | null | undefined) => {
@@ -38,35 +47,38 @@ const toPhotoType = (value: FormDataEntryValue | undefined) => {
     : PhotoType.OTHER;
 };
 
-async function collectPhotos(formData: FormData) {
+function collectPhotos(formData: FormData) {
   const types = formData.getAll('photoType');
   const files = formData.getAll('photoFile');
   const urls = formData.getAll('photoUrl');
   const captions = formData.getAll('photoCaption');
   const photoCount = Math.max(types.length, files.length, urls.length, captions.length);
-  const photos: Array<{ type: PhotoType; url: string; caption: string | null }> = [];
+  const photos: PendingPhoto[] = [];
 
   for (let index = 0; index < photoCount; index += 1) {
-    const type = toPhotoType(types[index]);
-    const caption = toOptional(captions[index]);
-    let url = toOptional(urls[index]);
     const file = files[index];
+    const url = toOptional(urls[index]);
 
     if (file instanceof File && file.size > 0) {
-      if (!file.type.startsWith('image/')) {
-        redirect('/visits/new?status=invalid-photo');
+      const validationError = validateVisitPhotoFile(file);
+
+      if (validationError) {
+        redirect(`/visits/new?status=${validationError}`);
       }
 
-      if (file.size > PHOTO_UPLOAD_LIMIT_BYTES) {
-        redirect('/visits/new?status=photo-too-large');
-      }
-
-      const buffer = Buffer.from(await file.arrayBuffer());
-      url = `data:${file.type};base64,${buffer.toString('base64')}`;
-    }
-
-    if (url) {
-      photos.push({ type, url, caption });
+      photos.push({
+        type: toPhotoType(types[index]),
+        file,
+        url: null,
+        caption: toOptional(captions[index]),
+      });
+    } else if (url) {
+      photos.push({
+        type: toPhotoType(types[index]),
+        file: null,
+        url,
+        caption: toOptional(captions[index]),
+      });
     }
   }
 
@@ -76,6 +88,8 @@ async function collectPhotos(formData: FormData) {
 async function createVisit(formData: FormData) {
   'use server';
 
+  const user = await requireUser();
+  const actorName = getUserDisplayName(user);
   const locationType = String(formData.get('locationType') ?? 'agency') === 'wholesale' ? 'wholesale' : 'agency';
   const agencyId = toOptional(formData.get('agencyId'));
   const selectedWholesaleAccountId = toOptional(formData.get('wholesaleAccountId'));
@@ -86,9 +100,8 @@ async function createVisit(formData: FormData) {
   const summary = toOptional(formData.get('summary'));
   const outcomes = toOptional(formData.get('outcomes'));
   const nextStep = toOptional(formData.get('nextStep'));
-  const createdBy = toOptional(formData.get('createdBy'));
   const followUpDate = toDate(formData.get('followUpDate'));
-  const photos = await collectPhotos(formData);
+  const pendingPhotos = collectPhotos(formData);
 
   if (locationType === 'agency' && !agencyId) {
     redirect('/visits/new?status=invalid-agency');
@@ -98,7 +111,7 @@ async function createVisit(formData: FormData) {
     redirect('/visits/new?status=invalid-wholesale');
   }
 
-  await prisma.$transaction(async (tx) => {
+  const visit = await prisma.$transaction(async (tx) => {
     let wholesaleAccountId = selectedWholesaleAccountId;
 
     if (locationType === 'wholesale' && !wholesaleAccountId && newWholesaleLicenseeId && newWholesaleName) {
@@ -116,6 +129,7 @@ async function createVisit(formData: FormData) {
           ownership: toOptional(formData.get('newWholesaleOwnership')),
           districtId: toOptional(formData.get('newWholesaleDistrictId')),
           deliveryDay: toOptional(formData.get('newWholesaleDeliveryDay')),
+          createdByUserId: user.id,
         },
         update: {
           name: newWholesaleName,
@@ -143,12 +157,13 @@ async function createVisit(formData: FormData) {
           phone: newContactPhone,
           agencyId: locationType === 'agency' ? agencyId : null,
           wholesaleAccountId: locationType === 'wholesale' ? wholesaleAccountId : null,
+          createdByUserId: user.id,
         },
       });
       contactId = createdContact.id;
     }
 
-    const visit = await tx.loggedVisit.create({
+    const loggedVisit = await tx.loggedVisit.create({
       data: {
         locationType,
         agencyId: locationType === 'agency' ? agencyId : null,
@@ -157,46 +172,79 @@ async function createVisit(formData: FormData) {
         summary,
         outcomes,
         nextStep,
-        createdBy,
+        createdBy: actorName,
+        createdByUserId: user.id,
         followUpDate,
       },
     });
-
-    if (photos.length > 0) {
-      await tx.visitPhoto.createMany({
-        data: photos.map((photo) => ({
-          loggedVisitId: visit.id,
-          type: photo.type,
-          url: photo.url,
-          caption: photo.caption,
-        })),
-      });
-    }
 
     if (followUpDate) {
       await tx.worklistItem.create({
         data: {
           title: nextStep ? `Follow up: ${nextStep.slice(0, 120)}` : 'Follow up on visit',
-          detail: [
-            summary ? `Summary: ${summary}` : null,
-            outcomes ? `Outcomes: ${outcomes}` : null,
-            nextStep ? `Next step: ${nextStep}` : null,
-          ]
-            .filter(Boolean)
-            .join('\n') || null,
+          detail:
+            [
+              summary ? `Summary: ${summary}` : null,
+              outcomes ? `Outcomes: ${outcomes}` : null,
+              nextStep ? `Next step: ${nextStep}` : null,
+            ]
+              .filter(Boolean)
+              .join('\n') || null,
           status: WorklistStatus.OPEN,
           source: WorklistSource.VISIT_FOLLOW_UP,
           category: locationType === 'agency' ? WorklistCategory.AGENCY : WorklistCategory.WHOLESALE,
           agencyId: locationType === 'agency' ? agencyId : null,
           wholesaleAccountId: locationType === 'wholesale' ? wholesaleAccountId : null,
-          loggedVisitId: visit.id,
+          loggedVisitId: loggedVisit.id,
           dueDate: followUpDate,
-          assignedTo: createdBy,
-          createdBy,
+          assignedTo: actorName,
+          assignedToUserId: user.id,
+          createdBy: actorName,
+          createdByUserId: user.id,
         },
       });
     }
+
+    return loggedVisit;
   });
+
+  if (pendingPhotos.length > 0) {
+    try {
+      const photos = await Promise.all(
+        pendingPhotos.map(async (photo, index) => {
+          if (photo.file) {
+            const uploadedPhoto = await uploadVisitPhoto(photo.file, visit.id, user.id, index);
+
+            return {
+              loggedVisitId: visit.id,
+              type: photo.type,
+              url: uploadedPhoto.url,
+              storageKey: uploadedPhoto.storageKey,
+              contentType: uploadedPhoto.contentType,
+              sizeBytes: uploadedPhoto.sizeBytes,
+              caption: photo.caption,
+              createdByUserId: user.id,
+            };
+          }
+
+          return {
+            loggedVisitId: visit.id,
+            type: photo.type,
+            url: photo.url ?? '',
+            storageKey: null,
+            contentType: null,
+            sizeBytes: null,
+            caption: photo.caption,
+            createdByUserId: user.id,
+          };
+        }),
+      );
+
+      await prisma.visitPhoto.createMany({ data: photos });
+    } catch {
+      redirect('/visits/new?status=photo-upload-failed');
+    }
+  }
 
   revalidatePath('/visits');
   revalidatePath('/visits/new');
@@ -210,14 +258,18 @@ export default async function NewVisitPage({
 }: {
   searchParams?: Promise<{ status?: string }>;
 }) {
-  const params = (await searchParams) ?? {};
-  const agencies = await prisma.agency.findMany({ orderBy: { name: 'asc' }, take: 500 });
-  const wholesaleAccounts = await prisma.wholesaleAccount.findMany({ orderBy: { name: 'asc' }, take: 500 });
-  const contacts = await prisma.locationContact.findMany({ orderBy: { name: 'asc' }, take: 1000 });
+  const [params, user, agencies, wholesaleAccounts, contacts] = await Promise.all([
+    (await searchParams) ?? {},
+    requireUser(),
+    prisma.agency.findMany({ orderBy: { name: 'asc' }, take: 500 }),
+    prisma.wholesaleAccount.findMany({ orderBy: { name: 'asc' }, take: 500 }),
+    prisma.locationContact.findMany({ orderBy: { name: 'asc' }, take: 1000 }),
+  ]);
 
   return (
     <>
       <h1>Log Visit</h1>
+      <p className="muted">Visit activity will be recorded as {getUserDisplayName(user)}.</p>
       {params.status ? <p className="pill">{statusMessages[params.status] ?? params.status}</p> : null}
 
       <div className="card">
@@ -300,9 +352,6 @@ export default async function NewVisitPage({
 
             <label>Follow-up date</label>
             <input name="followUpDate" type="date" />
-
-            <label>Created by</label>
-            <input name="createdBy" placeholder="Rep name" />
           </fieldset>
 
           <fieldset>
@@ -318,7 +367,7 @@ export default async function NewVisitPage({
                   ))}
                 </select>
                 <input name="photoFile" type="file" accept="image/*" />
-                <input name="photoUrl" type="url" placeholder="Or paste a photo URL" />
+                <input name="photoUrl" type="url" placeholder="Or paste an existing photo URL" />
                 <input name="photoCaption" placeholder="Caption or note" />
               </div>
             ))}

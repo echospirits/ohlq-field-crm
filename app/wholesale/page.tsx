@@ -3,6 +3,7 @@ export const runtime = 'nodejs';
 
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
+import { requireUser } from '../../lib/auth';
 import { prisma } from '../../lib/prisma';
 
 const toOptional = (value: string | undefined) => {
@@ -13,6 +14,7 @@ const toOptional = (value: string | undefined) => {
 async function createWholesale(formData: FormData) {
   'use server';
 
+  const user = await requireUser();
   const licenseeId = String(formData.get('licenseeId') ?? '').trim();
   const name = String(formData.get('name') ?? '').trim();
 
@@ -34,6 +36,7 @@ async function createWholesale(formData: FormData) {
       ownership: toOptional(String(formData.get('ownership') ?? '')),
       districtId: toOptional(String(formData.get('districtId') ?? '')),
       deliveryDay: toOptional(String(formData.get('deliveryDay') ?? '')),
+      createdByUserId: user.id,
     },
     update: {
       name,
@@ -59,6 +62,8 @@ export default async function WholesalePage({
 }: {
   searchParams?: Promise<{ q?: string; status?: string }>;
 }) {
+  await requireUser();
+
   const params = (await searchParams) ?? {};
   const q = (params.q ?? '').trim();
 

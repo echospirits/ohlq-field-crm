@@ -54,6 +54,37 @@ enum WorklistCategory {
   GENERAL
 }
 
+model User {
+  id                       String             @id @default(cuid())
+  googleId                 String             @unique
+  email                    String             @unique
+  name                     String?
+  image                    String?
+  createdAt                DateTime           @default(now())
+  updatedAt                DateTime           @updatedAt
+  sessions                 UserSession[]
+  createdWholesaleAccounts WholesaleAccount[] @relation("WholesaleAccountCreatedBy")
+  createdLocationContacts  LocationContact[]  @relation("LocationContactCreatedBy")
+  createdLoggedVisits      LoggedVisit[]      @relation("LoggedVisitCreatedBy")
+  createdVisitPhotos       VisitPhoto[]       @relation("VisitPhotoCreatedBy")
+  createdWorklistItems     WorklistItem[]     @relation("WorklistItemCreatedBy")
+  assignedWorklistItems    WorklistItem[]     @relation("WorklistItemAssignedTo")
+  completedWorklistItems   WorklistItem[]     @relation("WorklistItemCompletedBy")
+  cancelledWorklistItems   WorklistItem[]     @relation("WorklistItemCancelledBy")
+}
+
+model UserSession {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
 model Account {
   id                  String          @id @default(cuid())
   externalId          String?         @unique
@@ -90,6 +121,7 @@ model Account {
   inventoryFacts      InventoryFact[]
   visits              Visit[]
 }
+
 model Sku {
   id             String          @id @default(cuid())
   itemCode       String          @unique
@@ -264,21 +296,25 @@ model Agency {
 }
 
 model WholesaleAccount {
-  id          String   @id @default(cuid())
-  licenseeId  String   @unique
-  agencyId    String?
-  ownership   String?
-  name        String
-  address     String?
-  city        String?
-  county      String?
-  state       String?  @default("OH")
-  zip         String?
-  districtId  String?
-  deliveryDay String?
-  phone       String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id              String   @id @default(cuid())
+  licenseeId      String   @unique
+  agencyId        String?
+  ownership       String?
+  name            String
+  address         String?
+  city            String?
+  county          String?
+  state           String?  @default("OH")
+  zip             String?
+  districtId      String?
+  deliveryDay     String?
+  phone           String?
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  createdByUser   User?    @relation("WholesaleAccountCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([createdByUserId])
 }
 
 model LocationContact {
@@ -290,8 +326,12 @@ model LocationContact {
   agencyId           String?
   wholesaleAccountId String?
   notes              String?
+  createdByUserId    String?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
+  createdByUser      User?    @relation("LocationContactCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([createdByUserId])
 }
 
 model LoggedVisit {
@@ -306,21 +346,31 @@ model LoggedVisit {
   nextStep           String?
   followUpDate       DateTime?
   createdBy          String?
+  createdByUserId    String?
   createdAt          DateTime       @default(now())
+  createdByUser      User?          @relation("LoggedVisitCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
   photos             VisitPhoto[]
   worklistItems      WorklistItem[]
+
+  @@index([createdByUserId])
 }
 
 model VisitPhoto {
-  id            String      @id @default(cuid())
-  loggedVisitId String
-  type          PhotoType
-  url           String
-  caption       String?
-  createdAt     DateTime    @default(now())
-  visit         LoggedVisit @relation(fields: [loggedVisitId], references: [id], onDelete: Cascade)
+  id              String      @id @default(cuid())
+  loggedVisitId   String
+  type            PhotoType
+  url             String
+  storageKey      String?
+  contentType     String?
+  sizeBytes       Int?
+  caption         String?
+  createdByUserId String?
+  createdAt       DateTime    @default(now())
+  createdByUser   User?       @relation("VisitPhotoCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  visit           LoggedVisit @relation(fields: [loggedVisitId], references: [id], onDelete: Cascade)
 
   @@index([loggedVisitId])
+  @@index([createdByUserId])
 }
 
 model WorklistItem {
@@ -336,10 +386,18 @@ model WorklistItem {
   dueDate            DateTime?
   assignedTo         String?
   createdBy          String?
+  createdByUserId    String?
+  assignedToUserId   String?
+  completedByUserId  String?
+  cancelledByUserId  String?
   completedAt        DateTime?
   cancelledAt        DateTime?
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
+  assignedToUser     User?            @relation("WorklistItemAssignedTo", fields: [assignedToUserId], references: [id], onDelete: SetNull)
+  cancelledByUser    User?            @relation("WorklistItemCancelledBy", fields: [cancelledByUserId], references: [id], onDelete: SetNull)
+  completedByUser    User?            @relation("WorklistItemCompletedBy", fields: [completedByUserId], references: [id], onDelete: SetNull)
+  createdByUser      User?            @relation("WorklistItemCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
   loggedVisit        LoggedVisit?     @relation(fields: [loggedVisitId], references: [id], onDelete: SetNull)
 
   @@index([status])
@@ -347,4 +405,8 @@ model WorklistItem {
   @@index([dueDate])
   @@index([agencyId])
   @@index([wholesaleAccountId])
+  @@index([createdByUserId])
+  @@index([assignedToUserId])
+  @@index([completedByUserId])
+  @@index([cancelledByUserId])
 }

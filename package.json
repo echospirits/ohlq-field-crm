@@ -11,13 +11,13 @@
     "db:migrate": "prisma migrate deploy",
     "db:studio": "prisma studio",
     "import:sample": "tsx scripts/import-sample-data.ts",
-"vercel:link": "vercel link",
-"vercel:preview": "vercel --yes",
-"vercel:prod": "vercel --prod --yes"
+    "vercel:link": "vercel link",
+    "vercel:preview": "vercel --yes",
+    "vercel:prod": "vercel --prod --yes"
   },
   "dependencies": {
-
     "@prisma/client": "6.19.3",
+    "@vercel/blob": "^2.3.3",
     "next": "^16.2.4",
     "papaparse": "5.4.1",
     "prisma": "^6.19.3",

@@ -4,6 +4,7 @@ export const runtime = 'nodejs';
 import { Prisma, WorklistCategory, WorklistSource, WorklistStatus } from '@prisma/client';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
+import { getUserDisplayName, requireUser } from '../../lib/auth';
 import { prisma } from '../../lib/prisma';
 
 const statusLabels: Record<WorklistStatus, string> = {
@@ -53,12 +54,18 @@ const formatDate = (date: Date | null) => (date ? new Date(date).toLocaleDateStr
 async function createWorklistItem(formData: FormData) {
   'use server';
 
+  const currentUser = await requireUser();
   const title = toOptional(formData.get('title'));
   const category = toWorklistCategory(formData.get('category'));
+  const assignedToUserId = toOptional(formData.get('assignedToUserId'));
 
   if (!title) {
     redirect('/alerts?created=invalid');
   }
+
+  const assignedUser = assignedToUserId
+    ? await prisma.user.findUnique({ where: { id: assignedToUserId } })
+    : null;
 
   await prisma.worklistItem.create({
     data: {
@@ -71,8 +78,10 @@ async function createWorklistItem(formData: FormData) {
       wholesaleAccountId:
         category === WorklistCategory.WHOLESALE ? toOptional(formData.get('wholesaleAccountId')) : null,
       dueDate: toDate(formData.get('dueDate')),
-      assignedTo: toOptional(formData.get('assignedTo')),
-      createdBy: toOptional(formData.get('createdBy')),
+      assignedTo: assignedUser ? getUserDisplayName(assignedUser) : null,
+      assignedToUserId: assignedUser?.id,
+      createdBy: getUserDisplayName(currentUser),
+      createdByUserId: currentUser.id,
     },
   });
 
@@ -83,6 +92,7 @@ async function createWorklistItem(formData: FormData) {
 async function updateWorklistStatus(formData: FormData) {
   'use server';
 
+  const currentUser = await requireUser();
   const id = toOptional(formData.get('id'));
   const status = toWorklistStatus(formData.get('status'));
 
@@ -96,6 +106,8 @@ async function updateWorklistStatus(formData: FormData) {
       status,
       completedAt: status === WorklistStatus.COMPLETED ? new Date() : null,
       cancelledAt: status === WorklistStatus.CANCELLED ? new Date() : null,
+      completedByUserId: status === WorklistStatus.COMPLETED ? currentUser.id : null,
+      cancelledByUserId: status === WorklistStatus.CANCELLED ? currentUser.id : null,
     },
   });
 
@@ -107,6 +119,8 @@ export default async function Alerts({
 }: {
   searchParams?: Promise<{ status?: string; category?: string; q?: string; created?: string }>;
 }) {
+  await requireUser();
+
   const params = (await searchParams) ?? {};
   const q = (params.q ?? '').trim();
   const statusFilter = params.status ?? 'ACTIVE';
@@ -132,14 +146,21 @@ export default async function Alerts({
     ];
   }
 
-  const [items, agencyOptions, wholesaleOptions] = await Promise.all([
+  const [items, agencyOptions, wholesaleOptions, users] = await Promise.all([
     prisma.worklistItem.findMany({
       where,
       take: 300,
+      include: {
+        assignedToUser: true,
+        cancelledByUser: true,
+        completedByUser: true,
+        createdByUser: true,
+      },
       orderBy: [{ dueDate: 'asc' }, { createdAt: 'desc' }],
     }),
     prisma.agency.findMany({ orderBy: { name: 'asc' }, take: 500 }),
     prisma.wholesaleAccount.findMany({ orderBy: { name: 'asc' }, take: 500 }),
+    prisma.user.findMany({ orderBy: [{ name: 'asc' }, { email: 'asc' }] }),
   ]);
 
   const agencyMap = Object.fromEntries(agencyOptions.map((agency) => [agency.id, agency.name]));
@@ -199,10 +220,14 @@ export default async function Alerts({
             <input name="dueDate" type="date" />
 
             <label>Assigned to</label>
-            <input name="assignedTo" placeholder="Owner or rep" />
-
-            <label>Created by</label>
-            <input name="createdBy" placeholder="Your name" />
+            <select name="assignedToUserId">
+              <option value="">-- Unassigned --</option>
+              {users.map((user) => (
+                <option key={user.id} value={user.id}>
+                  {getUserDisplayName(user)}
+                </option>
+              ))}
+            </select>
 
             <label>Details</label>
             <textarea name="detail" rows={3} placeholder="Context, instructions, or notes" />
@@ -279,11 +304,16 @@ export default async function Alerts({
                       <td>
                         <strong>{item.title}</strong>
                         {item.detail ? <div className="muted preserve-lines">{item.detail}</div> : null}
+                        <div className="muted item-meta">
+                          Created by {item.createdByUser ? getUserDisplayName(item.createdByUser) : item.createdBy || 'Unknown user'}
+                          {item.completedByUser ? `; completed by ${getUserDisplayName(item.completedByUser)}` : ''}
+                          {item.cancelledByUser ? `; cancelled by ${getUserDisplayName(item.cancelledByUser)}` : ''}
+                        </div>
                       </td>
                       <td>{sourceLabels[item.source]}</td>
                       <td>{location}</td>
                       <td>{formatDate(item.dueDate)}</td>
-                      <td>{item.assignedTo}</td>
+                      <td>{item.assignedToUser ? getUserDisplayName(item.assignedToUser) : item.assignedTo}</td>
                       <td>{statusLabels[item.status]}</td>
                       <td>
                         <div className="action-row">

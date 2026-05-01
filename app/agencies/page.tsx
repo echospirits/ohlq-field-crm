@@ -4,6 +4,7 @@ export const runtime = 'nodejs';
 import Papa from 'papaparse';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
+import { requireUser } from '../../lib/auth';
 import { prisma } from '../../lib/prisma';
 
 type CsvRow = Record<string, string | undefined>;
@@ -19,6 +20,7 @@ const parseBool = (value: string | undefined) =>
 async function importAgencies(formData: FormData) {
   'use server';
 
+  const user = await requireUser();
   const file = formData.get('csvFile');
   if (!(file instanceof File) || file.size === 0) {
     redirect('/agencies?status=invalid');
@@ -84,6 +86,7 @@ async function importAgencies(formData: FormData) {
         name: primaryContact ?? `Agency Contact ${agencyId}`,
         phone: primaryContactPhone,
         role: 'Primary Contact',
+        createdByUserId: user.id,
       },
       update: {
         name: primaryContact ?? `Agency Contact ${agencyId}`,
@@ -105,6 +108,8 @@ export default async function AgenciesPage({
 }: {
   searchParams?: Promise<{ q?: string; status?: string; count?: string }>;
 }) {
+  await requireUser();
+
   const params = (await searchParams) ?? {};
   const q = (params.q ?? '').trim();
 

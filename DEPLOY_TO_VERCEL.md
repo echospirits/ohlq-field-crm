@@ -54,6 +54,28 @@ npx prisma migrate deploy
 
 Push to GitHub. Vercel will deploy automatically.
 
+### 5a. Add authentication and photo storage environment variables
+
+Create a Google OAuth web client and add this callback URL:
+
+```text
+https://your-app.vercel.app/api/auth/google/callback
+```
+
+Then set these environment variables in Vercel:
+
+```bash
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+AUTH_BASE_URL=https://your-app.vercel.app
+```
+
+Create a Vercel Blob store for visit photos and set:
+
+```bash
+BLOB_READ_WRITE_TOKEN=...
+```
+
 After deploy, test:
 
 ```text
@@ -78,8 +100,7 @@ Do not upload large OHLQ CSV files into the Vercel app bundle. Keep imports as a
 
 ## Immediate next engineering steps
 
-1. Add authentication and roles.
+1. Add role-based permissions.
 2. Build protected CSV import UI.
 3. Add account detail pages.
-4. Add photo upload using Vercel Blob or S3.
-5. Finish Eventbrite sync as a scheduled Vercel Cron job.
+4. Finish Eventbrite sync as a scheduled Vercel Cron job.

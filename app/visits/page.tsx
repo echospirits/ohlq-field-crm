@@ -1,13 +1,17 @@
 ﻿export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
+import { getUserDisplayName, requireUser } from '../../lib/auth';
 import { prisma } from '../../lib/prisma';
+import { VisitPhotoGallery } from './VisitPhotoGallery';
 
 export default async function VisitsPage({
   searchParams,
 }: {
   searchParams?: Promise<{ q?: string; type?: string; status?: string }>;
 }) {
+  await requireUser();
+
   const params = (await searchParams) ?? {};
   const q = (params.q ?? '').trim();
   const type = (params.type ?? '').trim();
@@ -22,10 +26,16 @@ export default async function VisitsPage({
             { outcomes: { contains: q, mode: 'insensitive' } },
             { nextStep: { contains: q, mode: 'insensitive' } },
             { createdBy: { contains: q, mode: 'insensitive' } },
+            { createdByUser: { name: { contains: q, mode: 'insensitive' } } },
+            { createdByUser: { email: { contains: q, mode: 'insensitive' } } },
           ]
         : undefined,
     },
     include: {
+      createdByUser: true,
+      photos: {
+        orderBy: { createdAt: 'asc' },
+      },
       _count: {
         select: {
           photos: true,
@@ -76,6 +86,7 @@ export default async function VisitsPage({
             <th>Outcomes</th>
             <th>Next Step</th>
             <th>Follow-up</th>
+            <th>Created By</th>
             <th>Photos</th>
           </tr>
         </thead>
@@ -90,7 +101,8 @@ export default async function VisitsPage({
               <td>{visit.outcomes}</td>
               <td>{visit.nextStep}</td>
               <td>{visit.followUpDate ? new Date(visit.followUpDate).toLocaleDateString() : ''}</td>
-              <td>{visit._count.photos}</td>
+              <td>{visit.createdByUser ? getUserDisplayName(visit.createdByUser) : visit.createdBy}</td>
+              <td><VisitPhotoGallery photos={visit.photos} /></td>
             </tr>
           ))}
         </tbody>
