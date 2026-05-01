@@ -134,7 +134,7 @@ export default async function AgenciesPage({
   return (
     <>
       <h1>Liquor Agencies</h1>
-      <form method="get" style={{ maxWidth: 520 }}>
+      <form method="get" className="filter-form narrow-filter">
         <input name="q" defaultValue={q} placeholder="Filter name, agency ID, address, contact, phone" />
       </form>
       {params.status === 'imported' ? <p className="pill">Imported/updated {params.count} agencies.</p> : null}
@@ -147,7 +147,7 @@ export default async function AgenciesPage({
         </form>
       </div>
 
-      <table>
+      <table className="responsive-table">
         <thead>
           <tr>
             <th>Agency ID</th>
@@ -162,13 +162,13 @@ export default async function AgenciesPage({
         <tbody>
           {agencies.map((agency) => (
             <tr key={agency.id}>
-              <td>{agency.agencyId}</td>
-              <td>{agency.name}</td>
-              <td>{agency.address}</td>
-              <td>{agency.city}</td>
-              <td>{agency.primaryContact}</td>
-              <td>{agency.primaryContactPhone}</td>
-              <td>{agency.phone}</td>
+              <td data-label="Agency ID">{agency.agencyId}</td>
+              <td data-label="Name">{agency.name}</td>
+              <td data-label="Address">{agency.address}</td>
+              <td data-label="City">{agency.city}</td>
+              <td data-label="Primary Contact">{agency.primaryContact}</td>
+              <td data-label="Contact Phone">{agency.primaryContactPhone}</td>
+              <td data-label="Agency Phone">{agency.phone}</td>
             </tr>
           ))}
         </tbody>

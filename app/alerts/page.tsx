@@ -328,7 +328,7 @@ export default async function Alerts({
           {group.items.length === 0 ? (
             <p className="muted">No matching items.</p>
           ) : (
-            <table>
+            <table className="responsive-table">
               <thead>
                 <tr>
                   <th>Item</th>
@@ -351,7 +351,7 @@ export default async function Alerts({
 
                   return (
                     <tr key={item.id}>
-                      <td>
+                      <td data-label="Item">
                         <strong>{item.title}</strong>
                         {item.detail ? <div className="muted preserve-lines">{item.detail}</div> : null}
                         <div className="muted item-meta">
@@ -360,12 +360,12 @@ export default async function Alerts({
                           {item.cancelledByUser ? `; cancelled by ${getUserDisplayName(item.cancelledByUser)}` : ''}
                         </div>
                       </td>
-                      <td>{sourceLabels[item.source]}</td>
-                      <td>{location}</td>
-                      <td>{formatDate(item.dueDate)}</td>
-                      <td>{item.assignedToUser ? getUserDisplayName(item.assignedToUser) : item.assignedTo}</td>
-                      <td>{statusLabels[item.status]}</td>
-                      <td>
+                      <td data-label="Source">{sourceLabels[item.source]}</td>
+                      <td data-label="Location">{location}</td>
+                      <td data-label="Due">{formatDate(item.dueDate)}</td>
+                      <td data-label="Assigned">{item.assignedToUser ? getUserDisplayName(item.assignedToUser) : item.assignedTo}</td>
+                      <td data-label="Status">{statusLabels[item.status]}</td>
+                      <td data-label="Actions">
                         <WorklistActions
                           actorName={getUserDisplayName(currentUser)}
                           agencies={agencyOptions}

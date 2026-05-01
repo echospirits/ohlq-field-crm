@@ -108,13 +108,13 @@ export default async function WholesalePage({
         </div>
       </div>
 
-      <form method="get" style={{ maxWidth: 520 }}>
+      <form method="get" className="filter-form narrow-filter">
         <input name="q" defaultValue={q} placeholder="Filter name, licensee ID, agency ID, address, phone" />
       </form>
       {params.status === 'saved' ? <p className="pill">Wholesale account saved.</p> : null}
       {params.status === 'invalid' ? <p className="pill">Name and Licensee ID are required.</p> : null}
 
-      <table>
+      <table className="responsive-table">
         <thead>
           <tr>
             <th>Licensee ID</th>
@@ -128,12 +128,12 @@ export default async function WholesalePage({
         <tbody>
           {accounts.map((account) => (
             <tr key={account.id}>
-              <td>{account.licenseeId}</td>
-              <td>{account.name}</td>
-              <td>{account.agencyId}</td>
-              <td>{account.address}</td>
-              <td>{account.city}</td>
-              <td>{account.phone}</td>
+              <td data-label="Licensee ID">{account.licenseeId}</td>
+              <td data-label="Name">{account.name}</td>
+              <td data-label="Agency ID">{account.agencyId}</td>
+              <td data-label="Address">{account.address}</td>
+              <td data-label="City">{account.city}</td>
+              <td data-label="Phone">{account.phone}</td>
             </tr>
           ))}
         </tbody>

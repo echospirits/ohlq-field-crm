@@ -89,7 +89,7 @@ table {
   overflow: hidden;
 }
 th, td { text-align: left; padding: 11px; border-bottom: 1px solid #24304f; vertical-align: top; }
-th { color: #b8c5e9; font-size: 13px; letter-spacing: .02em; }
+th { color: #b8c5e9; font-size: 13px; letter-spacing: 0; }
 tr:hover td { background: #121e36; }
 
 a { color: #a9c2ff; }
@@ -116,6 +116,16 @@ input, select, textarea {
 }
 label { font-weight: 600; font-size: 13px; color: #cad5f2; }
 form { display: grid; gap: 12px; max-width: 720px; }
+.filter-form {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.narrow-filter { max-width: 520px; }
+.visit-filter {
+  grid-template-columns: minmax(0, 2fr) minmax(140px, 1fr) auto;
+  max-width: 920px;
+}
 .muted { color: var(--muted); }
 fieldset {
   display: grid;
@@ -302,8 +312,114 @@ button:disabled {
   aside h2 { margin: 0 0 8px 0; font-size: 18px; }
   aside a { display: inline-block; margin: 6px 6px 0 0; }
   main { padding: 14px; }
-  table { display: block; overflow-x: auto; white-space: nowrap; }
+  h1 { font-size: 26px; line-height: 1.15; }
+  h2 { font-size: 20px; line-height: 1.2; }
+  .grid { grid-template-columns: 1fr; }
+  .card { border-radius: 12px; padding: 14px; }
+  form { max-width: none; }
+  .form-grid,
+  .visit-filter {
+    grid-template-columns: 1fr;
+  }
   .photo-entry { grid-template-columns: 1fr; }
+  .responsive-table {
+    display: block;
+    border: 0;
+    background: transparent;
+    overflow: visible;
+  }
+  .responsive-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  .responsive-table tbody {
+    display: grid;
+    gap: 12px;
+  }
+  .responsive-table tr {
+    display: grid;
+    gap: 0;
+    padding: 10px 12px;
+    background: #10192e;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    box-shadow: 0 6px 18px #0000002e;
+  }
+  .responsive-table tr:hover td { background: transparent; }
+  .responsive-table td {
+    display: block;
+    padding: 8px 0;
+    border-bottom: 1px solid #24304f;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .responsive-table td:last-child { border-bottom: 0; }
+  .responsive-table td::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 3px;
+    color: #b8c5e9;
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .action-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(94px, 1fr));
+    width: 100%;
+  }
+  .action-row form,
+  .action-row button {
+    width: 100%;
+  }
+  .app-modal,
+  .photo-modal {
+    align-items: start;
+    padding: 8px;
+  }
+  .app-modal-panel,
+  .photo-modal-panel {
+    width: calc(100vw - 16px);
+    max-height: calc(100dvh - 16px);
+    border-radius: 10px;
+    padding: 12px;
+  }
+  .app-modal-header {
+    top: -12px;
+    margin: -12px -12px 0;
+    padding: 12px;
+  }
+  .thumbnail-grid { min-width: 0; }
+}
+
+@media (max-width: 520px) {
+  aside {
+    padding: 10px;
+  }
+  aside a {
+    display: block;
+    margin: 5px 0;
+    padding: 9px 10px;
+  }
+  main { padding: 10px; }
+  input, select, textarea, button, .btn {
+    min-height: 42px;
+  }
+  fieldset {
+    padding: 12px;
+  }
+  .worklist-section { margin-top: 18px; }
+  .section-heading {
+    align-items: flex-start;
+    justify-content: space-between;
+  }
+  .fab {
+    right: 12px;
+    bottom: 12px;
+  }
 }
 
 .fab{position:fixed;right:18px;bottom:18px;width:56px;height:56px;border-radius:999px;display:flex;align-items:center;justify-content:center;font-size:34px;font-weight:700;background:linear-gradient(180deg,#8db0ff,#5b7ff3);color:#fff;text-decoration:none;box-shadow:0 14px 30px #0006;z-index:1000}

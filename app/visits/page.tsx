@@ -65,7 +65,7 @@ export default async function VisitsPage({
       <h1>Visits</h1>
       {params.status === 'logged' ? <p className="pill">Visit logged.</p> : null}
 
-      <form method="get" className="card" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr auto', gap: 8, maxWidth: 920 }}>
+      <form method="get" className="card filter-form visit-filter">
         <input name="q" defaultValue={q} placeholder="Filter summary, outcomes, next steps, rep" />
         <select name="type" defaultValue={type}>
           <option value="">All types</option>
@@ -75,7 +75,7 @@ export default async function VisitsPage({
         <button type="submit">Filter</button>
       </form>
 
-      <table>
+      <table className="responsive-table">
         <thead>
           <tr>
             <th>Date</th>
@@ -93,16 +93,16 @@ export default async function VisitsPage({
         <tbody>
           {visits.map((visit) => (
             <tr key={visit.id}>
-              <td>{new Date(visit.visitAt).toLocaleString()}</td>
-              <td>{visit.locationType}</td>
-              <td>{visit.locationType === 'agency' ? agencyMap[visit.agencyId ?? ''] : wholesaleMap[visit.wholesaleAccountId ?? '']}</td>
-              <td>{contactMap[visit.contactId ?? '']}</td>
-              <td>{visit.summary}</td>
-              <td>{visit.outcomes}</td>
-              <td>{visit.nextStep}</td>
-              <td>{visit.followUpDate ? new Date(visit.followUpDate).toLocaleDateString() : ''}</td>
-              <td>{visit.createdByUser ? getUserDisplayName(visit.createdByUser) : visit.createdBy}</td>
-              <td><VisitPhotoGallery photos={visit.photos} /></td>
+              <td data-label="Date">{new Date(visit.visitAt).toLocaleString()}</td>
+              <td data-label="Type">{visit.locationType}</td>
+              <td data-label="Location">{visit.locationType === 'agency' ? agencyMap[visit.agencyId ?? ''] : wholesaleMap[visit.wholesaleAccountId ?? '']}</td>
+              <td data-label="Contact">{contactMap[visit.contactId ?? '']}</td>
+              <td data-label="Summary">{visit.summary}</td>
+              <td data-label="Outcomes">{visit.outcomes}</td>
+              <td data-label="Next Step">{visit.nextStep}</td>
+              <td data-label="Follow-up">{visit.followUpDate ? new Date(visit.followUpDate).toLocaleDateString() : ''}</td>
+              <td data-label="Created By">{visit.createdByUser ? getUserDisplayName(visit.createdByUser) : visit.createdBy}</td>
+              <td data-label="Photos"><VisitPhotoGallery photos={visit.photos} /></td>
             </tr>
           ))}
         </tbody>
