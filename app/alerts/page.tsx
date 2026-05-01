@@ -6,6 +6,8 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { getUserDisplayName, requireUser } from '../../lib/auth';
 import { prisma } from '../../lib/prisma';
+import { createVisit } from '../visits/actions';
+import { WorklistActions } from './WorklistActions';
 
 const statusLabels: Record<WorklistStatus, string> = {
   [WorklistStatus.OPEN]: 'Open',
@@ -23,6 +25,17 @@ const categoryLabels: Record<WorklistCategory, string> = {
   [WorklistCategory.AGENCY]: 'Agency follow-ups',
   [WorklistCategory.WHOLESALE]: 'Wholesale follow-ups',
   [WorklistCategory.GENERAL]: 'General',
+};
+
+const noticeMessages: Record<string, string> = {
+  'visit-logged': 'Visit logged and worklist item completed.',
+  'invalid-agency': 'Select an agency before logging an agency visit.',
+  'invalid-wholesale': 'Select an existing wholesale account or create one before logging a wholesale visit.',
+  'invalid-contact': 'Select a contact tied to the selected account.',
+  'invalid-photo': 'Photos must be image files.',
+  'photo-too-large': 'Each uploaded photo must be 5 MB or smaller.',
+  'storage-not-configured': 'Photo object storage is not configured yet.',
+  'photo-upload-failed': 'The visit was saved, but one or more photos could not be uploaded.',
 };
 
 const toOptional = (value: FormDataEntryValue | null | undefined) => {
@@ -117,9 +130,9 @@ async function updateWorklistStatus(formData: FormData) {
 export default async function Alerts({
   searchParams,
 }: {
-  searchParams?: Promise<{ status?: string; category?: string; q?: string; created?: string }>;
+  searchParams?: Promise<{ status?: string; category?: string; q?: string; created?: string; notice?: string }>;
 }) {
-  await requireUser();
+  const currentUser = await requireUser();
 
   const params = (await searchParams) ?? {};
   const q = (params.q ?? '').trim();
@@ -146,7 +159,7 @@ export default async function Alerts({
     ];
   }
 
-  const [items, agencyOptions, wholesaleOptions, users] = await Promise.all([
+  const [items, agencyOptions, wholesaleOptions, contacts, users] = await Promise.all([
     prisma.worklistItem.findMany({
       where,
       take: 300,
@@ -158,8 +171,44 @@ export default async function Alerts({
       },
       orderBy: [{ dueDate: 'asc' }, { createdAt: 'desc' }],
     }),
-    prisma.agency.findMany({ orderBy: { name: 'asc' }, take: 500 }),
-    prisma.wholesaleAccount.findMany({ orderBy: { name: 'asc' }, take: 500 }),
+    prisma.agency.findMany({
+      orderBy: { name: 'asc' },
+      take: 500,
+      select: {
+        id: true,
+        agencyId: true,
+        name: true,
+        city: true,
+        county: true,
+        phone: true,
+      },
+    }),
+    prisma.wholesaleAccount.findMany({
+      orderBy: { name: 'asc' },
+      take: 500,
+      select: {
+        id: true,
+        licenseeId: true,
+        name: true,
+        agencyId: true,
+        city: true,
+        county: true,
+        phone: true,
+      },
+    }),
+    prisma.locationContact.findMany({
+      orderBy: { name: 'asc' },
+      take: 1000,
+      select: {
+        id: true,
+        name: true,
+        role: true,
+        phone: true,
+        email: true,
+        agencyId: true,
+        wholesaleAccountId: true,
+      },
+    }),
     prisma.user.findMany({ orderBy: [{ name: 'asc' }, { email: 'asc' }] }),
   ]);
 
@@ -181,6 +230,7 @@ export default async function Alerts({
 
       {params.created === '1' ? <p className="pill">Worklist item created.</p> : null}
       {params.created === 'invalid' ? <p className="pill">A title is required.</p> : null}
+      {params.notice ? <p className="pill">{noticeMessages[params.notice] ?? params.notice}</p> : null}
 
       <div className="grid">
         <div className="card">
@@ -316,29 +366,23 @@ export default async function Alerts({
                       <td>{item.assignedToUser ? getUserDisplayName(item.assignedToUser) : item.assignedTo}</td>
                       <td>{statusLabels[item.status]}</td>
                       <td>
-                        <div className="action-row">
-                          {item.status === WorklistStatus.OPEN ? (
-                            <form action={updateWorklistStatus}>
-                              <input name="id" type="hidden" value={item.id} />
-                              <input name="status" type="hidden" value={WorklistStatus.IN_PROGRESS} />
-                              <button className="secondary" type="submit">Start</button>
-                            </form>
-                          ) : null}
-                          {item.status !== WorklistStatus.COMPLETED ? (
-                            <form action={updateWorklistStatus}>
-                              <input name="id" type="hidden" value={item.id} />
-                              <input name="status" type="hidden" value={WorklistStatus.COMPLETED} />
-                              <button type="submit">Complete</button>
-                            </form>
-                          ) : null}
-                          {item.status !== WorklistStatus.CANCELLED ? (
-                            <form action={updateWorklistStatus}>
-                              <input name="id" type="hidden" value={item.id} />
-                              <input name="status" type="hidden" value={WorklistStatus.CANCELLED} />
-                              <button className="secondary" type="submit">Cancel</button>
-                            </form>
-                          ) : null}
-                        </div>
+                        <WorklistActions
+                          actorName={getUserDisplayName(currentUser)}
+                          agencies={agencyOptions}
+                          contacts={contacts}
+                          createVisitAction={createVisit}
+                          item={{
+                            id: item.id,
+                            title: item.title,
+                            detail: item.detail,
+                            status: item.status,
+                            category: item.category,
+                            agencyId: item.agencyId,
+                            wholesaleAccountId: item.wholesaleAccountId,
+                          }}
+                          updateStatusAction={updateWorklistStatus}
+                          wholesaleAccounts={wholesaleOptions}
+                        />
                       </td>
                     </tr>
                   );

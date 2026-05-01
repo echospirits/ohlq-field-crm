@@ -160,9 +160,23 @@ legend {
 }
 .action-row form { display: inline; max-width: none; }
 .action-row button { padding: 7px 10px; }
+button:disabled {
+  cursor: not-allowed;
+  opacity: .55;
+}
 .secondary {
   background: #283253;
   color: #d4dcf5;
+}
+.visit-form { max-width: none; }
+.search-select {
+  display: grid;
+  gap: 8px;
+}
+.field-note {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 0;
 }
 .preserve-lines { white-space: pre-line; margin-top: 6px; }
 .item-meta { margin-top: 8px; font-size: 12px; }
@@ -227,6 +241,53 @@ legend {
   justify-self: end;
   padding: 8px 10px;
 }
+.app-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 2100;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  white-space: normal;
+}
+.app-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  background: #030711cc;
+  padding: 0;
+}
+.app-modal-panel {
+  position: relative;
+  z-index: 1;
+  width: min(980px, calc(100vw - 40px));
+  max-height: calc(100vh - 40px);
+  overflow: auto;
+  display: grid;
+  gap: 14px;
+  background: #0f172a;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 18px 54px #0009;
+}
+.app-modal-header {
+  position: sticky;
+  top: -16px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: -16px -16px 0;
+  padding: 14px 16px;
+  background: #0f172a;
+  border-bottom: 1px solid var(--line);
+}
+.app-modal-header h2 { margin: 0; }
+.app-modal-close { padding: 8px 10px; }
 
 @media (max-width: 900px) {
   body { display: block; }

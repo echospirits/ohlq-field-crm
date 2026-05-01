@@ -41,7 +41,7 @@ async function importAgencies(formData: FormData) {
     const primaryContact = toOptional(row.primarycontact);
     const primaryContactPhone = toOptional(row.primarycontactphone);
 
-    await prisma.agency.upsert({
+    const agency = await prisma.agency.upsert({
       where: { agencyId },
       create: {
         agencyId,
@@ -82,13 +82,14 @@ async function importAgencies(formData: FormData) {
       where: { id: `agency-${agencyId}-default` },
       create: {
         id: `agency-${agencyId}-default`,
-        agencyId,
+        agencyId: agency.id,
         name: primaryContact ?? `Agency Contact ${agencyId}`,
         phone: primaryContactPhone,
         role: 'Primary Contact',
         createdByUserId: user.id,
       },
       update: {
+        agencyId: agency.id,
         name: primaryContact ?? `Agency Contact ${agencyId}`,
         phone: primaryContactPhone,
         role: 'Primary Contact',
