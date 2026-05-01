@@ -94,6 +94,54 @@ input, select, textarea {
 label { font-weight: 600; font-size: 13px; color: #cad5f2; }
 form { display: grid; gap: 12px; max-width: 720px; }
 .muted { color: var(--muted); }
+fieldset {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 14px;
+  margin: 0;
+}
+legend {
+  padding: 0 6px;
+  color: #dbe5ff;
+  font-weight: 700;
+}
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 10px;
+}
+.photo-entry {
+  display: grid;
+  grid-template-columns: 140px minmax(180px, 1fr) minmax(180px, 1fr) minmax(180px, 1fr);
+  gap: 10px;
+  align-items: end;
+  padding: 12px;
+  border: 1px solid #263453;
+  border-radius: 10px;
+  background: #10192e;
+}
+.photo-entry h3 { margin: 0; font-size: 15px; }
+.worklist-section { margin-top: 24px; }
+.section-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.section-heading h2 { margin-bottom: 10px; }
+.action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.action-row form { display: inline; max-width: none; }
+.action-row button { padding: 7px 10px; }
+.secondary {
+  background: #283253;
+  color: #d4dcf5;
+}
+.preserve-lines { white-space: pre-line; margin-top: 6px; }
 
 @media (max-width: 900px) {
   body { display: block; }
@@ -109,6 +157,7 @@ form { display: grid; gap: 12px; max-width: 720px; }
   aside a { display: inline-block; margin: 6px 6px 0 0; }
   main { padding: 14px; }
   table { display: block; overflow-x: auto; white-space: nowrap; }
+  .photo-entry { grid-template-columns: 1fr; }
 }
 
 .fab{position:fixed;right:18px;bottom:18px;width:56px;height:56px;border-radius:999px;display:flex;align-items:center;justify-content:center;font-size:34px;font-weight:700;background:linear-gradient(180deg,#8db0ff,#5b7ff3);color:#fff;text-decoration:none;box-shadow:0 14px 30px #0006;z-index:1000}

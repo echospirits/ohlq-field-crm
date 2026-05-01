@@ -6,7 +6,7 @@ import { prisma } from '../../lib/prisma';
 export default async function VisitsPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ q?: string; type?: string }>;
+  searchParams?: Promise<{ q?: string; type?: string; status?: string }>;
 }) {
   const params = (await searchParams) ?? {};
   const q = (params.q ?? '').trim();
@@ -24,6 +24,14 @@ export default async function VisitsPage({
             { createdBy: { contains: q, mode: 'insensitive' } },
           ]
         : undefined,
+    },
+    include: {
+      _count: {
+        select: {
+          photos: true,
+          worklistItems: true,
+        },
+      },
     },
     orderBy: [{ visitAt: 'desc' }],
   });
@@ -45,6 +53,7 @@ export default async function VisitsPage({
   return (
     <>
       <h1>Visits</h1>
+      {params.status === 'logged' ? <p className="pill">Visit logged.</p> : null}
 
       <form method="get" className="card" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr auto', gap: 8, maxWidth: 920 }}>
         <input name="q" defaultValue={q} placeholder="Filter summary, outcomes, next steps, rep" />
@@ -66,6 +75,8 @@ export default async function VisitsPage({
             <th>Summary</th>
             <th>Outcomes</th>
             <th>Next Step</th>
+            <th>Follow-up</th>
+            <th>Photos</th>
           </tr>
         </thead>
         <tbody>
@@ -78,6 +89,8 @@ export default async function VisitsPage({
               <td>{visit.summary}</td>
               <td>{visit.outcomes}</td>
               <td>{visit.nextStep}</td>
+              <td>{visit.followUpDate ? new Date(visit.followUpDate).toLocaleDateString() : ''}</td>
+              <td>{visit._count.photos}</td>
             </tr>
           ))}
         </tbody>

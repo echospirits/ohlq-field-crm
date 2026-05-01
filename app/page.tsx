@@ -1,12 +1,15 @@
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
+import { WorklistStatus } from '@prisma/client';
 import { prisma } from '../lib/prisma';
 
 export default async function Dashboard() {
-  const [accounts, alerts] = await Promise.all([
+  const [accounts, worklistItems] = await Promise.all([
     prisma.account.count(),
-    prisma.alert.count({ where: { status: 'OPEN' } }),
+    prisma.worklistItem.count({
+      where: { status: { notIn: [WorklistStatus.COMPLETED, WorklistStatus.CANCELLED] } },
+    }),
   ]);
 
   return (
@@ -18,8 +21,8 @@ export default async function Dashboard() {
           <p>{accounts}</p>
         </div>
         <div className="card">
-          <h3>Open alerts</h3>
-          <p>{alerts}</p>
+          <h3>Active worklist</h3>
+          <p>{worklistItems}</p>
         </div>
       </div>
       <div className="card">

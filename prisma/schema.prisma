@@ -36,6 +36,24 @@ enum EventSource {
   GOOGLE_SHEET
 }
 
+enum WorklistStatus {
+  OPEN
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum WorklistSource {
+  MANUAL
+  VISIT_FOLLOW_UP
+}
+
+enum WorklistCategory {
+  AGENCY
+  WHOLESALE
+  GENERAL
+}
+
 model Account {
   id                  String          @id @default(cuid())
   externalId          String?         @unique
@@ -71,7 +89,8 @@ model Account {
   salesFacts          SalesFact[]
   inventoryFacts      InventoryFact[]
   visits              Visit[]
-}model Sku {
+}
+model Sku {
   id             String          @id @default(cuid())
   itemCode       String          @unique
   brand          String?
@@ -117,37 +136,37 @@ model SalesFact {
 }
 
 model InventoryFact {
-  id               String   @id @default(cuid())
+  id               String    @id @default(cuid())
   accountId        String
   skuId            String
-  snapshotDate     DateTime @default(now())
+  snapshotDate     DateTime  @default(now())
   coverageStatus   String?
-  minFlag          Boolean  @default(false)
-  inventoryBottles Int      @default(0)
-  sales12MoBottles Int      @default(0)
+  minFlag          Boolean   @default(false)
+  inventoryBottles Int       @default(0)
+  sales12MoBottles Int       @default(0)
   lastArrivalDate  DateTime?
-  account          Account  @relation(fields: [accountId], references: [id])
-  sku              Sku      @relation(fields: [skuId], references: [id])
+  account          Account   @relation(fields: [accountId], references: [id])
+  sku              Sku       @relation(fields: [skuId], references: [id])
 
   @@unique([accountId, skuId, snapshotDate])
 }
 
 model Alert {
-  id          String      @id @default(cuid())
-  accountId   String
-  skuId       String?
-  type        String
-  title       String
-  detail      String?
-  status      AlertStatus @default(OPEN)
-  dueDate     DateTime?
+  id           String      @id @default(cuid())
+  accountId    String
+  skuId        String?
+  type         String
+  title        String
+  detail       String?
+  status       AlertStatus @default(OPEN)
+  dueDate      DateTime?
   snoozedUntil DateTime?
-  resolvedAt  DateTime?
-  dismissedAt DateTime?
-  account     Account     @relation(fields: [accountId], references: [id])
-  notes       Note[]
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  resolvedAt   DateTime?
+  dismissedAt  DateTime?
+  account      Account     @relation(fields: [accountId], references: [id])
+  notes        Note[]
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
 }
 
 model Note {
@@ -162,13 +181,13 @@ model Note {
 }
 
 model Task {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   accountId   String
   title       String
   dueDate     DateTime?
   completedAt DateTime?
   ownerUserId String?
-  account     Account  @relation(fields: [accountId], references: [id])
+  account     Account   @relation(fields: [accountId], references: [id])
 }
 
 model Visit {
@@ -182,15 +201,15 @@ model Visit {
 }
 
 model Photo {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   accountId String
   visitId   String?
   type      PhotoType
   url       String
   caption   String?
-  takenAt   DateTime @default(now())
-  account   Account  @relation(fields: [accountId], references: [id])
-  visit     Visit?   @relation(fields: [visitId], references: [id])
+  takenAt   DateTime  @default(now())
+  account   Account   @relation(fields: [accountId], references: [id])
+  visit     Visit?    @relation(fields: [visitId], references: [id])
 }
 
 model EventShift {
@@ -221,6 +240,7 @@ model Recipe {
   notes         String?
   sku           Sku?    @relation(fields: [skuId], references: [id])
 }
+
 model Agency {
   id                  String   @id @default(cuid())
   agencyId            String   @unique
@@ -244,21 +264,21 @@ model Agency {
 }
 
 model WholesaleAccount {
-  id           String   @id @default(cuid())
-  licenseeId   String   @unique
-  agencyId     String?
-  ownership    String?
-  name         String
-  address      String?
-  city         String?
-  county       String?
-  state        String?  @default("OH")
-  zip          String?
-  districtId   String?
-  deliveryDay  String?
-  phone        String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id          String   @id @default(cuid())
+  licenseeId  String   @unique
+  agencyId    String?
+  ownership   String?
+  name        String
+  address     String?
+  city        String?
+  county      String?
+  state       String?  @default("OH")
+  zip         String?
+  districtId  String?
+  deliveryDay String?
+  phone       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 model LocationContact {
@@ -273,9 +293,10 @@ model LocationContact {
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 }
+
 model LoggedVisit {
-  id                 String   @id @default(cuid())
-  visitAt            DateTime @default(now())
+  id                 String         @id @default(cuid())
+  visitAt            DateTime       @default(now())
   locationType       String
   agencyId           String?
   wholesaleAccountId String?
@@ -285,5 +306,45 @@ model LoggedVisit {
   nextStep           String?
   followUpDate       DateTime?
   createdBy          String?
-  createdAt          DateTime @default(now())
+  createdAt          DateTime       @default(now())
+  photos             VisitPhoto[]
+  worklistItems      WorklistItem[]
+}
+
+model VisitPhoto {
+  id            String      @id @default(cuid())
+  loggedVisitId String
+  type          PhotoType
+  url           String
+  caption       String?
+  createdAt     DateTime    @default(now())
+  visit         LoggedVisit @relation(fields: [loggedVisitId], references: [id], onDelete: Cascade)
+
+  @@index([loggedVisitId])
+}
+
+model WorklistItem {
+  id                 String           @id @default(cuid())
+  title              String
+  detail             String?
+  status             WorklistStatus   @default(OPEN)
+  source             WorklistSource   @default(MANUAL)
+  category           WorklistCategory @default(GENERAL)
+  agencyId           String?
+  wholesaleAccountId String?
+  loggedVisitId      String?
+  dueDate            DateTime?
+  assignedTo         String?
+  createdBy          String?
+  completedAt        DateTime?
+  cancelledAt        DateTime?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  loggedVisit        LoggedVisit?     @relation(fields: [loggedVisitId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([category])
+  @@index([dueDate])
+  @@index([agencyId])
+  @@index([wholesaleAccountId])
 }
