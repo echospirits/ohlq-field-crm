@@ -3,6 +3,7 @@ export const runtime = 'nodejs';
 
 import { getUserDisplayName, requireUser } from '../../lib/auth';
 import { prisma } from '../../lib/prisma';
+import { LiveFilterForm } from '../components/LiveFilterForm';
 import { VisitPhotoGallery } from './VisitPhotoGallery';
 
 export default async function VisitsPage({
@@ -65,15 +66,14 @@ export default async function VisitsPage({
       <h1>Visits</h1>
       {params.status === 'logged' ? <p className="pill">Visit logged.</p> : null}
 
-      <form method="get" className="card filter-form visit-filter">
+      <LiveFilterForm className="card filter-form visit-filter" label="Filter visits">
         <input name="q" defaultValue={q} placeholder="Filter summary, outcomes, next steps, rep" />
         <select name="type" defaultValue={type}>
           <option value="">All types</option>
           <option value="agency">Agency</option>
           <option value="wholesale">Wholesale</option>
         </select>
-        <button type="submit">Filter</button>
-      </form>
+      </LiveFilterForm>
 
       <table className="responsive-table">
         <thead>

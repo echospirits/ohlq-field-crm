@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { DatePickerField } from '../components/DatePickerField';
 
 const photoTypes = [
   { value: 'DISPLAY', label: 'Display' },
@@ -437,9 +438,9 @@ export function LogVisitForm({
             None
           </button>
         </div>
-        <input
+        <DatePickerField
           name="followUpDate"
-          type="date"
+          pickerLabel="Choose follow-up date"
           value={followUpDate}
           onChange={(event) => setFollowUpDate(event.target.value)}
         />

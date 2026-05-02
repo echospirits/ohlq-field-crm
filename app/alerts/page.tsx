@@ -6,6 +6,8 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { getUserDisplayName, requireUser } from '../../lib/auth';
 import { prisma } from '../../lib/prisma';
+import { DatePickerField } from '../components/DatePickerField';
+import { LiveFilterForm } from '../components/LiveFilterForm';
 import { createVisit } from '../visits/actions';
 import { WorklistActions } from './WorklistActions';
 
@@ -245,7 +247,7 @@ export default async function Alerts({
           <h2>Quick task</h2>
           <form action={createWorklistItem} className="quick-task-form">
             <input name="title" placeholder="What needs to happen?" required />
-            <input name="dueDate" type="date" aria-label="Due date" />
+            <DatePickerField name="dueDate" aria-label="Due date" pickerLabel="Choose due date" />
             <select name="category" defaultValue={WorklistCategory.GENERAL} aria-label="Category">
               <option value={WorklistCategory.AGENCY}>Agency</option>
               <option value={WorklistCategory.WHOLESALE}>Wholesale</option>
@@ -293,7 +295,7 @@ export default async function Alerts({
 
         <details className="card compact-details filter-panel">
           <summary>Filters</summary>
-          <form method="get">
+          <LiveFilterForm label="Filter worklist items">
             <label>Status</label>
             <select name="status" defaultValue={statusFilter}>
               <option value="ACTIVE">Active only</option>
@@ -317,9 +319,7 @@ export default async function Alerts({
 
             <label>Search</label>
             <input name="q" defaultValue={q} placeholder="Search title, detail, owner, creator" />
-
-            <button type="submit">Apply filters</button>
-          </form>
+          </LiveFilterForm>
         </details>
       </div>
 

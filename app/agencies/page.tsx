@@ -7,6 +7,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { requireUser } from '../../lib/auth';
 import { prisma } from '../../lib/prisma';
+import { LiveFilterForm } from '../components/LiveFilterForm';
 import { TagBadges } from '../tags/TagBadges';
 
 type CsvRow = Record<string, string | undefined>;
@@ -167,9 +168,9 @@ export default async function AgenciesPage({
   return (
     <>
       <h1>Liquor Agencies</h1>
-      <form method="get" className="filter-form narrow-filter">
+      <LiveFilterForm className="filter-form narrow-filter" label="Filter agencies">
         <input name="q" defaultValue={q} placeholder="Filter name, agency ID, address, contact, phone" />
-      </form>
+      </LiveFilterForm>
       {params.status === 'imported' ? <p className="pill">Imported/updated {params.count} agencies.</p> : null}
 
       <details className="card compact-details admin-panel">

@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { requireUser } from '../../lib/auth';
 import { prisma } from '../../lib/prisma';
+import { LiveFilterForm } from '../components/LiveFilterForm';
 import { TagBadges } from '../tags/TagBadges';
 
 const toOptional = (value: string | undefined) => {
@@ -148,9 +149,9 @@ export default async function WholesalePage({
       <h1>Wholesale Accounts</h1>
       <p className="muted">Manual creation only.</p>
 
-      <form method="get" className="filter-form narrow-filter">
+      <LiveFilterForm className="filter-form narrow-filter" label="Filter wholesale accounts">
         <input name="q" defaultValue={q} placeholder="Filter name, licensee ID, agency ID, address, phone" />
-      </form>
+      </LiveFilterForm>
       {params.status === 'saved' ? <p className="pill">Wholesale account saved.</p> : null}
       {params.status === 'invalid' ? <p className="pill">Name and Licensee ID are required.</p> : null}
 
