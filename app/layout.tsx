@@ -31,6 +31,14 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             <a className="fab" href="/visits/new" aria-label="Log Visit">
               +
             </a>
+            <nav className="mobile-tabbar" aria-label="Quick field actions">
+              <a href="/alerts">Worklist</a>
+              <a className="mobile-tabbar-primary" href="/visits/new">
+                Log Visit
+              </a>
+              <a href="/agencies">Agencies</a>
+              <a href="/wholesale">Wholesale</a>
+            </nav>
           </>
         ) : (
           <main className="public-main">{children}</main>

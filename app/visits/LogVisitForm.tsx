@@ -8,7 +8,22 @@ const photoTypes = [
   { value: 'OTHER', label: 'Other' },
 ] as const;
 
-const photoSlots = [1, 2, 3] as const;
+const photoSlots = [2, 3] as const;
+
+const quickOutcomes = [
+  'Display checked',
+  'Menu checked',
+  'Staff trained',
+  'Order opportunity',
+  'Needs follow-up',
+  'No action needed',
+] as const;
+
+const quickFollowUps = [
+  { label: 'Tomorrow', days: 1 },
+  { label: '3 days', days: 3 },
+  { label: '1 week', days: 7 },
+] as const;
 
 export type VisitLocationType = 'agency' | 'wholesale';
 
@@ -80,6 +95,30 @@ const includesSearch = (searchText: string, ...values: Array<string | null | und
 const withSelected = <T extends { id: string }>(items: T[], selected: T | undefined) =>
   selected && !items.some((item) => item.id === selected.id) ? [selected, ...items] : items;
 
+const toDateInputValue = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+
+  return `${year}-${month}-${day}`;
+};
+
+const getFollowUpDate = (daysFromNow: number) => {
+  const date = new Date();
+  date.setDate(date.getDate() + daysFromNow);
+
+  return toDateInputValue(date);
+};
+
+const getAgencyMeta = (agency: VisitFormAgencyOption) =>
+  [agency.agencyId, agency.city, agency.phone].filter(Boolean).join(' / ');
+
+const getWholesaleMeta = (account: VisitFormWholesaleOption) =>
+  [account.licenseeId, account.city, account.phone].filter(Boolean).join(' / ');
+
+const getContactMeta = (contact: VisitFormContactOption) =>
+  [contact.role, contact.phone, contact.email].filter(Boolean).join(' / ');
+
 export function LogVisitForm({
   action,
   agencies,
@@ -99,12 +138,14 @@ export function LogVisitForm({
   const [agencySearch, setAgencySearch] = useState('');
   const [wholesaleSearch, setWholesaleSearch] = useState('');
   const [contactSearch, setContactSearch] = useState('');
+  const [followUpDate, setFollowUpDate] = useState(initialValues?.followUpDate ?? '');
 
   const agencySearchText = normalize(agencySearch);
   const wholesaleSearchText = normalize(wholesaleSearch);
   const contactSearchText = normalize(contactSearch);
   const selectedAgency = agencies.find((agency) => agency.id === agencyId);
   const selectedWholesaleAccount = wholesaleAccounts.find((account) => account.id === wholesaleAccountId);
+  const selectedContact = contacts.find((contact) => contact.id === contactId);
 
   const visibleAgencies = useMemo(
     () =>
@@ -113,7 +154,7 @@ export function LogVisitForm({
           .filter((agency) =>
             includesSearch(agencySearchText, agency.name, agency.agencyId, agency.city, agency.county, agency.phone),
           )
-          .slice(0, 150),
+          .slice(0, 8),
         selectedAgency,
       ),
     [agencies, agencySearchText, selectedAgency],
@@ -134,7 +175,7 @@ export function LogVisitForm({
               account.phone,
             ),
           )
-          .slice(0, 150),
+          .slice(0, 8),
         selectedWholesaleAccount,
       ),
     [selectedWholesaleAccount, wholesaleAccounts, wholesaleSearchText],
@@ -150,10 +191,13 @@ export function LogVisitForm({
       return !!wholesaleAccountId && contact.wholesaleAccountId === wholesaleAccountId;
     });
 
-    return scopedContacts
-      .filter((contact) => includesSearch(contactSearchText, contact.name, contact.role, contact.phone, contact.email))
-      .slice(0, 150);
-  }, [agencyId, contactSearchText, contacts, locationType, selectedAgency, wholesaleAccountId]);
+    return withSelected(
+      scopedContacts
+        .filter((contact) => includesSearch(contactSearchText, contact.name, contact.role, contact.phone, contact.email))
+        .slice(0, 8),
+      selectedContact,
+    );
+  }, [agencyId, contactSearchText, contacts, locationType, selectedAgency, selectedContact, wholesaleAccountId]);
 
   const handleLocationTypeChange = (nextLocationType: VisitLocationType) => {
     setLocationType(nextLocationType);
@@ -166,208 +210,277 @@ export function LogVisitForm({
     }
   };
 
-  const contactSelectLabel =
-    locationType === 'agency'
-      ? agencyId
-        ? '-- Optional agency contact --'
-        : '-- Select an agency first --'
-      : wholesaleAccountId
-        ? '-- Optional wholesale contact --'
-        : '-- Select a wholesale account first --';
-
   return (
-    <form action={action} className="visit-form" encType="multipart/form-data">
-      <input name="formOrigin" type="hidden" value={formOrigin} />
-      {worklistItemId ? <input name="worklistItemId" type="hidden" value={worklistItemId} /> : null}
+    <form action={action} className="visit-form field-visit-form" encType="multipart/form-data">
+      <input name="formOrigin" readOnly type="hidden" value={formOrigin} />
+      <input name="locationType" readOnly type="hidden" value={locationType} />
+      <input name="agencyId" readOnly type="hidden" value={locationType === 'agency' ? agencyId : ''} />
+      <input
+        name="wholesaleAccountId"
+        readOnly
+        type="hidden"
+        value={locationType === 'wholesale' ? wholesaleAccountId : ''}
+      />
+      <input name="contactId" readOnly type="hidden" value={contactId} />
+      {worklistItemId ? <input name="worklistItemId" readOnly type="hidden" value={worklistItemId} /> : null}
 
-      <fieldset>
-        <legend>Location</legend>
-        <label>Location type</label>
-        <select
-          name="locationType"
-          value={locationType}
-          onChange={(event) =>
-            handleLocationTypeChange(event.target.value === 'wholesale' ? 'wholesale' : 'agency')
-          }
-        >
-          <option value="agency">Agency</option>
-          <option value="wholesale">Wholesale</option>
-        </select>
-
-        <div className="search-select">
-          <label>Agency</label>
-          <input
-            aria-label="Search agencies"
-            placeholder="Search agency name, agency ID, city, county, phone"
-            type="search"
-            value={agencySearch}
-            onChange={(event) => setAgencySearch(event.target.value)}
-          />
-          <select
-            name="agencyId"
-            value={agencyId}
-            onChange={(event) => {
-              setAgencyId(event.target.value);
-              setContactId('');
-            }}
-            disabled={locationType !== 'agency'}
+      <fieldset className="visit-step">
+        <legend>1. Pick the location</legend>
+        <div className="segmented-control" role="group" aria-label="Location type">
+          <button
+            aria-pressed={locationType === 'agency'}
+            className={locationType === 'agency' ? 'is-active' : ''}
+            type="button"
+            onClick={() => handleLocationTypeChange('agency')}
           >
-            <option value="">-- Select agency for agency visits --</option>
-            {visibleAgencies.map((agency) => (
-              <option key={agency.id} value={agency.id}>
-                {agency.name} ({agency.agencyId})
-              </option>
-            ))}
-          </select>
+            Agency
+          </button>
+          <button
+            aria-pressed={locationType === 'wholesale'}
+            className={locationType === 'wholesale' ? 'is-active' : ''}
+            type="button"
+            onClick={() => handleLocationTypeChange('wholesale')}
+          >
+            Wholesale
+          </button>
         </div>
 
-        <div className="search-select">
-          <label>Existing wholesale account</label>
-          <input
-            aria-label="Search wholesale accounts"
-            placeholder="Search account name, licensee ID, agency ID, city, county, phone"
-            type="search"
-            value={wholesaleSearch}
-            onChange={(event) => setWholesaleSearch(event.target.value)}
-          />
-          <select
-            name="wholesaleAccountId"
-            value={wholesaleAccountId}
-            onChange={(event) => {
-              setWholesaleAccountId(event.target.value);
-              setContactId('');
-            }}
-            disabled={locationType !== 'wholesale'}
-          >
-            <option value="">-- Select wholesale or create one below --</option>
-            {visibleWholesaleAccounts.map((account) => (
-              <option key={account.id} value={account.id}>
-                {account.name} ({account.licenseeId})
-              </option>
-            ))}
-          </select>
-        </div>
+        {locationType === 'agency' ? (
+          <div className="search-select">
+            <label>Find agency</label>
+            <input
+              aria-label="Search agencies"
+              placeholder="Search name, agency ID, city, phone"
+              type="search"
+              value={agencySearch}
+              onChange={(event) => setAgencySearch(event.target.value)}
+            />
+            <div className="quick-picker-list">
+              {visibleAgencies.map((agency) => (
+                <button
+                  className={agency.id === agencyId ? 'quick-picker is-selected' : 'quick-picker'}
+                  key={agency.id}
+                  type="button"
+                  onClick={() => {
+                    setAgencyId(agency.id);
+                    setContactId('');
+                  }}
+                >
+                  <strong>{agency.name}</strong>
+                  <span>{getAgencyMeta(agency)}</span>
+                </button>
+              ))}
+            </div>
+            {selectedAgency ? <p className="selected-note">Selected: {selectedAgency.name}</p> : null}
+          </div>
+        ) : (
+          <div className="search-select">
+            <label>Find wholesale account</label>
+            <input
+              aria-label="Search wholesale accounts"
+              placeholder="Search name, licensee ID, city, phone"
+              type="search"
+              value={wholesaleSearch}
+              onChange={(event) => setWholesaleSearch(event.target.value)}
+            />
+            <div className="quick-picker-list">
+              {visibleWholesaleAccounts.map((account) => (
+                <button
+                  className={account.id === wholesaleAccountId ? 'quick-picker is-selected' : 'quick-picker'}
+                  key={account.id}
+                  type="button"
+                  onClick={() => {
+                    setWholesaleAccountId(account.id);
+                    setContactId('');
+                  }}
+                >
+                  <strong>{account.name}</strong>
+                  <span>{getWholesaleMeta(account)}</span>
+                </button>
+              ))}
+            </div>
+            {selectedWholesaleAccount ? (
+              <p className="selected-note">Selected: {selectedWholesaleAccount.name}</p>
+            ) : (
+              <details className="compact-details">
+                <summary>Create a new wholesale account</summary>
+                <div className="form-grid">
+                  <input name="newWholesaleLicenseeId" placeholder="Licensee ID" />
+                  <input name="newWholesaleName" placeholder="Account name" />
+                  <input name="newWholesalePhone" placeholder="Phone" />
+                  <input name="newWholesaleCity" placeholder="City" />
+                </div>
+                <details className="compact-details nested-details">
+                  <summary>More account details</summary>
+                  <div className="form-grid">
+                    <input name="newWholesaleAgencyId" placeholder="Agency ID" />
+                    <input name="newWholesaleAddress" placeholder="Address" />
+                    <input name="newWholesaleCounty" placeholder="County" />
+                    <input name="newWholesaleZip" placeholder="Zip" />
+                    <input name="newWholesaleOwnership" placeholder="Ownership" />
+                    <input name="newWholesaleDistrictId" placeholder="District ID" />
+                    <input name="newWholesaleDeliveryDay" placeholder="Delivery Day" />
+                  </div>
+                </details>
+                {tags.length > 0 ? (
+                  <details className="compact-details nested-details">
+                    <summary>Apply tags</summary>
+                    <div className="tag-checkbox-grid">
+                      {tags.map((tag) => (
+                        <label className="tag-checkbox" key={tag.id}>
+                          <input name="newWholesaleTagId" type="checkbox" value={tag.id} />
+                          <span className="tag-swatch" style={{ backgroundColor: tag.color ?? '#7c9cff' }} />
+                          <span>{tag.name}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </details>
+                ) : null}
+              </details>
+            )}
+          </div>
+        )}
       </fieldset>
 
-      {locationType === 'wholesale' ? (
-        <fieldset>
-          <legend>Create / tag wholesale account</legend>
-          <div className="form-grid">
-            <input name="newWholesaleLicenseeId" placeholder="Licensee ID" />
-            <input name="newWholesaleName" placeholder="Account name" />
-            <input name="newWholesaleAgencyId" placeholder="Agency ID" />
-            <input name="newWholesalePhone" placeholder="Phone" />
-            <input name="newWholesaleAddress" placeholder="Address" />
-            <input name="newWholesaleCity" placeholder="City" />
-            <input name="newWholesaleCounty" placeholder="County" />
-            <input name="newWholesaleZip" placeholder="Zip" />
-            <input name="newWholesaleOwnership" placeholder="Ownership" />
-            <input name="newWholesaleDistrictId" placeholder="District ID" />
-            <input name="newWholesaleDeliveryDay" placeholder="Delivery Day" />
-          </div>
-          {tags.length > 0 ? (
-            <>
-              <label>Tags</label>
-              <div className="tag-checkbox-grid">
-                {tags.map((tag) => (
-                  <label className="tag-checkbox" key={tag.id}>
-                    <input name="newWholesaleTagId" type="checkbox" value={tag.id} />
-                    <span className="tag-swatch" style={{ backgroundColor: tag.color ?? '#7c9cff' }} />
-                    <span>{tag.name}</span>
-                  </label>
-                ))}
-              </div>
-            </>
-          ) : null}
-        </fieldset>
-      ) : null}
-
-      <fieldset>
-        <legend>Contact</legend>
+      <details className="compact-details cardless-details">
+        <summary>{selectedContact ? `Contact: ${selectedContact.name}` : 'Contact optional'}</summary>
         <div className="search-select">
-          <label>Existing contact</label>
+          <label>Find contact</label>
           <input
             aria-label="Search contacts"
-            placeholder="Search contacts for the selected account"
+            placeholder="Search contacts for this account"
             type="search"
             value={contactSearch}
             onChange={(event) => setContactSearch(event.target.value)}
           />
-          <select
-            name="contactId"
-            value={contactId}
-            onChange={(event) => setContactId(event.target.value)}
-            disabled={locationType === 'agency' ? !agencyId : !wholesaleAccountId}
-          >
-            <option value="">{contactSelectLabel}</option>
-            {visibleContacts.map((contact) => (
-              <option key={contact.id} value={contact.id}>
-                {contact.name}
-                {contact.role ? `, ${contact.role}` : ''}
-                {contact.phone ? ` (${contact.phone})` : ''}
-              </option>
-            ))}
-          </select>
+          {visibleContacts.length > 0 ? (
+            <div className="quick-picker-list">
+              {visibleContacts.map((contact) => (
+                <button
+                  className={contact.id === contactId ? 'quick-picker is-selected' : 'quick-picker'}
+                  key={contact.id}
+                  type="button"
+                  onClick={() => setContactId(contact.id)}
+                >
+                  <strong>{contact.name}</strong>
+                  <span>{getContactMeta(contact) || 'Contact'}</span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="field-note">Select a location to see saved contacts.</p>
+          )}
         </div>
 
-        <label>Or create contact on the fly</label>
+        <label>Create contact</label>
         <div className="form-grid">
           <input name="newContactName" placeholder="Contact name" />
           <input name="newContactPhone" placeholder="Contact phone" />
         </div>
-      </fieldset>
+      </details>
 
-      <fieldset>
-        <legend>Visit notes</legend>
+      <fieldset className="visit-step">
+        <legend>2. Tap what happened</legend>
         <p className="field-note">Visit activity will be recorded as {actorName}.</p>
-        <label>Visit summary</label>
+        <div className="quick-chip-grid">
+          {quickOutcomes.map((outcome) => (
+            <label className="quick-chip" key={outcome}>
+              <input name="quickOutcome" type="checkbox" value={outcome} />
+              <span>{outcome}</span>
+            </label>
+          ))}
+        </div>
+
+        <label>Short note</label>
         <textarea
           name="summary"
-          rows={3}
-          placeholder="What happened during the visit?"
+          rows={2}
+          placeholder="Optional dictated note or context"
           defaultValue={initialValues?.summary ?? ''}
         />
 
-        <label>Outcomes</label>
-        <textarea
-          name="outcomes"
-          rows={3}
-          placeholder="Wins, losses, placement notes"
-          defaultValue={initialValues?.outcomes ?? ''}
-        />
+        <details className="compact-details nested-details">
+          <summary>More notes</summary>
+          <label>Outcomes</label>
+          <textarea
+            name="outcomes"
+            rows={2}
+            placeholder="Wins, losses, placement notes"
+            defaultValue={initialValues?.outcomes ?? ''}
+          />
 
-        <label>Next step</label>
-        <textarea
-          name="nextStep"
-          rows={2}
-          placeholder="What should happen next?"
-          defaultValue={initialValues?.nextStep ?? ''}
-        />
+          <label>Next step</label>
+          <textarea
+            name="nextStep"
+            rows={2}
+            placeholder="What should happen next?"
+            defaultValue={initialValues?.nextStep ?? ''}
+          />
+        </details>
+      </fieldset>
 
+      <fieldset className="visit-step">
+        <legend>3. Follow-up and photo</legend>
         <label>Follow-up date</label>
-        <input name="followUpDate" type="date" defaultValue={initialValues?.followUpDate ?? ''} />
+        <div className="quick-chip-grid">
+          {quickFollowUps.map((option) => (
+            <button
+              className={followUpDate === getFollowUpDate(option.days) ? 'quick-date is-selected' : 'quick-date'}
+              key={option.label}
+              type="button"
+              onClick={() => setFollowUpDate(getFollowUpDate(option.days))}
+            >
+              {option.label}
+            </button>
+          ))}
+          <button className="quick-date secondary" type="button" onClick={() => setFollowUpDate('')}>
+            None
+          </button>
+        </div>
+        <input
+          name="followUpDate"
+          type="date"
+          value={followUpDate}
+          onChange={(event) => setFollowUpDate(event.target.value)}
+        />
+
+        <div className="photo-entry fast-photo-entry">
+          <h3>Main photo</h3>
+          <select name="photoType" defaultValue="DISPLAY" aria-label="Photo type">
+            {photoTypes.map((photoType) => (
+              <option key={photoType.value} value={photoType.value}>
+                {photoType.label}
+              </option>
+            ))}
+          </select>
+          <input name="photoFile" type="file" accept="image/*" capture="environment" />
+          <input name="photoUrl" readOnly type="hidden" value="" />
+          <input name="photoCaption" placeholder="Caption" />
+        </div>
+
+        <details className="compact-details nested-details">
+          <summary>Add more photos or a URL</summary>
+          {photoSlots.map((photoNumber) => (
+            <div className="photo-entry" key={photoNumber}>
+              <h3>Photo {photoNumber}</h3>
+              <select name="photoType" defaultValue="DISPLAY">
+                {photoTypes.map((photoType) => (
+                  <option key={photoType.value} value={photoType.value}>
+                    {photoType.label}
+                  </option>
+                ))}
+              </select>
+              <input name="photoFile" type="file" accept="image/*" capture="environment" />
+              <input name="photoUrl" type="url" placeholder="Or paste existing photo URL" />
+              <input name="photoCaption" placeholder="Caption or note" />
+            </div>
+          ))}
+        </details>
       </fieldset>
 
-      <fieldset>
-        <legend>Photos</legend>
-        {photoSlots.map((photoNumber) => (
-          <div className="photo-entry" key={photoNumber}>
-            <h3>Photo {photoNumber}</h3>
-            <select name="photoType" defaultValue="DISPLAY">
-              {photoTypes.map((photoType) => (
-                <option key={photoType.value} value={photoType.value}>
-                  {photoType.label}
-                </option>
-              ))}
-            </select>
-            <input name="photoFile" type="file" accept="image/*" />
-            <input name="photoUrl" type="url" placeholder="Or paste an existing photo URL" />
-            <input name="photoCaption" placeholder="Caption or note" />
-          </div>
-        ))}
-      </fieldset>
-
-      <button type="submit">{submitLabel}</button>
+      <div className="visit-submit-bar">
+        <button type="submit">{submitLabel}</button>
+      </div>
     </form>
   );
 }

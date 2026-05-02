@@ -172,17 +172,18 @@ export default async function AgenciesPage({
       </form>
       {params.status === 'imported' ? <p className="pill">Imported/updated {params.count} agencies.</p> : null}
 
-      <div className="card">
-        <h2>Import Agencies CSV</h2>
+      <details className="card compact-details admin-panel">
+        <summary>Import Agencies CSV</summary>
         <form action={importAgencies}>
           <input type="file" name="csvFile" accept=".csv,text/csv" required />
           <button type="submit">Upload agencies</button>
         </form>
-      </div>
+      </details>
 
       <table className="responsive-table">
         <thead>
           <tr>
+            <th>Actions</th>
             <th>Agency ID</th>
             <th>Name</th>
             <th>Address</th>
@@ -201,6 +202,11 @@ export default async function AgenciesPage({
 
             return (
               <tr key={agency.id}>
+                <td data-label="Actions">
+                  <Link className="btn compact-btn" href={`/visits/new?type=agency&agencyId=${agency.id}`}>
+                    Log Visit
+                  </Link>
+                </td>
                 <td data-label="Agency ID">{agency.agencyId}</td>
                 <td data-label="Name">
                   <Link className="table-link" href={`/agencies/${agency.id}`}>

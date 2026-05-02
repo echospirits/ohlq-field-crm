@@ -240,62 +240,59 @@ export default async function Alerts({
       {params.created === 'invalid' ? <p className="pill">A title is required.</p> : null}
       {params.notice ? <p className="pill">{noticeMessages[params.notice] ?? params.notice}</p> : null}
 
-      <div className="grid">
-        <div className="card">
-          <h2>Generate worklist item</h2>
-          <form action={createWorklistItem}>
-            <label>Title</label>
+      <div className="worklist-tools">
+        <div className="card quick-task-card">
+          <h2>Quick task</h2>
+          <form action={createWorklistItem} className="quick-task-form">
             <input name="title" placeholder="What needs to happen?" required />
-
-            <label>Category</label>
-            <select name="category" defaultValue={WorklistCategory.GENERAL}>
-              <option value={WorklistCategory.AGENCY}>Agency follow-up</option>
-              <option value={WorklistCategory.WHOLESALE}>Wholesale follow-up</option>
+            <input name="dueDate" type="date" aria-label="Due date" />
+            <select name="category" defaultValue={WorklistCategory.GENERAL} aria-label="Category">
+              <option value={WorklistCategory.AGENCY}>Agency</option>
+              <option value={WorklistCategory.WHOLESALE}>Wholesale</option>
               <option value={WorklistCategory.GENERAL}>General</option>
             </select>
+            <button type="submit">Create</button>
 
-            <label>Agency</label>
-            <select name="agencyId">
-              <option value="">-- Optional agency --</option>
-              {agencyOptions.map((agency) => (
-                <option key={agency.id} value={agency.id}>
-                  {agency.name} ({agency.agencyId})
-                </option>
-              ))}
-            </select>
+            <details className="compact-details nested-details quick-task-more">
+              <summary>Add account, owner, or details</summary>
+              <label>Agency</label>
+              <select name="agencyId">
+                <option value="">-- Optional agency --</option>
+                {agencyOptions.map((agency) => (
+                  <option key={agency.id} value={agency.id}>
+                    {agency.name} ({agency.agencyId})
+                  </option>
+                ))}
+              </select>
 
-            <label>Wholesale account</label>
-            <select name="wholesaleAccountId">
-              <option value="">-- Optional wholesale account --</option>
-              {wholesaleOptions.map((account) => (
-                <option key={account.id} value={account.id}>
-                  {account.name} ({account.licenseeId})
-                </option>
-              ))}
-            </select>
+              <label>Wholesale account</label>
+              <select name="wholesaleAccountId">
+                <option value="">-- Optional wholesale account --</option>
+                {wholesaleOptions.map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {account.name} ({account.licenseeId})
+                  </option>
+                ))}
+              </select>
 
-            <label>Due date</label>
-            <input name="dueDate" type="date" />
+              <label>Assigned to</label>
+              <select name="assignedToUserId">
+                <option value="">-- Unassigned --</option>
+                {users.map((user) => (
+                  <option key={user.id} value={user.id}>
+                    {getUserDisplayName(user)}
+                  </option>
+                ))}
+              </select>
 
-            <label>Assigned to</label>
-            <select name="assignedToUserId">
-              <option value="">-- Unassigned --</option>
-              {users.map((user) => (
-                <option key={user.id} value={user.id}>
-                  {getUserDisplayName(user)}
-                </option>
-              ))}
-            </select>
-
-            <label>Details</label>
-            <textarea name="detail" rows={3} placeholder="Context, instructions, or notes" />
-
-            <button type="submit">Create worklist item</button>
+              <label>Details</label>
+              <textarea name="detail" rows={3} placeholder="Context, instructions, or notes" />
+            </details>
           </form>
         </div>
 
-        <div className="card">
-          <h2>Filters</h2>
+        <details className="card compact-details filter-panel">
+          <summary>Filters</summary>
           <form method="get">
             <label>Status</label>
             <select name="status" defaultValue={statusFilter}>
@@ -323,7 +320,7 @@ export default async function Alerts({
 
             <button type="submit">Apply filters</button>
           </form>
-        </div>
+        </details>
       </div>
 
       {groups.map((group) => (
@@ -340,11 +337,8 @@ export default async function Alerts({
               <thead>
                 <tr>
                   <th>Item</th>
-                  <th>Source</th>
-                  <th>Location</th>
-                  <th>Due</th>
-                  <th>Assigned</th>
-                  <th>Status</th>
+                  <th>Location / Due</th>
+                  <th>Owner</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -361,6 +355,10 @@ export default async function Alerts({
                     <tr key={item.id}>
                       <td data-label="Item">
                         <strong>{item.title}</strong>
+                        <div className="inline-meta">
+                          <span className="pill">{sourceLabels[item.source]}</span>
+                          <span className="pill">{statusLabels[item.status]}</span>
+                        </div>
                         {item.detail ? <div className="muted preserve-lines">{item.detail}</div> : null}
                         <div className="muted item-meta">
                           Created by {item.createdByUser ? getUserDisplayName(item.createdByUser) : item.createdBy || 'Unknown user'}
@@ -368,11 +366,11 @@ export default async function Alerts({
                           {item.cancelledByUser ? `; cancelled by ${getUserDisplayName(item.cancelledByUser)}` : ''}
                         </div>
                       </td>
-                      <td data-label="Source">{sourceLabels[item.source]}</td>
-                      <td data-label="Location">{location}</td>
-                      <td data-label="Due">{formatDate(item.dueDate)}</td>
-                      <td data-label="Assigned">{item.assignedToUser ? getUserDisplayName(item.assignedToUser) : item.assignedTo}</td>
-                      <td data-label="Status">{statusLabels[item.status]}</td>
+                      <td data-label="Location / Due">
+                        <strong>{location || 'General'}</strong>
+                        <div className="muted">{formatDate(item.dueDate) || 'No due date'}</div>
+                      </td>
+                      <td data-label="Owner">{item.assignedToUser ? getUserDisplayName(item.assignedToUser) : item.assignedTo}</td>
                       <td data-label="Actions">
                         <WorklistActions
                           actorName={getUserDisplayName(currentUser)}

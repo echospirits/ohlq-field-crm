@@ -71,6 +71,9 @@ export default async function AgencyActivityPage({
     <>
       <div className="page-actions">
         <Link href="/agencies">Back to agencies</Link>
+        <Link className="btn compact-btn" href={`/visits/new?type=agency&agencyId=${agency.id}`}>
+          Log Visit
+        </Link>
       </div>
 
       <h1>{agency.name}</h1>

@@ -46,6 +46,16 @@ const getSelectedTagIds = (formData: FormData) =>
     ),
   );
 
+const getQuickOutcomes = (formData: FormData) =>
+  Array.from(
+    new Set(
+      formData
+        .getAll('quickOutcome')
+        .map((value) => String(value ?? '').trim())
+        .filter(Boolean),
+    ),
+  );
+
 const redirectWithStatus = (formOrigin: FormOrigin, status: string): never => {
   redirect(formOrigin === 'worklist' ? `/alerts?notice=${status}` : `/visits/new?status=${status}`);
 };
@@ -101,7 +111,15 @@ export async function createVisit(formData: FormData) {
   const newContactName = toOptional(formData.get('newContactName'));
   const newContactPhone = toOptional(formData.get('newContactPhone'));
   const summary = toOptional(formData.get('summary'));
-  const outcomes = toOptional(formData.get('outcomes'));
+  const quickOutcomes = getQuickOutcomes(formData);
+  const typedOutcomes = toOptional(formData.get('outcomes'));
+  const outcomes =
+    [
+      quickOutcomes.length > 0 ? `Quick outcomes: ${quickOutcomes.join(', ')}` : null,
+      typedOutcomes,
+    ]
+      .filter(Boolean)
+      .join('\n') || null;
   const nextStep = toOptional(formData.get('nextStep'));
   const followUpDate = toDate(formData.get('followUpDate'));
   const selectedTagIds = getSelectedTagIds(formData);

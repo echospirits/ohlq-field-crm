@@ -19,9 +19,9 @@ const statusMessages: Record<string, string> = {
 export default async function NewVisitPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ status?: string }>;
+  searchParams?: Promise<{ status?: string; type?: string; agencyId?: string; wholesaleAccountId?: string }>;
 }) {
-  const [params, user, agencies, wholesaleAccounts, contacts, tags] = await Promise.all([
+  const [params, user, agencyOptions, wholesaleAccountOptions, contacts, tags] = await Promise.all([
     (await searchParams) ?? {},
     requireUser(),
     prisma.agency.findMany({
@@ -71,6 +71,41 @@ export default async function NewVisitPage({
       },
     }),
   ]);
+  const initialLocationType = params.type === 'wholesale' || params.wholesaleAccountId ? 'wholesale' : 'agency';
+  const [selectedAgency, selectedWholesaleAccount] = await Promise.all([
+    params.agencyId && !agencyOptions.some((agency) => agency.id === params.agencyId)
+      ? prisma.agency.findUnique({
+          where: { id: params.agencyId },
+          select: {
+            id: true,
+            agencyId: true,
+            name: true,
+            city: true,
+            county: true,
+            phone: true,
+          },
+        })
+      : null,
+    params.wholesaleAccountId &&
+    !wholesaleAccountOptions.some((account) => account.id === params.wholesaleAccountId)
+      ? prisma.wholesaleAccount.findUnique({
+          where: { id: params.wholesaleAccountId },
+          select: {
+            id: true,
+            licenseeId: true,
+            name: true,
+            agencyId: true,
+            city: true,
+            county: true,
+            phone: true,
+          },
+        })
+      : null,
+  ]);
+  const agencies = selectedAgency ? [selectedAgency, ...agencyOptions] : agencyOptions;
+  const wholesaleAccounts = selectedWholesaleAccount
+    ? [selectedWholesaleAccount, ...wholesaleAccountOptions]
+    : wholesaleAccountOptions;
 
   return (
     <>
@@ -83,6 +118,11 @@ export default async function NewVisitPage({
           actorName={getUserDisplayName(user)}
           agencies={agencies}
           contacts={contacts}
+          initialValues={{
+            locationType: initialLocationType,
+            agencyId: params.agencyId ?? null,
+            wholesaleAccountId: params.wholesaleAccountId ?? null,
+          }}
           tags={tags}
           wholesaleAccounts={wholesaleAccounts}
         />

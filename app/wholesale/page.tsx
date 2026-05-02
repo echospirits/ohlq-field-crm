@@ -148,49 +148,55 @@ export default async function WholesalePage({
       <h1>Wholesale Accounts</h1>
       <p className="muted">Manual creation only.</p>
 
-      <div className="grid">
-        <div className="card">
-          <h2>Create / update wholesale account</h2>
-          <form action={createWholesale}>
-            <input name="licenseeId" placeholder="Licensee ID" required />
-            <input name="name" placeholder="Name" required />
-            <input name="agencyId" placeholder="Agency ID" />
-            <input name="address" placeholder="Address" />
-            <input name="city" placeholder="City" />
-            <input name="county" placeholder="County" />
-            <input name="zip" placeholder="Zip" />
-            <input name="phone" placeholder="Phone" />
-            <input name="ownership" placeholder="Ownership" />
-            <input name="districtId" placeholder="District ID" />
-            <input name="deliveryDay" placeholder="Delivery Day" />
-            {tags.length > 0 ? (
-              <fieldset>
-                <legend>Tags</legend>
-                <div className="tag-checkbox-grid">
-                  {tags.map((tag) => (
-                    <label className="tag-checkbox" key={tag.id}>
-                      <input name="tagId" type="checkbox" value={tag.id} />
-                      <span className="tag-swatch" style={{ backgroundColor: tag.color ?? '#7c9cff' }} />
-                      <span>{tag.name}</span>
-                    </label>
-                  ))}
-                </div>
-              </fieldset>
-            ) : null}
-            <button type="submit">Save wholesale account</button>
-          </form>
-        </div>
-      </div>
-
       <form method="get" className="filter-form narrow-filter">
         <input name="q" defaultValue={q} placeholder="Filter name, licensee ID, agency ID, address, phone" />
       </form>
       {params.status === 'saved' ? <p className="pill">Wholesale account saved.</p> : null}
       {params.status === 'invalid' ? <p className="pill">Name and Licensee ID are required.</p> : null}
 
+      <details className="card compact-details admin-panel">
+        <summary>Create / update wholesale account</summary>
+        <form action={createWholesale}>
+          <div className="form-grid">
+            <input name="licenseeId" placeholder="Licensee ID" required />
+            <input name="name" placeholder="Name" required />
+            <input name="phone" placeholder="Phone" />
+            <input name="city" placeholder="City" />
+          </div>
+          <details className="compact-details nested-details">
+            <summary>More account details</summary>
+            <div className="form-grid">
+              <input name="agencyId" placeholder="Agency ID" />
+              <input name="address" placeholder="Address" />
+              <input name="county" placeholder="County" />
+              <input name="zip" placeholder="Zip" />
+              <input name="ownership" placeholder="Ownership" />
+              <input name="districtId" placeholder="District ID" />
+              <input name="deliveryDay" placeholder="Delivery Day" />
+            </div>
+          </details>
+          {tags.length > 0 ? (
+            <details className="compact-details nested-details">
+              <summary>Tags</summary>
+              <div className="tag-checkbox-grid">
+                {tags.map((tag) => (
+                  <label className="tag-checkbox" key={tag.id}>
+                    <input name="tagId" type="checkbox" value={tag.id} />
+                    <span className="tag-swatch" style={{ backgroundColor: tag.color ?? '#7c9cff' }} />
+                    <span>{tag.name}</span>
+                  </label>
+                ))}
+              </div>
+            </details>
+          ) : null}
+          <button type="submit">Save wholesale account</button>
+        </form>
+      </details>
+
       <table className="responsive-table">
         <thead>
           <tr>
+            <th>Actions</th>
             <th>Licensee ID</th>
             <th>Name</th>
             <th>Agency ID</th>
@@ -208,6 +214,11 @@ export default async function WholesalePage({
 
             return (
               <tr key={account.id}>
+                <td data-label="Actions">
+                  <Link className="btn compact-btn" href={`/visits/new?type=wholesale&wholesaleAccountId=${account.id}`}>
+                    Log Visit
+                  </Link>
+                </td>
                 <td data-label="Licensee ID">{account.licenseeId}</td>
                 <td data-label="Name">
                   <Link className="table-link" href={`/wholesale/${account.id}`}>

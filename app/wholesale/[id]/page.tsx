@@ -71,6 +71,9 @@ export default async function WholesaleActivityPage({
     <>
       <div className="page-actions">
         <Link href="/wholesale">Back to wholesale accounts</Link>
+        <Link className="btn compact-btn" href={`/visits/new?type=wholesale&wholesaleAccountId=${account.id}`}>
+          Log Visit
+        </Link>
       </div>
 
       <h1>{account.name}</h1>

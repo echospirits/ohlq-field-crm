@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 import { WorklistCategory, WorklistStatus } from '@prisma/client';
+import Link from 'next/link';
 import { getUserDisplayName, requireUser } from '../lib/auth';
 import { prisma } from '../lib/prisma';
 
@@ -220,6 +221,25 @@ export default async function Dashboard() {
   return (
     <>
       <h1>Daily Operating Dashboard</h1>
+
+      <section className="quick-action-panel">
+        <Link className="quick-action-card quick-action-primary" href="/visits/new">
+          <strong>Log visit</strong>
+          <span>Start with account search</span>
+        </Link>
+        <Link className="quick-action-card" href="/alerts">
+          <strong>Worklist</strong>
+          <span>{activeWorklistItems} active</span>
+        </Link>
+        <Link className="quick-action-card" href="/agencies">
+          <strong>Find agency</strong>
+          <span>Search and log</span>
+        </Link>
+        <Link className="quick-action-card" href="/wholesale">
+          <strong>Find wholesale</strong>
+          <span>Search or create</span>
+        </Link>
+      </section>
 
       <div className="grid">
         <div className="card metric-card">
