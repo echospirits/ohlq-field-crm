@@ -306,7 +306,7 @@ export function LogVisitForm({
               <details className="compact-details">
                 <summary>Create a new wholesale account</summary>
                 <div className="form-grid">
-                  <input name="newWholesaleLicenseeId" placeholder="Licensee ID" />
+                  <input name="newWholesaleLicenseeId" placeholder="Licensee ID (optional)" />
                   <input name="newWholesaleName" placeholder="Account name" />
                   <input name="newWholesalePhone" placeholder="Phone" />
                   <input name="newWholesaleCity" placeholder="City" />

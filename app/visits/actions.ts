@@ -28,6 +28,17 @@ const toDate = (value: FormDataEntryValue | null | undefined) => {
   return date ? new Date(`${date}T00:00:00`) : null;
 };
 
+const toManualLicenseeId = (name: string) => {
+  const slug =
+    name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 32) || 'account';
+
+  return `manual-${slug}-${Date.now().toString(36)}`;
+};
+
 const toPhotoType = (value: FormDataEntryValue | undefined) => {
   const requestedType = String(value ?? PhotoType.OTHER);
   return photoTypes.includes(requestedType as PhotoType) ? (requestedType as PhotoType) : PhotoType.OTHER;
@@ -60,7 +71,15 @@ const redirectWithStatus = (formOrigin: FormOrigin, status: string): never => {
   redirect(formOrigin === 'worklist' ? `/alerts?notice=${status}` : `/visits/new?status=${status}`);
 };
 
-function collectPhotos(formData: FormData, formOrigin: FormOrigin) {
+const redirectVisitWithStatus = (formOrigin: FormOrigin, status: string, locationType: string): never => {
+  redirect(
+    formOrigin === 'worklist'
+      ? `/alerts?notice=${status}`
+      : `/visits/new?status=${status}&type=${locationType === 'wholesale' ? 'wholesale' : 'agency'}`,
+  );
+};
+
+function collectPhotos(formData: FormData, formOrigin: FormOrigin, locationType: string) {
   const types = formData.getAll('photoType');
   const files = formData.getAll('photoFile');
   const urls = formData.getAll('photoUrl');
@@ -76,7 +95,7 @@ function collectPhotos(formData: FormData, formOrigin: FormOrigin) {
       const validationError = validateVisitPhotoFile(file);
 
       if (validationError) {
-        redirectWithStatus(formOrigin, validationError);
+        redirectVisitWithStatus(formOrigin, validationError, locationType);
       }
 
       photos.push({
@@ -123,49 +142,77 @@ export async function createVisit(formData: FormData) {
   const nextStep = toOptional(formData.get('nextStep'));
   const followUpDate = toDate(formData.get('followUpDate'));
   const selectedTagIds = getSelectedTagIds(formData);
-  const pendingPhotos = collectPhotos(formData, formOrigin);
+  const pendingPhotos = collectPhotos(formData, formOrigin, locationType);
 
   if (locationType === 'agency' && !agencyId) {
-    redirectWithStatus(formOrigin, 'invalid-agency');
+    redirectVisitWithStatus(formOrigin, 'invalid-agency', locationType);
   }
 
-  if (locationType === 'wholesale' && !selectedWholesaleAccountId && (!newWholesaleLicenseeId || !newWholesaleName)) {
-    redirectWithStatus(formOrigin, 'invalid-wholesale');
+  if (locationType === 'wholesale' && !selectedWholesaleAccountId && !newWholesaleName && !newWholesaleLicenseeId) {
+    redirectVisitWithStatus(formOrigin, 'invalid-wholesale', locationType);
   }
 
   const visit = await prisma.$transaction(async (tx) => {
     let wholesaleAccountId = selectedWholesaleAccountId;
 
-    if (locationType === 'wholesale' && !wholesaleAccountId && newWholesaleLicenseeId && newWholesaleName) {
-      const wholesaleAccount = await tx.wholesaleAccount.upsert({
-        where: { licenseeId: newWholesaleLicenseeId },
-        create: {
-          licenseeId: newWholesaleLicenseeId,
-          name: newWholesaleName,
-          agencyId: toOptional(formData.get('newWholesaleAgencyId')),
-          address: toOptional(formData.get('newWholesaleAddress')),
-          city: toOptional(formData.get('newWholesaleCity')),
-          county: toOptional(formData.get('newWholesaleCounty')),
-          zip: toOptional(formData.get('newWholesaleZip')),
-          phone: toOptional(formData.get('newWholesalePhone')),
-          ownership: toOptional(formData.get('newWholesaleOwnership')),
-          districtId: toOptional(formData.get('newWholesaleDistrictId')),
-          deliveryDay: toOptional(formData.get('newWholesaleDeliveryDay')),
-          createdByUserId: user.id,
-        },
-        update: {
-          name: newWholesaleName,
-          agencyId: toOptional(formData.get('newWholesaleAgencyId')),
-          address: toOptional(formData.get('newWholesaleAddress')),
-          city: toOptional(formData.get('newWholesaleCity')),
-          county: toOptional(formData.get('newWholesaleCounty')),
-          zip: toOptional(formData.get('newWholesaleZip')),
-          phone: toOptional(formData.get('newWholesalePhone')),
-          ownership: toOptional(formData.get('newWholesaleOwnership')),
-          districtId: toOptional(formData.get('newWholesaleDistrictId')),
-          deliveryDay: toOptional(formData.get('newWholesaleDeliveryDay')),
-        },
-      });
+    if (locationType === 'wholesale' && !wholesaleAccountId && (newWholesaleLicenseeId || newWholesaleName)) {
+      const licenseeId = newWholesaleLicenseeId ?? toManualLicenseeId(newWholesaleName ?? 'Wholesale account');
+      const name = newWholesaleName ?? `Wholesale ${licenseeId}`;
+      const existingAccount = newWholesaleLicenseeId
+        ? null
+        : await tx.wholesaleAccount.findFirst({
+            where: { name: { equals: name, mode: 'insensitive' } },
+            select: { id: true },
+          });
+
+      const wholesaleAccount = existingAccount
+        ? existingAccount
+        : await tx.wholesaleAccount.upsert({
+            where: { licenseeId },
+            create: {
+              licenseeId,
+              name,
+              agencyId: toOptional(formData.get('newWholesaleAgencyId')),
+              address: toOptional(formData.get('newWholesaleAddress')),
+              city: toOptional(formData.get('newWholesaleCity')),
+              county: toOptional(formData.get('newWholesaleCounty')),
+              zip: toOptional(formData.get('newWholesaleZip')),
+              phone: toOptional(formData.get('newWholesalePhone')),
+              ownership: toOptional(formData.get('newWholesaleOwnership')),
+              districtId: toOptional(formData.get('newWholesaleDistrictId')),
+              deliveryDay: toOptional(formData.get('newWholesaleDeliveryDay')),
+              createdByUserId: user.id,
+            },
+            update: {
+              name,
+              agencyId: toOptional(formData.get('newWholesaleAgencyId')),
+              address: toOptional(formData.get('newWholesaleAddress')),
+              city: toOptional(formData.get('newWholesaleCity')),
+              county: toOptional(formData.get('newWholesaleCounty')),
+              zip: toOptional(formData.get('newWholesaleZip')),
+              phone: toOptional(formData.get('newWholesalePhone')),
+              ownership: toOptional(formData.get('newWholesaleOwnership')),
+              districtId: toOptional(formData.get('newWholesaleDistrictId')),
+              deliveryDay: toOptional(formData.get('newWholesaleDeliveryDay')),
+            },
+          });
+
+      if (existingAccount) {
+        await tx.wholesaleAccount.update({
+          where: { id: existingAccount.id },
+          data: {
+            agencyId: toOptional(formData.get('newWholesaleAgencyId')) ?? undefined,
+            address: toOptional(formData.get('newWholesaleAddress')) ?? undefined,
+            city: toOptional(formData.get('newWholesaleCity')) ?? undefined,
+            county: toOptional(formData.get('newWholesaleCounty')) ?? undefined,
+            zip: toOptional(formData.get('newWholesaleZip')) ?? undefined,
+            phone: toOptional(formData.get('newWholesalePhone')) ?? undefined,
+            ownership: toOptional(formData.get('newWholesaleOwnership')) ?? undefined,
+            districtId: toOptional(formData.get('newWholesaleDistrictId')) ?? undefined,
+            deliveryDay: toOptional(formData.get('newWholesaleDeliveryDay')) ?? undefined,
+          },
+        });
+      }
 
       wholesaleAccountId = wholesaleAccount.id;
     }
@@ -191,7 +238,7 @@ export async function createVisit(formData: FormData) {
       });
 
       if (!contact) {
-        redirectWithStatus(formOrigin, 'invalid-contact');
+        redirectVisitWithStatus(formOrigin, 'invalid-contact', locationType);
       }
 
       const selectedContact = contact!;
@@ -203,12 +250,12 @@ export async function createVisit(formData: FormData) {
         const allowedAgencyIds = new Set([agencyId, selectedAgency?.agencyId].filter(Boolean));
 
         if (!selectedContact.agencyId || !allowedAgencyIds.has(selectedContact.agencyId)) {
-          redirectWithStatus(formOrigin, 'invalid-contact');
+          redirectVisitWithStatus(formOrigin, 'invalid-contact', locationType);
         }
       }
 
       if (locationType === 'wholesale' && selectedContact.wholesaleAccountId !== wholesaleAccountId) {
-        redirectWithStatus(formOrigin, 'invalid-contact');
+        redirectVisitWithStatus(formOrigin, 'invalid-contact', locationType);
       }
     }
 
