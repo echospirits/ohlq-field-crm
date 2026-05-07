@@ -563,6 +563,16 @@ button:disabled {
   border-color: #52525b;
 }
 
+.danger-btn {
+  background: linear-gradient(180deg, #dc2626, #991b1b);
+  border-color: #ef4444;
+  box-shadow: 0 8px 18px #991b1b29;
+}
+
+.danger-btn:hover {
+  border-color: #f87171;
+}
+
 input,
 select,
 textarea {
@@ -830,6 +840,31 @@ legend {
 .action-row button {
   min-height: 34px;
   padding: 7px 10px;
+}
+
+.user-admin-actions {
+  display: grid;
+  gap: 8px;
+  min-width: min(100%, 360px);
+}
+
+.inline-control-form {
+  grid-template-columns: minmax(120px, 1fr) auto;
+  max-width: none;
+  gap: 8px;
+  align-items: center;
+}
+
+.inline-control-form input[type="hidden"] {
+  display: none;
+}
+
+.user-reset-details {
+  padding-top: 6px;
+}
+
+.user-reset-details .inline-control-form {
+  margin-top: 8px;
 }
 
 .visit-form {
@@ -1345,7 +1380,10 @@ legend {
   }
 
   .fab {
-    display: none;
+    right: 18px;
+    bottom: 82px;
+    z-index: 1950;
+    display: flex;
   }
 
   .mobile-tabbar {
@@ -1386,11 +1424,6 @@ legend {
     background: #1b1b1f;
   }
 
-  .mobile-tabbar .mobile-tabbar-primary {
-    color: #ffffff;
-    background: linear-gradient(180deg, var(--accent), var(--accent-hover));
-    border-color: #7da0ff66;
-  }
 }
 
 @media (max-width: 520px) {
@@ -1435,6 +1468,6 @@ legend {
 
   .fab {
     right: 12px;
-    bottom: 12px;
+    bottom: 82px;
   }
 }

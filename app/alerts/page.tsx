@@ -3,6 +3,7 @@ export const runtime = 'nodejs';
 
 import { Prisma, WorklistCategory, WorklistSource, WorklistStatus } from '@prisma/client';
 import { revalidatePath } from 'next/cache';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getUserDisplayName, requireUser } from '../../lib/auth';
 import { prisma } from '../../lib/prisma';
@@ -350,6 +351,12 @@ export default async function Alerts({
                       : item.category === WorklistCategory.WHOLESALE
                         ? wholesaleMap[item.wholesaleAccountId ?? '']
                         : '';
+                  const locationHref =
+                    item.category === WorklistCategory.AGENCY && item.agencyId
+                      ? `/agencies/${item.agencyId}`
+                      : item.category === WorklistCategory.WHOLESALE && item.wholesaleAccountId
+                        ? `/wholesale/${item.wholesaleAccountId}`
+                        : null;
 
                   return (
                     <tr key={item.id}>
@@ -367,7 +374,13 @@ export default async function Alerts({
                         </div>
                       </td>
                       <td data-label="Location / Due">
-                        <strong>{location || 'General'}</strong>
+                        {locationHref ? (
+                          <Link className="table-link" href={locationHref}>
+                            {location || 'Open account'}
+                          </Link>
+                        ) : (
+                          <strong>{location || 'General'}</strong>
+                        )}
                         <div className="muted">{formatDate(item.dueDate) || 'No due date'}</div>
                       </td>
                       <td data-label="Owner">{item.assignedToUser ? getUserDisplayName(item.assignedToUser) : item.assignedTo}</td>

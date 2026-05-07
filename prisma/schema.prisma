@@ -54,11 +54,21 @@ enum WorklistCategory {
   GENERAL
 }
 
+enum UserRole {
+  ADMIN
+  USER
+}
+
 model User {
   id                       String             @id @default(cuid())
-  googleId                 String             @unique
   email                    String             @unique
+  firstName                String?
+  lastName                 String?
   name                     String?
+  phone                    String?
+  passwordHash             String?
+  role                     UserRole           @default(USER)
+  isActive                 Boolean            @default(true)
   image                    String?
   createdAt                DateTime           @default(now())
   updatedAt                DateTime           @updatedAt
@@ -73,6 +83,9 @@ model User {
   assignedWorklistItems    WorklistItem[]     @relation("WorklistItemAssignedTo")
   completedWorklistItems   WorklistItem[]     @relation("WorklistItemCompletedBy")
   cancelledWorklistItems   WorklistItem[]     @relation("WorklistItemCancelledBy")
+
+  @@index([role])
+  @@index([isActive])
 }
 
 model UserSession {
@@ -85,6 +98,17 @@ model UserSession {
 
   @@index([userId])
   @@index([expiresAt])
+}
+
+model LoginThrottle {
+  id            String    @id @default(cuid())
+  identifier    String    @unique
+  failedCount   Int       @default(0)
+  lockedUntil   DateTime?
+  lastAttemptAt DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([lockedUntil])
 }
 
 model Account {

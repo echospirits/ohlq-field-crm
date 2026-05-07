@@ -5,10 +5,9 @@ import { redirect } from 'next/navigation';
 import { getCurrentUser } from '../../lib/auth';
 
 const statusMessages: Record<string, string> = {
-  'google-not-configured': 'Google sign-in is not configured yet.',
-  'invalid-google-state': 'The Google sign-in session expired. Try again.',
-  'google-token-error': 'Google sign-in could not be completed.',
-  'google-profile-error': 'Google did not return a verified email address.',
+  'invalid-credentials': 'Email or password is incorrect.',
+  'missing-credentials': 'Email and password are required.',
+  locked: 'Too many failed sign-in attempts. Wait 15 minutes and try again.',
 };
 
 export default async function LoginPage({
@@ -25,11 +24,19 @@ export default async function LoginPage({
   return (
     <div className="login-panel">
       <h1>Echo Spirits Distilling Co.</h1>
-      <p className="muted">Sign in with your Google account to use the field CRM.</p>
+      <p className="muted">Sign in with your Echo Field CRM account.</p>
       {params.status ? <p className="pill">{statusMessages[params.status] ?? params.status}</p> : null}
-      <a className="btn" href="/api/auth/google/start">
-        Continue with Google
-      </a>
+      <form action="/api/auth/login" method="post">
+        <label>
+          Email
+          <input autoComplete="email" name="email" type="email" required />
+        </label>
+        <label>
+          Password
+          <input autoComplete="current-password" name="password" type="password" required />
+        </label>
+        <button type="submit">Sign in</button>
+      </form>
     </div>
   );
 }

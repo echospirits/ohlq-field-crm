@@ -16,10 +16,14 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               <a href="/wholesale">Wholesale Accounts</a>
               <a href="/tags">Tags</a>
               <a href="/visits">Visits</a>
+              <a href="/my-week">My Week</a>
               <a href="/alerts">Worklist</a>
+              <a href="/profile">Profile</a>
+              {user.role === 'ADMIN' ? <a href="/users">Users</a> : null}
               <div className="user-card">
                 <span className="muted">Signed in as</span>
                 <strong>{getUserDisplayName(user)}</strong>
+                <span className="pill">{user.role === 'ADMIN' ? 'Admin' : 'User'}</span>
                 <form action="/api/auth/logout" method="post">
                   <button className="secondary" type="submit">
                     Sign out
@@ -32,10 +36,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               +
             </a>
             <nav className="mobile-tabbar" aria-label="Quick field actions">
+              <a href="/my-week">My Week</a>
               <a href="/alerts">Worklist</a>
-              <a className="mobile-tabbar-primary" href="/visits/new">
-                Log Visit
-              </a>
               <a href="/agencies">Agencies</a>
               <a href="/wholesale">Wholesale</a>
             </nav>

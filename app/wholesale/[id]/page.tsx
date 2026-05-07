@@ -15,13 +15,16 @@ const tagStatusMessages: Record<string, string> = {
   removed: 'Tag removed.',
   invalid: 'Select a valid tag.',
 };
+const statusMessages: Record<string, string> = {
+  updated: 'Wholesale account updated.',
+};
 
 export default async function WholesaleActivityPage({
   params,
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams?: Promise<{ tagStatus?: string }>;
+  searchParams?: Promise<{ status?: string; tagStatus?: string }>;
 }) {
   await requireUser();
   const { id } = await params;
@@ -74,10 +77,14 @@ export default async function WholesaleActivityPage({
         <Link className="btn compact-btn" href={`/visits/new?type=wholesale&wholesaleAccountId=${account.id}`}>
           Log Visit
         </Link>
+        <Link className="btn compact-btn secondary" href={`/wholesale/${account.id}/edit`}>
+          Edit
+        </Link>
       </div>
 
       <h1>{account.name}</h1>
       <p className="muted">Licensee {account.licenseeId}</p>
+      {query.status ? <p className="pill">{statusMessages[query.status] ?? query.status}</p> : null}
       {query.tagStatus ? <p className="pill">{tagStatusMessages[query.tagStatus] ?? query.tagStatus}</p> : null}
       <TagBadges tags={account.tags.map((assignment) => assignment.tag)} />
 

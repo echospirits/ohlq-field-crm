@@ -11,6 +11,7 @@
     "db:migrate": "prisma migrate deploy",
     "db:studio": "prisma studio",
     "import:sample": "tsx scripts/import-sample-data.ts",
+    "seed:admin": "tsx scripts/seed-admin.ts",
     "vercel:link": "vercel link",
     "vercel:preview": "vercel --yes",
     "vercel:prod": "vercel --prod --yes"

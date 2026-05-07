@@ -1,6 +1,7 @@
 ﻿export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
+import Link from 'next/link';
 import { getUserDisplayName, requireUser } from '../../lib/auth';
 import { prisma } from '../../lib/prisma';
 import { LiveFilterForm } from '../components/LiveFilterForm';
@@ -91,20 +92,41 @@ export default async function VisitsPage({
           </tr>
         </thead>
         <tbody>
-          {visits.map((visit) => (
-            <tr key={visit.id}>
-              <td data-label="Date">{new Date(visit.visitAt).toLocaleString()}</td>
-              <td data-label="Type">{visit.locationType}</td>
-              <td data-label="Location">{visit.locationType === 'agency' ? agencyMap[visit.agencyId ?? ''] : wholesaleMap[visit.wholesaleAccountId ?? '']}</td>
-              <td data-label="Contact">{contactMap[visit.contactId ?? '']}</td>
-              <td data-label="Summary">{visit.summary}</td>
-              <td data-label="Outcomes">{visit.outcomes}</td>
-              <td data-label="Next Step">{visit.nextStep}</td>
-              <td data-label="Follow-up">{visit.followUpDate ? new Date(visit.followUpDate).toLocaleDateString() : ''}</td>
-              <td data-label="Created By">{visit.createdByUser ? getUserDisplayName(visit.createdByUser) : visit.createdBy}</td>
-              <td data-label="Photos"><VisitPhotoGallery photos={visit.photos} /></td>
-            </tr>
-          ))}
+          {visits.map((visit) => {
+            const locationName =
+              visit.locationType === 'agency'
+                ? agencyMap[visit.agencyId ?? '']
+                : wholesaleMap[visit.wholesaleAccountId ?? ''];
+            const locationHref =
+              visit.locationType === 'agency' && visit.agencyId
+                ? `/agencies/${visit.agencyId}`
+                : visit.locationType === 'wholesale' && visit.wholesaleAccountId
+                  ? `/wholesale/${visit.wholesaleAccountId}`
+                  : null;
+
+            return (
+              <tr key={visit.id}>
+                <td data-label="Date">{new Date(visit.visitAt).toLocaleString()}</td>
+                <td data-label="Type">{visit.locationType}</td>
+                <td data-label="Location">
+                  {locationHref ? (
+                    <Link className="table-link" href={locationHref}>
+                      {locationName || 'Open account'}
+                    </Link>
+                  ) : (
+                    locationName
+                  )}
+                </td>
+                <td data-label="Contact">{contactMap[visit.contactId ?? '']}</td>
+                <td data-label="Summary">{visit.summary}</td>
+                <td data-label="Outcomes">{visit.outcomes}</td>
+                <td data-label="Next Step">{visit.nextStep}</td>
+                <td data-label="Follow-up">{visit.followUpDate ? new Date(visit.followUpDate).toLocaleDateString() : ''}</td>
+                <td data-label="Created By">{visit.createdByUser ? getUserDisplayName(visit.createdByUser) : visit.createdBy}</td>
+                <td data-label="Photos"><VisitPhotoGallery photos={visit.photos} /></td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </>
