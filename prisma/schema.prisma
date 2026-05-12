@@ -59,6 +59,18 @@ enum UserRole {
   USER
 }
 
+enum WeeklyDigestType {
+  USER_WEEKLY
+  ADMIN_WEEKLY
+}
+
+enum WeeklyDigestStatus {
+  PENDING
+  SENT
+  FAILED
+  SKIPPED
+}
+
 enum MenuPlacementType {
   COCKTAIL_MENU
   MENU_FEATURE
@@ -112,12 +124,41 @@ model User {
   assignedMenuPlacements   MenuPlacement[]    @relation("MenuPlacementAssignedTo")
   createdMenuPlacements    MenuPlacement[]    @relation("MenuPlacementCreatedBy")
   updatedMenuPlacements    MenuPlacement[]    @relation("MenuPlacementUpdatedBy")
+  weeklyDigestLogs         WeeklyDigestLog[]  @relation("WeeklyDigestRecipient")
   assignedWorklistItems    WorklistItem[]     @relation("WorklistItemAssignedTo")
   completedWorklistItems   WorklistItem[]     @relation("WorklistItemCompletedBy")
   cancelledWorklistItems   WorklistItem[]     @relation("WorklistItemCancelledBy")
 
   @@index([role])
   @@index([isActive])
+}
+
+model WeeklyDigestLog {
+  id                String             @id @default(cuid())
+  digestType        WeeklyDigestType
+  recipientUserId   String?
+  recipientEmail    String
+  periodStart       DateTime
+  periodEnd         DateTime
+  scheduledFor      DateTime
+  runAt             DateTime?
+  status            WeeklyDigestStatus @default(PENDING)
+  attemptCount      Int                @default(0)
+  providerMessageId String?
+  errorMessage      String?
+  lastSkippedAt     DateTime?
+  lastSkipReason    String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  recipientUser     User?              @relation("WeeklyDigestRecipient", fields: [recipientUserId], references: [id], onDelete: SetNull)
+
+  @@unique([digestType, recipientEmail, periodStart, periodEnd])
+  @@index([digestType])
+  @@index([recipientUserId])
+  @@index([recipientEmail])
+  @@index([periodStart, periodEnd])
+  @@index([scheduledFor])
+  @@index([status])
 }
 
 model UserSession {
@@ -248,6 +289,32 @@ model InventoryFact {
   sku              Sku       @relation(fields: [skuId], references: [id])
 
   @@unique([accountId, skuId, snapshotDate])
+}
+
+model OhlqAnnualSalesRow {
+  id                   String   @id @default(cuid())
+  reportDate           DateTime
+  district             String?
+  agencyId             String
+  agencyName           String
+  vendor               String
+  brand                String
+  name                 String
+  category             String?
+  retailBottlesSold    Int      @default(0)
+  retailAmount         Decimal  @default(0)
+  retailTax            Decimal  @default(0)
+  wholesaleBottlesSold Int      @default(0)
+  wholesaleAmount      Decimal  @default(0)
+  wholesaleTax         Decimal  @default(0)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@unique([reportDate, agencyId, vendor, brand])
+  @@index([reportDate])
+  @@index([agencyId])
+  @@index([brand])
+  @@index([vendor])
 }
 
 model Alert {

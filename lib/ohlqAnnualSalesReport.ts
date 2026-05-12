@@ -1,0 +1,314 @@
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import { chromium as playwrightChromium, type FrameLocator, type LaunchOptions, type Page } from 'playwright-core';
+
+const APP_ROOT = process.cwd();
+const POWER_BI_REPORT_URL =
+  'https://app.powerbigov.us/groups/me/apps/1b854c43-d373-43ea-9f76-edefa2dd227f/rdlreports/9781fc23-73de-4ee8-b0b8-77ae6f9b7c4e?ctid=50f8fcc4-94d8-4f07-84eb-36ed57c7c8a2';
+const OHLQ_REPORT_REDIRECT_URL = `https://ops.ohlq.com/link/external/${encodeURIComponent(POWER_BI_REPORT_URL)}`;
+
+type Logger = Pick<Console, 'error' | 'log'>;
+
+export type ReportDate = {
+  day: number;
+  display: string;
+  iso: string;
+  monthName: string;
+  year: number;
+};
+
+export type OhlqAnnualSalesDownloadResult = {
+  csvBuffer?: Buffer;
+  filename: string;
+  outputPath: string;
+  reportDate: string;
+  runDate: string;
+  sizeBytes: number;
+};
+
+export type OhlqAnnualSalesDownloadOptions = {
+  browserChannel?: string;
+  debugDir?: string;
+  downloadDir?: string;
+  headless?: boolean;
+  logger?: Logger;
+  returnBuffer?: boolean;
+  useServerlessChromium?: boolean;
+};
+
+export function requireEnv(name: string) {
+  const value = process.env[name]?.trim();
+  if (!value) {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+  return value;
+}
+
+function envFlag(name: string, fallback: boolean) {
+  const value = process.env[name]?.trim().toLowerCase();
+  if (!value) return fallback;
+  return ['1', 'true', 'yes', 'y'].includes(value);
+}
+
+function formatDateParts(year: number, month: number, day: number): ReportDate {
+  const date = new Date(Date.UTC(year, month - 1, day, 12));
+  const normalizedYear = date.getUTCFullYear();
+  const normalizedMonth = date.getUTCMonth() + 1;
+  const normalizedDay = date.getUTCDate();
+  const mm = String(normalizedMonth).padStart(2, '0');
+  const dd = String(normalizedDay).padStart(2, '0');
+
+  return {
+    day: normalizedDay,
+    display: `${mm}/${dd}/${normalizedYear}`,
+    iso: `${normalizedYear}-${mm}-${dd}`,
+    monthName: date.toLocaleString('en-US', { month: 'long', timeZone: 'UTC' }),
+    year: normalizedYear,
+  };
+}
+
+function todayInEastern() {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    day: '2-digit',
+    month: '2-digit',
+    timeZone: 'America/New_York',
+    year: 'numeric',
+  }).formatToParts(new Date());
+
+  const value = (type: Intl.DateTimeFormatPartTypes) => {
+    const part = parts.find((item) => item.type === type)?.value;
+    if (!part) throw new Error(`Unable to resolve Eastern date part: ${type}`);
+    return Number(part);
+  };
+
+  return {
+    day: value('day'),
+    month: value('month'),
+    year: value('year'),
+  };
+}
+
+function defaultReportDate() {
+  const today = todayInEastern();
+  return formatDateParts(today.year, today.month, today.day - 1);
+}
+
+function todayIsoEastern() {
+  const today = todayInEastern();
+  return formatDateParts(today.year, today.month, today.day).iso;
+}
+
+function getReportDate() {
+  const rawDate = process.env.OHLQ_REPORT_DATE?.trim();
+  if (!rawDate) return defaultReportDate();
+
+  const isoMatch = rawDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoMatch) {
+    return formatDateParts(Number(isoMatch[1]), Number(isoMatch[2]), Number(isoMatch[3]));
+  }
+
+  const displayMatch = rawDate.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (displayMatch) {
+    return formatDateParts(Number(displayMatch[3]), Number(displayMatch[1]), Number(displayMatch[2]));
+  }
+
+  throw new Error('OHLQ_REPORT_DATE must be YYYY-MM-DD or MM/DD/YYYY when provided.');
+}
+
+export function getAnnualSalesReportFilename(runDateIso: string) {
+  return `ohlq-annual-sales-summary-${runDateIso}.csv`;
+}
+
+async function saveDebugScreenshot(page: Page, label: string, debugDir: string) {
+  fs.mkdirSync(debugDir, { recursive: true });
+  const screenshotPath = path.join(debugDir, `${label}-${Date.now()}.png`);
+  await page.screenshot({ fullPage: true, path: screenshotPath }).catch(() => undefined);
+  return screenshotPath;
+}
+
+async function clickIfVisible(page: Page, selectorName: string) {
+  const button = page.getByRole('button', { name: selectorName });
+  if (await button.isVisible().catch(() => false)) {
+    await button.click();
+    return true;
+  }
+  return false;
+}
+
+async function handleMicrosoftSignIn(page: Page, debugDir: string) {
+  if (!page.url().includes('login.microsoftonline.com')) return;
+
+  const username = process.env.OHLQ_MICROSOFT_USERNAME?.trim();
+  const password = process.env.OHLQ_MICROSOFT_PASSWORD?.trim();
+  if (!username) {
+    const screenshotPath = await saveDebugScreenshot(page, 'microsoft-sign-in-required', debugDir);
+    throw new Error(
+      [
+        'Clean browser reached Microsoft/OHID sign-in before Power BI loaded.',
+        'Set OHLQ_MICROSOFT_USERNAME and, if allowed by the account policy, OHLQ_MICROSOFT_PASSWORD to keep testing.',
+        'If this account requires MFA, device trust, or interactive SSO, cloud mode needs an automation-friendly service account or an API/export route.',
+        `Debug screenshot: ${screenshotPath}`,
+      ].join(' '),
+    );
+  }
+
+  const usernamePlaceholder = page.getByPlaceholder(/email, phone, or skype/i).first();
+  if (await usernamePlaceholder.isVisible().catch(() => false)) {
+    await usernamePlaceholder.fill(username);
+  } else {
+    await page.getByRole('textbox', { name: /email, phone, or skype/i }).first().fill(username);
+  }
+  await page.getByRole('button', { name: 'Next' }).click();
+  await page.waitForLoadState('domcontentloaded').catch(() => undefined);
+
+  if (await page.getByText('There was an issue looking up your account').isVisible().catch(() => false)) {
+    const screenshotPath = await saveDebugScreenshot(page, 'microsoft-account-lookup-error', debugDir);
+    throw new Error(`Microsoft could not look up OHLQ_MICROSOFT_USERNAME. Debug screenshot: ${screenshotPath}`);
+  }
+
+  const passwordInput = page.locator('input[type="password"]').first();
+  if (await passwordInput.isVisible().catch(() => false)) {
+    if (!password) {
+      const screenshotPath = await saveDebugScreenshot(page, 'microsoft-password-required', debugDir);
+      throw new Error(`Microsoft password prompt appeared, but OHLQ_MICROSOFT_PASSWORD is not set. Debug screenshot: ${screenshotPath}`);
+    }
+
+    await passwordInput.fill(password);
+    await page.getByRole('button', { name: 'Sign in' }).click();
+    await page.waitForLoadState('domcontentloaded').catch(() => undefined);
+  }
+
+  await clickIfVisible(page, 'Yes');
+}
+
+async function setDate(frame: FrameLocator, label: 'From date' | 'To date', reportDate: ReportDate) {
+  const input = frame.locator(`input[aria-label="${label}"]`);
+  await input.waitFor({ state: 'visible', timeout: 120_000 });
+  await input.click();
+  await input.fill(reportDate.display).catch(() => undefined);
+  await input.press('Tab').catch(() => undefined);
+
+  if ((await input.inputValue().catch(() => '')) === reportDate.display) return;
+
+  await frame.locator(`input[aria-label="${label}"] + span[role="button"]`).click();
+  await frame
+    .getByRole('button', {
+      name: `${reportDate.day}, ${reportDate.monthName}, ${reportDate.year}`,
+    })
+    .click();
+  await input.waitFor({ state: 'visible', timeout: 30_000 });
+}
+
+async function getLaunchOptions(options: OhlqAnnualSalesDownloadOptions): Promise<LaunchOptions> {
+  const useServerlessChromium =
+    options.useServerlessChromium ?? envFlag('OHLQ_USE_SERVERLESS_CHROMIUM', process.env.VERCEL === '1');
+
+  if (useServerlessChromium) {
+    const { default: chromium } = await import('@sparticuz/chromium');
+
+    return {
+      args: chromium.args,
+      executablePath: await chromium.executablePath(),
+      headless: true,
+    };
+  }
+
+  const browserChannel =
+    options.browserChannel ?? process.env.OHLQ_BROWSER_CHANNEL?.trim() ?? (process.env.CI ? undefined : 'chrome');
+
+  return {
+    channel: browserChannel,
+    headless: options.headless ?? envFlag('OHLQ_HEADLESS', process.env.CI === 'true'),
+  };
+}
+
+export async function downloadOhlqAnnualSalesSummary(options: OhlqAnnualSalesDownloadOptions = {}) {
+  const logger = options.logger ?? console;
+  const ohlqUsername = requireEnv('OHLQ_OPS_USERNAME');
+  const ohlqPassword = requireEnv('OHLQ_OPS_PASSWORD');
+  const reportDate = getReportDate();
+  const runDateIso = todayIsoEastern();
+  const filename = getAnnualSalesReportFilename(runDateIso);
+  const downloadDir = path.resolve(
+    options.downloadDir ??
+      (options.returnBuffer ? path.join(os.tmpdir(), 'ohlq-downloads') : path.join(APP_ROOT, 'output', 'ohlq-downloads')),
+  );
+  const debugDir = path.resolve(
+    options.debugDir ?? (process.env.VERCEL ? path.join(os.tmpdir(), 'ohlq-playwright') : path.join(APP_ROOT, 'output', 'playwright')),
+  );
+  fs.mkdirSync(downloadDir, { recursive: true });
+
+  const launchOptions = await getLaunchOptions(options);
+  const browser = await playwrightChromium.launch(launchOptions);
+  const context = await browser.newContext({
+    acceptDownloads: true,
+    viewport: { height: 900, width: 1536 },
+  });
+  const page = await context.newPage();
+
+  try {
+    logger.log(`Using report date ${reportDate.display} (${reportDate.iso}).`);
+
+    await page.goto('https://ops.ohlq.com/login', { waitUntil: 'domcontentloaded' });
+    if (!page.url().includes('/partner')) {
+      await page.getByPlaceholder('username or email').fill(ohlqUsername);
+      await page.getByPlaceholder('please enter your password').fill(ohlqPassword);
+      await Promise.all([
+        page.waitForURL(/https:\/\/ops\.ohlq\.com\/partner/, { timeout: 60_000 }),
+        page.getByRole('button', { name: 'Log In' }).click(),
+      ]);
+    }
+
+    await page.goto(OHLQ_REPORT_REDIRECT_URL, { waitUntil: 'domcontentloaded' });
+    await handleMicrosoftSignIn(page, debugDir);
+    await page.waitForURL(/https:\/\/app\.powerbigov\.us\/.*rdlreports\/9781fc23-73de-4ee8-b0b8-77ae6f9b7c4e/, {
+      timeout: 120_000,
+    });
+
+    const frame = page.frameLocator('iframe');
+    await setDate(frame, 'From date', reportDate);
+    await setDate(frame, 'To date', reportDate);
+
+    await frame.locator('span[aria-label="Open Vendor"]').click();
+    await frame.getByRole('menuitemcheckbox', { name: 'Select All' }).click();
+
+    await frame.getByRole('button', { name: 'View report' }).click();
+    await frame.getByText('Annual Sales Summary', { exact: true }).waitFor({ timeout: 240_000 });
+    await frame
+      .getByText(`From: ${reportDate.display.replace(/^0/, '').replace('/0', '/')}`)
+      .waitFor({
+        timeout: 30_000,
+      })
+      .catch(() => undefined);
+
+    await frame.getByRole('menuitem', { name: /Export/ }).click();
+    const downloadPromise = page.waitForEvent('download', { timeout: 180_000 });
+    await frame.getByRole('menuitem', { name: /Comma Separated Values \(\.csv\)/ }).click();
+    const download = await downloadPromise;
+
+    const outputPath = path.join(downloadDir, filename);
+    await download.saveAs(outputPath);
+
+    const sizeBytes = fs.statSync(outputPath).size;
+    const csvBuffer = options.returnBuffer ? fs.readFileSync(outputPath) : undefined;
+
+    logger.log(`Downloaded CSV: ${outputPath}`);
+
+    return {
+      csvBuffer,
+      filename,
+      outputPath,
+      reportDate: reportDate.iso,
+      runDate: runDateIso,
+      sizeBytes,
+    } satisfies OhlqAnnualSalesDownloadResult;
+  } catch (error) {
+    const screenshotPath = await saveDebugScreenshot(page, 'ohlq-annual-sales-error', debugDir);
+    logger.error(`Debug screenshot: ${screenshotPath}`);
+    throw error;
+  } finally {
+    await context.close().catch(() => undefined);
+    await browser.close().catch(() => undefined);
+  }
+}

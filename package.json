@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "prisma generate && next build",
+    "test": "tsx --test tests/**/*.test.ts",
     "start": "next start",
     "postinstall": "prisma generate",
     "db:push": "prisma db push",
@@ -12,6 +13,7 @@
     "db:studio": "prisma studio",
     "import:sample": "tsx scripts/import-sample-data.ts",
     "import:recipes": "tsx scripts/import-recipes.ts",
+    "download:ohlq-annual-sales": "tsx scripts/download-ohlq-annual-sales.ts",
     "seed:admin": "tsx scripts/seed-admin.ts",
     "vercel:link": "vercel link",
     "vercel:preview": "vercel --yes",
@@ -19,18 +21,22 @@
   },
   "dependencies": {
     "@prisma/client": "6.19.3",
+    "@sparticuz/chromium": "^148.0.0",
     "@vercel/blob": "^2.3.3",
     "next": "^16.2.4",
     "papaparse": "5.4.1",
+    "playwright-core": "^1.60.0",
     "prisma": "^6.19.3",
     "react": "18.3.1",
     "react-dom": "18.3.1",
+    "resend": "^6.12.3",
     "zod": "3.23.8"
   },
   "devDependencies": {
     "@types/node": "20.16.5",
     "@types/react": "18.3.5",
     "@types/react-dom": "18.3.0",
+    "playwright": "^1.60.0",
     "tsx": "^4.21.0",
     "typescript": "^5.4.5"
   }

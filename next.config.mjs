@@ -5,6 +5,10 @@ const nextConfig = {
       bodySizeLimit: '20mb',
     },
   },
+  outputFileTracingIncludes: {
+    '/api/cron/ohlq-annual-sales': ['./node_modules/@sparticuz/chromium/bin/**/*'],
+  },
+  serverExternalPackages: ['@sparticuz/chromium'],
 };
 
 export default nextConfig;

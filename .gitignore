@@ -4,6 +4,7 @@ node_modules/
 # next.js build output
 .next/
 out/
+tsconfig.tsbuildinfo
 
 # local env
 .env
@@ -12,6 +13,9 @@ out/
 
 # logs
 npm-debug.log*
+
+# generated automation artifacts
+output/
 
 # OS/editor
 .DS_Store

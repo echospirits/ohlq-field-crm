@@ -789,6 +789,64 @@ fieldset {
   margin-bottom: 16px;
 }
 
+.digest-admin-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.digest-control-form {
+  display: grid;
+  grid-template-columns: minmax(180px, .5fr) minmax(240px, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+  max-width: 860px;
+}
+
+.digest-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.digest-preview-shell {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  background: #0c0c0f99;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.digest-preview-meta {
+  display: grid;
+  gap: 4px;
+}
+
+.digest-preview-frame {
+  width: 100%;
+  min-height: 680px;
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.digest-text-preview {
+  max-height: 360px;
+  overflow: auto;
+  padding: 12px;
+  color: #dbeafe;
+  background: #050507;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  white-space: pre-wrap;
+}
+
+.danger-pill {
+  border-color: #7f1d1d;
+  color: #fecaca;
+  background: #450a0a;
+}
+
 legend {
   padding: 0 6px;
   color: #e2e8f0;
@@ -1447,7 +1505,8 @@ legend {
   .quick-task-form,
   .worklist-tools,
   .inline-suggestion-form,
-  .recipe-detail-layout {
+  .recipe-detail-layout,
+  .digest-control-form {
     grid-template-columns: 1fr;
   }
 

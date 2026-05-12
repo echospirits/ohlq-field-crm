@@ -10,6 +10,7 @@ Internal web-based CRM for liquor agency and bar/restaurant field work.
 - Visit/photo model for shelf, display, menu, back bar, competitor evidence
 - EventShift model for tour guide scheduling and future Eventbrite sync
 - Recipe database for cocktail suggestions
+- Weekly digest emails for rep activity, completed work, and upcoming follow-ups
 
 ## Setup
 1. Create a Postgres database, ideally Neon/Supabase/Vercel Postgres.
@@ -25,8 +26,46 @@ npm run dev
 ## Deploy to Vercel
 - Push this folder to GitHub.
 - Import the repo into Vercel.
-- Add `DATABASE_URL` and optional `EVENTBRITE_TOKEN` as environment variables.
+- Add `DATABASE_URL`, `APP_BASE_URL`, `CRON_SECRET`, `RESEND_API_KEY`, `EMAIL_FROM`, `BLOB_READ_WRITE_TOKEN`, `OHLQ_OPS_USERNAME`, `OHLQ_OPS_PASSWORD`, and optional `EVENTBRITE_TOKEN` as environment variables.
 - Deploy.
+
+## OHLQ annual sales export
+- Vercel cron calls `/api/cron/ohlq-annual-sales` at 12:30 UTC daily.
+- The cron route requires `Authorization: Bearer $CRON_SECRET`.
+- The automation downloads yesterday's Annual Sales Summary report and imports the CSV rows into `OhlqAnnualSalesRow`.
+- The import stores `reportDate` from the report's From date parameter and replaces existing rows for that date, so reruns are idempotent.
+
+Local command:
+```bash
+npm run download:ohlq-annual-sales
+```
+
+Required OHLQ env vars:
+- `OHLQ_OPS_USERNAME`: OHLQ portal username.
+- `OHLQ_OPS_PASSWORD`: OHLQ portal password.
+
+## Weekly digest email
+- Vercel cron calls `/api/cron/weekly-digest` at 12:00, 13:00, and 14:00 UTC on Fridays. The route only sends when the current `America/New_York` local hour is 8, so daylight saving time is handled by the app.
+- The cron route requires `Authorization: Bearer $CRON_SECRET`.
+- Standard active users receive their own weekly digest. Active admins receive the team digest for all active users.
+- Digest sends are logged in `WeeklyDigestLog` and are idempotent per recipient, digest type, and period.
+- Admins can preview and send tests at `/admin/weekly-digest`.
+
+Local commands:
+```bash
+# Preview in the app
+npm run dev
+# Then open http://localhost:3000/admin/weekly-digest as an admin.
+
+# Trigger the cron route locally
+curl -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/cron/weekly-digest
+```
+
+Required email env vars:
+- `RESEND_API_KEY`: Resend API key.
+- `EMAIL_FROM`: verified sender, for example `Echo Field CRM <crm@echospirits.com>`.
+- `APP_BASE_URL`: production app URL used for absolute links in emails.
+- `CRON_SECRET`: shared secret for Vercel cron authorization.
 
 ## Next build steps
 1. Add auth and roles: admin, sales rep, tour guide.

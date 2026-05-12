@@ -21,6 +21,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               <a href="/alerts">Worklist</a>
               <a href="/profile">Profile</a>
               {user.role === 'ADMIN' ? <a href="/users">Users</a> : null}
+              {user.role === 'ADMIN' ? <a href="/admin/weekly-digest">Weekly Digest</a> : null}
               <div className="user-card">
                 <span className="muted">Signed in as</span>
                 <strong>{getUserDisplayName(user)}</strong>
