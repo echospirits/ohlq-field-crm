@@ -14,6 +14,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               <a href="/">Dashboard</a>
               <a href="/agencies">Liquor Agencies</a>
               <a href="/wholesale">Wholesale Accounts</a>
+              <a href="/recipes">Recipe Database</a>
               <a href="/tags">Tags</a>
               <a href="/visits">Visits</a>
               <a href="/my-week">My Week</a>
@@ -40,6 +41,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               <a href="/alerts">Worklist</a>
               <a href="/agencies">Agencies</a>
               <a href="/wholesale">Wholesale</a>
+              <a href="/recipes">Recipes</a>
             </nav>
           </>
         ) : (

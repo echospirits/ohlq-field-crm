@@ -704,6 +704,16 @@ form {
   max-width: 760px;
 }
 
+.recipe-filter {
+  grid-template-columns: minmax(240px, 1.4fr) minmax(150px, .6fr) minmax(210px, .8fr);
+  max-width: 880px;
+}
+
+.placement-filter {
+  grid-template-columns: minmax(220px, 1fr) minmax(150px, .5fr) minmax(160px, .6fr);
+  max-width: 860px;
+}
+
 .muted {
   color: var(--muted);
 }
@@ -804,6 +814,167 @@ legend {
 
 .fast-photo-entry {
   grid-template-columns: 120px minmax(150px, .5fr) minmax(220px, 1fr) minmax(160px, .7fr);
+}
+
+.recipe-form {
+  max-width: none;
+}
+
+.menu-placement-form {
+  max-width: none;
+}
+
+.placement-date-list {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.inline-edit-details {
+  min-width: min(100%, 520px);
+}
+
+.inline-edit-details .menu-placement-form {
+  margin-top: 8px;
+}
+
+.recipe-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: 14px;
+}
+
+.recipe-card {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: 0;
+  min-height: 190px;
+  overflow: hidden;
+  padding: 0;
+}
+
+.recipe-card-media {
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+  color: #c7d2fe;
+  background:
+    linear-gradient(135deg, #12322f, #101014 58%),
+    #101014;
+  border-right: 1px solid var(--line);
+  text-decoration: none;
+  font-weight: 780;
+  text-align: center;
+}
+
+.recipe-card-media img {
+  width: 100%;
+  height: 100%;
+  min-height: 190px;
+  display: block;
+  object-fit: cover;
+}
+
+.recipe-card-body {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-width: 0;
+  padding: 14px;
+}
+
+.recipe-card-text {
+  max-height: 5.9em;
+  margin: 0;
+  overflow: hidden;
+  color: #dbeafe;
+}
+
+.recipe-detail-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
+  gap: 16px;
+  align-items: start;
+}
+
+.recipe-detail-main {
+  display: grid;
+  gap: 14px;
+}
+
+.recipe-hero-photo {
+  width: 100%;
+  max-height: 460px;
+  display: block;
+  object-fit: cover;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.recipe-body-text {
+  margin-top: 0;
+  color: #e2e8f0;
+  font-size: 16px;
+}
+
+.recipe-side-panel {
+  align-content: start;
+}
+
+.detail-list {
+  display: grid;
+  gap: 9px;
+  margin: 0;
+}
+
+.detail-list div {
+  display: grid;
+  gap: 3px;
+  padding-top: 9px;
+  border-top: 1px solid var(--line);
+}
+
+.detail-list div:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.detail-list dt {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.detail-list dd {
+  margin: 0;
+  color: #f8fafc;
+  overflow-wrap: anywhere;
+}
+
+.inline-suggestion-form {
+  max-width: none;
+  grid-template-columns: minmax(240px, 1fr) minmax(150px, .35fr) minmax(190px, .7fr) auto;
+  align-items: end;
+}
+
+.recipe-photo-edit {
+  display: grid;
+  grid-template-columns: minmax(160px, 280px) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.recipe-photo-edit img {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.danger-zone {
+  border-color: #7f1d1d;
 }
 
 .photo-entry h3 {
@@ -1271,8 +1442,29 @@ legend {
 
   .form-grid,
   .visit-filter,
+  .recipe-filter,
+  .placement-filter,
   .quick-task-form,
-  .worklist-tools {
+  .worklist-tools,
+  .inline-suggestion-form,
+  .recipe-detail-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .recipe-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .recipe-card {
+    grid-template-columns: 112px minmax(0, 1fr);
+    min-height: 170px;
+  }
+
+  .recipe-card-media img {
+    min-height: 170px;
+  }
+
+  .recipe-photo-edit {
     grid-template-columns: 1fr;
   }
 
@@ -1393,7 +1585,7 @@ legend {
     left: 10px;
     z-index: 1900;
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 6px;
     padding: 7px;
     background: #08080af2;
@@ -1414,7 +1606,7 @@ legend {
     text-decoration: none;
     border: 1px solid transparent;
     border-radius: 10px;
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 780;
     line-height: 1.1;
   }

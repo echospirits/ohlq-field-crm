@@ -59,6 +59,32 @@ enum UserRole {
   USER
 }
 
+enum MenuPlacementType {
+  COCKTAIL_MENU
+  MENU_FEATURE
+  HAPPY_HOUR
+  TABLE_TENT
+  QR_DIGITAL
+  BACK_BAR
+  OTHER
+}
+
+enum MenuPlacementStatus {
+  PROMISED
+  LIVE
+  PAUSED
+  ENDED
+  LOST
+}
+
+enum MenuPlacementSource {
+  MANUAL
+  VISIT
+  PHOTO
+  ACCOUNT_REVIEW
+  IMPORT
+}
+
 model User {
   id                       String             @id @default(cuid())
   email                    String             @unique
@@ -80,6 +106,12 @@ model User {
   createdWorklistItems     WorklistItem[]     @relation("WorklistItemCreatedBy")
   createdTags              Tag[]              @relation("TagCreatedBy")
   createdLocationTags      LocationTag[]      @relation("LocationTagCreatedBy")
+  createdRecipes           Recipe[]           @relation("RecipeCreatedBy")
+  updatedRecipes           Recipe[]           @relation("RecipeUpdatedBy")
+  createdRecipeSuggestions RecipeSuggestion[] @relation("RecipeSuggestionCreatedBy")
+  assignedMenuPlacements   MenuPlacement[]    @relation("MenuPlacementAssignedTo")
+  createdMenuPlacements    MenuPlacement[]    @relation("MenuPlacementCreatedBy")
+  updatedMenuPlacements    MenuPlacement[]    @relation("MenuPlacementUpdatedBy")
   assignedWorklistItems    WorklistItem[]     @relation("WorklistItemAssignedTo")
   completedWorklistItems   WorklistItem[]     @relation("WorklistItemCompletedBy")
   cancelledWorklistItems   WorklistItem[]     @relation("WorklistItemCancelledBy")
@@ -146,6 +178,7 @@ model Account {
   salesFacts          SalesFact[]
   inventoryFacts      InventoryFact[]
   visits              Visit[]
+  menuPlacements      MenuPlacement[]
 }
 
 model Sku {
@@ -257,25 +290,70 @@ model Task {
 }
 
 model Visit {
-  id        String   @id @default(cuid())
-  accountId String
-  visitDate DateTime @default(now())
-  summary   String?
-  createdBy String?
-  account   Account  @relation(fields: [accountId], references: [id])
-  photos    Photo[]
+  id             String          @id @default(cuid())
+  accountId      String
+  visitDate      DateTime        @default(now())
+  summary        String?
+  createdBy      String?
+  account        Account         @relation(fields: [accountId], references: [id])
+  photos         Photo[]
+  menuPlacements MenuPlacement[]
 }
 
 model Photo {
-  id        String    @id @default(cuid())
-  accountId String
-  visitId   String?
-  type      PhotoType
-  url       String
-  caption   String?
-  takenAt   DateTime  @default(now())
-  account   Account   @relation(fields: [accountId], references: [id])
-  visit     Visit?    @relation(fields: [visitId], references: [id])
+  id                 String         @id @default(cuid())
+  accountId          String
+  visitId            String?
+  type               PhotoType
+  url                String
+  caption            String?
+  takenAt            DateTime       @default(now())
+  account            Account        @relation(fields: [accountId], references: [id])
+  visit              Visit?         @relation(fields: [visitId], references: [id])
+  menuPlacementProof MenuPlacement? @relation("MenuPlacementProofPhoto")
+}
+
+model MenuPlacement {
+  id                 String              @id @default(cuid())
+  accountId          String
+  wholesaleAccountId String?
+  visitId            String?
+  proofPhotoId       String?             @unique
+  product            String
+  menuItemName       String
+  placementType      MenuPlacementType   @default(COCKTAIL_MENU)
+  status             MenuPlacementStatus @default(PROMISED)
+  source             MenuPlacementSource @default(MANUAL)
+  proofUrl           String?
+  proofStorageKey    String?
+  proofContentType   String?
+  proofSizeBytes     Int?
+  firstSeenAt        DateTime?
+  lastVerifiedAt     DateTime?
+  expectedEndAt      DateTime?
+  notes              String?
+  assignedToUserId   String?
+  createdByUserId    String?
+  updatedByUserId    String?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  account            Account             @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  wholesaleAccount   WholesaleAccount?   @relation(fields: [wholesaleAccountId], references: [id], onDelete: SetNull)
+  visit              Visit?              @relation(fields: [visitId], references: [id], onDelete: SetNull)
+  proofPhoto         Photo?              @relation("MenuPlacementProofPhoto", fields: [proofPhotoId], references: [id], onDelete: SetNull)
+  assignedToUser     User?               @relation("MenuPlacementAssignedTo", fields: [assignedToUserId], references: [id], onDelete: SetNull)
+  createdByUser      User?               @relation("MenuPlacementCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  updatedByUser      User?               @relation("MenuPlacementUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([accountId])
+  @@index([wholesaleAccountId])
+  @@index([status])
+  @@index([placementType])
+  @@index([source])
+  @@index([firstSeenAt])
+  @@index([lastVerifiedAt])
+  @@index([expectedEndAt])
+  @@index([assignedToUserId])
 }
 
 model EventShift {
@@ -293,18 +371,63 @@ model EventShift {
 }
 
 model Recipe {
-  id            String  @id @default(cuid())
-  name          String
-  skuId         String?
-  season        String?
-  flavorProfile String?
-  complexity    String?
-  glassware     String?
-  ingredients   Json
-  instructions  String
-  garnish       String?
-  notes         String?
-  sku           Sku?    @relation(fields: [skuId], references: [id])
+  id                String             @id @default(cuid())
+  name              String
+  primarySpirit     String?
+  preparation       String?
+  glassware         String?
+  sourceAttribution String?
+  fitsNeed          String?
+  complexity        String?
+  recipeText        String             @default("")
+  ingredients       Json               @default("[]")
+  instructions      String             @default("")
+  garnish           String?
+  season            String?
+  flavorProfile     String?
+  notes             String?
+  photoUrl          String?
+  photoStorageKey   String?
+  photoContentType  String?
+  photoSizeBytes    Int?
+  photoCaption      String?
+  importSource      String?
+  importKey         String?            @unique
+  skuId             String?
+  createdByUserId   String?
+  updatedByUserId   String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  sku               Sku?               @relation(fields: [skuId], references: [id])
+  createdByUser     User?              @relation("RecipeCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  updatedByUser     User?              @relation("RecipeUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+  suggestions       RecipeSuggestion[]
+
+  @@index([name])
+  @@index([primarySpirit])
+  @@index([complexity])
+  @@index([createdByUserId])
+  @@index([updatedByUserId])
+}
+
+model RecipeSuggestion {
+  id                 String           @id @default(cuid())
+  recipeId           String
+  wholesaleAccountId String
+  note               String?
+  suggestedAt        DateTime         @default(now())
+  createdByUserId    String?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  recipe             Recipe           @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  wholesaleAccount   WholesaleAccount @relation(fields: [wholesaleAccountId], references: [id], onDelete: Cascade)
+  createdByUser      User?            @relation("RecipeSuggestionCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([recipeId, wholesaleAccountId])
+  @@index([recipeId])
+  @@index([wholesaleAccountId])
+  @@index([suggestedAt])
+  @@index([createdByUserId])
 }
 
 model Agency {
@@ -331,24 +454,26 @@ model Agency {
 }
 
 model WholesaleAccount {
-  id              String        @id @default(cuid())
-  licenseeId      String        @unique
-  agencyId        String?
-  ownership       String?
-  name            String
-  address         String?
-  city            String?
-  county          String?
-  state           String?       @default("OH")
-  zip             String?
-  districtId      String?
-  deliveryDay     String?
-  phone           String?
-  createdByUserId String?
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-  createdByUser   User?         @relation("WholesaleAccountCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
-  tags            LocationTag[] @relation("WholesaleLocationTags")
+  id                String             @id @default(cuid())
+  licenseeId        String             @unique
+  agencyId          String?
+  ownership         String?
+  name              String
+  address           String?
+  city              String?
+  county            String?
+  state             String?            @default("OH")
+  zip               String?
+  districtId        String?
+  deliveryDay       String?
+  phone             String?
+  createdByUserId   String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  createdByUser     User?              @relation("WholesaleAccountCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  tags              LocationTag[]      @relation("WholesaleLocationTags")
+  recipeSuggestions RecipeSuggestion[]
+  menuPlacements    MenuPlacement[]
 
   @@index([createdByUserId])
 }

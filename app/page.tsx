@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-import { WorklistCategory, WorklistStatus } from '@prisma/client';
+import { MenuPlacementStatus, WorklistCategory, WorklistStatus } from '@prisma/client';
 import Link from 'next/link';
 import { getUserDisplayName, requireUser } from '../lib/auth';
 import { prisma } from '../lib/prisma';
@@ -98,6 +98,8 @@ const getDashboardRanges = () => {
   const nextSevenEndDate = addLocalDays(localToday.year, localToday.month, localToday.day, 7);
   const lastMonthStart = new Date(now);
   lastMonthStart.setUTCDate(lastMonthStart.getUTCDate() - 30);
+  const stalePlacementCutoff = new Date(now);
+  stalePlacementCutoff.setUTCDate(stalePlacementCutoff.getUTCDate() - 30);
 
   return {
     now,
@@ -106,6 +108,7 @@ const getDashboardRanges = () => {
     dueDateStart: new Date(Date.UTC(localToday.year, localToday.month - 1, localToday.day)),
     nextSevenDueDateEnd: new Date(Date.UTC(nextSevenEndDate.year, nextSevenEndDate.month - 1, nextSevenEndDate.day)),
     lastMonthStart,
+    stalePlacementCutoff,
   };
 };
 
@@ -162,7 +165,15 @@ export default async function Dashboard() {
   const ranges = getDashboardRanges();
   const visitQueryStart = ranges.weekStart < ranges.monthStart ? ranges.weekStart : ranges.monthStart;
 
-  const [activeWorklistItems, visits, scheduledWorklistItems, photosUploadedLastMonth] = await Promise.all([
+  const [
+    activeWorklistItems,
+    visits,
+    scheduledWorklistItems,
+    photosUploadedLastMonth,
+    liveMenuPlacements,
+    promisedMenuPlacementsWithoutProof,
+    staleMenuPlacements,
+  ] = await Promise.all([
     prisma.worklistItem.count({
       where: { status: { notIn: inactiveWorklistStatuses } },
     }),
@@ -205,6 +216,21 @@ export default async function Dashboard() {
         },
       },
     }),
+    prisma.menuPlacement.count({
+      where: { status: MenuPlacementStatus.LIVE },
+    }),
+    prisma.menuPlacement.count({
+      where: {
+        status: MenuPlacementStatus.PROMISED,
+        proofUrl: null,
+      },
+    }),
+    prisma.menuPlacement.count({
+      where: {
+        status: MenuPlacementStatus.LIVE,
+        OR: [{ lastVerifiedAt: null }, { lastVerifiedAt: { lt: ranges.stalePlacementCutoff } }],
+      },
+    }),
   ]);
 
   const weekVisits = visits.filter((visit) => visit.visitAt.getTime() >= ranges.weekStart.getTime());
@@ -238,6 +264,10 @@ export default async function Dashboard() {
         <Link className="quick-action-card" href="/wholesale">
           <strong>Find wholesale</strong>
           <span>Search or create</span>
+        </Link>
+        <Link className="quick-action-card" href="/recipes">
+          <strong>Recipe database</strong>
+          <span>Search and suggest</span>
         </Link>
       </section>
 
@@ -298,6 +328,24 @@ export default async function Dashboard() {
             <h3>Photos uploaded</h3>
             <p className="metric-value">{photosUploadedLastMonth}</p>
             <p className="muted metric-caption">Last 30 days</p>
+          </div>
+
+          <div className="card metric-card">
+            <h3>Live placements</h3>
+            <p className="metric-value">{liveMenuPlacements}</p>
+            <p className="muted metric-caption">Current menu placements</p>
+          </div>
+
+          <div className="card metric-card">
+            <h3>Promised, no proof</h3>
+            <p className="metric-value">{promisedMenuPlacementsWithoutProof}</p>
+            <p className="muted metric-caption">Need proof or verification</p>
+          </div>
+
+          <div className="card metric-card">
+            <h3>Stale placements</h3>
+            <p className="metric-value">{staleMenuPlacements}</p>
+            <p className="muted metric-caption">Live, not verified in 30 days</p>
           </div>
         </div>
       </section>

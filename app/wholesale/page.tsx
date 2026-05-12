@@ -99,12 +99,6 @@ export default async function WholesalePage({
   const [accounts, tags] = await Promise.all([
     prisma.wholesaleAccount.findMany({
       take: 300,
-      include: {
-        tags: {
-          include: { tag: true },
-          orderBy: { createdAt: 'desc' },
-        },
-      },
       where: q
         ? {
             OR: [
@@ -114,9 +108,22 @@ export default async function WholesalePage({
               { address: { contains: q, mode: 'insensitive' } },
               { phone: { contains: q, mode: 'insensitive' } },
               { tags: { some: { tag: { name: { contains: q, mode: 'insensitive' } } } } },
+              { recipeSuggestions: { some: { recipe: { name: { contains: q, mode: 'insensitive' } } } } },
+              { recipeSuggestions: { some: { recipe: { primarySpirit: { contains: q, mode: 'insensitive' } } } } },
+              { menuPlacements: { some: { product: { contains: q, mode: 'insensitive' } } } },
+              { menuPlacements: { some: { menuItemName: { contains: q, mode: 'insensitive' } } } },
             ],
           }
         : undefined,
+      include: {
+        tags: {
+          include: { tag: true },
+          orderBy: { createdAt: 'desc' },
+        },
+        _count: {
+          select: { menuPlacements: true, recipeSuggestions: true },
+        },
+      },
       orderBy: [{ name: 'asc' }, { licenseeId: 'asc' }],
     }),
     prisma.tag.findMany({ orderBy: [{ name: 'asc' }] }),
@@ -150,7 +157,7 @@ export default async function WholesalePage({
       <p className="muted">Manual creation only.</p>
 
       <LiveFilterForm className="filter-form narrow-filter" label="Filter wholesale accounts">
-        <input name="q" defaultValue={q} placeholder="Filter name, licensee ID, agency ID, address, phone" />
+        <input name="q" defaultValue={q} placeholder="Filter name, licensee ID, recipe, menu placement, phone" />
       </LiveFilterForm>
       {params.status === 'saved' ? <p className="pill">Wholesale account saved.</p> : null}
       {params.status === 'invalid' ? <p className="pill">Name and Licensee ID are required.</p> : null}
@@ -205,6 +212,8 @@ export default async function WholesalePage({
             <th>City</th>
             <th>Phone</th>
             <th>Tags</th>
+            <th>Menu Placements</th>
+            <th>Recipe Suggestions</th>
             <th>Logged Visits</th>
             <th>Most Recent Visit</th>
           </tr>
@@ -233,6 +242,8 @@ export default async function WholesalePage({
                 <td data-label="Tags">
                   <TagBadges tags={account.tags.map((assignment) => assignment.tag)} />
                 </td>
+                <td data-label="Menu Placements">{account._count.menuPlacements}</td>
+                <td data-label="Recipe Suggestions">{account._count.recipeSuggestions}</td>
                 <td data-label="Logged Visits">{stats.count}</td>
                 <td data-label="Most Recent Visit">{formatDate(stats.lastVisitAt)}</td>
               </tr>
