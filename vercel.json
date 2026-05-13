@@ -9,7 +9,7 @@
     },
     {
       "path": "/api/cron/weekly-digest",
-      "schedule": "0 12-14 * * 5"
+      "schedule": "0 13 * * 5"
     }
   ]
 }

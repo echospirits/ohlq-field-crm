@@ -91,10 +91,10 @@ test('weekly digest window uses a 7 day past and future range', () => {
   assert.equal(window.upcomingEnd.toISOString(), '2026-01-09T13:00:00.000Z');
 });
 
-test('cron send window matches Friday 8 AM America/New_York across DST', () => {
+test('cron send window matches Friday morning America/New_York across DST', () => {
   assert.equal(isWeeklyDigestCronSendWindow(new Date('2026-01-02T13:00:00.000Z')), true);
-  assert.equal(isWeeklyDigestCronSendWindow(new Date('2026-07-03T12:00:00.000Z')), true);
-  assert.equal(isWeeklyDigestCronSendWindow(new Date('2026-07-03T13:00:00.000Z')), false);
+  assert.equal(isWeeklyDigestCronSendWindow(new Date('2026-07-03T13:00:00.000Z')), true);
+  assert.equal(isWeeklyDigestCronSendWindow(new Date('2026-07-03T11:00:00.000Z')), false);
 });
 
 test('worklist buckets exclude completed and cancelled items from open sections', () => {

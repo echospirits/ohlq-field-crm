@@ -220,7 +220,7 @@ export const getWeeklyDigestWindow = (
 export const isWeeklyDigestCronSendWindow = (now = new Date(), timeZone = DEFAULT_DIGEST_TIME_ZONE) => {
   const local = getZonedDateParts(now, timeZone);
 
-  return local.weekday === 'Fri' && local.hour === 8;
+  return local.weekday === 'Fri' && (local.hour === 8 || local.hour === 9);
 };
 
 const formatDate = (date: Date | null | undefined, timeZone = DEFAULT_DIGEST_TIME_ZONE) =>
