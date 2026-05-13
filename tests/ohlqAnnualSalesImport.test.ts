@@ -20,8 +20,10 @@ describe('parseOhlqAnnualSalesCsv', () => {
     assert.equal(result.rows[0].agencyId, '10100');
     assert.equal(result.rows[0].brand, '0026D');
     assert.equal(result.rows[0].retailBottlesSold, 2);
-    assert.equal(result.rows[0].retailAmount, '28.00');
+    assert.equal(result.rows[0].wholesaleBottlesSold, 0);
     assert.equal(new Date(result.rows[0].reportDate).toISOString(), '2026-05-11T00:00:00.000Z');
+    assert.equal('retailAmount' in result.rows[0], false);
+    assert.equal('agencyName' in result.rows[0], false);
   });
 
   it('fails loudly when required headers are missing', () => {
@@ -46,8 +48,9 @@ describe('parseOhlqAnnualSalesByWholesaleCsv', () => {
     assert.equal(result.rows[0].agencyId, '10113');
     assert.equal(result.rows[0].vendor, '000000090');
     assert.equal(result.rows[0].permitNumber, '00072045-1');
-    assert.equal(result.rows[0].doingBusinessAs, 'ADRIENNES WHITE RABBIT LOUNGE');
-    assert.equal(result.rows[0].wholesaleAmount, '67.68');
+    assert.equal(result.rows[0].wholesaleBottlesSold, 2);
     assert.equal(new Date(result.rows[0].reportDate).toISOString(), '2026-05-11T00:00:00.000Z');
+    assert.equal('wholesaler' in result.rows[0], false);
+    assert.equal('doingBusinessAs' in result.rows[0], false);
   });
 });

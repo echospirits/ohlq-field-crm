@@ -3,35 +3,19 @@ import Papa from 'papaparse';
 import { prisma } from './prisma';
 
 const REQUIRED_HEADERS = [
-  'District',
   'Agency_Id',
-  'Agency_Name',
   'Vendor',
   'Brand',
-  'Name',
-  'Category',
   'Retail_Bottles_Sold',
-  'Retail_Amount',
-  'Retail_Tax',
   'Wholesale_Bottles_Sold',
-  'Wholesale_Amount',
-  'Wholesale_Tax',
 ] as const;
 
 const WHOLESALE_REQUIRED_HEADERS = [
-  'District',
   'Agency_Id',
-  'Agency_Name',
   'DimVendor_VendorNumber_',
   'Brand',
-  'Name',
-  'Category',
   'Permit_Number',
-  'Wholesaler',
-  'Doing_Business_As',
   'Wholesale_Bottles_Sold',
-  'Wholesale_Amount',
-  'Wholesale_Tax',
 ] as const;
 
 type RawAnnualSalesRow = Record<(typeof REQUIRED_HEADERS)[number], string>;
@@ -65,26 +49,12 @@ const clean = (value: string | null | undefined) => {
   return trimmed || null;
 };
 
-const required = <T extends Record<string, string>>(row: T, key: keyof T) => {
-  const value = clean(row[key]);
-  if (!value) throw new Error(`Missing required OHLQ CSV value: ${String(key)}`);
-  return value;
-};
-
 const toInt = (value: string | null | undefined) => {
   const normalized = clean(value)?.replace(/,/g, '');
   if (!normalized) return 0;
   const parsed = Number.parseInt(normalized, 10);
   if (Number.isNaN(parsed)) throw new Error(`Invalid integer value in OHLQ CSV: ${value}`);
   return parsed;
-};
-
-const toDecimalString = (value: string | null | undefined) => {
-  const normalized = clean(value)?.replace(/[$,]/g, '');
-  if (!normalized) return '0';
-  const parsed = Number(normalized);
-  if (Number.isNaN(parsed)) throw new Error(`Invalid money value in OHLQ CSV: ${value}`);
-  return normalized;
 };
 
 export function parseOhlqAnnualSalesCsv(csv: string | Buffer, reportDateIso: string) {
@@ -121,19 +91,11 @@ export function parseOhlqAnnualSalesCsv(csv: string | Buffer, reportDateIso: str
 
     data.set(`${reportDateIso}:${agencyId}:${vendor}:${brand}`, {
       agencyId,
-      agencyName: required(row, 'Agency_Name'),
       brand,
-      category: clean(row.Category),
-      district: clean(row.District),
-      name: required(row, 'Name'),
       reportDate,
-      retailAmount: toDecimalString(row.Retail_Amount),
       retailBottlesSold: toInt(row.Retail_Bottles_Sold),
-      retailTax: toDecimalString(row.Retail_Tax),
       vendor,
-      wholesaleAmount: toDecimalString(row.Wholesale_Amount),
       wholesaleBottlesSold: toInt(row.Wholesale_Bottles_Sold),
-      wholesaleTax: toDecimalString(row.Wholesale_Tax),
     });
   }
 
@@ -170,28 +132,19 @@ export function parseOhlqAnnualSalesByWholesaleCsv(csv: string | Buffer, reportD
     const vendor = clean(row.DimVendor_VendorNumber_);
     const brand = clean(row.Brand);
     const permitNumber = clean(row.Permit_Number);
-    const wholesaler = clean(row.Wholesaler);
 
-    if (!agencyId || !vendor || !brand || !permitNumber || !wholesaler) {
+    if (!agencyId || !vendor || !brand || !permitNumber) {
       skippedRows += 1;
       continue;
     }
 
-    data.set(`${reportDateIso}:${agencyId}:${vendor}:${brand}:${permitNumber}:${wholesaler}`, {
+    data.set(`${reportDateIso}:${agencyId}:${vendor}:${brand}:${permitNumber}`, {
       agencyId,
-      agencyName: required(row, 'Agency_Name'),
       brand,
-      category: clean(row.Category),
-      district: clean(row.District),
-      doingBusinessAs: clean(row.Doing_Business_As),
-      name: required(row, 'Name'),
       permitNumber,
       reportDate,
       vendor,
-      wholesaler,
-      wholesaleAmount: toDecimalString(row.Wholesale_Amount),
       wholesaleBottlesSold: toInt(row.Wholesale_Bottles_Sold),
-      wholesaleTax: toDecimalString(row.Wholesale_Tax),
     });
   }
 

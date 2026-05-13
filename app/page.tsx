@@ -376,44 +376,6 @@ export default async function Dashboard() {
         </Link>
       </section>
 
-      <section className="dashboard-section data-pipeline-section">
-        <div className="section-heading">
-          <h2>Data Pipeline</h2>
-          <span className="pill">Latest report date {formatReportDateLabel(latestReportDate)}</span>
-          {user.role === UserRole.ADMIN ? (
-            <Link className="btn secondary compact-btn" href="/admin/data-status">
-              Open Data Status
-            </Link>
-          ) : null}
-        </div>
-
-        <div className="grid data-pipeline-grid">
-          {pipelineSummaries.map((summary) => (
-            <div className="card metric-card data-pipeline-card" key={summary.config.source}>
-              <div className="data-pipeline-title">
-                <h3>{summary.config.label}</h3>
-                <span className={statusClassName(summary.latestStatus)}>{summary.latestStatus}</span>
-              </div>
-              <p className="metric-value">{summary.latestCount.toLocaleString('en-US')}</p>
-              <p className="muted metric-caption">Rows for {formatReportDateLabel(summary.latestReportDate)}</p>
-              <div className="metric-splits">
-                <div className="metric-split">
-                  <span>Completed days</span>
-                  <strong>{summary.completedDays}/{dashboardDataStatusDays}</strong>
-                </div>
-                <div className="metric-split">
-                  <span>Errored / not yet run</span>
-                  <strong>
-                    {summary.erroredDays} / {summary.missingDays}
-                  </strong>
-                </div>
-              </div>
-              <p className="muted metric-caption">Last success: {formatRunTime(summary.lastSuccessfulAt)}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
       <div className="grid">
         <div className="card metric-card">
           <h3>Active worklist</h3>
@@ -490,6 +452,44 @@ export default async function Dashboard() {
             <p className="metric-value">{staleMenuPlacements}</p>
             <p className="muted metric-caption">Live, not verified in 30 days</p>
           </div>
+        </div>
+      </section>
+
+      <section className="dashboard-section data-pipeline-section">
+        <div className="section-heading">
+          <h2>Data Pipeline</h2>
+          <span className="pill">Latest report date {formatReportDateLabel(latestReportDate)}</span>
+          {user.role === UserRole.ADMIN ? (
+            <Link className="btn secondary compact-btn" href="/admin/data-status">
+              Open Data Status
+            </Link>
+          ) : null}
+        </div>
+
+        <div className="grid data-pipeline-grid">
+          {pipelineSummaries.map((summary) => (
+            <div className="card metric-card data-pipeline-card" key={summary.config.source}>
+              <div className="data-pipeline-title">
+                <h3>{summary.config.label}</h3>
+                <span className={statusClassName(summary.latestStatus)}>{summary.latestStatus}</span>
+              </div>
+              <p className="metric-value">{summary.latestCount.toLocaleString('en-US')}</p>
+              <p className="muted metric-caption">Rows for {formatReportDateLabel(summary.latestReportDate)}</p>
+              <div className="metric-splits">
+                <div className="metric-split">
+                  <span>Completed days</span>
+                  <strong>{summary.completedDays}/{dashboardDataStatusDays}</strong>
+                </div>
+                <div className="metric-split">
+                  <span>Errored / not yet run</span>
+                  <strong>
+                    {summary.erroredDays} / {summary.missingDays}
+                  </strong>
+                </div>
+              </div>
+              <p className="muted metric-caption">Last success: {formatRunTime(summary.lastSuccessfulAt)}</p>
+            </div>
+          ))}
         </div>
       </section>
     </>

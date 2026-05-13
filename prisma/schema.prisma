@@ -305,19 +305,11 @@ model InventoryFact {
 model OhlqAnnualSalesRow {
   id                   String   @id @default(cuid())
   reportDate           DateTime
-  district             String?
   agencyId             String
-  agencyName           String
   vendor               String
   brand                String
-  name                 String
-  category             String?
   retailBottlesSold    Int      @default(0)
-  retailAmount         Decimal  @default(0)
-  retailTax            Decimal  @default(0)
   wholesaleBottlesSold Int      @default(0)
-  wholesaleAmount      Decimal  @default(0)
-  wholesaleTax         Decimal  @default(0)
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 
@@ -331,23 +323,15 @@ model OhlqAnnualSalesRow {
 model OhlqAnnualSalesByWholesaleRow {
   id                   String   @id @default(cuid())
   reportDate           DateTime
-  district             String?
   agencyId             String
-  agencyName           String
   vendor               String
   brand                String
-  name                 String
-  category             String?
   permitNumber         String
-  wholesaler           String
-  doingBusinessAs      String?
   wholesaleBottlesSold Int      @default(0)
-  wholesaleAmount      Decimal  @default(0)
-  wholesaleTax         Decimal  @default(0)
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 
-  @@unique([reportDate, agencyId, vendor, brand, permitNumber, wholesaler])
+  @@unique([reportDate, agencyId, vendor, brand, permitNumber])
   @@index([reportDate])
   @@index([agencyId])
   @@index([brand])
