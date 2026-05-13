@@ -32,12 +32,14 @@ npm run dev
 ## OHLQ annual sales export
 - Vercel cron calls `/api/cron/ohlq-annual-sales` at 12:30 UTC daily.
 - The cron route requires `Authorization: Bearer $CRON_SECRET`.
-- The automation downloads yesterday's Annual Sales Summary report and imports the CSV rows into `OhlqAnnualSalesRow`.
+- The automation downloads yesterday's Annual Sales Summary and Annual Sales Summary by Wholesale reports.
+- The agency summary imports CSV rows into `OhlqAnnualSalesRow`; the wholesale summary imports rows into `OhlqAnnualSalesByWholesaleRow`.
 - The import stores `reportDate` from the report's From date parameter and replaces existing rows for that date, so reruns are idempotent.
 
 Local command:
 ```bash
 npm run download:ohlq-annual-sales
+npm run download:ohlq-annual-sales:wholesale
 ```
 
 Required OHLQ env vars:

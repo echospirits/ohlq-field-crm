@@ -5,8 +5,11 @@ export const maxDuration = 300;
 import os from 'os';
 import path from 'path';
 import { NextResponse } from 'next/server';
-import { importOhlqAnnualSalesCsv } from '../../../../lib/ohlqAnnualSalesImport';
-import { downloadOhlqAnnualSalesSummary } from '../../../../lib/ohlqAnnualSalesReport';
+import {
+  importOhlqAnnualSalesByWholesaleCsv,
+  importOhlqAnnualSalesCsv,
+} from '../../../../lib/ohlqAnnualSalesImport';
+import { downloadOhlqAnnualSalesReports } from '../../../../lib/ohlqAnnualSalesReport';
 
 const unauthorized = () => NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
@@ -21,7 +24,8 @@ export async function GET(request: Request) {
   const startedAt = Date.now();
 
   try {
-    const result = await downloadOhlqAnnualSalesSummary({
+    const { annualSalesSummary: annualSalesDownload, annualSalesSummaryByWholesale: wholesaleDownload } =
+      await downloadOhlqAnnualSalesReports({
       debugDir: path.join(os.tmpdir(), 'ohlq-playwright'),
       downloadDir: path.join(os.tmpdir(), 'ohlq-downloads'),
       headless: true,
@@ -29,26 +33,51 @@ export async function GET(request: Request) {
       useServerlessChromium: process.env.VERCEL === '1',
     });
 
-    if (!result.csvBuffer) {
-      throw new Error('CSV download completed, but no CSV buffer was returned for import.');
+    if (!annualSalesDownload.csvBuffer) {
+      throw new Error('Annual Sales Summary CSV download completed, but no CSV buffer was returned for import.');
     }
 
-    const importResult = await importOhlqAnnualSalesCsv({
-      csv: result.csvBuffer,
-      reportDate: result.reportDate,
+    const annualSalesImport = await importOhlqAnnualSalesCsv({
+      csv: annualSalesDownload.csvBuffer,
+      reportDate: annualSalesDownload.reportDate,
+    });
+
+    if (!wholesaleDownload.csvBuffer) {
+      throw new Error(
+        'Annual Sales Summary by Wholesale CSV download completed, but no CSV buffer was returned for import.',
+      );
+    }
+
+    const wholesaleImport = await importOhlqAnnualSalesByWholesaleCsv({
+      csv: wholesaleDownload.csvBuffer,
+      reportDate: wholesaleDownload.reportDate,
     });
 
     return NextResponse.json({
       ok: true,
       durationMs: Date.now() - startedAt,
-      filename: result.filename,
-      importedRows: importResult.importedRows,
-      parsedRows: importResult.parsedRows,
-      reportDate: result.reportDate,
-      replacedRows: importResult.deletedRows,
-      runDate: result.runDate,
-      skippedRows: importResult.skippedRows,
-      sizeBytes: result.sizeBytes,
+      reports: {
+        annualSalesSummary: {
+          filename: annualSalesDownload.filename,
+          importedRows: annualSalesImport.importedRows,
+          parsedRows: annualSalesImport.parsedRows,
+          reportDate: annualSalesDownload.reportDate,
+          replacedRows: annualSalesImport.deletedRows,
+          runDate: annualSalesDownload.runDate,
+          skippedRows: annualSalesImport.skippedRows,
+          sizeBytes: annualSalesDownload.sizeBytes,
+        },
+        annualSalesSummaryByWholesale: {
+          filename: wholesaleDownload.filename,
+          importedRows: wholesaleImport.importedRows,
+          parsedRows: wholesaleImport.parsedRows,
+          reportDate: wholesaleDownload.reportDate,
+          replacedRows: wholesaleImport.deletedRows,
+          runDate: wholesaleDownload.runDate,
+          skippedRows: wholesaleImport.skippedRows,
+          sizeBytes: wholesaleDownload.sizeBytes,
+        },
+      },
     });
   } catch (error) {
     console.error('OHLQ annual sales cron failed:', error);

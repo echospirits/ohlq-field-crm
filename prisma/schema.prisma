@@ -317,6 +317,33 @@ model OhlqAnnualSalesRow {
   @@index([vendor])
 }
 
+model OhlqAnnualSalesByWholesaleRow {
+  id                   String   @id @default(cuid())
+  reportDate           DateTime
+  district             String?
+  agencyId             String
+  agencyName           String
+  vendor               String
+  brand                String
+  name                 String
+  category             String?
+  permitNumber         String
+  wholesaler           String
+  doingBusinessAs      String?
+  wholesaleBottlesSold Int      @default(0)
+  wholesaleAmount      Decimal  @default(0)
+  wholesaleTax         Decimal  @default(0)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@unique([reportDate, agencyId, vendor, brand, permitNumber, wholesaler])
+  @@index([reportDate])
+  @@index([agencyId])
+  @@index([brand])
+  @@index([vendor])
+  @@index([permitNumber])
+}
+
 model Alert {
   id           String      @id @default(cuid())
   accountId    String

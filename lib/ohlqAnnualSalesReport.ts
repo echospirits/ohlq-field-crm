@@ -4,11 +4,31 @@ import path from 'path';
 import { chromium as playwrightChromium, type FrameLocator, type LaunchOptions, type Page } from 'playwright-core';
 
 const APP_ROOT = process.cwd();
-const POWER_BI_REPORT_URL =
-  'https://app.powerbigov.us/groups/me/apps/1b854c43-d373-43ea-9f76-edefa2dd227f/rdlreports/9781fc23-73de-4ee8-b0b8-77ae6f9b7c4e?ctid=50f8fcc4-94d8-4f07-84eb-36ed57c7c8a2';
-const OHLQ_REPORT_REDIRECT_URL = `https://ops.ohlq.com/link/external/${encodeURIComponent(POWER_BI_REPORT_URL)}`;
+const POWER_BI_APP_ID = '1b854c43-d373-43ea-9f76-edefa2dd227f';
+const POWER_BI_TENANT_ID = '50f8fcc4-94d8-4f07-84eb-36ed57c7c8a2';
 
 type Logger = Pick<Console, 'error' | 'log'>;
+
+type OhlqPowerBiReportConfig = {
+  fileSlug: string;
+  reportId: string;
+  renderedTitle: string | RegExp;
+};
+
+const buildPowerBiReportUrl = (reportId: string) =>
+  `https://app.powerbigov.us/groups/me/apps/${POWER_BI_APP_ID}/rdlreports/${reportId}?ctid=${POWER_BI_TENANT_ID}`;
+
+export const OHLQ_ANNUAL_SALES_SUMMARY_REPORT = {
+  fileSlug: 'annual-sales-summary',
+  reportId: '9781fc23-73de-4ee8-b0b8-77ae6f9b7c4e',
+  renderedTitle: 'Annual Sales Summary',
+} satisfies OhlqPowerBiReportConfig;
+
+export const OHLQ_ANNUAL_SALES_BY_WHOLESALE_REPORT = {
+  fileSlug: 'annual-sales-summary-by-wholesale',
+  reportId: 'dea7572c-2ea4-45bb-bbbc-29600bd326cc',
+  renderedTitle: /Annual Sales Summary By Wholesale Account/i,
+} satisfies OhlqPowerBiReportConfig;
 
 export type ReportDate = {
   day: number;
@@ -117,7 +137,11 @@ function getReportDate() {
 }
 
 export function getAnnualSalesReportFilename(runDateIso: string) {
-  return `ohlq-annual-sales-summary-${runDateIso}.csv`;
+  return getOhlqReportFilename(OHLQ_ANNUAL_SALES_SUMMARY_REPORT, runDateIso);
+}
+
+function getOhlqReportFilename(report: OhlqPowerBiReportConfig, runDateIso: string) {
+  return `ohlq-${report.fileSlug}-${runDateIso}.csv`;
 }
 
 async function saveDebugScreenshot(page: Page, label: string, debugDir: string) {
@@ -200,6 +224,25 @@ async function setDate(frame: FrameLocator, label: 'From date' | 'To date', repo
   await input.waitFor({ state: 'visible', timeout: 30_000 });
 }
 
+async function selectAllVendors(frame: FrameLocator) {
+  await frame.locator('span[aria-label="Open Vendor"]').click();
+  const selectAll = frame.getByRole('menuitemcheckbox', { name: 'Select All' });
+  await selectAll.waitFor({ state: 'visible', timeout: 30_000 });
+
+  if ((await selectAll.getAttribute('aria-checked')) !== 'true') {
+    await selectAll.click();
+  }
+
+  await frame.locator('body').press('Escape').catch(() => undefined);
+}
+
+async function viewReportIfReady(frame: FrameLocator) {
+  const viewReportButton = frame.getByRole('button', { name: 'View report' });
+  if (await viewReportButton.isEnabled().catch(() => false)) {
+    await viewReportButton.click();
+  }
+}
+
 async function getLaunchOptions(options: OhlqAnnualSalesDownloadOptions): Promise<LaunchOptions> {
   const useServerlessChromium =
     options.useServerlessChromium ?? envFlag('OHLQ_USE_SERVERLESS_CHROMIUM', process.env.VERCEL === '1');
@@ -223,13 +266,19 @@ async function getLaunchOptions(options: OhlqAnnualSalesDownloadOptions): Promis
   };
 }
 
-export async function downloadOhlqAnnualSalesSummary(options: OhlqAnnualSalesDownloadOptions = {}) {
+type OhlqDownloadRuntime = {
+  debugDir: string;
+  downloadDir: string;
+  logger: Logger;
+  reportDate: ReportDate;
+  returnBuffer: boolean;
+  runDateIso: string;
+};
+
+function createDownloadRuntime(options: OhlqAnnualSalesDownloadOptions): OhlqDownloadRuntime {
   const logger = options.logger ?? console;
-  const ohlqUsername = requireEnv('OHLQ_OPS_USERNAME');
-  const ohlqPassword = requireEnv('OHLQ_OPS_PASSWORD');
   const reportDate = getReportDate();
   const runDateIso = todayIsoEastern();
-  const filename = getAnnualSalesReportFilename(runDateIso);
   const downloadDir = path.resolve(
     options.downloadDir ??
       (options.returnBuffer ? path.join(os.tmpdir(), 'ohlq-downloads') : path.join(APP_ROOT, 'output', 'ohlq-downloads')),
@@ -239,6 +288,17 @@ export async function downloadOhlqAnnualSalesSummary(options: OhlqAnnualSalesDow
   );
   fs.mkdirSync(downloadDir, { recursive: true });
 
+  return {
+    debugDir,
+    downloadDir,
+    logger,
+    reportDate,
+    returnBuffer: options.returnBuffer ?? false,
+    runDateIso,
+  };
+}
+
+async function openBrowserPage(options: OhlqAnnualSalesDownloadOptions) {
   const launchOptions = await getLaunchOptions(options);
   const browser = await playwrightChromium.launch(launchOptions);
   const context = await browser.newContext({
@@ -247,68 +307,137 @@ export async function downloadOhlqAnnualSalesSummary(options: OhlqAnnualSalesDow
   });
   const page = await context.newPage();
 
-  try {
-    logger.log(`Using report date ${reportDate.display} (${reportDate.iso}).`);
+  return { browser, context, page };
+}
 
-    await page.goto('https://ops.ohlq.com/login', { waitUntil: 'domcontentloaded' });
-    if (!page.url().includes('/partner')) {
-      await page.getByPlaceholder('username or email').fill(ohlqUsername);
-      await page.getByPlaceholder('please enter your password').fill(ohlqPassword);
-      await Promise.all([
-        page.waitForURL(/https:\/\/ops\.ohlq\.com\/partner/, { timeout: 60_000 }),
-        page.getByRole('button', { name: 'Log In' }).click(),
-      ]);
+async function signInToOhlqPartner(page: Page) {
+  const ohlqUsername = requireEnv('OHLQ_OPS_USERNAME');
+  const ohlqPassword = requireEnv('OHLQ_OPS_PASSWORD');
+
+  await page.goto('https://ops.ohlq.com/login', { waitUntil: 'domcontentloaded' });
+  if (!page.url().includes('/partner')) {
+    await page.getByPlaceholder('username or email').fill(ohlqUsername);
+    await page.getByPlaceholder('please enter your password').fill(ohlqPassword);
+    await Promise.all([
+      page.waitForURL(/https:\/\/ops\.ohlq\.com\/partner/, { timeout: 60_000 }),
+      page.getByRole('button', { name: 'Log In' }).click(),
+    ]);
+  }
+}
+
+async function downloadOhlqPowerBiReportFromPage(
+  page: Page,
+  report: OhlqPowerBiReportConfig,
+  runtime: OhlqDownloadRuntime,
+) {
+  const { debugDir, downloadDir, logger, reportDate, returnBuffer, runDateIso } = runtime;
+  const filename = getOhlqReportFilename(report, runDateIso);
+  const powerBiReportUrl = buildPowerBiReportUrl(report.reportId);
+  const ohlqReportRedirectUrl = `https://ops.ohlq.com/link/external/${encodeURIComponent(powerBiReportUrl)}`;
+
+  logger.log(`Using report date ${reportDate.display} (${reportDate.iso}).`);
+
+  await page.goto(ohlqReportRedirectUrl, { waitUntil: 'domcontentloaded' });
+  await handleMicrosoftSignIn(page, debugDir);
+  await page.waitForURL((url) => url.href.includes(`/rdlreports/${report.reportId}`), {
+    timeout: 120_000,
+  });
+
+  const frame = page.frameLocator('iframe');
+  await setDate(frame, 'From date', reportDate);
+  await setDate(frame, 'To date', reportDate);
+
+  await selectAllVendors(frame);
+
+  await viewReportIfReady(frame);
+  await frame.getByText(report.renderedTitle, { exact: typeof report.renderedTitle === 'string' }).waitFor({
+    timeout: 240_000,
+  });
+  await frame
+    .getByText(`From: ${reportDate.display.replace(/^0/, '').replace('/0', '/')}`)
+    .waitFor({
+      timeout: 30_000,
+    })
+    .catch(() => undefined);
+
+  await frame.getByRole('menuitem', { name: /Export/ }).click();
+  const downloadPromise = page.waitForEvent('download', { timeout: 180_000 });
+  await frame.getByRole('menuitem', { name: /Comma Separated Values \(\.csv\)/ }).click();
+  const download = await downloadPromise;
+
+  const outputPath = path.join(downloadDir, filename);
+  await download.saveAs(outputPath);
+
+  const sizeBytes = fs.statSync(outputPath).size;
+  const csvBuffer = returnBuffer ? fs.readFileSync(outputPath) : undefined;
+
+  logger.log(`Downloaded CSV: ${outputPath}`);
+
+  return {
+    csvBuffer,
+    filename,
+    outputPath,
+    reportDate: reportDate.iso,
+    runDate: runDateIso,
+    sizeBytes,
+  } satisfies OhlqAnnualSalesDownloadResult;
+}
+
+async function downloadOhlqPowerBiReports(
+  reports: OhlqPowerBiReportConfig[],
+  options: OhlqAnnualSalesDownloadOptions = {},
+) {
+  const runtime = createDownloadRuntime(options);
+  const { browser, context, page } = await openBrowserPage(options);
+  let activeReport: OhlqPowerBiReportConfig | undefined;
+
+  try {
+    await signInToOhlqPartner(page);
+
+    const results: OhlqAnnualSalesDownloadResult[] = [];
+    for (const report of reports) {
+      activeReport = report;
+      results.push(await downloadOhlqPowerBiReportFromPage(page, report, runtime));
+      activeReport = undefined;
     }
 
-    await page.goto(OHLQ_REPORT_REDIRECT_URL, { waitUntil: 'domcontentloaded' });
-    await handleMicrosoftSignIn(page, debugDir);
-    await page.waitForURL(/https:\/\/app\.powerbigov\.us\/.*rdlreports\/9781fc23-73de-4ee8-b0b8-77ae6f9b7c4e/, {
-      timeout: 120_000,
-    });
-
-    const frame = page.frameLocator('iframe');
-    await setDate(frame, 'From date', reportDate);
-    await setDate(frame, 'To date', reportDate);
-
-    await frame.locator('span[aria-label="Open Vendor"]').click();
-    await frame.getByRole('menuitemcheckbox', { name: 'Select All' }).click();
-
-    await frame.getByRole('button', { name: 'View report' }).click();
-    await frame.getByText('Annual Sales Summary', { exact: true }).waitFor({ timeout: 240_000 });
-    await frame
-      .getByText(`From: ${reportDate.display.replace(/^0/, '').replace('/0', '/')}`)
-      .waitFor({
-        timeout: 30_000,
-      })
-      .catch(() => undefined);
-
-    await frame.getByRole('menuitem', { name: /Export/ }).click();
-    const downloadPromise = page.waitForEvent('download', { timeout: 180_000 });
-    await frame.getByRole('menuitem', { name: /Comma Separated Values \(\.csv\)/ }).click();
-    const download = await downloadPromise;
-
-    const outputPath = path.join(downloadDir, filename);
-    await download.saveAs(outputPath);
-
-    const sizeBytes = fs.statSync(outputPath).size;
-    const csvBuffer = options.returnBuffer ? fs.readFileSync(outputPath) : undefined;
-
-    logger.log(`Downloaded CSV: ${outputPath}`);
-
-    return {
-      csvBuffer,
-      filename,
-      outputPath,
-      reportDate: reportDate.iso,
-      runDate: runDateIso,
-      sizeBytes,
-    } satisfies OhlqAnnualSalesDownloadResult;
+    return results;
   } catch (error) {
-    const screenshotPath = await saveDebugScreenshot(page, 'ohlq-annual-sales-error', debugDir);
-    logger.error(`Debug screenshot: ${screenshotPath}`);
+    const screenshotLabel = activeReport ? `ohlq-${activeReport.fileSlug}-error` : 'ohlq-report-batch-error';
+    const screenshotPath = await saveDebugScreenshot(page, screenshotLabel, runtime.debugDir);
+    runtime.logger.error(`Debug screenshot: ${screenshotPath}`);
     throw error;
   } finally {
     await context.close().catch(() => undefined);
     await browser.close().catch(() => undefined);
   }
+}
+
+async function downloadOhlqPowerBiReport(
+  report: OhlqPowerBiReportConfig,
+  options: OhlqAnnualSalesDownloadOptions = {},
+) {
+  const [result] = await downloadOhlqPowerBiReports([report], options);
+  return result;
+}
+
+export async function downloadOhlqAnnualSalesSummary(options: OhlqAnnualSalesDownloadOptions = {}) {
+  return downloadOhlqPowerBiReport(OHLQ_ANNUAL_SALES_SUMMARY_REPORT, options);
+}
+
+export async function downloadOhlqAnnualSalesSummaryByWholesale(options: OhlqAnnualSalesDownloadOptions = {}) {
+  return downloadOhlqPowerBiReport(OHLQ_ANNUAL_SALES_BY_WHOLESALE_REPORT, options);
+}
+
+export async function downloadOhlqAnnualSalesReports(options: OhlqAnnualSalesDownloadOptions = {}) {
+  const [annualSalesSummary, annualSalesSummaryByWholesale] = await downloadOhlqPowerBiReports(
+    [OHLQ_ANNUAL_SALES_SUMMARY_REPORT, OHLQ_ANNUAL_SALES_BY_WHOLESALE_REPORT],
+    options,
+  );
+
+  if (!annualSalesSummary || !annualSalesSummaryByWholesale) {
+    throw new Error('Unable to download both OHLQ annual sales reports.');
+  }
+
+  return { annualSalesSummary, annualSalesSummaryByWholesale };
 }

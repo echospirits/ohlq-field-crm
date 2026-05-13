@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { parseOhlqAnnualSalesCsv } from '../lib/ohlqAnnualSalesImport';
+import {
+  parseOhlqAnnualSalesByWholesaleCsv,
+  parseOhlqAnnualSalesCsv,
+} from '../lib/ohlqAnnualSalesImport';
 
 const csv = [
   'District,Agency_Id,Agency_Name,Vendor,Brand,Name,Category,Retail_Bottles_Sold,Retail_Amount,Retail_Tax,Wholesale_Bottles_Sold,Wholesale_Amount,Wholesale_Tax',
@@ -26,5 +29,25 @@ describe('parseOhlqAnnualSalesCsv', () => {
       () => parseOhlqAnnualSalesCsv('District,Agency_Id\nGPT,10100', '2026-05-11'),
       /missing required header/i,
     );
+  });
+});
+
+const wholesaleCsv = [
+  '﻿District,Agency_Id,Agency_Name,DimVendor_VendorNumber_,Brand,Name,Category,Permit_Number,Wholesaler,Doing_Business_As,Wholesale_Bottles_Sold,Wholesale_Amount,Wholesale_Tax',
+  'GPT,10113,CENTERVILLE LIQUOR & WINE,000000090,0281L,JAMESON,Irish,00072045-1,ADRIENNES WHITE RABBIT INC,ADRIENNES WHITE RABBIT LOUNGE,2,67.68,0.00',
+].join('\n');
+
+describe('parseOhlqAnnualSalesByWholesaleCsv', () => {
+  it('normalizes wholesale rows with report date and permit details', () => {
+    const result = parseOhlqAnnualSalesByWholesaleCsv(wholesaleCsv, '2026-05-11');
+
+    assert.equal(result.rows.length, 1);
+    assert.equal(result.skippedRows, 0);
+    assert.equal(result.rows[0].agencyId, '10113');
+    assert.equal(result.rows[0].vendor, '000000090');
+    assert.equal(result.rows[0].permitNumber, '00072045-1');
+    assert.equal(result.rows[0].doingBusinessAs, 'ADRIENNES WHITE RABBIT LOUNGE');
+    assert.equal(result.rows[0].wholesaleAmount, '67.68');
+    assert.equal(new Date(result.rows[0].reportDate).toISOString(), '2026-05-11T00:00:00.000Z');
   });
 });
