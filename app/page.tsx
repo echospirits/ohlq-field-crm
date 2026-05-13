@@ -1,13 +1,26 @@
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-import { MenuPlacementStatus, WorklistCategory, WorklistStatus } from '@prisma/client';
+import {
+  MenuPlacementStatus,
+  OhlqReportDataSource,
+  OhlqReportRunStatus,
+  UserRole,
+  WorklistCategory,
+  WorklistStatus,
+} from '@prisma/client';
 import Link from 'next/link';
 import { getUserDisplayName, requireUser } from '../lib/auth';
+import {
+  formatOhlqDate,
+  OHLQ_DATA_SOURCE_CONFIGS,
+  toOhlqDateOnlyUtc,
+} from '../lib/ohlqDataStatus';
 import { prisma } from '../lib/prisma';
 
 const dashboardTimeZone = 'America/New_York';
 const inactiveWorklistStatuses = [WorklistStatus.COMPLETED, WorklistStatus.CANCELLED];
+const dashboardDataStatusDays = 7;
 
 type DateParts = {
   year: number;
@@ -115,6 +128,44 @@ const getDashboardRanges = () => {
 const formatDateRange = (start: Date, end: Date) =>
   `${shortDateFormatter.format(start)} - ${shortDateFormatter.format(end)}`;
 
+const formatReportDateLabel = (isoDate: string) =>
+  shortDateFormatter.format(new Date(`${isoDate}T12:00:00.000Z`));
+
+const runTimeFormatter = new Intl.DateTimeFormat('en-US', {
+  dateStyle: 'medium',
+  timeStyle: 'short',
+  timeZone: dashboardTimeZone,
+});
+
+const formatRunTime = (date: Date | null | undefined) => (date ? runTimeFormatter.format(date) : 'No success yet');
+
+const getRecentReportDates = (days: number) => {
+  const today = getDateParts(new Date());
+
+  return Array.from({ length: days }, (_, index) => {
+    const offset = days - index;
+    const date = addLocalDays(today.year, today.month, today.day, -offset);
+    return formatOhlqDate(new Date(Date.UTC(date.year, date.month - 1, date.day, 12)));
+  });
+};
+
+const buildCountMap = (counts: Array<{ reportDate: Date; _count: { _all: number } }>) =>
+  new Map(counts.map((item) => [formatOhlqDate(item.reportDate), item._count._all]));
+
+const getPipelineStatusLabel = (status: OhlqReportRunStatus | undefined, count: number) => {
+  if (status === OhlqReportRunStatus.ERRORED) return 'Errored';
+  if (status === OhlqReportRunStatus.RUNNING) return 'Running';
+  if (status === OhlqReportRunStatus.COMPLETED || count > 0) return 'Completed';
+  return 'Not Yet Run';
+};
+
+const statusClassName = (status: string) => {
+  if (status === 'Completed') return 'status-pill status-completed';
+  if (status === 'Errored') return 'status-pill status-errored';
+  if (status === 'Running') return 'status-pill status-running';
+  return 'status-pill status-muted';
+};
+
 const getVisitCounts = (visits: VisitRecord[]) => ({
   total: visits.length,
   agency: visits.filter((visit) => visit.locationType === 'agency').length,
@@ -160,10 +211,13 @@ function MetricSplits({ agency, wholesale }: { agency: number; wholesale: number
 }
 
 export default async function Dashboard() {
-  await requireUser();
+  const user = await requireUser();
 
   const ranges = getDashboardRanges();
   const visitQueryStart = ranges.weekStart < ranges.monthStart ? ranges.weekStart : ranges.monthStart;
+  const reportDates = getRecentReportDates(dashboardDataStatusDays);
+  const reportStartDate = toOhlqDateOnlyUtc(reportDates[0]);
+  const reportEndDate = toOhlqDateOnlyUtc(reportDates[reportDates.length - 1]);
 
   const [
     activeWorklistItems,
@@ -173,6 +227,9 @@ export default async function Dashboard() {
     liveMenuPlacements,
     promisedMenuPlacementsWithoutProof,
     staleMenuPlacements,
+    annualDataCounts,
+    wholesaleDataCounts,
+    pipelineStatusRows,
   ] = await Promise.all([
     prisma.worklistItem.count({
       where: { status: { notIn: inactiveWorklistStatuses } },
@@ -231,6 +288,22 @@ export default async function Dashboard() {
         OR: [{ lastVerifiedAt: null }, { lastVerifiedAt: { lt: ranges.stalePlacementCutoff } }],
       },
     }),
+    prisma.ohlqAnnualSalesRow.groupBy({
+      by: ['reportDate'],
+      where: { reportDate: { gte: reportStartDate, lte: reportEndDate } },
+      _count: { _all: true },
+      orderBy: { reportDate: 'asc' },
+    }),
+    prisma.ohlqAnnualSalesByWholesaleRow.groupBy({
+      by: ['reportDate'],
+      where: { reportDate: { gte: reportStartDate, lte: reportEndDate } },
+      _count: { _all: true },
+      orderBy: { reportDate: 'asc' },
+    }),
+    prisma.ohlqReportImportStatus.findMany({
+      where: { reportDate: { gte: reportStartDate, lte: reportEndDate } },
+      orderBy: [{ reportDate: 'asc' }, { dataSource: 'asc' }],
+    }),
   ]);
 
   const weekVisits = visits.filter((visit) => visit.visitAt.getTime() >= ranges.weekStart.getTime());
@@ -243,6 +316,38 @@ export default async function Dashboard() {
   const scheduledWholesaleVisits =
     scheduledWorklistItems.find((item) => item.category === WorklistCategory.WHOLESALE)?._count._all ?? 0;
   const scheduledVisitTotal = scheduledAgencyVisits + scheduledWholesaleVisits;
+  const countsBySource = {
+    [OhlqReportDataSource.ANNUAL_SALES_SUMMARY]: buildCountMap(annualDataCounts),
+    [OhlqReportDataSource.ANNUAL_SALES_SUMMARY_BY_WHOLESALE]: buildCountMap(wholesaleDataCounts),
+  };
+  const statusBySourceDate = new Map(
+    pipelineStatusRows.map((row) => [`${row.dataSource}:${formatOhlqDate(row.reportDate)}`, row]),
+  );
+  const latestReportDate = reportDates[reportDates.length - 1];
+  const pipelineSummaries = OHLQ_DATA_SOURCE_CONFIGS.map((config) => {
+    const counts = countsBySource[config.source];
+    const latestCount = counts.get(latestReportDate) ?? 0;
+    const latestStatusRow = statusBySourceDate.get(`${config.source}:${latestReportDate}`);
+    const dayStatuses = reportDates.map((date) => {
+      const count = counts.get(date) ?? 0;
+      const statusRow = statusBySourceDate.get(`${config.source}:${date}`);
+      return getPipelineStatusLabel(statusRow?.status, count);
+    });
+    const lastSuccessfulAt = pipelineStatusRows
+      .filter((row) => row.dataSource === config.source && row.lastSuccessfulAt)
+      .sort((a, b) => Number(b.lastSuccessfulAt) - Number(a.lastSuccessfulAt))[0]?.lastSuccessfulAt;
+
+    return {
+      completedDays: dayStatuses.filter((status) => status === 'Completed').length,
+      config,
+      erroredDays: dayStatuses.filter((status) => status === 'Errored').length,
+      latestCount,
+      latestReportDate,
+      latestStatus: getPipelineStatusLabel(latestStatusRow?.status, latestCount),
+      lastSuccessfulAt,
+      missingDays: dayStatuses.filter((status) => status === 'Not Yet Run').length,
+    };
+  });
 
   return (
     <>
@@ -269,6 +374,44 @@ export default async function Dashboard() {
           <strong>Recipe database</strong>
           <span>Search and suggest</span>
         </Link>
+      </section>
+
+      <section className="dashboard-section data-pipeline-section">
+        <div className="section-heading">
+          <h2>Data Pipeline</h2>
+          <span className="pill">Latest report date {formatReportDateLabel(latestReportDate)}</span>
+          {user.role === UserRole.ADMIN ? (
+            <Link className="btn secondary compact-btn" href="/admin/data-status">
+              Open Data Status
+            </Link>
+          ) : null}
+        </div>
+
+        <div className="grid data-pipeline-grid">
+          {pipelineSummaries.map((summary) => (
+            <div className="card metric-card data-pipeline-card" key={summary.config.source}>
+              <div className="data-pipeline-title">
+                <h3>{summary.config.label}</h3>
+                <span className={statusClassName(summary.latestStatus)}>{summary.latestStatus}</span>
+              </div>
+              <p className="metric-value">{summary.latestCount.toLocaleString('en-US')}</p>
+              <p className="muted metric-caption">Rows for {formatReportDateLabel(summary.latestReportDate)}</p>
+              <div className="metric-splits">
+                <div className="metric-split">
+                  <span>Completed days</span>
+                  <strong>{summary.completedDays}/{dashboardDataStatusDays}</strong>
+                </div>
+                <div className="metric-split">
+                  <span>Errored / not yet run</span>
+                  <strong>
+                    {summary.erroredDays} / {summary.missingDays}
+                  </strong>
+                </div>
+              </div>
+              <p className="muted metric-caption">Last success: {formatRunTime(summary.lastSuccessfulAt)}</p>
+            </div>
+          ))}
+        </div>
       </section>
 
       <div className="grid">

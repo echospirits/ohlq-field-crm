@@ -35,11 +35,14 @@ npm run dev
 - The automation downloads yesterday's Annual Sales Summary and Annual Sales Summary by Wholesale reports.
 - The agency summary imports CSV rows into `OhlqAnnualSalesRow`; the wholesale summary imports rows into `OhlqAnnualSalesByWholesaleRow`.
 - The import stores `reportDate` from the report's From date parameter and replaces existing rows for that date, so reruns are idempotent.
+- Import status is tracked in `OhlqReportImportStatus` and visible to admins at `/admin/data-status`.
 
 Local command:
 ```bash
 npm run download:ohlq-annual-sales
 npm run download:ohlq-annual-sales:wholesale
+npm run backfill:ohlq-annual-sales -- --days 7
+npm run backfill:ohlq-annual-sales -- --date 2026-05-11
 ```
 
 Required OHLQ env vars:
@@ -47,7 +50,7 @@ Required OHLQ env vars:
 - `OHLQ_OPS_PASSWORD`: OHLQ portal password.
 
 ## Weekly digest email
-- Vercel cron calls `/api/cron/weekly-digest` at 12:00, 13:00, and 14:00 UTC on Fridays. The route only sends when the current `America/New_York` local hour is 8, so daylight saving time is handled by the app.
+- Vercel cron calls `/api/cron/weekly-digest` at 13:00 UTC on Fridays. The route only sends when the current `America/New_York` local hour is 8 or 9, so daylight saving time is handled by the app while staying compatible with Vercel Hobby cron limits.
 - The cron route requires `Authorization: Bearer $CRON_SECRET`.
 - Standard active users receive their own weekly digest. Active admins receive the team digest for all active users.
 - Digest sends are logged in `WeeklyDigestLog` and are idempotent per recipient, digest type, and period.

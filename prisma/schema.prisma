@@ -97,6 +97,17 @@ enum MenuPlacementSource {
   IMPORT
 }
 
+enum OhlqReportDataSource {
+  ANNUAL_SALES_SUMMARY
+  ANNUAL_SALES_SUMMARY_BY_WHOLESALE
+}
+
+enum OhlqReportRunStatus {
+  RUNNING
+  COMPLETED
+  ERRORED
+}
+
 model User {
   id                       String             @id @default(cuid())
   email                    String             @unique
@@ -342,6 +353,31 @@ model OhlqAnnualSalesByWholesaleRow {
   @@index([brand])
   @@index([vendor])
   @@index([permitNumber])
+}
+
+model OhlqReportImportStatus {
+  id               String               @id @default(cuid())
+  dataSource       OhlqReportDataSource
+  reportDate       DateTime
+  status           OhlqReportRunStatus
+  rowCount         Int                  @default(0)
+  parsedRows       Int                  @default(0)
+  skippedRows      Int                  @default(0)
+  replacedRows     Int                  @default(0)
+  sizeBytes        Int                  @default(0)
+  filename         String?
+  startedAt        DateTime             @default(now())
+  completedAt      DateTime?
+  lastSuccessfulAt DateTime?
+  errorMessage     String?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  @@unique([dataSource, reportDate])
+  @@index([dataSource])
+  @@index([reportDate])
+  @@index([status])
+  @@index([lastSuccessfulAt])
 }
 
 model Alert {

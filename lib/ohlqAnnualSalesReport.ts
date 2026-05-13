@@ -53,6 +53,7 @@ export type OhlqAnnualSalesDownloadOptions = {
   downloadDir?: string;
   headless?: boolean;
   logger?: Logger;
+  reportDate?: string;
   returnBuffer?: boolean;
   useServerlessChromium?: boolean;
 };
@@ -119,8 +120,7 @@ function todayIsoEastern() {
   return formatDateParts(today.year, today.month, today.day).iso;
 }
 
-function getReportDate() {
-  const rawDate = process.env.OHLQ_REPORT_DATE?.trim();
+function parseReportDate(rawDate: string | undefined) {
   if (!rawDate) return defaultReportDate();
 
   const isoMatch = rawDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -134,6 +134,14 @@ function getReportDate() {
   }
 
   throw new Error('OHLQ_REPORT_DATE must be YYYY-MM-DD or MM/DD/YYYY when provided.');
+}
+
+function getReportDate() {
+  return parseReportDate(process.env.OHLQ_REPORT_DATE?.trim());
+}
+
+export function getOhlqAnnualSalesReportDate(rawDate?: string) {
+  return parseReportDate(rawDate?.trim() || process.env.OHLQ_REPORT_DATE?.trim());
 }
 
 export function getAnnualSalesReportFilename(runDateIso: string) {
@@ -277,7 +285,7 @@ type OhlqDownloadRuntime = {
 
 function createDownloadRuntime(options: OhlqAnnualSalesDownloadOptions): OhlqDownloadRuntime {
   const logger = options.logger ?? console;
-  const reportDate = getReportDate();
+  const reportDate = options.reportDate ? getOhlqAnnualSalesReportDate(options.reportDate) : getReportDate();
   const runDateIso = todayIsoEastern();
   const downloadDir = path.resolve(
     options.downloadDir ??

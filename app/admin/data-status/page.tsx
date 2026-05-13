@@ -1,0 +1,229 @@
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
+import { OhlqReportDataSource, OhlqReportRunStatus } from '@prisma/client';
+import { requireAdminSession } from '../../../lib/auth';
+import {
+  formatOhlqDate,
+  OHLQ_DATA_SOURCE_CONFIGS,
+  toOhlqDateOnlyUtc,
+} from '../../../lib/ohlqDataStatus';
+import { prisma } from '../../../lib/prisma';
+
+const statusTimeZone = 'America/New_York';
+const visibleDays = 14;
+
+type SourceCell = {
+  count: number;
+  delta: number | null;
+  errorMessage: string | null;
+  lastSuccessfulAt: Date | null;
+  source: OhlqReportDataSource;
+  status: 'Not Yet Run' | 'Completed' | 'Errored' | 'Running';
+};
+
+const numberFormatter = new Intl.NumberFormat('en-US');
+
+const reportDateFormatter = new Intl.DateTimeFormat('en-US', {
+  day: 'numeric',
+  month: 'short',
+  timeZone: 'UTC',
+  year: 'numeric',
+});
+
+const runTimeFormatter = new Intl.DateTimeFormat('en-US', {
+  dateStyle: 'medium',
+  timeStyle: 'short',
+  timeZone: statusTimeZone,
+});
+
+const formatRunTime = (date: Date | null | undefined) => (date ? runTimeFormatter.format(date) : 'No success yet');
+
+const todayInEastern = () => {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    day: '2-digit',
+    month: '2-digit',
+    timeZone: statusTimeZone,
+    year: 'numeric',
+  }).formatToParts(new Date());
+
+  const value = (type: Intl.DateTimeFormatPartTypes) => {
+    const part = parts.find((item) => item.type === type)?.value;
+    if (!part) throw new Error(`Unable to resolve Eastern date part: ${type}`);
+    return Number(part);
+  };
+
+  return {
+    day: value('day'),
+    month: value('month'),
+    year: value('year'),
+  };
+};
+
+const getReportDateRange = () => {
+  const today = todayInEastern();
+
+  return Array.from({ length: visibleDays }, (_, index) => {
+    const offset = visibleDays - index;
+    return formatOhlqDate(new Date(Date.UTC(today.year, today.month - 1, today.day - offset, 12)));
+  });
+};
+
+const statusLabel = (status: OhlqReportRunStatus | undefined, count: number): SourceCell['status'] => {
+  if (status === OhlqReportRunStatus.ERRORED) return 'Errored';
+  if (status === OhlqReportRunStatus.RUNNING) return 'Running';
+  if (status === OhlqReportRunStatus.COMPLETED || count > 0) return 'Completed';
+  return 'Not Yet Run';
+};
+
+const statusClassName = (status: SourceCell['status']) => {
+  if (status === 'Completed') return 'status-pill status-completed';
+  if (status === 'Errored') return 'status-pill status-errored';
+  if (status === 'Running') return 'status-pill status-running';
+  return 'status-pill status-muted';
+};
+
+const formatDelta = (delta: number | null, count: number) => {
+  if (delta === null || count === 0) return 'Baseline';
+  if (delta === 0) return 'Same as previous day';
+  return `${delta > 0 ? '+' : ''}${numberFormatter.format(delta)} vs previous day`;
+};
+
+const buildCountMap = (counts: Array<{ reportDate: Date; _count: { _all: number } }>) =>
+  new Map(counts.map((item) => [formatOhlqDate(item.reportDate), item._count._all]));
+
+export default async function DataStatusPage() {
+  await requireAdminSession();
+
+  const dates = getReportDateRange();
+  const startDate = toOhlqDateOnlyUtc(dates[0]);
+  const endDate = toOhlqDateOnlyUtc(dates[dates.length - 1]);
+
+  const [annualCounts, wholesaleCounts, statusRows, annualTotalRows, wholesaleTotalRows] = await Promise.all([
+    prisma.ohlqAnnualSalesRow.groupBy({
+      by: ['reportDate'],
+      where: { reportDate: { gte: startDate, lte: endDate } },
+      _count: { _all: true },
+      orderBy: { reportDate: 'asc' },
+    }),
+    prisma.ohlqAnnualSalesByWholesaleRow.groupBy({
+      by: ['reportDate'],
+      where: { reportDate: { gte: startDate, lte: endDate } },
+      _count: { _all: true },
+      orderBy: { reportDate: 'asc' },
+    }),
+    prisma.ohlqReportImportStatus.findMany({
+      where: { reportDate: { gte: startDate, lte: endDate } },
+      orderBy: [{ reportDate: 'asc' }, { dataSource: 'asc' }],
+    }),
+    prisma.ohlqAnnualSalesRow.count(),
+    prisma.ohlqAnnualSalesByWholesaleRow.count(),
+  ]);
+
+  const countsBySource = {
+    [OhlqReportDataSource.ANNUAL_SALES_SUMMARY]: buildCountMap(annualCounts),
+    [OhlqReportDataSource.ANNUAL_SALES_SUMMARY_BY_WHOLESALE]: buildCountMap(wholesaleCounts),
+  };
+  const totalRowsBySource = {
+    [OhlqReportDataSource.ANNUAL_SALES_SUMMARY]: annualTotalRows,
+    [OhlqReportDataSource.ANNUAL_SALES_SUMMARY_BY_WHOLESALE]: wholesaleTotalRows,
+  };
+  const statusBySourceDate = new Map(statusRows.map((row) => [`${row.dataSource}:${formatOhlqDate(row.reportDate)}`, row]));
+  const lastSuccessBySource = new Map<OhlqReportDataSource, Date>();
+
+  statusRows.forEach((row) => {
+    if (!row.lastSuccessfulAt) return;
+    const existing = lastSuccessBySource.get(row.dataSource);
+    if (!existing || existing.getTime() < row.lastSuccessfulAt.getTime()) {
+      lastSuccessBySource.set(row.dataSource, row.lastSuccessfulAt);
+    }
+  });
+
+  const rows = dates
+    .slice()
+    .reverse()
+    .map((date, index, reversedDates) => {
+      const previousDate = reversedDates[index + 1] ?? null;
+      const cells = OHLQ_DATA_SOURCE_CONFIGS.map(({ source }) => {
+        const count = countsBySource[source].get(date) ?? 0;
+        const previousCount = previousDate ? countsBySource[source].get(previousDate) ?? 0 : null;
+        const statusRow = statusBySourceDate.get(`${source}:${date}`);
+
+        return {
+          count,
+          delta: previousCount === null ? null : count - previousCount,
+          errorMessage: statusRow?.errorMessage ?? null,
+          lastSuccessfulAt: statusRow?.lastSuccessfulAt ?? null,
+          source,
+          status: statusLabel(statusRow?.status, count),
+        } satisfies SourceCell;
+      });
+
+      return { cells, date };
+    });
+
+  return (
+    <>
+      <h1>Data Status</h1>
+      <p className="muted">OHLQ report health by report date, newest first.</p>
+
+      <section className="data-source-grid" aria-label="Data source summary">
+        {OHLQ_DATA_SOURCE_CONFIGS.map((config) => (
+          <article className="card data-source-summary" key={config.source}>
+            <div>
+              <h2>{config.label}</h2>
+              <p className="muted">{config.tableName}</p>
+            </div>
+            <p className="metric-value">{numberFormatter.format(totalRowsBySource[config.source])}</p>
+            <p className="muted metric-caption">Total rows loaded</p>
+            <div className="data-source-meta">
+              <span>Most recent successful run</span>
+              <strong>{formatRunTime(lastSuccessBySource.get(config.source))}</strong>
+            </div>
+          </article>
+        ))}
+      </section>
+
+      <section className="dashboard-section">
+        <div className="section-heading">
+          <h2>Daily Row Counts</h2>
+          <span className="pill">Last {visibleDays} report dates</span>
+        </div>
+
+        <table className="responsive-table data-status-table">
+          <thead>
+            <tr>
+              <th>Report date</th>
+              {OHLQ_DATA_SOURCE_CONFIGS.map((config) => (
+                <th key={config.source}>{config.label}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.date}>
+                <td data-label="Report date">
+                  <strong>{reportDateFormatter.format(toOhlqDateOnlyUtc(row.date))}</strong>
+                  <span className="muted data-status-date">{row.date}</span>
+                </td>
+                {row.cells.map((cell) => (
+                  <td data-label={OHLQ_DATA_SOURCE_CONFIGS.find((config) => config.source === cell.source)?.label} key={cell.source}>
+                    <div className="data-status-cell">
+                      <span className={statusClassName(cell.status)}>{cell.status}</span>
+                      <strong>{numberFormatter.format(cell.count)} rows</strong>
+                      <span className={cell.delta === 0 && cell.count > 0 ? 'data-delta data-delta-flat' : 'data-delta'}>
+                        {formatDelta(cell.delta, cell.count)}
+                      </span>
+                      <span className="muted">Success: {formatRunTime(cell.lastSuccessfulAt)}</span>
+                      {cell.errorMessage ? <span className="data-error-text">{cell.errorMessage}</span> : null}
+                    </div>
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+    </>
+  );
+}
