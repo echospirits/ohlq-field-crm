@@ -22,6 +22,9 @@ describe('parseOhlqAnnualSalesCsv', () => {
     assert.equal(result.rows[0].retailBottlesSold, 2);
     assert.equal(result.rows[0].wholesaleBottlesSold, 0);
     assert.equal(new Date(result.rows[0].reportDate).toISOString(), '2026-05-11T00:00:00.000Z');
+    assert.equal('id' in result.rows[0], false);
+    assert.equal('createdAt' in result.rows[0], false);
+    assert.equal('updatedAt' in result.rows[0], false);
     assert.equal('retailAmount' in result.rows[0], false);
     assert.equal('agencyName' in result.rows[0], false);
   });
@@ -50,6 +53,9 @@ describe('parseOhlqAnnualSalesByWholesaleCsv', () => {
     assert.equal(result.rows[0].permitNumber, '00072045-1');
     assert.equal(result.rows[0].wholesaleBottlesSold, 2);
     assert.equal(new Date(result.rows[0].reportDate).toISOString(), '2026-05-11T00:00:00.000Z');
+    assert.equal('id' in result.rows[0], false);
+    assert.equal('createdAt' in result.rows[0], false);
+    assert.equal('updatedAt' in result.rows[0], false);
     assert.equal('wholesaler' in result.rows[0], false);
     assert.equal('doingBusinessAs' in result.rows[0], false);
   });

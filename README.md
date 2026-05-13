@@ -26,7 +26,7 @@ npm run dev
 ## Deploy to Vercel
 - Push this folder to GitHub.
 - Import the repo into Vercel.
-- Add `DATABASE_URL`, `APP_BASE_URL`, `CRON_SECRET`, `RESEND_API_KEY`, `EMAIL_FROM`, `BLOB_READ_WRITE_TOKEN`, `OHLQ_OPS_USERNAME`, `OHLQ_OPS_PASSWORD`, and optional `EVENTBRITE_TOKEN` as environment variables.
+- Add `DATABASE_URL`, `APP_BASE_URL`, `CRON_SECRET`, `RESEND_API_KEY`, `EMAIL_FROM`, `BLOB_READ_WRITE_TOKEN`, `OHLQ_OPS_USERNAME`, `OHLQ_OPS_PASSWORD`, optional `OHLQ_REPORT_RETENTION_DAYS`, and optional `EVENTBRITE_TOKEN` as environment variables.
 - Deploy.
 
 ## OHLQ annual sales export
@@ -35,6 +35,7 @@ npm run dev
 - The automation downloads yesterday's Annual Sales Summary and Annual Sales Summary by Wholesale reports.
 - The agency summary imports CSV rows into `OhlqAnnualSalesRow`; the wholesale summary imports rows into `OhlqAnnualSalesByWholesaleRow`.
 - The import stores `reportDate` from the report's From date parameter and replaces existing rows for that date, so reruns are idempotent.
+- Raw OHLQ report rows are pruned after successful imports. Set `OHLQ_REPORT_RETENTION_DAYS` to adjust the window; the default is 90 report dates.
 - Import status is tracked in `OhlqReportImportStatus` and visible to admins at `/admin/data-status`.
 
 Local command:
@@ -43,6 +44,7 @@ npm run download:ohlq-annual-sales
 npm run download:ohlq-annual-sales:wholesale
 npm run backfill:ohlq-annual-sales -- --days 7
 npm run backfill:ohlq-annual-sales -- --date 2026-05-11
+npm run audit:ohlq-storage
 ```
 
 Required OHLQ env vars:

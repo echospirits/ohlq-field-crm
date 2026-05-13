@@ -303,46 +303,31 @@ model InventoryFact {
 }
 
 model OhlqAnnualSalesRow {
-  id                   String   @id @default(cuid())
-  reportDate           DateTime
+  reportDate           DateTime @db.Date
   agencyId             String
   vendor               String
   brand                String
   retailBottlesSold    Int      @default(0)
   wholesaleBottlesSold Int      @default(0)
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
 
-  @@unique([reportDate, agencyId, vendor, brand])
-  @@index([reportDate])
-  @@index([agencyId])
-  @@index([brand])
-  @@index([vendor])
+  @@id([reportDate, agencyId, vendor, brand])
 }
 
 model OhlqAnnualSalesByWholesaleRow {
-  id                   String   @id @default(cuid())
-  reportDate           DateTime
+  reportDate           DateTime @db.Date
   agencyId             String
   vendor               String
   brand                String
   permitNumber         String
   wholesaleBottlesSold Int      @default(0)
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
 
-  @@unique([reportDate, agencyId, vendor, brand, permitNumber])
-  @@index([reportDate])
-  @@index([agencyId])
-  @@index([brand])
-  @@index([vendor])
-  @@index([permitNumber])
+  @@id([reportDate, agencyId, vendor, brand, permitNumber])
 }
 
 model OhlqReportImportStatus {
   id               String               @id @default(cuid())
   dataSource       OhlqReportDataSource
-  reportDate       DateTime
+  reportDate       DateTime             @db.Date
   status           OhlqReportRunStatus
   rowCount         Int                  @default(0)
   parsedRows       Int                  @default(0)

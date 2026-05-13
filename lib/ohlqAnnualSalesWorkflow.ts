@@ -5,6 +5,7 @@ import {
   importOhlqAnnualSalesByWholesaleCsv,
   importOhlqAnnualSalesCsv,
 } from './ohlqAnnualSalesImport';
+import { pruneOhlqAnnualSalesRows } from './ohlqAnnualSalesRetention';
 import {
   downloadOhlqAnnualSalesReports,
   getOhlqAnnualSalesReportDate,
@@ -109,9 +110,17 @@ export async function runOhlqAnnualSalesWorkflow(options: OhlqAnnualSalesWorkflo
     });
     completedSources.add(OhlqReportDataSource.ANNUAL_SALES_SUMMARY_BY_WHOLESALE);
 
+    const retention = await pruneOhlqAnnualSalesRows({ reportDate });
+    logger.log(
+      `OHLQ annual sales retention kept ${retention.retentionDays} day(s) from ${retention.cutoffDate}; ` +
+        `deleted ${retention.deletedRows.annualSalesSummary} annual row(s) and ` +
+        `${retention.deletedRows.annualSalesSummaryByWholesale} wholesale row(s).`,
+    );
+
     return {
       ok: true,
       durationMs: Date.now() - startedAt,
+      retention,
       reports: {
         annualSalesSummary: {
           filename: annualSalesDownload.filename,
