@@ -329,6 +329,26 @@ model OhlqAnnualSalesByWholesaleRow {
   @@index([permitNumber, vendor, reportDate, brand])
 }
 
+model OhlqBrandMasterItem {
+  itemCode           String   @id
+  name               String
+  vendor             String?
+  broker             String?
+  category           String?
+  purchaseUnitSymbol String?
+  productVolume      Decimal?
+  retailPrice        Decimal?
+  wholesalePrice     Decimal?
+  solItemStatusCode  String?
+  bottleLimit        Int?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([name])
+  @@index([vendor])
+  @@index([category])
+}
+
 model OhlqReportImportStatus {
   id               String               @id @default(cuid())
   dataSource       OhlqReportDataSource

@@ -2,7 +2,10 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 import { OhlqReportDataSource, OhlqReportRunStatus } from '@prisma/client';
+import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
 import { requireAdminSession } from '../../../lib/auth';
+import { importOhlqBrandMasterCsv } from '../../../lib/ohlqBrandMasterImport';
 import {
   formatOhlqDate,
   OHLQ_DATA_SOURCE_CONFIGS,
@@ -92,14 +95,81 @@ const formatDelta = (delta: number | null, count: number) => {
 const buildCountMap = (counts: Array<{ reportDate: Date; _count: { _all: number } }>) =>
   new Map(counts.map((item) => [formatOhlqDate(item.reportDate), item._count._all]));
 
-export default async function DataStatusPage() {
+const brandMasterStatusMessage = (params: {
+  count?: string;
+  message?: string;
+  replaced?: string;
+  skipped?: string;
+  status?: string;
+}) => {
+  if (params.status === 'brand-master-imported') {
+    return `Brand master refreshed: ${params.count ?? '0'} rows loaded, ${params.replaced ?? '0'} replaced, ${
+      params.skipped ?? '0'
+    } skipped.`;
+  }
+
+  if (params.status === 'brand-master-invalid') return 'Choose a brand master CSV file before importing.';
+  if (params.status === 'brand-master-error') {
+    return `Brand master import failed: ${params.message ?? 'Unknown error'}`;
+  }
+
+  return null;
+};
+
+async function importBrandMaster(formData: FormData) {
+  'use server';
+
+  await requireAdminSession();
+  const file = formData.get('brandMasterFile');
+
+  if (!(file instanceof File) || file.size === 0) {
+    redirect('/admin/data-status?status=brand-master-invalid');
+  }
+
+  let result: Awaited<ReturnType<typeof importOhlqBrandMasterCsv>>;
+  try {
+    result = await importOhlqBrandMasterCsv({ csv: await file.text() });
+  } catch (error) {
+    const message = encodeURIComponent((error instanceof Error ? error.message : String(error)).slice(0, 180));
+    redirect(`/admin/data-status?status=brand-master-error&message=${message}`);
+  }
+
+  revalidatePath('/');
+  revalidatePath('/admin/data-status');
+  revalidatePath('/agencies');
+  revalidatePath('/wholesale');
+  redirect(
+    `/admin/data-status?status=brand-master-imported&count=${result.importedRows}&replaced=${result.deletedRows}&skipped=${result.skippedRows}`,
+  );
+}
+
+export default async function DataStatusPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{
+    count?: string;
+    message?: string;
+    replaced?: string;
+    skipped?: string;
+    status?: string;
+  }>;
+}) {
   await requireAdminSession();
 
+  const params = (await searchParams) ?? {};
   const dates = getReportDateRange();
   const startDate = toOhlqDateOnlyUtc(dates[0]);
   const endDate = toOhlqDateOnlyUtc(dates[dates.length - 1]);
 
-  const [annualCounts, wholesaleCounts, statusRows, annualTotalRows, wholesaleTotalRows] = await Promise.all([
+  const [
+    annualCounts,
+    wholesaleCounts,
+    statusRows,
+    annualTotalRows,
+    wholesaleTotalRows,
+    brandMasterRows,
+    latestBrandMasterRow,
+  ] = await Promise.all([
     prisma.ohlqAnnualSalesRow.groupBy({
       by: ['reportDate'],
       where: { reportDate: { gte: startDate, lte: endDate } },
@@ -118,6 +188,11 @@ export default async function DataStatusPage() {
     }),
     prisma.ohlqAnnualSalesRow.count(),
     prisma.ohlqAnnualSalesByWholesaleRow.count(),
+    prisma.ohlqBrandMasterItem.count(),
+    prisma.ohlqBrandMasterItem.findFirst({
+      orderBy: { updatedAt: 'desc' },
+      select: { updatedAt: true },
+    }),
   ]);
 
   const countsBySource = {
@@ -166,6 +241,7 @@ export default async function DataStatusPage() {
     <>
       <h1>Data Status</h1>
       <p className="muted">OHLQ report health by report date, newest first.</p>
+      {brandMasterStatusMessage(params) ? <p className="pill">{brandMasterStatusMessage(params)}</p> : null}
 
       <section className="data-source-grid" aria-label="Data source summary">
         {OHLQ_DATA_SOURCE_CONFIGS.map((config) => (
@@ -182,7 +258,31 @@ export default async function DataStatusPage() {
             </div>
           </article>
         ))}
+        <article className="card data-source-summary">
+          <div>
+            <h2>Brand Master Lookup</h2>
+            <p className="muted">OhlqBrandMasterItem</p>
+          </div>
+          <p className="metric-value">{numberFormatter.format(brandMasterRows)}</p>
+          <p className="muted metric-caption">SKU/item lookup rows loaded</p>
+          <div className="data-source-meta">
+            <span>Most recent refresh</span>
+            <strong>{formatRunTime(latestBrandMasterRow?.updatedAt)}</strong>
+          </div>
+        </article>
       </section>
+
+      <details className="card compact-details admin-panel">
+        <summary>Import OHLQ Brand Master CSV</summary>
+        <form action={importBrandMaster} encType="multipart/form-data">
+          <input type="file" name="brandMasterFile" accept=".csv,text/csv" required />
+          <button type="submit">Refresh brand master</button>
+          <p className="muted">
+            Each upload fully replaces the brand master lookup table, then reloads item code and item name data from
+            the uploaded CSV.
+          </p>
+        </form>
+      </details>
 
       <section className="dashboard-section">
         <div className="section-heading">

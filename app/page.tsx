@@ -232,6 +232,8 @@ export default async function Dashboard() {
     annualDataCounts,
     wholesaleDataCounts,
     pipelineStatusRows,
+    brandMasterRows,
+    latestBrandMasterRow,
     wholesaleReactivationSummary,
   ] = await Promise.all([
     prisma.worklistItem.count({
@@ -306,6 +308,11 @@ export default async function Dashboard() {
     prisma.ohlqReportImportStatus.findMany({
       where: { reportDate: { gte: reportStartDate, lte: reportEndDate } },
       orderBy: [{ reportDate: 'asc' }, { dataSource: 'asc' }],
+    }),
+    prisma.ohlqBrandMasterItem.count(),
+    prisma.ohlqBrandMasterItem.findFirst({
+      orderBy: { updatedAt: 'desc' },
+      select: { updatedAt: true },
     }),
     getOhlqWholesaleReactivationDashboardSummary({ runAt: ranges.now }),
   ]);
@@ -541,6 +548,17 @@ export default async function Dashboard() {
               <p className="muted metric-caption">Last success: {formatRunTime(summary.lastSuccessfulAt)}</p>
             </div>
           ))}
+          <div className="card metric-card data-pipeline-card">
+            <div className="data-pipeline-title">
+              <h3>Brand Master Lookup</h3>
+              <span className={statusClassName(brandMasterRows > 0 ? 'Completed' : 'Not Yet Run')}>
+                {brandMasterRows > 0 ? 'Loaded' : 'Not Loaded'}
+              </span>
+            </div>
+            <p className="metric-value">{brandMasterRows.toLocaleString('en-US')}</p>
+            <p className="muted metric-caption">SKU/item lookup rows</p>
+            <p className="muted metric-caption">Last refresh: {formatRunTime(latestBrandMasterRow?.updatedAt)}</p>
+          </div>
         </div>
       </section>
     </>

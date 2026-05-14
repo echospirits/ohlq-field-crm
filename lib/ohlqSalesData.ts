@@ -77,7 +77,7 @@ const sum = (value: number | null | undefined) => value ?? 0;
 const getSkuLookup = async (db: PrismaClient, itemCodes: string[]) => {
   if (itemCodes.length === 0) return new Map<string, string>();
 
-  const skus = await db.sku.findMany({
+  const skus = await db.ohlqBrandMasterItem.findMany({
     where: { itemCode: { in: Array.from(new Set(itemCodes)) } },
     select: { itemCode: true, name: true },
   });

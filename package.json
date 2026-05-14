@@ -13,6 +13,7 @@
     "db:studio": "prisma studio",
     "import:sample": "tsx scripts/import-sample-data.ts",
     "import:recipes": "tsx scripts/import-recipes.ts",
+    "import:ohlq-brand-master": "tsx scripts/import-ohlq-brand-master.ts",
     "download:ohlq-annual-sales": "tsx scripts/download-ohlq-annual-sales.ts",
     "download:ohlq-annual-sales:wholesale": "tsx scripts/download-ohlq-annual-sales.ts wholesale",
     "backfill:ohlq-annual-sales": "tsx scripts/backfill-ohlq-annual-sales.ts",
