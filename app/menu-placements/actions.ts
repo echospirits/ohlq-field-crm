@@ -1,12 +1,6 @@
 'use server';
 
-import {
-  AccountType,
-  MenuPlacementSource,
-  MenuPlacementStatus,
-  MenuPlacementType,
-  PhotoType,
-} from '@prisma/client';
+import { MenuPlacementSource, MenuPlacementStatus, MenuPlacementType, PhotoType } from '@prisma/client';
 import { revalidatePath } from 'next/cache';
 import { notFound, redirect } from 'next/navigation';
 import { getUserDisplayName, requireUser } from '../../lib/auth';
@@ -16,6 +10,7 @@ import {
   validateMenuPlacementProofFile,
 } from '../../lib/blob';
 import { prisma } from '../../lib/prisma';
+import { getLegacyAccountCreateDataFromWholesaleAccount } from '../../lib/wholesaleAccounts';
 
 type ProofInput =
   | { type: 'none' }
@@ -99,34 +94,16 @@ async function ensureAccountForWholesale(wholesaleAccountId: string) {
     notFound();
   }
 
-  return prisma.account.upsert({
+  const existingAccount = await prisma.account.findUnique({
     where: { licenseeId: wholesaleAccount.licenseeId },
-    create: {
-      licenseeId: wholesaleAccount.licenseeId,
-      agencyRefId: wholesaleAccount.agencyId,
-      type: AccountType.BAR_RESTAURANT,
-      name: wholesaleAccount.name,
-      address: wholesaleAccount.address,
-      city: wholesaleAccount.city,
-      county: wholesaleAccount.county,
-      state: wholesaleAccount.state ?? 'OH',
-      zip: wholesaleAccount.zip,
-      phone: wholesaleAccount.phone,
-      ownership: wholesaleAccount.ownership,
-      districtId: wholesaleAccount.districtId,
-    },
-    update: {
-      agencyRefId: wholesaleAccount.agencyId,
-      name: wholesaleAccount.name,
-      address: wholesaleAccount.address,
-      city: wholesaleAccount.city,
-      county: wholesaleAccount.county,
-      state: wholesaleAccount.state ?? 'OH',
-      zip: wholesaleAccount.zip,
-      phone: wholesaleAccount.phone,
-      ownership: wholesaleAccount.ownership,
-      districtId: wholesaleAccount.districtId,
-    },
+    select: { id: true },
+  });
+
+  if (existingAccount) return existingAccount;
+
+  return prisma.account.create({
+    data: getLegacyAccountCreateDataFromWholesaleAccount(wholesaleAccount),
+    select: { id: true },
   });
 }
 

@@ -1,11 +1,12 @@
 'use server';
 
-import { PhotoType, WorklistCategory, WorklistSource, WorklistStatus } from '@prisma/client';
+import { AccountType, PhotoType, WorklistCategory, WorklistSource, WorklistStatus } from '@prisma/client';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { getUserDisplayName, requireUser } from '../../lib/auth';
 import { uploadVisitPhoto, validateVisitPhotoFile } from '../../lib/blob';
 import { prisma } from '../../lib/prisma';
+import { normalizeWholesaleLicenseeId } from '../../lib/wholesaleAccounts';
 
 const photoTypes: PhotoType[] = [PhotoType.DISPLAY, PhotoType.MENU, PhotoType.OTHER];
 
@@ -156,8 +157,18 @@ export async function createVisit(formData: FormData) {
     let wholesaleAccountId = selectedWholesaleAccountId;
 
     if (locationType === 'wholesale' && !wholesaleAccountId && (newWholesaleLicenseeId || newWholesaleName)) {
-      const licenseeId = newWholesaleLicenseeId ?? toManualLicenseeId(newWholesaleName ?? 'Wholesale account');
+      const licenseeId =
+        normalizeWholesaleLicenseeId(newWholesaleLicenseeId) ?? toManualLicenseeId(newWholesaleName ?? 'Wholesale account');
       const name = newWholesaleName ?? `Wholesale ${licenseeId}`;
+      const officialAccount = newWholesaleLicenseeId
+        ? await tx.account.findFirst({
+            where: {
+              licenseeId: { equals: licenseeId, mode: 'insensitive' },
+              type: AccountType.BAR_RESTAURANT,
+            },
+            select: { id: true },
+          })
+        : null;
       const existingAccount = newWholesaleLicenseeId
         ? null
         : await tx.wholesaleAccount.findFirst({
@@ -171,6 +182,8 @@ export async function createVisit(formData: FormData) {
             where: { licenseeId },
             create: {
               licenseeId,
+              officialAccountId: officialAccount?.id,
+              isActive: true,
               name,
               agencyId: toOptional(formData.get('newWholesaleAgencyId')),
               address: toOptional(formData.get('newWholesaleAddress')),
@@ -184,6 +197,8 @@ export async function createVisit(formData: FormData) {
               createdByUserId: user.id,
             },
             update: {
+              isActive: true,
+              officialAccountId: officialAccount?.id,
               name,
               agencyId: toOptional(formData.get('newWholesaleAgencyId')),
               address: toOptional(formData.get('newWholesaleAddress')),

@@ -4,10 +4,13 @@ export const runtime = 'nodejs';
 import { revalidatePath } from 'next/cache';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import { AccountType, Prisma } from '@prisma/client';
 import { requireUser } from '../../lib/auth';
 import { prisma } from '../../lib/prisma';
+import { normalizeWholesaleLicenseeId } from '../../lib/wholesaleAccounts';
 import { LiveFilterForm } from '../components/LiveFilterForm';
 import { TagBadges } from '../tags/TagBadges';
+import { activateOfficialWholesaleAccount } from './actions';
 
 const toOptional = (value: string | undefined) => {
   const trimmed = (value ?? '').trim();
@@ -30,7 +33,7 @@ async function createWholesale(formData: FormData) {
   'use server';
 
   const user = await requireUser();
-  const licenseeId = String(formData.get('licenseeId') ?? '').trim();
+  const licenseeId = normalizeWholesaleLicenseeId(String(formData.get('licenseeId') ?? ''));
   const name = String(formData.get('name') ?? '').trim();
 
   if (!licenseeId || !name) {
@@ -38,11 +41,20 @@ async function createWholesale(formData: FormData) {
   }
 
   const tagIds = getSelectedTagIds(formData);
+  const officialAccount = await prisma.account.findFirst({
+    where: {
+      licenseeId: { equals: licenseeId, mode: 'insensitive' },
+      type: AccountType.BAR_RESTAURANT,
+    },
+    select: { id: true },
+  });
   const account = await prisma.wholesaleAccount.upsert({
     where: { licenseeId },
     create: {
       licenseeId,
+      isActive: true,
       name,
+      officialAccountId: officialAccount?.id,
       agencyId: toOptional(String(formData.get('agencyId') ?? '')),
       address: toOptional(String(formData.get('address') ?? '')),
       city: toOptional(String(formData.get('city') ?? '')),
@@ -55,7 +67,9 @@ async function createWholesale(formData: FormData) {
       createdByUserId: user.id,
     },
     update: {
+      isActive: true,
       name,
+      officialAccountId: officialAccount?.id,
       agencyId: toOptional(String(formData.get('agencyId') ?? '')),
       address: toOptional(String(formData.get('address') ?? '')),
       city: toOptional(String(formData.get('city') ?? '')),
@@ -86,6 +100,34 @@ async function createWholesale(formData: FormData) {
   redirect('/wholesale?status=saved');
 }
 
+const wholesaleSearchWhere = (q: string): Prisma.WholesaleAccountWhereInput => ({
+  OR: [
+    { name: { contains: q, mode: 'insensitive' } },
+    { licenseeId: { contains: q, mode: 'insensitive' } },
+    { agencyId: { contains: q, mode: 'insensitive' } },
+    { address: { contains: q, mode: 'insensitive' } },
+    { phone: { contains: q, mode: 'insensitive' } },
+    { tags: { some: { tag: { name: { contains: q, mode: 'insensitive' } } } } },
+    { recipeSuggestions: { some: { recipe: { name: { contains: q, mode: 'insensitive' } } } } },
+    { recipeSuggestions: { some: { recipe: { primarySpirit: { contains: q, mode: 'insensitive' } } } } },
+    { menuPlacements: { some: { product: { contains: q, mode: 'insensitive' } } } },
+    { menuPlacements: { some: { menuItemName: { contains: q, mode: 'insensitive' } } } },
+  ],
+});
+
+const officialWholesaleSearchWhere = (q: string): Prisma.AccountWhereInput => ({
+  licenseeId: { not: null },
+  type: AccountType.BAR_RESTAURANT,
+  OR: [
+    { name: { contains: q, mode: 'insensitive' } },
+    { licenseeId: { contains: q, mode: 'insensitive' } },
+    { agencyRefId: { contains: q, mode: 'insensitive' } },
+    { address: { contains: q, mode: 'insensitive' } },
+    { city: { contains: q, mode: 'insensitive' } },
+    { phone: { contains: q, mode: 'insensitive' } },
+  ],
+});
+
 export default async function WholesalePage({
   searchParams,
 }: {
@@ -95,26 +137,15 @@ export default async function WholesalePage({
 
   const params = (await searchParams) ?? {};
   const q = (params.q ?? '').trim();
+  const accountWhere: Prisma.WholesaleAccountWhereInput = {
+    isActive: true,
+    ...(q ? wholesaleSearchWhere(q) : {}),
+  };
 
-  const [accounts, tags] = await Promise.all([
+  const [accounts, tags, officialCandidates] = await Promise.all([
     prisma.wholesaleAccount.findMany({
       take: 300,
-      where: q
-        ? {
-            OR: [
-              { name: { contains: q, mode: 'insensitive' } },
-              { licenseeId: { contains: q, mode: 'insensitive' } },
-              { agencyId: { contains: q, mode: 'insensitive' } },
-              { address: { contains: q, mode: 'insensitive' } },
-              { phone: { contains: q, mode: 'insensitive' } },
-              { tags: { some: { tag: { name: { contains: q, mode: 'insensitive' } } } } },
-              { recipeSuggestions: { some: { recipe: { name: { contains: q, mode: 'insensitive' } } } } },
-              { recipeSuggestions: { some: { recipe: { primarySpirit: { contains: q, mode: 'insensitive' } } } } },
-              { menuPlacements: { some: { product: { contains: q, mode: 'insensitive' } } } },
-              { menuPlacements: { some: { menuItemName: { contains: q, mode: 'insensitive' } } } },
-            ],
-          }
-        : undefined,
+      where: accountWhere,
       include: {
         tags: {
           include: { tag: true },
@@ -127,7 +158,44 @@ export default async function WholesalePage({
       orderBy: [{ name: 'asc' }, { licenseeId: 'asc' }],
     }),
     prisma.tag.findMany({ orderBy: [{ name: 'asc' }] }),
+    q
+      ? prisma.account.findMany({
+          where: officialWholesaleSearchWhere(q),
+          orderBy: [{ name: 'asc' }, { licenseeId: 'asc' }],
+          take: 40,
+          select: {
+            id: true,
+            licenseeId: true,
+            agencyRefId: true,
+            name: true,
+            address: true,
+            city: true,
+            phone: true,
+          },
+        })
+      : [],
   ]);
+  const candidateLicenseeIds = officialCandidates
+    .map((account) => normalizeWholesaleLicenseeId(account.licenseeId))
+    .filter(Boolean) as string[];
+  const linkedWholesaleAccounts =
+    candidateLicenseeIds.length > 0
+      ? await prisma.wholesaleAccount.findMany({
+          where: {
+            OR: candidateLicenseeIds.map((licenseeId) => ({
+              licenseeId: { equals: licenseeId, mode: 'insensitive' },
+            })),
+          },
+          select: { licenseeId: true },
+        })
+      : [];
+  const linkedLicenseeIds = new Set(
+    linkedWholesaleAccounts.map((account) => normalizeWholesaleLicenseeId(account.licenseeId)).filter(Boolean),
+  );
+  const officialAccounts = officialCandidates.filter((account) => {
+    const licenseeId = normalizeWholesaleLicenseeId(account.licenseeId);
+    return licenseeId && !linkedLicenseeIds.has(licenseeId);
+  });
   const accountIds = accounts.map((account) => account.id);
   const visitStats =
     accountIds.length > 0
@@ -154,16 +222,17 @@ export default async function WholesalePage({
   return (
     <>
       <h1>Wholesale Accounts</h1>
-      <p className="muted">Manual creation only.</p>
+      <p className="muted">Active accounts by default. Search also checks inactive official OHLQ records.</p>
 
       <LiveFilterForm className="filter-form narrow-filter" label="Filter wholesale accounts">
         <input name="q" defaultValue={q} placeholder="Filter name, licensee ID, recipe, menu placement, phone" />
       </LiveFilterForm>
       {params.status === 'saved' ? <p className="pill">Wholesale account saved.</p> : null}
       {params.status === 'invalid' ? <p className="pill">Name and Licensee ID are required.</p> : null}
+      {params.status === 'invalid-official' ? <p className="pill">Select a valid official wholesale record.</p> : null}
 
       <details className="card compact-details admin-panel">
-        <summary>Create / update wholesale account</summary>
+        <summary>Create non-official wholesale account</summary>
         <form action={createWholesale}>
           <div className="form-grid">
             <input name="licenseeId" placeholder="Licensee ID" required />
@@ -205,6 +274,7 @@ export default async function WholesalePage({
         <thead>
           <tr>
             <th>Actions</th>
+            <th>Status</th>
             <th>Licensee ID</th>
             <th>Name</th>
             <th>Agency ID</th>
@@ -229,6 +299,9 @@ export default async function WholesalePage({
                     Log Visit
                   </Link>
                 </td>
+                <td data-label="Status">
+                  <span className="pill">Active</span>
+                </td>
                 <td data-label="Licensee ID">{account.licenseeId}</td>
                 <td data-label="Name">
                   <Link className="table-link" href={`/wholesale/${account.id}`}>
@@ -249,8 +322,47 @@ export default async function WholesalePage({
               </tr>
             );
           })}
+          {officialAccounts.map((account) => (
+            <tr className="inactive-official-row" key={account.id}>
+              <td data-label="Actions">
+                <form action={activateOfficialWholesaleAccount}>
+                  <input name="officialAccountId" type="hidden" value={account.id} />
+                  <button className="compact-btn secondary" type="submit">
+                    Activate
+                  </button>
+                </form>
+              </td>
+              <td data-label="Status">
+                <span className="pill">Official record - inactive</span>
+                <span className="muted tap-to-activate">Tap to activate</span>
+              </td>
+              <td data-label="Licensee ID">{account.licenseeId}</td>
+              <td data-label="Name">
+                <form action={activateOfficialWholesaleAccount} className="inline-activate-form">
+                  <input name="officialAccountId" type="hidden" value={account.id} />
+                  <button className="link-button table-link" type="submit">
+                    {account.name}
+                  </button>
+                </form>
+              </td>
+              <td data-label="Agency ID">{account.agencyRefId}</td>
+              <td data-label="Address">{account.address}</td>
+              <td data-label="City">{account.city}</td>
+              <td data-label="Phone">{account.phone}</td>
+              <td data-label="Tags">
+                <span className="muted">Activate to tag</span>
+              </td>
+              <td data-label="Menu Placements">0</td>
+              <td data-label="Recipe Suggestions">0</td>
+              <td data-label="Logged Visits">0</td>
+              <td data-label="Most Recent Visit">{formatDate(null)}</td>
+            </tr>
+          ))}
         </tbody>
       </table>
+      {q && accounts.length === 0 && officialAccounts.length === 0 ? (
+        <p className="muted activity-empty">No active or official wholesale accounts match that search.</p>
+      ) : null}
     </>
   );
 }

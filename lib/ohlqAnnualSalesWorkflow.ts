@@ -6,6 +6,7 @@ import {
   importOhlqAnnualSalesCsv,
 } from './ohlqAnnualSalesImport';
 import { pruneOhlqAnnualSalesRows } from './ohlqAnnualSalesRetention';
+import { syncOhlqWholesaleReactivationWorklist } from './ohlqWholesaleReactivation';
 import {
   downloadOhlqAnnualSalesReports,
   getOhlqAnnualSalesReportDate,
@@ -116,11 +117,18 @@ export async function runOhlqAnnualSalesWorkflow(options: OhlqAnnualSalesWorkflo
         `deleted ${retention.deletedRows.annualSalesSummary} annual row(s) and ` +
         `${retention.deletedRows.annualSalesSummaryByWholesale} wholesale row(s).`,
     );
+    const wholesaleReactivation = await syncOhlqWholesaleReactivationWorklist();
+    logger.log(
+      `OHLQ wholesale reactivation found ${wholesaleReactivation.matchedAccountsNeedingAction} account(s); ` +
+        `created ${wholesaleReactivation.createdItems}, updated ${wholesaleReactivation.updatedItems}, ` +
+        `cancelled ${wholesaleReactivation.cancelledItems}.`,
+    );
 
     return {
       ok: true,
       durationMs: Date.now() - startedAt,
       retention,
+      wholesaleReactivation,
       reports: {
         annualSalesSummary: {
           filename: annualSalesDownload.filename,

@@ -21,6 +21,7 @@ const statusLabels: Record<WorklistStatus, string> = {
 
 const sourceLabels: Record<WorklistSource, string> = {
   [WorklistSource.MANUAL]: 'Manual',
+  [WorklistSource.OHLQ_WHOLESALE_REACTIVATION]: 'OHLQ wholesale reactivation',
   [WorklistSource.VISIT_FOLLOW_UP]: 'Visit follow-up',
 };
 
@@ -205,6 +206,7 @@ export default async function MyWeekPage() {
     prisma.wholesaleAccount.findMany({
       orderBy: { name: 'asc' },
       take: 500,
+      where: { isActive: true },
       select: {
         id: true,
         licenseeId: true,

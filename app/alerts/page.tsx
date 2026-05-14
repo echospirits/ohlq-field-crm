@@ -21,6 +21,7 @@ const statusLabels: Record<WorklistStatus, string> = {
 
 const sourceLabels: Record<WorklistSource, string> = {
   [WorklistSource.MANUAL]: 'Manual',
+  [WorklistSource.OHLQ_WHOLESALE_REACTIVATION]: 'OHLQ wholesale reactivation',
   [WorklistSource.VISIT_FOLLOW_UP]: 'Visit follow-up',
 };
 
@@ -63,6 +64,13 @@ const toWorklistStatus = (value: FormDataEntryValue | string | null | undefined)
   return Object.values(WorklistStatus).includes(status as WorklistStatus)
     ? (status as WorklistStatus)
     : WorklistStatus.OPEN;
+};
+
+const toWorklistSource = (value: FormDataEntryValue | string | null | undefined) => {
+  const source = String(value ?? WorklistSource.MANUAL);
+  return Object.values(WorklistSource).includes(source as WorklistSource)
+    ? (source as WorklistSource)
+    : WorklistSource.MANUAL;
 };
 
 const formatDate = (date: Date | null) => (date ? new Date(date).toLocaleDateString() : '');
@@ -133,7 +141,14 @@ async function updateWorklistStatus(formData: FormData) {
 export default async function Alerts({
   searchParams,
 }: {
-  searchParams?: Promise<{ status?: string; category?: string; q?: string; created?: string; notice?: string }>;
+  searchParams?: Promise<{
+    category?: string;
+    created?: string;
+    notice?: string;
+    q?: string;
+    source?: string;
+    status?: string;
+  }>;
 }) {
   const currentUser = await requireUser();
 
@@ -141,6 +156,7 @@ export default async function Alerts({
   const q = (params.q ?? '').trim();
   const statusFilter = params.status ?? 'ACTIVE';
   const categoryFilter = params.category ?? 'ALL';
+  const sourceFilter = params.source ?? 'ALL';
   const where: Prisma.WorklistItemWhereInput = {};
 
   if (statusFilter === 'ACTIVE') {
@@ -151,6 +167,10 @@ export default async function Alerts({
 
   if (categoryFilter !== 'ALL') {
     where.category = toWorklistCategory(categoryFilter);
+  }
+
+  if (sourceFilter !== 'ALL') {
+    where.source = toWorklistSource(sourceFilter);
   }
 
   if (q) {
@@ -189,6 +209,7 @@ export default async function Alerts({
     prisma.wholesaleAccount.findMany({
       orderBy: { name: 'asc' },
       take: 500,
+      where: { isActive: true },
       select: {
         id: true,
         licenseeId: true,
@@ -236,7 +257,7 @@ export default async function Alerts({
     <>
       <h1>Worklist</h1>
       <p className="muted">
-        Follow-ups from visits and manually assigned tasks. Completed and cancelled items are hidden by default.
+        Follow-ups from visits, data signals, and manually assigned tasks. Completed and cancelled items are hidden by default.
       </p>
 
       {params.created === '1' ? <p className="pill">Worklist item created.</p> : null}
@@ -314,6 +335,16 @@ export default async function Alerts({
               {Object.values(WorklistCategory).map((category) => (
                 <option key={category} value={category}>
                   {categoryLabels[category]}
+                </option>
+              ))}
+            </select>
+
+            <label>Source</label>
+            <select name="source" defaultValue={sourceFilter}>
+              <option value="ALL">All sources</option>
+              {Object.values(WorklistSource).map((source) => (
+                <option key={source} value={source}>
+                  {sourceLabels[source]}
                 </option>
               ))}
             </select>

@@ -53,7 +53,10 @@ export default async function RecipeDetailPage({
 
   const suggestedAccountIds = recipe.suggestions.map((suggestion) => suggestion.wholesaleAccountId);
   const availableWholesaleAccounts = await prisma.wholesaleAccount.findMany({
-    where: suggestedAccountIds.length > 0 ? { id: { notIn: suggestedAccountIds } } : undefined,
+    where: {
+      isActive: true,
+      ...(suggestedAccountIds.length > 0 ? { id: { notIn: suggestedAccountIds } } : {}),
+    },
     orderBy: [{ name: 'asc' }, { licenseeId: 'asc' }],
     take: 500,
     select: {

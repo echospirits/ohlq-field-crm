@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { requireUser } from '../../../../lib/auth';
 import { prisma } from '../../../../lib/prisma';
+import { normalizeWholesaleLicenseeId } from '../../../../lib/wholesaleAccounts';
 
 const toOptional = (value: FormDataEntryValue | null | undefined) => {
   const trimmed = String(value ?? '').trim();
@@ -18,8 +19,9 @@ async function updateWholesaleAccount(formData: FormData) {
   await requireUser();
 
   const id = toOptional(formData.get('id'));
-  const licenseeId = toOptional(formData.get('licenseeId'));
+  const licenseeId = normalizeWholesaleLicenseeId(String(formData.get('licenseeId') ?? ''));
   const name = toOptional(formData.get('name'));
+  const isActive = formData.get('isActive') === 'true';
 
   if (!id || !licenseeId || !name) {
     redirect(id ? `/wholesale/${id}/edit?status=invalid` : '/wholesale?status=invalid');
@@ -47,6 +49,7 @@ async function updateWholesaleAccount(formData: FormData) {
     where: { id },
     data: {
       licenseeId,
+      isActive,
       name,
       agencyId: toOptional(formData.get('agencyId')),
       ownership: toOptional(formData.get('ownership')),
@@ -114,6 +117,13 @@ export default async function EditWholesaleAccountPage({
             <label>
               Account name
               <input name="name" defaultValue={account.name} required />
+            </label>
+            <label>
+              Status
+              <select name="isActive" defaultValue={account.isActive ? 'true' : 'false'}>
+                <option value="true">Active</option>
+                <option value="false">Inactive</option>
+              </select>
             </label>
             <label>
               Phone

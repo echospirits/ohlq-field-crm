@@ -4,7 +4,9 @@ export const runtime = 'nodejs';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { requireUser } from '../../../lib/auth';
+import { getAgencyRecentItemSales } from '../../../lib/ohlqSalesData';
 import { prisma } from '../../../lib/prisma';
+import { AgencyRecentSalesCard } from '../AgencyRecentSalesCard';
 import { AccountTagPanel } from '../../tags/AccountTagPanel';
 import { TagBadges } from '../../tags/TagBadges';
 import { VisitActivityTable } from '../../visits/VisitActivityTable';
@@ -44,7 +46,7 @@ export default async function AgencyActivityPage({
     notFound();
   }
 
-  const [visits, tags] = await Promise.all([
+  const [visits, tags, salesWindows] = await Promise.all([
     prisma.loggedVisit.findMany({
       where: {
         agencyId: id,
@@ -59,6 +61,7 @@ export default async function AgencyActivityPage({
       orderBy: [{ visitAt: 'desc' }],
     }),
     prisma.tag.findMany({ orderBy: [{ name: 'asc' }] }),
+    getAgencyRecentItemSales({ agencyId: agency.agencyId }),
   ]);
 
   const contacts = await prisma.locationContact.findMany({
@@ -117,6 +120,8 @@ export default async function AgencyActivityPage({
           tags={tags}
         />
       </div>
+
+      <AgencyRecentSalesCard salesWindows={salesWindows} />
 
       <section className="dashboard-section">
         <div className="section-heading">

@@ -46,6 +46,7 @@ enum WorklistStatus {
 enum WorklistSource {
   MANUAL
   VISIT_FOLLOW_UP
+  OHLQ_WHOLESALE_REACTIVATION
 }
 
 enum WorklistCategory {
@@ -196,20 +197,20 @@ model LoginThrottle {
 }
 
 model Account {
-  id                  String          @id @default(cuid())
-  externalId          String?         @unique
-  agencyId            String?         @unique
+  id                  String            @id @default(cuid())
+  externalId          String?           @unique
+  agencyId            String?           @unique
   agencyRefId         String?
-  licenseeId          String?         @unique
+  licenseeId          String?           @unique
   type                AccountType
   name                String
   address             String?
   city                String?
   county              String?
-  state               String?         @default("OH")
+  state               String?           @default("OH")
   zip                 String?
   phone               String?
-  d8Permit            Boolean         @default(false)
+  d8Permit            Boolean           @default(false)
   ownership           String?
   districtId          String?
   warehouse           String?
@@ -220,8 +221,8 @@ model Account {
   primaryContactPhone String?
   wholesaleStatus     String?
   ownerUserId         String?
-  createdAt           DateTime        @default(now())
-  updatedAt           DateTime        @updatedAt
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
   tags                AccountTag[]
   notes               Note[]
   photos              Photo[]
@@ -231,6 +232,7 @@ model Account {
   inventoryFacts      InventoryFact[]
   visits              Visit[]
   menuPlacements      MenuPlacement[]
+  officialWholesale   WholesaleAccount? @relation("OfficialWholesaleAccount")
 }
 
 model Sku {
@@ -311,6 +313,7 @@ model OhlqAnnualSalesRow {
   wholesaleBottlesSold Int      @default(0)
 
   @@id([reportDate, agencyId, vendor, brand])
+  @@index([agencyId, vendor, reportDate, brand])
 }
 
 model OhlqAnnualSalesByWholesaleRow {
@@ -322,6 +325,8 @@ model OhlqAnnualSalesByWholesaleRow {
   wholesaleBottlesSold Int      @default(0)
 
   @@id([reportDate, agencyId, vendor, brand, permitNumber])
+  @@index([permitNumber, reportDate])
+  @@index([permitNumber, vendor, reportDate, brand])
 }
 
 model OhlqReportImportStatus {
@@ -555,6 +560,8 @@ model Agency {
 model WholesaleAccount {
   id                String             @id @default(cuid())
   licenseeId        String             @unique
+  officialAccountId String?            @unique
+  isActive          Boolean            @default(true)
   agencyId          String?
   ownership         String?
   name              String
@@ -570,11 +577,14 @@ model WholesaleAccount {
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
   createdByUser     User?              @relation("WholesaleAccountCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  officialAccount   Account?           @relation("OfficialWholesaleAccount", fields: [officialAccountId], references: [id], onDelete: SetNull)
   tags              LocationTag[]      @relation("WholesaleLocationTags")
   recipeSuggestions RecipeSuggestion[]
   menuPlacements    MenuPlacement[]
 
   @@index([createdByUserId])
+  @@index([isActive])
+  @@index([officialAccountId])
 }
 
 model LocationTag {
@@ -687,6 +697,7 @@ model WorklistItem {
   @@index([dueDate])
   @@index([agencyId])
   @@index([wholesaleAccountId])
+  @@index([source, status, wholesaleAccountId])
   @@index([createdByUserId])
   @@index([assignedToUserId])
   @@index([completedByUserId])

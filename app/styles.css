@@ -347,6 +347,14 @@ textarea:focus-visible {
   letter-spacing: 0;
 }
 
+.metric-card-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .metric-value {
   margin: 0;
   color: #ffffff;
@@ -397,6 +405,53 @@ textarea:focus-visible {
 
 .metric-empty {
   margin: 0;
+}
+
+.reactivation-card {
+  min-height: 0;
+}
+
+.reactivation-list {
+  display: grid;
+  gap: 7px;
+}
+
+.reactivation-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding-top: 8px;
+  color: #f8fafc;
+  text-decoration: none;
+  border-top: 1px solid var(--line);
+}
+
+.reactivation-row:hover {
+  color: #bfdbfe;
+}
+
+.reactivation-row span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.reactivation-row strong,
+.reactivation-row small {
+  overflow-wrap: anywhere;
+}
+
+.reactivation-row small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.reactivation-row em {
+  color: #dbeafe;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 750;
 }
 
 .pill {
@@ -456,6 +511,29 @@ tr:hover td {
 
 .table-link:hover {
   color: #bfdbfe;
+}
+
+.link-button {
+  width: auto;
+  min-height: 0;
+  padding: 0;
+  color: #93c5fd;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  font: inherit;
+  font-weight: 720;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.link-button:hover {
+  color: #bfdbfe;
+  background: transparent;
+  border-color: transparent;
+  transform: none;
 }
 
 .page-actions {
@@ -544,6 +622,13 @@ button:hover,
   color: #ffffff;
   border-color: #7da0ff;
   transform: translateY(-1px);
+}
+
+button.link-button:hover {
+  color: #bfdbfe;
+  background: transparent;
+  border-color: transparent;
+  transform: none;
 }
 
 button:disabled {
@@ -937,6 +1022,112 @@ fieldset {
   color: #fecaca;
   font-size: 12px;
   overflow-wrap: anywhere;
+}
+
+.ohlq-sales-section {
+  display: grid;
+  gap: 14px;
+}
+
+.ohlq-window-card,
+.ohlq-window-details {
+  display: grid;
+  gap: 12px;
+}
+
+.ohlq-window-card h3,
+.ohlq-window-details h3 {
+  margin: 0;
+}
+
+.ohlq-window-details summary {
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ohlq-item-list,
+.ohlq-purchase-list {
+  display: grid;
+  gap: 10px;
+}
+
+.ohlq-item-row,
+.ohlq-purchase-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+
+.ohlq-item-row:first-child,
+.ohlq-purchase-row:first-child {
+  border-top: 0;
+}
+
+.ohlq-item-row strong,
+.ohlq-purchase-row strong {
+  display: block;
+  color: #f8fafc;
+  overflow-wrap: anywhere;
+}
+
+.ohlq-item-row .muted,
+.ohlq-purchase-row .muted {
+  display: block;
+  margin-top: 3px;
+  font-size: 12px;
+}
+
+.ohlq-item-metrics,
+.ohlq-purchase-summary {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.ohlq-item-metrics span,
+.ohlq-purchase-summary span {
+  min-width: 74px;
+  display: grid;
+  gap: 2px;
+  padding: 7px 9px;
+  background: #101014;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  text-align: right;
+}
+
+.ohlq-item-metrics strong,
+.ohlq-purchase-summary strong {
+  color: #f8fafc;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.ohlq-item-metrics small,
+.ohlq-purchase-summary small,
+.tap-to-activate,
+.view-more-note {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.inactive-official-row {
+  background: #10101466;
+}
+
+.inline-activate-form {
+  display: block;
+  max-width: none;
+}
+
+.tap-to-activate {
+  display: block;
+  margin-top: 4px;
 }
 
 .data-pipeline-section {
@@ -1833,6 +2024,22 @@ legend {
   .section-heading {
     align-items: flex-start;
     justify-content: space-between;
+  }
+
+  .ohlq-item-row,
+  .ohlq-purchase-row {
+    grid-template-columns: 1fr;
+  }
+
+  .ohlq-item-metrics,
+  .ohlq-purchase-summary {
+    justify-content: flex-start;
+  }
+
+  .ohlq-item-metrics span,
+  .ohlq-purchase-summary span {
+    min-width: 88px;
+    text-align: left;
   }
 
   .fab {

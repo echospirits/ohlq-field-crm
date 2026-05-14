@@ -39,6 +39,7 @@ export default async function NewVisitPage({
     prisma.wholesaleAccount.findMany({
       orderBy: { name: 'asc' },
       take: 500,
+      where: { isActive: true },
       select: {
         id: true,
         licenseeId: true,
@@ -87,7 +88,7 @@ export default async function NewVisitPage({
         })
       : null,
     params.wholesaleAccountId &&
-    !wholesaleAccountOptions.some((account) => account.id === params.wholesaleAccountId)
+        !wholesaleAccountOptions.some((account) => account.id === params.wholesaleAccountId)
       ? prisma.wholesaleAccount.findUnique({
           where: { id: params.wholesaleAccountId },
           select: {

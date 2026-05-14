@@ -7,6 +7,7 @@ import {
   OhlqReportRunStatus,
   UserRole,
   WorklistCategory,
+  WorklistSource,
   WorklistStatus,
 } from '@prisma/client';
 import Link from 'next/link';
@@ -16,6 +17,7 @@ import {
   OHLQ_DATA_SOURCE_CONFIGS,
   toOhlqDateOnlyUtc,
 } from '../lib/ohlqDataStatus';
+import { getOhlqWholesaleReactivationDashboardSummary } from '../lib/ohlqWholesaleReactivation';
 import { prisma } from '../lib/prisma';
 
 const dashboardTimeZone = 'America/New_York';
@@ -230,6 +232,7 @@ export default async function Dashboard() {
     annualDataCounts,
     wholesaleDataCounts,
     pipelineStatusRows,
+    wholesaleReactivationSummary,
   ] = await Promise.all([
     prisma.worklistItem.count({
       where: { status: { notIn: inactiveWorklistStatuses } },
@@ -304,6 +307,7 @@ export default async function Dashboard() {
       where: { reportDate: { gte: reportStartDate, lte: reportEndDate } },
       orderBy: [{ reportDate: 'asc' }, { dataSource: 'asc' }],
     }),
+    getOhlqWholesaleReactivationDashboardSummary({ runAt: ranges.now }),
   ]);
 
   const weekVisits = visits.filter((visit) => visit.visitAt.getTime() >= ranges.weekStart.getTime());
@@ -381,6 +385,53 @@ export default async function Dashboard() {
           <h3>Active worklist</h3>
           <p className="metric-value">{activeWorklistItems}</p>
           <p className="muted metric-caption">Open and in-progress items</p>
+        </div>
+
+        <div className="card metric-card metric-card-wide reactivation-card">
+          <div className="metric-card-title-row">
+            <h3>Wholesale Reactivation</h3>
+            <Link
+              className="btn secondary compact-btn"
+              href={`/alerts?source=${WorklistSource.OHLQ_WHOLESALE_REACTIVATION}`}
+            >
+              View worklist
+            </Link>
+          </div>
+          <p className="metric-value">{wholesaleReactivationSummary.accountCount}</p>
+          <p className="muted metric-caption">Bought Echo items in the last 90 days, but not in the last 30.</p>
+          <div className="metric-splits">
+            <div className="metric-split">
+              <span>Open worklist items</span>
+              <strong>{wholesaleReactivationSummary.openWorklistItems}</strong>
+            </div>
+            <div className="metric-split">
+              <span>Unmatched Licensee IDs</span>
+              <strong>{wholesaleReactivationSummary.unmatchedLicenseeCount}</strong>
+            </div>
+          </div>
+          <div className="reactivation-list">
+            {wholesaleReactivationSummary.topAccounts.length > 0 ? (
+              wholesaleReactivationSummary.topAccounts.map((account) => {
+                const lastItem = account.items[0];
+
+                return (
+                  <Link
+                    className="reactivation-row"
+                    href={`/wholesale/${account.wholesaleAccountId}`}
+                    key={account.wholesaleAccountId}
+                  >
+                    <span>
+                      <strong>{account.accountName}</strong>
+                      <small>{lastItem ? `${lastItem.itemCode} - ${lastItem.itemName}` : 'Echo item'}</small>
+                    </span>
+                    <em>{account.daysSinceLastEchoPurchase} days</em>
+                  </Link>
+                );
+              })
+            ) : (
+              <p className="muted metric-empty">No wholesale reactivation accounts right now.</p>
+            )}
+          </div>
         </div>
       </div>
 

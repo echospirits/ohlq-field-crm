@@ -5,12 +5,14 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { MenuPlacementStatus, MenuPlacementType, Prisma } from '@prisma/client';
 import { getUserDisplayName, requireUser } from '../../../lib/auth';
+import { getWholesaleRecentPurchases } from '../../../lib/ohlqSalesData';
 import { prisma } from '../../../lib/prisma';
 import { MenuPlacementPanel } from '../../menu-placements/MenuPlacementPanel';
 import { addRecipeSuggestion, removeRecipeSuggestion } from '../../recipes/actions';
 import { AccountTagPanel } from '../../tags/AccountTagPanel';
 import { TagBadges } from '../../tags/TagBadges';
 import { VisitActivityTable } from '../../visits/VisitActivityTable';
+import { WholesaleRecentPurchasesCard } from '../WholesaleRecentPurchasesCard';
 
 const formatDate = (date: Date | null | undefined) => (date ? new Date(date).toLocaleDateString() : 'No visits yet');
 const todayInputValue = () => new Date().toISOString().slice(0, 10);
@@ -21,6 +23,7 @@ const tagStatusMessages: Record<string, string> = {
 };
 const statusMessages: Record<string, string> = {
   updated: 'Wholesale account updated.',
+  activated: 'Account activated.',
 };
 const suggestionStatusMessages: Record<string, string> = {
   added: 'Recipe suggestion saved.',
@@ -73,7 +76,7 @@ export default async function WholesaleActivityPage({
     notFound();
   }
 
-  const [visits, tags, recipeSuggestions, backingAccount, users] = await Promise.all([
+  const [visits, tags, recipeSuggestions, backingAccount, users, purchases] = await Promise.all([
     prisma.loggedVisit.findMany({
       where: {
         wholesaleAccountId: id,
@@ -101,6 +104,7 @@ export default async function WholesaleActivityPage({
       select: { id: true },
     }),
     prisma.user.findMany({ orderBy: [{ name: 'asc' }, { email: 'asc' }] }),
+    getWholesaleRecentPurchases({ licenseeId: account.licenseeId }),
   ]);
   const placementQ = (query.placementQ ?? '').trim();
   const placementStatusFilter = Object.values(MenuPlacementStatus).includes(
@@ -202,6 +206,7 @@ export default async function WholesaleActivityPage({
 
       <h1>{account.name}</h1>
       <p className="muted">Licensee {account.licenseeId}</p>
+      {!account.isActive ? <p className="pill">Inactive</p> : null}
       {query.status ? <p className="pill">{statusMessages[query.status] ?? query.status}</p> : null}
       {query.tagStatus ? <p className="pill">{tagStatusMessages[query.tagStatus] ?? query.tagStatus}</p> : null}
       {query.suggestionStatus ? (
@@ -266,6 +271,8 @@ export default async function WholesaleActivityPage({
         visits={legacyVisits}
         wholesaleAccountId={account.id}
       />
+
+      <WholesaleRecentPurchasesCard purchases={purchases} />
 
       <section className="dashboard-section">
         <div className="section-heading">
