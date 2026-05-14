@@ -37,6 +37,7 @@ export async function activateOfficialWholesaleAccount(formData: FormData) {
       agencyRefId: true,
       city: true,
       county: true,
+      deliveryDay: true,
       districtId: true,
       id: true,
       licenseeId: true,

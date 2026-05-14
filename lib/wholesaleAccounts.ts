@@ -5,12 +5,13 @@ export const normalizeWholesaleLicenseeId = (value: string | null | undefined) =
   return normalized || null;
 };
 
-type OfficialWholesaleSource = Pick<
+export type OfficialWholesaleSource = Pick<
   Account,
   | 'address'
   | 'agencyRefId'
   | 'city'
   | 'county'
+  | 'deliveryDay'
   | 'districtId'
   | 'id'
   | 'licenseeId'
@@ -20,6 +21,137 @@ type OfficialWholesaleSource = Pick<
   | 'state'
   | 'zip'
 >;
+
+export type WholesaleAccountEditableValues = {
+  address: string | null;
+  agencyId: string | null;
+  city: string | null;
+  county: string | null;
+  deliveryDay: string | null;
+  districtId: string | null;
+  name: string;
+  ownership: string | null;
+  phone: string | null;
+  state: string;
+  zip: string | null;
+};
+
+const normalizeEditableValue = (value: string | null | undefined) => {
+  const trimmed = String(value ?? '').trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+const chooseSubmittedChangeOrOfficialDefault = ({
+  existingValue,
+  fallback,
+  officialValue,
+  submittedValue,
+}: {
+  existingValue: string | null | undefined;
+  fallback?: string | null;
+  officialValue: string | null | undefined;
+  submittedValue: string | null | undefined;
+}) => {
+  const fallbackValue = normalizeEditableValue(fallback);
+  const existing = normalizeEditableValue(existingValue) ?? fallbackValue;
+  const submitted = normalizeEditableValue(submittedValue) ?? fallbackValue;
+  const official = normalizeEditableValue(officialValue);
+
+  if (submitted && submitted !== existing) {
+    return submitted;
+  }
+
+  return official ?? submitted ?? existing ?? null;
+};
+
+export function getWholesaleEditableValuesFromOfficialAccount(
+  officialAccount: OfficialWholesaleSource,
+): WholesaleAccountEditableValues {
+  return {
+    address: officialAccount.address,
+    agencyId: officialAccount.agencyRefId,
+    city: officialAccount.city,
+    county: officialAccount.county,
+    deliveryDay: officialAccount.deliveryDay,
+    districtId: officialAccount.districtId,
+    name: officialAccount.name,
+    ownership: officialAccount.ownership,
+    phone: officialAccount.phone,
+    state: officialAccount.state ?? 'OH',
+    zip: officialAccount.zip,
+  };
+}
+
+export function mergeWholesaleEditableValuesWithOfficialDefaults({
+  existingValues,
+  officialValues,
+  submittedValues,
+}: {
+  existingValues: WholesaleAccountEditableValues;
+  officialValues: WholesaleAccountEditableValues;
+  submittedValues: WholesaleAccountEditableValues;
+}): WholesaleAccountEditableValues {
+  return {
+    address: chooseSubmittedChangeOrOfficialDefault({
+      existingValue: existingValues.address,
+      officialValue: officialValues.address,
+      submittedValue: submittedValues.address,
+    }),
+    agencyId: chooseSubmittedChangeOrOfficialDefault({
+      existingValue: existingValues.agencyId,
+      officialValue: officialValues.agencyId,
+      submittedValue: submittedValues.agencyId,
+    }),
+    city: chooseSubmittedChangeOrOfficialDefault({
+      existingValue: existingValues.city,
+      officialValue: officialValues.city,
+      submittedValue: submittedValues.city,
+    }),
+    county: chooseSubmittedChangeOrOfficialDefault({
+      existingValue: existingValues.county,
+      officialValue: officialValues.county,
+      submittedValue: submittedValues.county,
+    }),
+    deliveryDay: chooseSubmittedChangeOrOfficialDefault({
+      existingValue: existingValues.deliveryDay,
+      officialValue: officialValues.deliveryDay,
+      submittedValue: submittedValues.deliveryDay,
+    }),
+    districtId: chooseSubmittedChangeOrOfficialDefault({
+      existingValue: existingValues.districtId,
+      officialValue: officialValues.districtId,
+      submittedValue: submittedValues.districtId,
+    }),
+    name:
+      chooseSubmittedChangeOrOfficialDefault({
+        existingValue: existingValues.name,
+        officialValue: officialValues.name,
+        submittedValue: submittedValues.name,
+      }) ?? submittedValues.name,
+    ownership: chooseSubmittedChangeOrOfficialDefault({
+      existingValue: existingValues.ownership,
+      officialValue: officialValues.ownership,
+      submittedValue: submittedValues.ownership,
+    }),
+    phone: chooseSubmittedChangeOrOfficialDefault({
+      existingValue: existingValues.phone,
+      officialValue: officialValues.phone,
+      submittedValue: submittedValues.phone,
+    }),
+    state:
+      chooseSubmittedChangeOrOfficialDefault({
+        existingValue: existingValues.state,
+        fallback: 'OH',
+        officialValue: officialValues.state,
+        submittedValue: submittedValues.state,
+      }) ?? 'OH',
+    zip: chooseSubmittedChangeOrOfficialDefault({
+      existingValue: existingValues.zip,
+      officialValue: officialValues.zip,
+      submittedValue: submittedValues.zip,
+    }),
+  };
+}
 
 export function getWholesaleCreateDataFromOfficialAccount(
   officialAccount: OfficialWholesaleSource,
@@ -36,6 +168,7 @@ export function getWholesaleCreateDataFromOfficialAccount(
     city: officialAccount.city,
     county: officialAccount.county,
     createdByUser: { connect: { id: createdByUserId } },
+    deliveryDay: officialAccount.deliveryDay,
     districtId: officialAccount.districtId,
     isActive: true,
     licenseeId,
