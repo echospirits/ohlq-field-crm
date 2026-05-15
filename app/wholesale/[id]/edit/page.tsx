@@ -254,7 +254,7 @@ export default async function EditWholesaleAccountPage({
               <input name="deliveryDay" defaultValue={account.deliveryDay ?? ''} />
             </label>
           </div>
-          <button type="submit">Save changes</button>
+          <button type="submit">Save wholesale account</button>
         </form>
       </div>
     </>

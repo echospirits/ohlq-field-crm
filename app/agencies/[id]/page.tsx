@@ -17,13 +17,18 @@ const tagStatusMessages: Record<string, string> = {
   removed: 'Tag removed.',
   invalid: 'Select a valid tag.',
 };
+const statusMessages: Record<string, string> = {
+  'visit-logged': 'Visit logged.',
+  'visit-logged-photo-upload-failed': 'Visit logged, but one or more photos could not be uploaded.',
+  'visit-logged-worklist-completed': 'Visit logged and worklist item completed.',
+};
 
 export default async function AgencyActivityPage({
   params,
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams?: Promise<{ tagStatus?: string }>;
+  searchParams?: Promise<{ status?: string; tagStatus?: string }>;
 }) {
   await requireUser();
   const { id } = await params;
@@ -75,12 +80,13 @@ export default async function AgencyActivityPage({
       <div className="page-actions">
         <Link href="/agencies">Back to agencies</Link>
         <Link className="btn compact-btn" href={`/visits/new?type=agency&agencyId=${agency.id}`}>
-          Log Visit
+          Log visit
         </Link>
       </div>
 
       <h1>{agency.name}</h1>
       <p className="muted">Agency {agency.agencyId}</p>
+      {query.status ? <p className="toast-notice" role="status">{statusMessages[query.status] ?? query.status}</p> : null}
       {query.tagStatus ? <p className="pill">{tagStatusMessages[query.tagStatus] ?? query.tagStatus}</p> : null}
       <TagBadges tags={agency.tags.map((assignment) => assignment.tag)} />
 

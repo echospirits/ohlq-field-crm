@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { WorklistStatus } from '@prisma/client';
+import { WorklistStatus, type PrismaClient } from '@prisma/client';
 import {
   buildWholesaleReactivationAnalysis,
+  findOhlqWholesaleReactivationCandidates,
   getWholesaleReactivationWindows,
   planWholesaleReactivationWorklistSync,
   type ReactivationWorklistSnapshot,
@@ -67,7 +68,7 @@ describe('buildWholesaleReactivationAnalysis', () => {
   it('flags Licensee IDs with Echo purchases in 90 days and none in 30 days', () => {
     const result = buildWholesaleReactivationAnalysis({
       accounts: [
-        { id: 'wholesale-1', licenseeId: '00072045-1', name: 'Adriennes White Rabbit' },
+        { id: 'wholesale-1', licenseeId: '72045', name: 'Adriennes White Rabbit' },
         { id: 'wholesale-2', licenseeId: 'T40949003', name: 'Recent Buyer' },
         { id: 'wholesale-3', licenseeId: 'COLD-1', name: 'Cold Buyer' },
       ],
@@ -84,7 +85,7 @@ describe('buildWholesaleReactivationAnalysis', () => {
     });
 
     assert.equal(result.candidates.length, 1);
-    assert.equal(result.candidates[0].licenseeId, '00072045-1');
+    assert.equal(result.candidates[0].licenseeId, '72045');
     assert.equal(result.candidates[0].items[0].itemName, 'Echo Vodka');
     assert.equal(result.candidates[0].totalWholesaleBottlesSold, 2);
     assert.equal(result.recentBuyerLicenseeIds.has('T40949003'), true);
@@ -109,6 +110,43 @@ describe('buildWholesaleReactivationAnalysis', () => {
     });
 
     assert.equal(result.candidates.length, 0);
+  });
+});
+
+describe('findOhlqWholesaleReactivationCandidates', () => {
+  it('uses stored last Echo purchase state instead of requiring raw rows older than 30 days', async () => {
+    let findManyCalls = 0;
+    const db = {
+      wholesaleAccount: {
+        findMany: async () => {
+          findManyCalls += 1;
+          return findManyCalls === 1
+            ? [
+                {
+                  id: 'wholesale-1',
+                  licenseeId: '00072045-1',
+                  name: 'Adriennes White Rabbit',
+                  ohlqLastEchoPurchaseBottles: 2,
+                  ohlqLastEchoPurchaseDate: new Date('2026-04-01T00:00:00.000Z'),
+                  ohlqLastEchoPurchaseItemCode: '0100A',
+                  ohlqLastEchoPurchaseItemName: 'Echo Vodka',
+                },
+              ]
+            : [{ licenseeId: '00077777-1' }];
+        },
+      },
+    };
+
+    const result = await findOhlqWholesaleReactivationCandidates({
+      db: db as unknown as PrismaClient,
+      runAt,
+    });
+
+    assert.equal(result.candidates.length, 1);
+    assert.equal(result.candidates[0].licenseeId, '00072045-1');
+    assert.equal(result.candidates[0].items[0].itemName, 'Echo Vodka');
+    assert.equal(result.recentBuyerLicenseeIds.has('77777'), true);
+    assert.deepEqual(result.unmatchedLicenseeIds, []);
   });
 });
 

@@ -18,7 +18,7 @@ export function LiveFilterForm({ children, className, debounceMs = 250, label }:
   const router = useRouter();
   const searchParams = useSearchParams();
   const timeoutRef = useRef<number | null>(null);
-  const [, startTransition] = useTransition();
+  const [isPending, startTransition] = useTransition();
 
   const syncFilters = (form: HTMLFormElement) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -68,13 +68,17 @@ export function LiveFilterForm({ children, className, debounceMs = 250, label }:
   return (
     <form
       aria-label={label}
-      className={className}
+      aria-busy={isPending}
+      className={[className, isPending ? 'is-filtering' : null].filter(Boolean).join(' ')}
       method="get"
       onChange={handleInput}
       onInput={handleInput}
       onSubmit={handleSubmit}
     >
       {children}
+      <span aria-live="polite" className="live-filter-status">
+        {isPending ? 'Updating results...' : 'Results update as you type'}
+      </span>
     </form>
   );
 }

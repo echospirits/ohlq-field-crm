@@ -103,6 +103,10 @@ export async function runOhlqAnnualSalesWorkflow(options: OhlqAnnualSalesWorkflo
       csv: wholesaleDownload.csvBuffer,
       reportDate: wholesaleDownload.reportDate,
     });
+    logger.log(
+      `OHLQ Echo purchase state updated ${wholesaleImport.echoPurchaseState.updatedAccounts} wholesale account(s); ` +
+        `${wholesaleImport.echoPurchaseState.unmatchedPermitNumbers.length} permit number(s) were not matched.`,
+    );
 
     await recordOhlqReportRunCompleted({
       downloadResult: wholesaleDownload,
@@ -149,6 +153,7 @@ export async function runOhlqAnnualSalesWorkflow(options: OhlqAnnualSalesWorkflo
           runDate: wholesaleDownload.runDate,
           skippedRows: wholesaleImport.skippedRows,
           sizeBytes: wholesaleDownload.sizeBytes,
+          updatedEchoPurchaseAccounts: wholesaleImport.echoPurchaseState.updatedAccounts,
         },
       },
     };

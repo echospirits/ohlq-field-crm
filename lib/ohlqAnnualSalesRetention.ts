@@ -2,7 +2,7 @@ import type { PrismaClient } from '@prisma/client';
 import { formatOhlqDate, toOhlqDateOnlyUtc } from './ohlqDataStatus';
 import { prisma } from './prisma';
 
-export const DEFAULT_OHLQ_REPORT_RETENTION_DAYS = 90;
+export const DEFAULT_OHLQ_REPORT_RETENTION_DAYS = 30;
 
 type PruneOhlqAnnualSalesRowsOptions = {
   db?: PrismaClient;

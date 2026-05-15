@@ -1,5 +1,12 @@
 import type { PrismaClient } from '@prisma/client';
 import { formatOhlqDate } from './ohlqDataStatus';
+import {
+  buildPermitNumberSearchConditions,
+  normalizeOhlqId,
+  resolveOhlqWholesaleSalesLookup,
+  salesPermitMatchesLookup,
+  type OhlqWholesaleLookupAccount,
+} from './ohlqWholesaleMatching';
 import { prisma } from './prisma';
 
 export const ECHO_VENDOR_ID = 'Z90399001';
@@ -60,10 +67,7 @@ export type WholesaleRecentPurchases = {
 const addUtcDays = (date: Date, days: number) =>
   new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + days));
 
-export const normalizeOhlqId = (value: string | null | undefined) => {
-  const normalized = String(value ?? '').trim().toUpperCase();
-  return normalized || null;
-};
+export { normalizeOhlqId };
 
 export const isEchoItem = (vendor: string | null | undefined, itemCode: string | null | undefined) =>
   normalizeOhlqId(vendor) === ECHO_VENDOR_ID && !excludedEchoItemCodes.has(normalizeOhlqId(itemCode) ?? '');
@@ -186,22 +190,39 @@ const toPurchaseRecords = (
     wholesaleBottlesSold: record.wholesaleBottlesSold,
   }));
 
+const sortPurchasesByNewest = (left: WholesalePurchaseRecord, right: WholesalePurchaseRecord) =>
+  right.reportDate.localeCompare(left.reportDate) ||
+  left.itemName.localeCompare(right.itemName) ||
+  left.itemCode.localeCompare(right.itemCode) ||
+  left.agencyId.localeCompare(right.agencyId);
+
+const sortPurchasesByItemName = (left: WholesalePurchaseRecord, right: WholesalePurchaseRecord) =>
+  left.itemName.localeCompare(right.itemName) ||
+  left.itemCode.localeCompare(right.itemCode) ||
+  right.reportDate.localeCompare(left.reportDate) ||
+  left.agencyId.localeCompare(right.agencyId);
+
 export async function getWholesaleRecentPurchases({
+  account,
   db = prisma,
   days = 30,
   licenseeId,
   takeAll = 50,
   takeEcho = 50,
 }: {
+  account?: OhlqWholesaleLookupAccount;
   db?: PrismaClient;
   days?: number;
-  licenseeId: string | null | undefined;
+  licenseeId?: string | null | undefined;
   takeAll?: number;
   takeEcho?: number;
 }) {
-  const normalizedLicenseeId = normalizeOhlqId(licenseeId);
+  const lookupAccount = account ?? { licenseeId };
+  const lookup = await resolveOhlqWholesaleSalesLookup({ account: lookupAccount, db });
+  const linkedLicenseeId = lookup.primaryLicenseeId ?? Array.from(lookup.permitNumbers)[0] ?? null;
+  const permitNumberSearchConditions = buildPermitNumberSearchConditions(lookup);
 
-  if (!normalizedLicenseeId) {
+  if (!linkedLicenseeId || permitNumberSearchConditions.length === 0) {
     return {
       all: { count: 0, records: [], totalBottlesSold: 0 },
       echo: { count: 0, records: [], totalBottlesSold: 0 },
@@ -221,7 +242,7 @@ export async function getWholesaleRecentPurchases({
       all: { count: 0, records: [], totalBottlesSold: 0 },
       echo: { count: 0, records: [], totalBottlesSold: 0 },
       endDate: null,
-      licenseeId: normalizedLicenseeId,
+      licenseeId: linkedLicenseeId,
       startDate: null,
     } satisfies WholesaleRecentPurchases;
   }
@@ -229,52 +250,34 @@ export async function getWholesaleRecentPurchases({
   const endDate = latest.reportDate;
   const startDate = getOhlqWindowStartDate(endDate, days);
   const baseWhere = {
-    permitNumber: normalizedLicenseeId,
+    OR: permitNumberSearchConditions,
     reportDate: { gte: startDate, lte: endDate },
   };
-  const echoWhere = {
-    ...baseWhere,
-    brand: { notIn: [...EXCLUDED_ECHO_ITEM_CODES] },
-    vendor: ECHO_VENDOR_ID,
-  };
-  const [echoRecords, allRecords, echoCount, allCount, echoTotal, allTotal] = await Promise.all([
-    db.ohlqAnnualSalesByWholesaleRow.findMany({
-      where: echoWhere,
-      orderBy: [{ reportDate: 'desc' }, { brand: 'asc' }, { agencyId: 'asc' }],
-      take: takeEcho,
-    }),
-    db.ohlqAnnualSalesByWholesaleRow.findMany({
+  const candidateRows = (
+    await db.ohlqAnnualSalesByWholesaleRow.findMany({
       where: baseWhere,
       orderBy: [{ reportDate: 'desc' }, { brand: 'asc' }, { agencyId: 'asc' }],
-      take: takeAll,
-    }),
-    db.ohlqAnnualSalesByWholesaleRow.count({ where: echoWhere }),
-    db.ohlqAnnualSalesByWholesaleRow.count({ where: baseWhere }),
-    db.ohlqAnnualSalesByWholesaleRow.aggregate({
-      where: echoWhere,
-      _sum: { wholesaleBottlesSold: true },
-    }),
-    db.ohlqAnnualSalesByWholesaleRow.aggregate({
-      where: baseWhere,
-      _sum: { wholesaleBottlesSold: true },
-    }),
-  ]);
-  const itemCodes = [...echoRecords, ...allRecords].map((record) => record.brand);
+    })
+  ).filter((row) => salesPermitMatchesLookup(row.permitNumber, lookup));
+  const echoRows = candidateRows.filter((row) => isEchoItem(row.vendor, row.brand));
+  const itemCodes = candidateRows.map((record) => record.brand);
   const skuLookup = await getSkuLookup(db, itemCodes);
+  const echoRecords = toPurchaseRecords(echoRows, skuLookup).sort(sortPurchasesByNewest);
+  const allRecords = toPurchaseRecords(candidateRows, skuLookup).sort(sortPurchasesByItemName);
 
   return {
     all: {
-      count: allCount,
-      records: toPurchaseRecords(allRecords, skuLookup),
-      totalBottlesSold: sum(allTotal._sum.wholesaleBottlesSold),
+      count: candidateRows.length,
+      records: allRecords.slice(0, takeAll),
+      totalBottlesSold: candidateRows.reduce((total, row) => total + row.wholesaleBottlesSold, 0),
     },
     echo: {
-      count: echoCount,
-      records: toPurchaseRecords(echoRecords, skuLookup),
-      totalBottlesSold: sum(echoTotal._sum.wholesaleBottlesSold),
+      count: echoRows.length,
+      records: echoRecords.slice(0, takeEcho),
+      totalBottlesSold: echoRows.reduce((total, row) => total + row.wholesaleBottlesSold, 0),
     },
     endDate: formatDateOnly(endDate),
-    licenseeId: normalizedLicenseeId,
+    licenseeId: linkedLicenseeId,
     startDate: formatDateOnly(startDate),
   } satisfies WholesaleRecentPurchases;
 }

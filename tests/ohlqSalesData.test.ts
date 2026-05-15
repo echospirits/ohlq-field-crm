@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import type { PrismaClient } from '@prisma/client';
 import {
   ECHO_VENDOR_ID,
+  getWholesaleRecentPurchases,
   getOhlqWindowStartDate,
   isEchoItem,
   normalizeOhlqId,
@@ -14,6 +16,55 @@ describe('OHLQ Echo item filtering', () => {
     assert.equal(isEchoItem(ECHO_VENDOR_ID.toLowerCase(), '0100A'), true);
     assert.equal(isEchoItem(ECHO_VENDOR_ID, '3150B'), false);
     assert.equal(isEchoItem('000000932', '0100A'), false);
+  });
+});
+
+describe('getWholesaleRecentPurchases', () => {
+  it('matches permit suffix variants and sorts all purchases by item name', async () => {
+    const db = {
+      account: {
+        findMany: async () => [],
+      },
+      ohlqAnnualSalesByWholesaleRow: {
+        findFirst: async () => ({ reportDate: new Date('2026-05-12T00:00:00.000Z') }),
+        findMany: async () => [
+          {
+            agencyId: '10100',
+            brand: '0200B',
+            permitNumber: '00072045-1',
+            reportDate: new Date('2026-05-11T00:00:00.000Z'),
+            vendor: 'OTHER',
+            wholesaleBottlesSold: 1,
+          },
+          {
+            agencyId: '10100',
+            brand: '0100A',
+            permitNumber: '00072045-2',
+            reportDate: new Date('2026-05-10T00:00:00.000Z'),
+            vendor: 'OTHER',
+            wholesaleBottlesSold: 2,
+          },
+        ],
+      },
+      ohlqBrandMasterItem: {
+        findMany: async () => [
+          { itemCode: '0200B', name: 'Zeta Whiskey' },
+          { itemCode: '0100A', name: 'Alpha Vodka' },
+        ],
+      },
+    } as unknown as PrismaClient;
+
+    const result = await getWholesaleRecentPurchases({
+      account: { licenseeId: '72045' },
+      db,
+      licenseeId: '72045',
+    });
+
+    assert.equal(result.all.count, 2);
+    assert.deepEqual(
+      result.all.records.map((record) => record.itemName),
+      ['Alpha Vodka', 'Zeta Whiskey'],
+    );
   });
 });
 

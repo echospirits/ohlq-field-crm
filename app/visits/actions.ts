@@ -68,16 +68,39 @@ const getQuickOutcomes = (formData: FormData) =>
     ),
   );
 
-const redirectWithStatus = (formOrigin: FormOrigin, status: string): never => {
-  redirect(formOrigin === 'worklist' ? `/alerts?notice=${status}` : `/visits/new?status=${status}`);
-};
-
 const redirectVisitWithStatus = (formOrigin: FormOrigin, status: string, locationType: string): never => {
   redirect(
     formOrigin === 'worklist'
       ? `/alerts?notice=${status}`
       : `/visits/new?status=${status}&type=${locationType === 'wholesale' ? 'wholesale' : 'agency'}`,
   );
+};
+
+const getVisitSummaryPath = (visit: {
+  agencyId: string | null;
+  locationType: string;
+  wholesaleAccountId: string | null;
+}) => {
+  if (visit.locationType === 'wholesale' && visit.wholesaleAccountId) {
+    return `/wholesale/${visit.wholesaleAccountId}`;
+  }
+
+  if (visit.locationType === 'agency' && visit.agencyId) {
+    return `/agencies/${visit.agencyId}`;
+  }
+
+  return '/visits';
+};
+
+const redirectToVisitSummary = (
+  visit: {
+    agencyId: string | null;
+    locationType: string;
+    wholesaleAccountId: string | null;
+  },
+  status = 'visit-logged',
+): never => {
+  redirect(`${getVisitSummaryPath(visit)}?status=${status}`);
 };
 
 function collectPhotos(formData: FormData, formOrigin: FormOrigin, locationType: string) {
@@ -380,7 +403,7 @@ export async function createVisit(formData: FormData) {
 
       await prisma.visitPhoto.createMany({ data: photos });
     } catch {
-      redirectWithStatus(formOrigin, 'photo-upload-failed');
+      redirectToVisitSummary(visit, 'visit-logged-photo-upload-failed');
     }
   }
 
@@ -390,5 +413,11 @@ export async function createVisit(formData: FormData) {
   revalidatePath('/agencies');
   revalidatePath('/wholesale');
   revalidatePath('/tags');
-  redirect(worklistItemId ? '/alerts?notice=visit-logged' : '/visits?status=logged');
+  if (visit.agencyId) {
+    revalidatePath(`/agencies/${visit.agencyId}`);
+  }
+  if (visit.wholesaleAccountId) {
+    revalidatePath(`/wholesale/${visit.wholesaleAccountId}`);
+  }
+  redirectToVisitSummary(visit, worklistItemId ? 'visit-logged-worklist-completed' : 'visit-logged');
 }

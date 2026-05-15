@@ -296,7 +296,7 @@ export default async function WholesalePage({
               <tr key={account.id}>
                 <td data-label="Actions">
                   <Link className="btn compact-btn" href={`/visits/new?type=wholesale&wholesaleAccountId=${account.id}`}>
-                    Log Visit
+                    Log visit
                   </Link>
                 </td>
                 <td data-label="Status">

@@ -173,7 +173,7 @@ export default async function AgenciesPage({
       </LiveFilterForm>
       {params.status === 'imported' ? <p className="pill">Imported/updated {params.count} agencies.</p> : null}
 
-      <details className="card compact-details admin-panel">
+      <details className="card compact-details admin-panel desktop-admin-panel">
         <summary>Import Agencies CSV</summary>
         <form action={importAgencies}>
           <input type="file" name="csvFile" accept=".csv,text/csv" required />
@@ -205,7 +205,7 @@ export default async function AgenciesPage({
               <tr key={agency.id}>
                 <td data-label="Actions">
                   <Link className="btn compact-btn" href={`/visits/new?type=agency&agencyId=${agency.id}`}>
-                    Log Visit
+                    Log visit
                   </Link>
                 </td>
                 <td data-label="Agency ID">{agency.agencyId}</td>

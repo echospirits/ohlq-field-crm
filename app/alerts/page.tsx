@@ -275,7 +275,7 @@ export default async function Alerts({
               <option value={WorklistCategory.WHOLESALE}>Wholesale</option>
               <option value={WorklistCategory.GENERAL}>General</option>
             </select>
-            <button type="submit">Create</button>
+            <button type="submit">Create task</button>
 
             <details className="compact-details nested-details quick-task-more">
               <summary>Add account, owner, or details</summary>

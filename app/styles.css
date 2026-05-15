@@ -197,6 +197,31 @@ textarea:focus-visible {
   box-shadow: 0 12px 40px #0000002e;
 }
 
+.toast-notice {
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  color: #dcfce7;
+  background: #052e1a;
+  border: 1px solid #166534;
+  border-radius: 8px;
+  box-shadow: 0 12px 32px #00000030;
+  font-size: 14px;
+  font-weight: 760;
+  animation: toast-soft-fade 5s ease forwards;
+}
+
+@keyframes toast-soft-fade {
+  0%,
+  78% {
+    opacity: 1;
+  }
+  100% {
+    opacity: .72;
+  }
+}
+
 .dashboard-section {
   margin-top: 28px;
 }
@@ -425,10 +450,24 @@ textarea:focus-visible {
   color: #f8fafc;
   text-decoration: none;
   border-top: 1px solid var(--line);
+  border-radius: 8px;
+  transition: background-color 160ms ease, color 160ms ease, transform 120ms ease;
 }
 
-.reactivation-row:hover {
+.reactivation-row:hover,
+.reactivation-row:focus-visible {
   color: #bfdbfe;
+  background: #ffffff08;
+  transform: translateX(2px);
+}
+
+.reactivation-row::after {
+  content: "View";
+  align-self: center;
+  justify-self: end;
+  color: #93c5fd;
+  font-size: 11px;
+  font-weight: 800;
 }
 
 .reactivation-row span {
@@ -504,13 +543,28 @@ tr:hover td {
 }
 
 .table-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   color: #f8fafc;
   font-weight: 750;
+  text-decoration: underline;
+  text-decoration-color: #93c5fd66;
+  text-underline-offset: 3px;
+}
+
+.table-link::after {
+  content: "View";
+  color: #93c5fd;
+  font-size: 11px;
+  font-weight: 800;
   text-decoration: none;
 }
 
-.table-link:hover {
+.table-link:hover,
+.table-link:focus-visible {
   color: #bfdbfe;
+  text-decoration-color: #bfdbfe;
 }
 
 .link-button {
@@ -553,6 +607,7 @@ tr:hover td {
 
 .quick-action-card {
   display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 4px;
   min-height: 76px;
   padding: 14px;
@@ -564,6 +619,17 @@ tr:hover td {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   box-shadow: 0 10px 30px #00000026;
+  transition: transform 120ms ease, border-color 160ms ease, background-color 160ms ease;
+}
+
+.quick-action-card::after {
+  content: "View";
+  grid-row: 1 / span 2;
+  grid-column: 2;
+  justify-self: end;
+  color: #93c5fd;
+  font-size: 11px;
+  font-weight: 800;
 }
 
 .quick-action-card strong {
@@ -576,9 +642,11 @@ tr:hover td {
   font-size: 13px;
 }
 
-.quick-action-card:hover {
+.quick-action-card:hover,
+.quick-action-card:focus-visible {
   color: #ffffff;
-  border-color: var(--line-strong);
+  border-color: #4972ff;
+  transform: translateY(-1px);
 }
 
 .quick-action-primary {
@@ -755,6 +823,18 @@ form {
   margin-bottom: 16px;
 }
 
+.live-filter-status {
+  grid-column: 1 / -1;
+  min-height: 18px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.filter-form.is-filtering input,
+.filter-form.is-filtering select {
+  border-color: #7da0ff;
+}
+
 .worklist-tools {
   display: grid;
   grid-template-columns: minmax(0, 1.5fr) minmax(260px, .8fr);
@@ -829,6 +909,14 @@ fieldset {
   font-weight: 750;
   list-style: none;
   cursor: pointer;
+  border-radius: 8px;
+  transition: background-color 160ms ease, color 160ms ease;
+}
+
+.compact-details summary:hover,
+.compact-details summary:focus-visible {
+  color: #bfdbfe;
+  background: #ffffff08;
 }
 
 .compact-details summary::marker {
@@ -1458,6 +1546,15 @@ legend {
   border-radius: 8px;
   box-shadow: none;
   text-align: left;
+  cursor: pointer;
+  transition: transform 120ms ease, border-color 160ms ease, background-color 160ms ease;
+}
+
+.quick-picker:hover,
+.quick-picker:focus-visible {
+  border-color: #7da0ff;
+  background: #12121a;
+  transform: translateY(-1px);
 }
 
 .quick-picker strong {
@@ -1817,6 +1914,10 @@ legend {
   .recipe-detail-layout,
   .digest-control-form {
     grid-template-columns: 1fr;
+  }
+
+  .desktop-admin-panel {
+    display: none;
   }
 
   .recipe-grid {

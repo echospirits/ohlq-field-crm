@@ -8,9 +8,9 @@ import {
   ECHO_VENDOR_ID,
   EXCLUDED_ECHO_ITEM_CODES,
   isEchoItem,
-  normalizeOhlqId,
 } from './ohlqSalesData';
 import { formatOhlqDate } from './ohlqDataStatus';
+import { getOhlqLicenseeMatchKeys, normalizeOhlqId } from './ohlqWholesaleMatching';
 import { prisma } from './prisma';
 
 export const OHLQ_WHOLESALE_REACTIVATION_SOURCE = WorklistSource.OHLQ_WHOLESALE_REACTIVATION;
@@ -162,16 +162,21 @@ export function buildWholesaleReactivationAnalysis({
   timeZone?: string;
 }): WholesaleReactivationAnalysis {
   const windows = getWholesaleReactivationWindows({ runAt, timeZone });
-  const accountByLicenseeId = new Map(
-    accounts
-      .map((account) => [normalizeOhlqId(account.licenseeId), account] as const)
-      .filter(([licenseeId]) => Boolean(licenseeId)),
-  );
+  const accountByLicenseeKey = new Map<string, WholesaleReactivationAccount>();
+  accounts.forEach((account) => {
+    getOhlqLicenseeMatchKeys(account.licenseeId).forEach((key) => {
+      if (!accountByLicenseeKey.has(key)) {
+        accountByLicenseeKey.set(key, account);
+      }
+    });
+  });
   const groups = new Map<
     string,
     {
+      account: WholesaleReactivationAccount | null;
       hasRecentPurchase: boolean;
       items: Map<string, WholesaleReactivationItem>;
+      licenseeId: string;
       mostRecentPurchaseDate: Date;
       totalWholesaleBottlesSold: number;
     }
@@ -182,19 +187,30 @@ export function buildWholesaleReactivationAnalysis({
     if (!isEchoItem(row.vendor, row.brand)) continue;
 
     const licenseeId = normalizeOhlqId(row.permitNumber);
-    if (!licenseeId) continue;
+    const licenseeKeys = getOhlqLicenseeMatchKeys(row.permitNumber);
+    if (!licenseeId || licenseeKeys.length === 0) continue;
+
+    const account = licenseeKeys.map((key) => accountByLicenseeKey.get(key)).find(Boolean) ?? null;
+    const groupKey = account?.id ?? licenseeKeys[0];
 
     const reportTime = row.reportDate.getTime();
     if (reportTime < windows.ninetyDayStartDate.getTime() || reportTime > windows.runDate.getTime()) continue;
 
     const hasRecentPurchase = reportTime >= windows.recentStartDate.getTime();
-    if (hasRecentPurchase) recentBuyerLicenseeIds.add(licenseeId);
+    if (hasRecentPurchase) {
+      licenseeKeys.forEach((key) => recentBuyerLicenseeIds.add(key));
+      if (account) {
+        getOhlqLicenseeMatchKeys(account.licenseeId).forEach((key) => recentBuyerLicenseeIds.add(key));
+      }
+    }
 
     const group =
-      groups.get(licenseeId) ??
+      groups.get(groupKey) ??
       {
+        account,
         hasRecentPurchase: false,
         items: new Map<string, WholesaleReactivationItem>(),
+        licenseeId: account?.licenseeId ?? licenseeId,
         mostRecentPurchaseDate: row.reportDate,
         totalWholesaleBottlesSold: 0,
       };
@@ -211,20 +227,21 @@ export function buildWholesaleReactivationAnalysis({
     if (reportTime > item.mostRecentPurchaseDate.getTime()) item.mostRecentPurchaseDate = row.reportDate;
     group.totalWholesaleBottlesSold += row.wholesaleBottlesSold;
     if (hasRecentPurchase) group.hasRecentPurchase = true;
+    if (!group.account && account) group.account = account;
     if (reportTime > group.mostRecentPurchaseDate.getTime()) group.mostRecentPurchaseDate = row.reportDate;
     group.items.set(row.brand, item);
-    groups.set(licenseeId, group);
+    groups.set(groupKey, group);
   }
 
   const candidates: WholesaleReactivationCandidate[] = [];
   const unmatchedLicenseeIds: string[] = [];
 
-  for (const [licenseeId, group] of groups) {
+  for (const group of groups.values()) {
     if (group.hasRecentPurchase) continue;
 
-    const account = accountByLicenseeId.get(licenseeId);
+    const account = group.account;
     if (!account) {
-      unmatchedLicenseeIds.push(licenseeId);
+      unmatchedLicenseeIds.push(group.licenseeId);
       continue;
     }
 
@@ -319,7 +336,7 @@ export function planWholesaleReactivationWorklistSync({
         item.wholesaleAccountId &&
         isOpenWorklistStatus(item.status) &&
         !candidateAccountIds.has(item.wholesaleAccountId) &&
-        Boolean(item.licenseeId && recentBuyerLicenseeIds.has(normalizeOhlqId(item.licenseeId) ?? '')),
+        Boolean(item.licenseeId && getOhlqLicenseeMatchKeys(item.licenseeId).some((key) => recentBuyerLicenseeIds.has(key))),
     ),
     createCandidates,
     skippedCandidates,
@@ -339,25 +356,36 @@ const getItemNameLookup = async (db: PrismaClient, itemCodes: string[]) => {
 };
 
 const findActiveWholesaleAccounts = async (db: PrismaClient, licenseeIds: string[]) => {
-  const uniqueLicenseeIds = Array.from(new Set(licenseeIds));
-  const accounts: WholesaleReactivationAccount[] = [];
+  const uniqueLicenseeIds = Array.from(new Set(licenseeIds.map(normalizeOhlqId).filter(Boolean) as string[]));
+  const targetKeys = new Set(uniqueLicenseeIds.flatMap(getOhlqLicenseeMatchKeys));
+  const accounts = new Map<string, WholesaleReactivationAccount>();
   const chunkSize = 100;
 
   for (let index = 0; index < uniqueLicenseeIds.length; index += chunkSize) {
     const chunk = uniqueLicenseeIds.slice(index, index + chunkSize);
+    const chunkKeys = Array.from(new Set(chunk.flatMap(getOhlqLicenseeMatchKeys)));
     const chunkAccounts = await db.wholesaleAccount.findMany({
       where: {
         isActive: true,
-        OR: chunk.map((licenseeId) => ({
-          licenseeId: { equals: licenseeId, mode: 'insensitive' },
-        })),
+        OR: [
+          ...chunk.map((licenseeId) => ({
+            licenseeId: { equals: licenseeId, mode: 'insensitive' as const },
+          })),
+          ...chunkKeys
+            .filter((key) => key.length >= 4)
+            .map((key) => ({
+              licenseeId: { contains: key, mode: 'insensitive' as const },
+            })),
+        ],
       },
       select: { id: true, licenseeId: true, name: true },
     });
-    accounts.push(...chunkAccounts);
+    chunkAccounts
+      .filter((account) => getOhlqLicenseeMatchKeys(account.licenseeId).some((key) => targetKeys.has(key)))
+      .forEach((account) => accounts.set(account.id, account));
   }
 
-  return accounts;
+  return Array.from(accounts.values());
 };
 
 export async function findOhlqWholesaleReactivationCandidates({
@@ -368,35 +396,81 @@ export async function findOhlqWholesaleReactivationCandidates({
   runAt?: Date;
 } = {}) {
   const windows = getWholesaleReactivationWindows({ runAt });
-  const rows = await db.ohlqAnnualSalesByWholesaleRow.findMany({
-    where: {
-      brand: { notIn: [...EXCLUDED_ECHO_ITEM_CODES] },
-      reportDate: { gte: windows.ninetyDayStartDate, lte: windows.runDate },
-      vendor: ECHO_VENDOR_ID,
-    },
-    select: {
-      brand: true,
-      permitNumber: true,
-      reportDate: true,
-      vendor: true,
-      wholesaleBottlesSold: true,
-    },
-  });
-  const normalizedLicenseeIds = rows.map((row) => normalizeOhlqId(row.permitNumber)).filter(Boolean) as string[];
-  const [accounts, itemNames] = await Promise.all([
-    findActiveWholesaleAccounts(db, normalizedLicenseeIds),
-    getItemNameLookup(
-      db,
-      rows.filter((row) => isEchoItem(row.vendor, row.brand)).map((row) => row.brand),
-    ),
+  const [lapsedAccounts, recentBuyerAccounts] = await Promise.all([
+    db.wholesaleAccount.findMany({
+      where: {
+        isActive: true,
+        ohlqLastEchoPurchaseDate: {
+          gte: windows.ninetyDayStartDate,
+          lt: windows.recentStartDate,
+        },
+      },
+      orderBy: [
+        { ohlqLastEchoPurchaseDate: 'desc' },
+        { ohlqLastEchoPurchaseBottles: 'desc' },
+        { name: 'asc' },
+      ],
+      select: {
+        id: true,
+        licenseeId: true,
+        name: true,
+        ohlqLastEchoPurchaseBottles: true,
+        ohlqLastEchoPurchaseDate: true,
+        ohlqLastEchoPurchaseItemCode: true,
+        ohlqLastEchoPurchaseItemName: true,
+      },
+    }),
+    db.wholesaleAccount.findMany({
+      where: {
+        isActive: true,
+        ohlqLastEchoPurchaseDate: {
+          gte: windows.recentStartDate,
+          lte: windows.runDate,
+        },
+      },
+      select: { licenseeId: true },
+    }),
   ]);
-
-  return buildWholesaleReactivationAnalysis({
-    accounts,
-    itemNames,
-    rows,
-    runAt,
+  const recentBuyerLicenseeIds = new Set<string>();
+  recentBuyerAccounts.forEach((account) => {
+    getOhlqLicenseeMatchKeys(account.licenseeId).forEach((key) => recentBuyerLicenseeIds.add(key));
   });
+  const candidates = lapsedAccounts
+    .filter((account) => account.ohlqLastEchoPurchaseDate)
+    .map((account) => {
+      const purchaseDate = account.ohlqLastEchoPurchaseDate!;
+      const item =
+        account.ohlqLastEchoPurchaseItemCode || account.ohlqLastEchoPurchaseItemName
+          ? [
+              {
+                itemCode: account.ohlqLastEchoPurchaseItemCode ?? 'Echo item',
+                itemName: account.ohlqLastEchoPurchaseItemName ?? 'Name pending',
+                mostRecentPurchaseDate: purchaseDate,
+                wholesaleBottlesSold: account.ohlqLastEchoPurchaseBottles,
+              },
+            ]
+          : [];
+
+      return {
+        accountName: account.name,
+        daysSinceLastEchoPurchase: Math.max(
+          0,
+          Math.floor((windows.runDate.getTime() - purchaseDate.getTime()) / dayMs),
+        ),
+        items: item,
+        licenseeId: account.licenseeId,
+        mostRecentPurchaseDate: purchaseDate,
+        totalWholesaleBottlesSold: account.ohlqLastEchoPurchaseBottles,
+        wholesaleAccountId: account.id,
+      } satisfies WholesaleReactivationCandidate;
+    });
+
+  return {
+    candidates,
+    recentBuyerLicenseeIds,
+    unmatchedLicenseeIds: [],
+    windows,
+  } satisfies WholesaleReactivationAnalysis;
 }
 
 export const buildWholesaleReactivationDetail = (candidate: WholesaleReactivationCandidate) => {
@@ -411,9 +485,9 @@ export const buildWholesaleReactivationDetail = (candidate: WholesaleReactivatio
   return [
     `${candidate.accountName} (${candidate.licenseeId}) bought Echo items in the last 90 days, but not in the last 30 days.`,
     `Most recent Echo purchase: ${formatOhlqDate(candidate.mostRecentPurchaseDate)} (${candidate.daysSinceLastEchoPurchase} day(s) ago).`,
-    `Last 90-day Echo bottles: ${candidate.totalWholesaleBottlesSold.toLocaleString('en-US')}.`,
-    'Echo items purchased in the last 90 days:',
-    ...itemLines,
+    `Latest Echo purchase bottles captured: ${candidate.totalWholesaleBottlesSold.toLocaleString('en-US')}.`,
+    itemLines.length > 0 ? 'Most recent Echo item captured:' : 'Most recent Echo item details were not captured.',
+    itemLines.length > 0 ? itemLines.join('\n') : null,
     hiddenItemCount > 0 ? `- ${hiddenItemCount} more item(s)` : null,
   ]
     .filter(Boolean)

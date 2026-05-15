@@ -1,5 +1,6 @@
 import { Prisma, type PrismaClient } from '@prisma/client';
 import Papa from 'papaparse';
+import { syncWholesaleAccountEchoPurchaseState, type OhlqWholesalePurchaseStateSyncResult } from './ohlqWholesalePurchaseState';
 import { prisma } from './prisma';
 
 const REQUIRED_HEADERS = [
@@ -34,7 +35,9 @@ export type OhlqAnnualSalesImportResult = {
   skippedRows: number;
 };
 
-export type OhlqAnnualSalesByWholesaleImportResult = OhlqAnnualSalesImportResult;
+export type OhlqAnnualSalesByWholesaleImportResult = OhlqAnnualSalesImportResult & {
+  echoPurchaseState: OhlqWholesalePurchaseStateSyncResult;
+};
 
 const toDateOnlyUtc = (isoDate: string) => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(isoDate)) {
@@ -236,9 +239,20 @@ export async function importOhlqAnnualSalesByWholesaleCsv({
     },
     { timeout: 120_000 },
   );
+  const echoPurchaseState = await syncWholesaleAccountEchoPurchaseState({
+    db,
+    rows: parsed.rows.map((row) => ({
+      brand: row.brand,
+      permitNumber: row.permitNumber,
+      reportDate: row.reportDate instanceof Date ? row.reportDate : new Date(row.reportDate),
+      vendor: row.vendor,
+      wholesaleBottlesSold: row.wholesaleBottlesSold ?? 0,
+    })),
+  });
 
   return {
     deletedRows: result.deletedRows,
+    echoPurchaseState,
     importedRows: result.importedRows,
     parsedRows: parsed.rows.length,
     reportDate,

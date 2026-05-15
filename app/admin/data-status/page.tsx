@@ -272,7 +272,7 @@ export default async function DataStatusPage({
         </article>
       </section>
 
-      <details className="card compact-details admin-panel">
+      <details className="card compact-details admin-panel desktop-admin-panel">
         <summary>Import OHLQ Brand Master CSV</summary>
         <form action={importBrandMaster} encType="multipart/form-data">
           <input type="file" name="brandMasterFile" accept=".csv,text/csv" required />

@@ -593,6 +593,11 @@ model WholesaleAccount {
   districtId        String?
   deliveryDay       String?
   phone             String?
+  ohlqLastEchoPurchaseDate      DateTime? @db.Date
+  ohlqLastEchoPurchaseItemCode  String?
+  ohlqLastEchoPurchaseItemName  String?
+  ohlqLastEchoPurchaseBottles   Int       @default(0)
+  ohlqLastEchoPurchaseUpdatedAt DateTime?
   createdByUserId   String?
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
@@ -605,6 +610,7 @@ model WholesaleAccount {
   @@index([createdByUserId])
   @@index([isActive])
   @@index([officialAccountId])
+  @@index([ohlqLastEchoPurchaseDate])
 }
 
 model LocationTag {
