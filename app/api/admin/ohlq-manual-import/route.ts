@@ -57,6 +57,8 @@ export async function POST(request: Request) {
       wholesaleRows: result.reports.annualSalesSummaryByWholesale.importedRows,
     });
   } catch (error) {
+    console.error('Manual OHLQ import failed:', error);
+
     return redirectToDataStatus(request, 'ohlq-error', {
       message: (error instanceof Error ? error.message : String(error)).slice(0, 180),
     });

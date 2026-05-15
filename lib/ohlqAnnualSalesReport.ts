@@ -159,13 +159,33 @@ async function saveDebugScreenshot(page: Page, label: string, debugDir: string) 
   return screenshotPath;
 }
 
-async function clickIfVisible(page: Page, selectorName: string) {
-  const button = page.getByRole('button', { name: selectorName });
+async function clickIfVisible(page: Page, selectorName: string | RegExp) {
+  const button = page.getByRole('button', { name: selectorName }).first();
   if (await button.isVisible().catch(() => false)) {
     await button.click();
     return true;
   }
   return false;
+}
+
+async function waitForMicrosoftStep(page: Page) {
+  await page.waitForLoadState('domcontentloaded', { timeout: 5_000 }).catch(() => undefined);
+  await page.waitForTimeout(750);
+}
+
+async function getMicrosoftPageSummary(page: Page) {
+  const text = await page
+    .locator('body')
+    .innerText({ timeout: 2_000 })
+    .catch(() => '');
+
+  return text.replace(/\s+/g, ' ').trim().slice(0, 500);
+}
+
+async function throwMicrosoftInterrupt(page: Page, debugDir: string, message: string) {
+  const screenshotPath = await saveDebugScreenshot(page, 'microsoft-sign-in-interrupted', debugDir);
+  const pageSummary = await getMicrosoftPageSummary(page);
+  throw new Error(`${message} Last Microsoft page: ${pageSummary || page.url()}. Debug screenshot: ${screenshotPath}`);
 }
 
 async function handleMicrosoftSignIn(page: Page, debugDir: string) {
@@ -185,33 +205,77 @@ async function handleMicrosoftSignIn(page: Page, debugDir: string) {
     );
   }
 
-  const usernamePlaceholder = page.getByPlaceholder(/email, phone, or skype/i).first();
-  if (await usernamePlaceholder.isVisible().catch(() => false)) {
-    await usernamePlaceholder.fill(username);
-  } else {
-    await page.getByRole('textbox', { name: /email, phone, or skype/i }).first().fill(username);
-  }
-  await page.getByRole('button', { name: 'Next' }).click();
-  await page.waitForLoadState('domcontentloaded').catch(() => undefined);
+  const deadline = Date.now() + 90_000;
 
-  if (await page.getByText('There was an issue looking up your account').isVisible().catch(() => false)) {
-    const screenshotPath = await saveDebugScreenshot(page, 'microsoft-account-lookup-error', debugDir);
-    throw new Error(`Microsoft could not look up OHLQ_MICROSOFT_USERNAME. Debug screenshot: ${screenshotPath}`);
-  }
-
-  const passwordInput = page.locator('input[type="password"]').first();
-  if (await passwordInput.isVisible().catch(() => false)) {
-    if (!password) {
-      const screenshotPath = await saveDebugScreenshot(page, 'microsoft-password-required', debugDir);
-      throw new Error(`Microsoft password prompt appeared, but OHLQ_MICROSOFT_PASSWORD is not set. Debug screenshot: ${screenshotPath}`);
+  while (page.url().includes('login.microsoftonline.com') && Date.now() < deadline) {
+    if (await page.getByText('There was an issue looking up your account').isVisible().catch(() => false)) {
+      const screenshotPath = await saveDebugScreenshot(page, 'microsoft-account-lookup-error', debugDir);
+      throw new Error(`Microsoft could not look up OHLQ_MICROSOFT_USERNAME. Debug screenshot: ${screenshotPath}`);
     }
 
-    await passwordInput.fill(password);
-    await page.getByRole('button', { name: 'Sign in' }).click();
-    await page.waitForLoadState('domcontentloaded').catch(() => undefined);
+    const hasMfaPrompt = await page
+      .getByText(/approve sign in request|authenticator|verification code|enter code|more information required|help us protect your account/i)
+      .first()
+      .isVisible()
+      .catch(() => false);
+    if (hasMfaPrompt) {
+      await throwMicrosoftInterrupt(
+        page,
+        debugDir,
+        'Microsoft sign-in requires additional verification before Power BI can load.',
+      );
+    }
+
+    const accountChoice = page.getByText(username, { exact: false }).first();
+    if (await accountChoice.isVisible().catch(() => false)) {
+      await accountChoice.click();
+      await waitForMicrosoftStep(page);
+      continue;
+    }
+
+    if (await clickIfVisible(page, /use another account/i)) {
+      await waitForMicrosoftStep(page);
+      continue;
+    }
+
+    const usernameInput = page
+      .locator('input[type="email"], input[name="loginfmt"], input[aria-label*="Email"], input[placeholder*="email" i]')
+      .first();
+    if (await usernameInput.isVisible().catch(() => false)) {
+      await usernameInput.fill(username);
+      await clickIfVisible(page, /next/i);
+      await waitForMicrosoftStep(page);
+      continue;
+    }
+
+    const passwordInput = page.locator('input[type="password"]').first();
+    if (await passwordInput.isVisible().catch(() => false)) {
+      if (!password) {
+        const screenshotPath = await saveDebugScreenshot(page, 'microsoft-password-required', debugDir);
+        throw new Error(
+          `Microsoft password prompt appeared, but OHLQ_MICROSOFT_PASSWORD is not set. Debug screenshot: ${screenshotPath}`,
+        );
+      }
+
+      await passwordInput.fill(password);
+      if (!(await clickIfVisible(page, /sign in/i))) {
+        await clickIfVisible(page, /next/i);
+      }
+      await waitForMicrosoftStep(page);
+      continue;
+    }
+
+    if (await clickIfVisible(page, /^yes$/i)) {
+      await waitForMicrosoftStep(page);
+      continue;
+    }
+
+    await page.waitForTimeout(1_000);
   }
 
-  await clickIfVisible(page, 'Yes');
+  if (page.url().includes('login.microsoftonline.com')) {
+    await throwMicrosoftInterrupt(page, debugDir, 'Microsoft sign-in did not complete before the automation timeout.');
+  }
 }
 
 async function setDate(frame: FrameLocator, label: 'From date' | 'To date', reportDate: ReportDate) {
