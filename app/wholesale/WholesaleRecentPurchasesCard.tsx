@@ -7,7 +7,7 @@ function PurchaseSummary({ list }: { list: WholesalePurchaseList }) {
     <div className="ohlq-purchase-summary">
       <span>
         <strong>{numberFormatter.format(list.count)}</strong>
-        <small>records</small>
+        <small>items</small>
       </span>
       <span>
         <strong>{numberFormatter.format(list.totalBottlesSold)}</strong>
@@ -24,38 +24,41 @@ function PurchaseList({
   emptyText: string;
   list: WholesalePurchaseList;
 }) {
-  if (list.records.length === 0) {
+  if (list.items.length === 0) {
     return <p className="muted activity-empty">{emptyText}</p>;
   }
 
   return (
     <>
       <div className="ohlq-purchase-list">
-        {list.records.map((record, index) => (
+        {list.items.map((item) => (
           <article
             className="ohlq-purchase-row"
-            key={`${record.reportDate}:${record.agencyId}:${record.vendor}:${record.itemCode}:${index}`}
+            key={item.itemCode}
           >
             <div>
               <strong>
-                {record.itemCode} - {record.itemName}
+                {item.itemCode} - {item.itemName}
               </strong>
               <span className="muted">
-                {record.reportDate} - Agency {record.agencyId} - Vendor {record.vendor}
+                {numberFormatter.format(item.purchaseLineCount)} purchase line{item.purchaseLineCount === 1 ? '' : 's'}
+                {' · '}
+                {numberFormatter.format(item.agencyCount)} agenc{item.agencyCount === 1 ? 'y' : 'ies'}
+                {item.vendorCount > 1 ? ` · ${numberFormatter.format(item.vendorCount)} vendors` : ''}
               </span>
             </div>
             <div className="ohlq-item-metrics">
               <span>
-                <strong>{numberFormatter.format(record.wholesaleBottlesSold)}</strong>
+                <strong>{numberFormatter.format(item.totalBottlesSold)}</strong>
                 <small>bottles</small>
               </span>
             </div>
           </article>
         ))}
       </div>
-      {list.count > list.records.length ? (
+      {list.count > list.items.length ? (
         <p className="muted view-more-note">
-          Showing {numberFormatter.format(list.records.length)} most recent of {numberFormatter.format(list.count)}.
+          Showing {numberFormatter.format(list.items.length)} of {numberFormatter.format(list.count)} items.
         </p>
       ) : null}
     </>

@@ -20,7 +20,7 @@ describe('OHLQ Echo item filtering', () => {
 });
 
 describe('getWholesaleRecentPurchases', () => {
-  it('matches permit suffix variants and sorts all purchases by item name', async () => {
+  it('matches permit suffix variants and aggregates purchases by item name', async () => {
     const db = {
       account: {
         findMany: async () => [],
@@ -28,6 +28,14 @@ describe('getWholesaleRecentPurchases', () => {
       ohlqAnnualSalesByWholesaleRow: {
         findFirst: async () => ({ reportDate: new Date('2026-05-12T00:00:00.000Z') }),
         findMany: async () => [
+          {
+            agencyId: '10101',
+            brand: '0100A',
+            permitNumber: '00072045-1',
+            reportDate: new Date('2026-05-12T00:00:00.000Z'),
+            vendor: ECHO_VENDOR_ID,
+            wholesaleBottlesSold: 3,
+          },
           {
             agencyId: '10100',
             brand: '0200B',
@@ -41,7 +49,7 @@ describe('getWholesaleRecentPurchases', () => {
             brand: '0100A',
             permitNumber: '00072045-2',
             reportDate: new Date('2026-05-10T00:00:00.000Z'),
-            vendor: 'OTHER',
+            vendor: ECHO_VENDOR_ID,
             wholesaleBottlesSold: 2,
           },
         ],
@@ -62,9 +70,16 @@ describe('getWholesaleRecentPurchases', () => {
 
     assert.equal(result.all.count, 2);
     assert.deepEqual(
-      result.all.records.map((record) => record.itemName),
+      result.all.items.map((item) => item.itemName),
       ['Alpha Vodka', 'Zeta Whiskey'],
     );
+    assert.equal(result.all.purchaseLineCount, 3);
+    assert.equal(result.all.items[0].totalBottlesSold, 5);
+    assert.equal(result.all.items[0].purchaseLineCount, 2);
+    assert.equal(result.all.items[0].agencyCount, 2);
+    assert.equal(result.echo.count, 1);
+    assert.equal(result.echo.items[0].itemCode, '0100A');
+    assert.equal(result.echo.items[0].totalBottlesSold, 5);
   });
 });
 

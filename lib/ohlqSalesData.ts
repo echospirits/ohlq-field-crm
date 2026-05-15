@@ -41,18 +41,19 @@ export type AgencySalesSummaryItem = {
   wholesaleBottlesSold: number;
 };
 
-export type WholesalePurchaseRecord = {
-  agencyId: string;
+export type WholesalePurchaseSummaryItem = {
+  agencyCount: number;
   itemCode: string;
   itemName: string;
-  reportDate: string;
-  vendor: string;
-  wholesaleBottlesSold: number;
+  purchaseLineCount: number;
+  totalBottlesSold: number;
+  vendorCount: number;
 };
 
 export type WholesalePurchaseList = {
   count: number;
-  records: WholesalePurchaseRecord[];
+  items: WholesalePurchaseSummaryItem[];
+  purchaseLineCount: number;
   totalBottlesSold: number;
 };
 
@@ -171,36 +172,60 @@ export async function getAgencyRecentItemSales({
   })) satisfies AgencySalesWindow[];
 }
 
-const toPurchaseRecords = (
+const toPurchaseSummaryItems = (
   records: Array<{
     agencyId: string;
     brand: string;
-    reportDate: Date;
     vendor: string;
     wholesaleBottlesSold: number;
   }>,
   skuLookup: SkuLookup,
-) =>
-  records.map((record) => ({
-    agencyId: record.agencyId,
-    itemCode: record.brand,
-    itemName: getItemName(skuLookup, record.brand),
-    reportDate: formatDateOnly(record.reportDate) ?? '',
-    vendor: record.vendor,
-    wholesaleBottlesSold: record.wholesaleBottlesSold,
+) => {
+  const itemsByCode = new Map<
+    string,
+    {
+      agencies: Set<string>;
+      itemCode: string;
+      itemName: string;
+      purchaseLineCount: number;
+      totalBottlesSold: number;
+      vendors: Set<string>;
+    }
+  >();
+
+  records.forEach((record) => {
+    const item =
+      itemsByCode.get(record.brand) ??
+      {
+        agencies: new Set<string>(),
+        itemCode: record.brand,
+        itemName: getItemName(skuLookup, record.brand),
+        purchaseLineCount: 0,
+        totalBottlesSold: 0,
+        vendors: new Set<string>(),
+      };
+
+    item.agencies.add(record.agencyId);
+    item.purchaseLineCount += 1;
+    item.totalBottlesSold += record.wholesaleBottlesSold;
+    item.vendors.add(record.vendor);
+    itemsByCode.set(record.brand, item);
+  });
+
+  return Array.from(itemsByCode.values()).map((item) => ({
+    agencyCount: item.agencies.size,
+    itemCode: item.itemCode,
+    itemName: item.itemName,
+    purchaseLineCount: item.purchaseLineCount,
+    totalBottlesSold: item.totalBottlesSold,
+    vendorCount: item.vendors.size,
   }));
+};
 
-const sortPurchasesByNewest = (left: WholesalePurchaseRecord, right: WholesalePurchaseRecord) =>
-  right.reportDate.localeCompare(left.reportDate) ||
+const sortPurchaseItemsByName = (left: WholesalePurchaseSummaryItem, right: WholesalePurchaseSummaryItem) =>
   left.itemName.localeCompare(right.itemName) ||
   left.itemCode.localeCompare(right.itemCode) ||
-  left.agencyId.localeCompare(right.agencyId);
-
-const sortPurchasesByItemName = (left: WholesalePurchaseRecord, right: WholesalePurchaseRecord) =>
-  left.itemName.localeCompare(right.itemName) ||
-  left.itemCode.localeCompare(right.itemCode) ||
-  right.reportDate.localeCompare(left.reportDate) ||
-  left.agencyId.localeCompare(right.agencyId);
+  right.totalBottlesSold - left.totalBottlesSold;
 
 export async function getWholesaleRecentPurchases({
   account,
@@ -224,8 +249,8 @@ export async function getWholesaleRecentPurchases({
 
   if (!linkedLicenseeId || permitNumberSearchConditions.length === 0) {
     return {
-      all: { count: 0, records: [], totalBottlesSold: 0 },
-      echo: { count: 0, records: [], totalBottlesSold: 0 },
+      all: { count: 0, items: [], purchaseLineCount: 0, totalBottlesSold: 0 },
+      echo: { count: 0, items: [], purchaseLineCount: 0, totalBottlesSold: 0 },
       endDate: null,
       licenseeId: null,
       startDate: null,
@@ -239,8 +264,8 @@ export async function getWholesaleRecentPurchases({
 
   if (!latest) {
     return {
-      all: { count: 0, records: [], totalBottlesSold: 0 },
-      echo: { count: 0, records: [], totalBottlesSold: 0 },
+      all: { count: 0, items: [], purchaseLineCount: 0, totalBottlesSold: 0 },
+      echo: { count: 0, items: [], purchaseLineCount: 0, totalBottlesSold: 0 },
       endDate: null,
       licenseeId: linkedLicenseeId,
       startDate: null,
@@ -262,18 +287,20 @@ export async function getWholesaleRecentPurchases({
   const echoRows = candidateRows.filter((row) => isEchoItem(row.vendor, row.brand));
   const itemCodes = candidateRows.map((record) => record.brand);
   const skuLookup = await getSkuLookup(db, itemCodes);
-  const echoRecords = toPurchaseRecords(echoRows, skuLookup).sort(sortPurchasesByNewest);
-  const allRecords = toPurchaseRecords(candidateRows, skuLookup).sort(sortPurchasesByItemName);
+  const echoItems = toPurchaseSummaryItems(echoRows, skuLookup).sort(sortPurchaseItemsByName);
+  const allItems = toPurchaseSummaryItems(candidateRows, skuLookup).sort(sortPurchaseItemsByName);
 
   return {
     all: {
-      count: candidateRows.length,
-      records: allRecords.slice(0, takeAll),
+      count: allItems.length,
+      items: allItems.slice(0, takeAll),
+      purchaseLineCount: candidateRows.length,
       totalBottlesSold: candidateRows.reduce((total, row) => total + row.wholesaleBottlesSold, 0),
     },
     echo: {
-      count: echoRows.length,
-      records: echoRecords.slice(0, takeEcho),
+      count: echoItems.length,
+      items: echoItems.slice(0, takeEcho),
+      purchaseLineCount: echoRows.length,
       totalBottlesSold: echoRows.reduce((total, row) => total + row.wholesaleBottlesSold, 0),
     },
     endDate: formatDateOnly(endDate),
