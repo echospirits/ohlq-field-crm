@@ -12,8 +12,7 @@ import {
   OHLQ_DATA_SOURCE_CONFIGS,
   toOhlqDateOnlyUtc,
 } from '../../../lib/ohlqDataStatus';
-import { isFutureOhlqReportDate, normalizeManualOhlqReportDate } from '../../../lib/ohlqManualImport';
-import { runOhlqAnnualSalesWorkflow } from '../../../lib/ohlqAnnualSalesWorkflow';
+import { getLatestManualOhlqReportDate } from '../../../lib/ohlqManualImport';
 import { prisma } from '../../../lib/prisma';
 
 const statusTimeZone = 'America/New_York';
@@ -143,51 +142,6 @@ const redirectWithDataStatus = (status: string, params?: Record<string, string |
   redirect(`/admin/data-status?${query.toString()}`);
 };
 
-async function runManualOhlqImport(formData: FormData) {
-  'use server';
-
-  await requireAdminSession();
-
-  const reportDate = normalizeManualOhlqReportDate(formData.get('reportDate'));
-  const latestAllowedReportDate = getReportDateRange().at(-1);
-
-  if (!reportDate || !latestAllowedReportDate) {
-    redirectWithDataStatus('ohlq-invalid');
-  }
-
-  const selectedReportDate = reportDate!;
-  const latestReportDate = latestAllowedReportDate!;
-  if (isFutureOhlqReportDate(selectedReportDate, latestReportDate)) {
-    redirectWithDataStatus('ohlq-invalid');
-  }
-
-  let result: Awaited<ReturnType<typeof runOhlqAnnualSalesWorkflow>> | null = null;
-  try {
-    result = await runOhlqAnnualSalesWorkflow({ reportDate: selectedReportDate });
-  } catch (error) {
-    redirectWithDataStatus('ohlq-error', {
-      message: (error instanceof Error ? error.message : String(error)).slice(0, 180),
-    });
-  }
-
-  if (!result) {
-    redirectWithDataStatus('ohlq-error');
-  }
-
-  const finalResult = result!;
-  revalidatePath('/');
-  revalidatePath('/admin/data-status');
-  revalidatePath('/agencies');
-  revalidatePath('/wholesale');
-  revalidatePath('/alerts');
-  revalidatePath('/my-week');
-  redirectWithDataStatus('ohlq-imported', {
-    annualRows: finalResult.reports.annualSalesSummary.importedRows,
-    date: selectedReportDate,
-    wholesaleRows: finalResult.reports.annualSalesSummaryByWholesale.importedRows,
-  });
-}
-
 async function importBrandMaster(formData: FormData) {
   'use server';
 
@@ -233,7 +187,7 @@ export default async function DataStatusPage({
 
   const params = (await searchParams) ?? {};
   const dates = getReportDateRange();
-  const latestAllowedReportDate = dates[dates.length - 1];
+  const latestAllowedReportDate = getLatestManualOhlqReportDate();
   const startDate = toOhlqDateOnlyUtc(dates[0]);
   const endDate = toOhlqDateOnlyUtc(dates[dates.length - 1]);
 
@@ -321,7 +275,7 @@ export default async function DataStatusPage({
 
       <details className="card compact-details admin-panel" open>
         <summary>Run OHLQ Sales Import</summary>
-        <form action={runManualOhlqImport} className="data-status-action-form">
+        <form action="/api/admin/ohlq-manual-import" method="post" className="data-status-action-form">
           <label>
             Report date
             <input

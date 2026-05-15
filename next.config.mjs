@@ -6,7 +6,14 @@ const nextConfig = {
     },
   },
   outputFileTracingIncludes: {
-    '/api/cron/ohlq-annual-sales': ['./node_modules/@sparticuz/chromium/bin/**/*'],
+    '/api/admin/ohlq-manual-import': [
+      './node_modules/@sparticuz/chromium/bin/**/*',
+      './node_modules/playwright-core/browsers.json',
+    ],
+    '/api/cron/ohlq-annual-sales': [
+      './node_modules/@sparticuz/chromium/bin/**/*',
+      './node_modules/playwright-core/browsers.json',
+    ],
   },
   serverExternalPackages: ['@sparticuz/chromium'],
 };
