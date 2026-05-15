@@ -1021,6 +1021,31 @@ fieldset {
   margin-bottom: 22px;
 }
 
+.data-status-action-form {
+  display: grid;
+  gap: 10px;
+  max-width: 620px;
+}
+
+@media (min-width: 760px) {
+  .data-status-action-form {
+    grid-template-columns: minmax(180px, 240px) auto;
+    align-items: end;
+  }
+
+  .data-status-form-note {
+    grid-column: 1 / -1;
+  }
+}
+
+.data-status-action-form label {
+  margin: 0;
+}
+
+.data-status-form-note {
+  margin: 0;
+}
+
 .data-source-summary {
   display: grid;
   gap: 10px;

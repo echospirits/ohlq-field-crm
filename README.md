@@ -38,6 +38,7 @@ npm run dev
 - The cron checks recent report dates before running and imports missing dates first. Set `OHLQ_CRON_CATCHUP_DAYS` and `OHLQ_CRON_MAX_REPORT_DATES` to adjust the catch-up window and per-run limit.
 - Raw OHLQ report rows are pruned after successful imports. Set `OHLQ_REPORT_RETENTION_DAYS` to adjust the window; the default is 30 report dates.
 - Import status is tracked in `OhlqReportImportStatus` and visible to admins at `/admin/data-status`.
+- Admins can also manually run or refresh a specific past report date from `/admin/data-status`.
 
 Local command:
 ```bash
