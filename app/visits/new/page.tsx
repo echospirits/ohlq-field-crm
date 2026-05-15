@@ -3,6 +3,14 @@ export const runtime = 'nodejs';
 
 import { getUserDisplayName, requireUser } from '../../../lib/auth';
 import { prisma } from '../../../lib/prisma';
+import {
+  getAgenciesForVisitPicker,
+  getAgencyVisitPickerOptionById,
+  getInitialVisitLocationType,
+  getWholesaleAccountsForVisitPicker,
+  getWholesaleVisitPickerOptionById,
+  sortVisitPickerOptions,
+} from '../../../lib/visitPickerOptions';
 import { createVisit } from '../actions';
 import { LogVisitForm } from '../LogVisitForm';
 
@@ -24,32 +32,8 @@ export default async function NewVisitPage({
   const [params, user, agencyOptions, wholesaleAccountOptions, contacts, tags] = await Promise.all([
     (await searchParams) ?? {},
     requireUser(),
-    prisma.agency.findMany({
-      orderBy: { name: 'asc' },
-      take: 500,
-      select: {
-        id: true,
-        agencyId: true,
-        name: true,
-        city: true,
-        county: true,
-        phone: true,
-      },
-    }),
-    prisma.wholesaleAccount.findMany({
-      orderBy: { name: 'asc' },
-      take: 500,
-      where: { isActive: true },
-      select: {
-        id: true,
-        licenseeId: true,
-        name: true,
-        agencyId: true,
-        city: true,
-        county: true,
-        phone: true,
-      },
-    }),
+    getAgenciesForVisitPicker(),
+    getWholesaleAccountsForVisitPicker(),
     prisma.locationContact.findMany({
       orderBy: { name: 'asc' },
       take: 1000,
@@ -72,41 +56,26 @@ export default async function NewVisitPage({
       },
     }),
   ]);
-  const initialLocationType = params.type === 'wholesale' || params.wholesaleAccountId ? 'wholesale' : 'agency';
+  const initialLocationType = getInitialVisitLocationType(params);
   const [selectedAgency, selectedWholesaleAccount] = await Promise.all([
     params.agencyId && !agencyOptions.some((agency) => agency.id === params.agencyId)
-      ? prisma.agency.findUnique({
-          where: { id: params.agencyId },
-          select: {
-            id: true,
-            agencyId: true,
-            name: true,
-            city: true,
-            county: true,
-            phone: true,
-          },
-        })
+      ? getAgencyVisitPickerOptionById({ id: params.agencyId })
       : null,
     params.wholesaleAccountId &&
         !wholesaleAccountOptions.some((account) => account.id === params.wholesaleAccountId)
-      ? prisma.wholesaleAccount.findUnique({
-          where: { id: params.wholesaleAccountId },
-          select: {
-            id: true,
-            licenseeId: true,
-            name: true,
-            agencyId: true,
-            city: true,
-            county: true,
-            phone: true,
-          },
-        })
+      ? getWholesaleVisitPickerOptionById({ id: params.wholesaleAccountId })
       : null,
   ]);
-  const agencies = selectedAgency ? [selectedAgency, ...agencyOptions] : agencyOptions;
-  const wholesaleAccounts = selectedWholesaleAccount
-    ? [selectedWholesaleAccount, ...wholesaleAccountOptions]
-    : wholesaleAccountOptions;
+  const agencies = sortVisitPickerOptions(
+    selectedAgency && !agencyOptions.some((agency) => agency.id === selectedAgency.id)
+      ? [selectedAgency, ...agencyOptions]
+      : agencyOptions,
+  );
+  const wholesaleAccounts = sortVisitPickerOptions(
+    selectedWholesaleAccount && !wholesaleAccountOptions.some((account) => account.id === selectedWholesaleAccount.id)
+      ? [selectedWholesaleAccount, ...wholesaleAccountOptions]
+      : wholesaleAccountOptions,
+  );
 
   return (
     <>

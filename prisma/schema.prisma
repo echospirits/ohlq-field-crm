@@ -671,6 +671,8 @@ model LoggedVisit {
   worklistItems      WorklistItem[]
 
   @@index([createdByUserId])
+  @@index([locationType, agencyId, visitAt])
+  @@index([locationType, wholesaleAccountId, visitAt])
 }
 
 model VisitPhoto {

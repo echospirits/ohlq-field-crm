@@ -6,6 +6,7 @@ import { revalidatePath } from 'next/cache';
 import Link from 'next/link';
 import { getUserDisplayName, requireUser } from '../../lib/auth';
 import { prisma } from '../../lib/prisma';
+import { getAgenciesForVisitPicker, getWholesaleAccountsForVisitPicker } from '../../lib/visitPickerOptions';
 import { createVisit } from '../visits/actions';
 import { WorklistActions } from '../alerts/WorklistActions';
 
@@ -191,32 +192,8 @@ export default async function MyWeekPage() {
       },
       orderBy: [{ dueDate: 'asc' }, { createdAt: 'desc' }],
     }),
-    prisma.agency.findMany({
-      orderBy: { name: 'asc' },
-      take: 500,
-      select: {
-        id: true,
-        agencyId: true,
-        name: true,
-        city: true,
-        county: true,
-        phone: true,
-      },
-    }),
-    prisma.wholesaleAccount.findMany({
-      orderBy: { name: 'asc' },
-      take: 500,
-      where: { isActive: true },
-      select: {
-        id: true,
-        licenseeId: true,
-        name: true,
-        agencyId: true,
-        city: true,
-        county: true,
-        phone: true,
-      },
-    }),
+    getAgenciesForVisitPicker(),
+    getWholesaleAccountsForVisitPicker(),
     prisma.locationContact.findMany({
       orderBy: { name: 'asc' },
       take: 1000,

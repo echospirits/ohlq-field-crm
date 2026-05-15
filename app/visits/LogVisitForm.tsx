@@ -1,7 +1,9 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import type { VisitLocationType } from '../../lib/visitPickerOptions';
 import { DatePickerField } from '../components/DatePickerField';
+import { getVisitOutcomePrompts } from './visitPrompts';
 
 const photoTypes = [
   { value: 'DISPLAY', label: 'Display' },
@@ -11,26 +13,18 @@ const photoTypes = [
 
 const photoSlots = [2, 3] as const;
 
-const quickOutcomes = [
-  'Display checked',
-  'Menu checked',
-  'Staff trained',
-  'Order opportunity',
-  'Needs follow-up',
-  'No action needed',
-] as const;
-
 const quickFollowUps = [
   { label: 'Tomorrow', days: 1 },
   { label: '3 days', days: 3 },
   { label: '1 week', days: 7 },
 ] as const;
 
-export type VisitLocationType = 'agency' | 'wholesale';
+export type { VisitLocationType };
 
 export type VisitFormAgencyOption = {
   id: string;
   agencyId: string;
+  lastVisitAt: string | null;
   name: string;
   city: string | null;
   county: string | null;
@@ -40,6 +34,7 @@ export type VisitFormAgencyOption = {
 export type VisitFormWholesaleOption = {
   id: string;
   licenseeId: string;
+  lastVisitAt: string | null;
   name: string;
   agencyId: string | null;
   city: string | null;
@@ -120,6 +115,14 @@ const getWholesaleMeta = (account: VisitFormWholesaleOption) =>
 const getContactMeta = (contact: VisitFormContactOption) =>
   [contact.role, contact.phone, contact.email].filter(Boolean).join(' / ');
 
+const lastVisitFormatter = new Intl.DateTimeFormat('en-US', {
+  day: 'numeric',
+  month: 'short',
+});
+
+const getLastVisitLabel = (lastVisitAt: string | null) =>
+  lastVisitAt ? `Last visit: ${lastVisitFormatter.format(new Date(lastVisitAt))}` : 'Never visited';
+
 export function LogVisitForm({
   action,
   agencies,
@@ -132,7 +135,7 @@ export function LogVisitForm({
   initialValues,
   submitLabel = 'Log visit',
 }: LogVisitFormProps) {
-  const [locationType, setLocationType] = useState<VisitLocationType>(initialValues?.locationType ?? 'agency');
+  const [locationType, setLocationType] = useState<VisitLocationType>(initialValues?.locationType ?? 'wholesale');
   const [agencyId, setAgencyId] = useState(initialValues?.agencyId ?? '');
   const [wholesaleAccountId, setWholesaleAccountId] = useState(initialValues?.wholesaleAccountId ?? '');
   const [contactId, setContactId] = useState('');
@@ -199,6 +202,7 @@ export function LogVisitForm({
       selectedContact,
     );
   }, [agencyId, contactSearchText, contacts, locationType, selectedAgency, selectedContact, wholesaleAccountId]);
+  const quickOutcomePrompts = getVisitOutcomePrompts(locationType);
 
   const handleLocationTypeChange = (nextLocationType: VisitLocationType) => {
     setLocationType(nextLocationType);
@@ -229,20 +233,20 @@ export function LogVisitForm({
         <legend>1. Pick the location</legend>
         <div className="segmented-control" role="group" aria-label="Location type">
           <button
-            aria-pressed={locationType === 'agency'}
-            className={locationType === 'agency' ? 'is-active' : ''}
-            type="button"
-            onClick={() => handleLocationTypeChange('agency')}
-          >
-            Agency
-          </button>
-          <button
             aria-pressed={locationType === 'wholesale'}
             className={locationType === 'wholesale' ? 'is-active' : ''}
             type="button"
             onClick={() => handleLocationTypeChange('wholesale')}
           >
             Wholesale
+          </button>
+          <button
+            aria-pressed={locationType === 'agency'}
+            className={locationType === 'agency' ? 'is-active' : ''}
+            type="button"
+            onClick={() => handleLocationTypeChange('agency')}
+          >
+            Agency
           </button>
         </div>
 
@@ -269,6 +273,7 @@ export function LogVisitForm({
                 >
                   <strong>{agency.name}</strong>
                   <span>{getAgencyMeta(agency)}</span>
+                  <span className="quick-picker-last">{getLastVisitLabel(agency.lastVisitAt)}</span>
                 </button>
               ))}
             </div>
@@ -297,6 +302,7 @@ export function LogVisitForm({
                 >
                   <strong>{account.name}</strong>
                   <span>{getWholesaleMeta(account)}</span>
+                  <span className="quick-picker-last">{getLastVisitLabel(account.lastVisitAt)}</span>
                 </button>
               ))}
             </div>
@@ -384,10 +390,13 @@ export function LogVisitForm({
         <legend>2. Tap what happened</legend>
         <p className="field-note">Visit activity will be recorded as {actorName}.</p>
         <div className="quick-chip-grid">
-          {quickOutcomes.map((outcome) => (
-            <label className="quick-chip" key={outcome}>
-              <input name="quickOutcome" type="checkbox" value={outcome} />
-              <span>{outcome}</span>
+          {quickOutcomePrompts.map((prompt) => (
+            <label className="quick-chip" key={prompt.id}>
+              <input name="quickOutcome" type="checkbox" value={prompt.label} />
+              <span>
+                {prompt.label}
+                {prompt.helperText ? <small>{prompt.helperText}</small> : null}
+              </span>
             </label>
           ))}
         </div>

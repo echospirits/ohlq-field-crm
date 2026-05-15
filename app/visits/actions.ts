@@ -146,7 +146,7 @@ export async function createVisit(formData: FormData) {
   const actorName = getUserDisplayName(user);
   const formOrigin = getFormOrigin(formData);
   const worklistItemId = toOptional(formData.get('worklistItemId'));
-  const locationType = String(formData.get('locationType') ?? 'agency') === 'wholesale' ? 'wholesale' : 'agency';
+  const locationType = String(formData.get('locationType') ?? 'wholesale') === 'agency' ? 'agency' : 'wholesale';
   const agencyId = toOptional(formData.get('agencyId'));
   const selectedWholesaleAccountId = toOptional(formData.get('wholesaleAccountId'));
   const newWholesaleLicenseeId = toOptional(formData.get('newWholesaleLicenseeId'));
