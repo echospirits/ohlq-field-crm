@@ -30,12 +30,13 @@ npm run dev
 - Deploy.
 
 ## OHLQ annual sales export
-- Vercel cron calls `/api/cron/ohlq-annual-sales` at 12:30 UTC daily.
+- Vercel cron calls `/api/cron/ohlq-annual-sales` at 12:00 UTC daily, which is 8:00 AM Eastern during daylight saving time.
 - The cron route requires `Authorization: Bearer $CRON_SECRET`.
 - The automation downloads yesterday's Annual Sales Summary and Annual Sales Summary by Wholesale reports.
 - The agency summary imports CSV rows into `OhlqAnnualSalesRow`; the wholesale summary imports rows into `OhlqAnnualSalesByWholesaleRow`.
 - The import stores `reportDate` from the report's From date parameter and replaces existing rows for that date, so reruns are idempotent.
-- Raw OHLQ report rows are pruned after successful imports. Set `OHLQ_REPORT_RETENTION_DAYS` to adjust the window; the default is 90 report dates.
+- The cron checks recent report dates before running and imports missing dates first. Set `OHLQ_CRON_CATCHUP_DAYS` and `OHLQ_CRON_MAX_REPORT_DATES` to adjust the catch-up window and per-run limit.
+- Raw OHLQ report rows are pruned after successful imports. Set `OHLQ_REPORT_RETENTION_DAYS` to adjust the window; the default is 30 report dates.
 - Import status is tracked in `OhlqReportImportStatus` and visible to admins at `/admin/data-status`.
 
 Local command:
