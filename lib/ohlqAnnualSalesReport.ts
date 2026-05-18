@@ -19,10 +19,12 @@ const MICROSOFT_SIGN_IN_TIMEOUT_MS = 150_000;
 const POWER_BI_REPORT_FRAME_TIMEOUT_MS = 180_000;
 const POWER_BI_REPORT_FRAME_RELOAD_AFTER_MS = 75_000;
 const MICROSOFT_INPUT_ACTION_TIMEOUT_MS = 5_000;
+const MICROSOFT_LOGOUT_URL = 'https://login.microsoftonline.com/common/oauth2/v2.0/logout';
 const MICROSOFT_AUTH_RESET_DOMAINS = [
   /(?:^|\.)live\.com$/i,
   /(?:^|\.)microsoft\.com$/i,
   /(?:^|\.)microsoftonline\.com$/i,
+  /(?:^|\.)microsoftonline\.us$/i,
   /(?:^|\.)msauth\.net$/i,
   /(?:^|\.)powerbigov\.us$/i,
   /(?:^|\.)windows\.net$/i,
@@ -249,7 +251,6 @@ async function clickMicrosoftTextAction(page: Page, selectorName: string | RegEx
 
   const candidates = [
     page.getByRole('link', { name: selectorName }).first(),
-    page.getByText(selectorName).first(),
     page.locator('button, a, [role="button"], [role="link"], [tabindex]').filter({ hasText: selectorName }).first(),
   ];
 
@@ -284,6 +285,10 @@ async function waitForMicrosoftPasswordField(page: Page) {
 async function waitForMicrosoftStep(page: Page) {
   await page.waitForLoadState('domcontentloaded', { timeout: 5_000 }).catch(() => undefined);
   await page.waitForTimeout(750);
+}
+
+async function isMicrosoftUsernameInputVisible(page: Page) {
+  return Boolean(await firstVisibleLocator(page, MICROSOFT_USERNAME_INPUT_SELECTORS));
 }
 
 async function fillLocatorIfUsable(locator: Locator | null, value: string) {
@@ -401,6 +406,18 @@ async function resetMicrosoftAuthState(page: Page, restartUrl: string) {
     await page.context().clearCookies({ domain }).catch(() => undefined);
   }
 
+  await page.goto(MICROSOFT_LOGOUT_URL, { waitUntil: 'domcontentloaded', timeout: 30_000 }).catch(() => undefined);
+  await page
+    .evaluate(() => {
+      localStorage.clear();
+      sessionStorage.clear();
+    })
+    .catch(() => undefined);
+
+  for (const domain of MICROSOFT_AUTH_RESET_DOMAINS) {
+    await page.context().clearCookies({ domain }).catch(() => undefined);
+  }
+
   await page.goto(restartUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 }).catch(() => undefined);
   await waitForMicrosoftStep(page);
 }
@@ -494,14 +511,21 @@ async function handleMicrosoftSignIn(page: Page, debugDir: string, restartUrl?: 
       passwordSubmitAttempts = 0;
       accountPickerAttempts += 1;
 
-      const usedAnotherAccount = await clickMicrosoftTextAction(page, /use another account/i);
-      if (!usedAnotherAccount && hasAccountPickerError) {
-        await clickMicrosoftTextAction(page, /try again/i);
+      if (hasAccountPickerError && accountPickerAttempts === 1) {
+        await clickMicrosoftTextAction(page, /^try again$/i);
+        await waitForMicrosoftStep(page);
+        continue;
       }
 
+      const usedAnotherAccount = await clickMicrosoftTextAction(page, /use another account/i);
       await waitForMicrosoftStep(page);
 
+      if (usedAnotherAccount && (await isMicrosoftUsernameInputVisible(page))) {
+        continue;
+      }
+
       if (restartUrl && accountPickerAttempts >= 2 && authResetAttempts < 2) {
+        console.log('Resetting Microsoft auth state after repeated account-picker recovery attempts.');
         authResetAttempts += 1;
         accountPickerAttempts = 0;
         passwordSubmitAttempts = 0;
