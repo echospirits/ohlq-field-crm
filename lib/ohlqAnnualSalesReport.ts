@@ -19,6 +19,7 @@ const MICROSOFT_SIGN_IN_TIMEOUT_MS = 150_000;
 const POWER_BI_REPORT_FRAME_TIMEOUT_MS = 180_000;
 const POWER_BI_REPORT_FRAME_RELOAD_AFTER_MS = 75_000;
 const MICROSOFT_INPUT_ACTION_TIMEOUT_MS = 5_000;
+const BROWSER_COMPATIBILITY_LAUNCH_ARGS = ['--disable-blink-features=AutomationControlled'];
 const MICROSOFT_LOGOUT_URL = 'https://login.microsoftonline.com/common/oauth2/v2.0/logout';
 const MICROSOFT_AUTH_RESET_DOMAINS = [
   /(?:^|\.)live\.com$/i,
@@ -119,6 +120,23 @@ function envFlag(name: string, fallback: boolean) {
   const value = process.env[name]?.trim().toLowerCase();
   if (!value) return fallback;
   return ['1', 'true', 'yes', 'y'].includes(value);
+}
+
+function uniqueLaunchArgs(args: string[] = []) {
+  return Array.from(new Set([...args, ...BROWSER_COMPATIBILITY_LAUNCH_ARGS]));
+}
+
+function getBrowserUserAgent(browserVersion: string) {
+  const override = process.env.OHLQ_BROWSER_USER_AGENT?.trim();
+  if (override) return override;
+
+  const chromeVersion = browserVersion.match(/\d+\.\d+\.\d+\.\d+/)?.[0] ?? '148.0.0.0';
+  return [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+    'AppleWebKit/537.36 (KHTML, like Gecko)',
+    `Chrome/${chromeVersion}`,
+    'Safari/537.36',
+  ].join(' ');
 }
 
 function formatDateParts(year: number, month: number, day: number): ReportDate {
@@ -442,6 +460,7 @@ async function handleMicrosoftSignIn(page: Page, debugDir: string, restartUrl?: 
   const deadline = Date.now() + MICROSOFT_SIGN_IN_TIMEOUT_MS;
   let passwordSubmitAttempts = 0;
   let accountPickerAttempts = 0;
+  let accountPickerErrorCycles = 0;
   let authResetAttempts = 0;
 
   while (page.url().includes('login.microsoftonline.com') && Date.now() < deadline) {
@@ -510,6 +529,17 @@ async function handleMicrosoftSignIn(page: Page, debugDir: string, restartUrl?: 
     if (hasAccountPickerError || /pick an account/i.test(pageSummary)) {
       passwordSubmitAttempts = 0;
       accountPickerAttempts += 1;
+      if (hasAccountPickerError) accountPickerErrorCycles += 1;
+
+      if (restartUrl && hasAccountPickerError && accountPickerErrorCycles >= 2 && authResetAttempts < 2) {
+        console.log('Resetting Microsoft auth state after repeated account-picker sign-in failures.');
+        authResetAttempts += 1;
+        accountPickerAttempts = 0;
+        accountPickerErrorCycles = 0;
+        passwordSubmitAttempts = 0;
+        await resetMicrosoftAuthState(page, restartUrl);
+        continue;
+      }
 
       if (hasAccountPickerError && accountPickerAttempts === 1) {
         await clickMicrosoftTextAction(page, /^try again$/i);
@@ -528,6 +558,7 @@ async function handleMicrosoftSignIn(page: Page, debugDir: string, restartUrl?: 
         console.log('Resetting Microsoft auth state after repeated account-picker recovery attempts.');
         authResetAttempts += 1;
         accountPickerAttempts = 0;
+        accountPickerErrorCycles = 0;
         passwordSubmitAttempts = 0;
         await resetMicrosoftAuthState(page, restartUrl);
       }
@@ -659,7 +690,7 @@ async function getLaunchOptions(options: OhlqAnnualSalesDownloadOptions): Promis
     const { default: chromium } = await import('@sparticuz/chromium');
 
     return {
-      args: chromium.args,
+      args: uniqueLaunchArgs(chromium.args),
       executablePath: await chromium.executablePath(),
       headless: true,
     };
@@ -669,6 +700,7 @@ async function getLaunchOptions(options: OhlqAnnualSalesDownloadOptions): Promis
     options.browserChannel ?? process.env.OHLQ_BROWSER_CHANNEL?.trim() ?? (process.env.CI ? undefined : 'chrome');
 
   return {
+    args: uniqueLaunchArgs(),
     channel: browserChannel,
     headless: options.headless ?? envFlag('OHLQ_HEADLESS', process.env.CI === 'true'),
   };
@@ -711,7 +743,15 @@ async function openBrowserPage(options: OhlqAnnualSalesDownloadOptions) {
   const browser = await playwrightChromium.launch(launchOptions);
   const context = await browser.newContext({
     acceptDownloads: true,
+    locale: 'en-US',
+    timezoneId: 'America/New_York',
+    userAgent: getBrowserUserAgent(browser.version()),
     viewport: { height: 900, width: 1536 },
+  });
+  await context.addInitScript(() => {
+    Object.defineProperty(navigator, 'webdriver', {
+      get: () => undefined,
+    });
   });
   const page = await context.newPage();
 
