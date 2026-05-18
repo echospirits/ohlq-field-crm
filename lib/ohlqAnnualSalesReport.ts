@@ -3,6 +3,8 @@ import os from 'os';
 import path from 'path';
 import {
   chromium as playwrightChromium,
+  type Browser,
+  type BrowserContext,
   type Frame,
   type LaunchOptions,
   type Locator,
@@ -126,11 +128,11 @@ function uniqueLaunchArgs(args: string[] = []) {
   return Array.from(new Set([...args, ...BROWSER_COMPATIBILITY_LAUNCH_ARGS]));
 }
 
-function getBrowserUserAgent(browserVersion: string) {
+function getBrowserUserAgent(browserVersion?: string) {
   const override = process.env.OHLQ_BROWSER_USER_AGENT?.trim();
   if (override) return override;
 
-  const chromeVersion = browserVersion.match(/\d+\.\d+\.\d+\.\d+/)?.[0] ?? '148.0.0.0';
+  const chromeVersion = browserVersion?.match(/\d+\.\d+\.\d+\.\d+/)?.[0] ?? '148.0.0.0';
   return [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
     'AppleWebKit/537.36 (KHTML, like Gecko)',
@@ -779,22 +781,48 @@ function createDownloadRuntime(options: OhlqAnnualSalesDownloadOptions): OhlqDow
 
 async function openBrowserPage(options: OhlqAnnualSalesDownloadOptions) {
   const launchOptions = await getLaunchOptions(options);
-  const browser = await playwrightChromium.launch(launchOptions);
-  const context = await browser.newContext({
+  const usePersistentContext =
+    options.useServerlessChromium ?? envFlag('OHLQ_USE_PERSISTENT_BROWSER_CONTEXT', process.env.VERCEL === '1');
+  const contextOptions = {
     acceptDownloads: true,
     locale: 'en-US',
     timezoneId: 'America/New_York',
-    userAgent: getBrowserUserAgent(browser.version()),
     viewport: { height: 900, width: 1536 },
-  });
+  };
+
+  let browser: Browser | null = null;
+  let context: BrowserContext;
+
+  if (usePersistentContext) {
+    context = await playwrightChromium.launchPersistentContext(
+      path.join(os.tmpdir(), `ohlq-browser-profile-${process.pid}-${Date.now()}`),
+      {
+        ...launchOptions,
+        ...contextOptions,
+        userAgent: getBrowserUserAgent(),
+      },
+    );
+  } else {
+    browser = await playwrightChromium.launch(launchOptions);
+    context = await browser.newContext({
+      ...contextOptions,
+      userAgent: getBrowserUserAgent(browser.version()),
+    });
+  }
+
   await context.addInitScript(() => {
     Object.defineProperty(navigator, 'webdriver', {
       get: () => undefined,
     });
   });
-  const page = await context.newPage();
+  const page = context.pages()[0] ?? (await context.newPage());
 
   return { browser, context, page };
+}
+
+async function closeBrowserPage(context: BrowserContext, browser: Browser | null) {
+  await context.close().catch(() => undefined);
+  await browser?.close().catch(() => undefined);
 }
 
 async function signInToOhlqPartner(page: Page) {
@@ -895,8 +923,7 @@ async function downloadOhlqPowerBiReports(
     runtime.logger.error(`Debug screenshot: ${screenshotPath}`);
     throw error;
   } finally {
-    await context.close().catch(() => undefined);
-    await browser.close().catch(() => undefined);
+    await closeBrowserPage(context, browser);
   }
 }
 
