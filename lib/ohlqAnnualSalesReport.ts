@@ -16,11 +16,15 @@ const POWER_BI_TENANT_ID = '50f8fcc4-94d8-4f07-84eb-36ed57c7c8a2';
 type Logger = Pick<Console, 'error' | 'log'>;
 
 const MICROSOFT_SIGN_IN_TIMEOUT_MS = 150_000;
+const MICROSOFT_PASSWORD_PROMPT_TEXT = /enter password|forgot my password/i;
 const MICROSOFT_USERNAME_INPUT_SELECTORS = [
   'input[type="email"]',
+  'input[type="text"]',
   'input[name="loginfmt"]',
   'input#i0116',
   'input[autocomplete="username"]',
+  'input[placeholder*="Email"]',
+  'input[placeholder*="phone"]',
   'input[aria-label*="email" i]',
   'input[placeholder*="email" i]',
 ];
@@ -32,6 +36,7 @@ const MICROSOFT_PASSWORD_INPUT_SELECTORS = [
   'input[aria-label*="password" i]',
   'input[placeholder*="password" i]',
 ];
+const MICROSOFT_PASSWORD_DOM_SELECTORS = ['input[type="password"]', 'input[name="passwd"]', 'input#i0118'];
 const MICROSOFT_FORWARD_ACTION_SELECTORS = [
   'button[type="submit"]',
   'input[type="submit"]',
@@ -243,6 +248,36 @@ async function waitForMicrosoftStep(page: Page) {
   await page.waitForTimeout(750);
 }
 
+async function fillMicrosoftPassword(page: Page, password: string, options: { allowDomFallback?: boolean } = {}) {
+  const passwordInput = await firstVisibleLocator(page, MICROSOFT_PASSWORD_INPUT_SELECTORS);
+  if (passwordInput) {
+    await passwordInput.fill(password);
+    return true;
+  }
+
+  if (!options.allowDomFallback) return false;
+
+  return page
+    .evaluate(
+      ({ password: passwordValue, selectors }) => {
+        for (const selector of selectors) {
+          const input = document.querySelector<HTMLInputElement>(selector);
+          if (!input || input.disabled || input.readOnly) continue;
+
+          input.focus();
+          input.value = passwordValue;
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+          return true;
+        }
+
+        return false;
+      },
+      { password, selectors: MICROSOFT_PASSWORD_DOM_SELECTORS },
+    )
+    .catch(() => false);
+}
+
 async function getMicrosoftPageSummary(page: Page) {
   const text = await page
     .locator('body')
@@ -276,6 +311,7 @@ async function handleMicrosoftSignIn(page: Page, debugDir: string) {
   }
 
   const deadline = Date.now() + MICROSOFT_SIGN_IN_TIMEOUT_MS;
+  let passwordSubmitAttempts = 0;
 
   while (page.url().includes('login.microsoftonline.com') && Date.now() < deadline) {
     const pageSummary = await getMicrosoftPageSummary(page);
@@ -298,6 +334,52 @@ async function handleMicrosoftSignIn(page: Page, debugDir: string) {
       );
     }
 
+    const isPasswordPrompt = MICROSOFT_PASSWORD_PROMPT_TEXT.test(pageSummary);
+    const usernameInput = isPasswordPrompt ? null : await firstVisibleLocator(page, MICROSOFT_USERNAME_INPUT_SELECTORS);
+    if (usernameInput) {
+      passwordSubmitAttempts = 0;
+      await usernameInput.fill(username);
+      if (!(await clickMicrosoftForwardAction(page))) await usernameInput.press('Enter');
+      await waitForMicrosoftStep(page);
+      continue;
+    }
+
+    const passwordWasFilled = password ? await fillMicrosoftPassword(page, password, { allowDomFallback: isPasswordPrompt }) : false;
+    if (passwordWasFilled) {
+      passwordSubmitAttempts += 1;
+      if (passwordSubmitAttempts > 3) {
+        await throwMicrosoftInterrupt(
+          page,
+          debugDir,
+          'Microsoft password prompt remained after multiple submit attempts. Check OHLQ_MICROSOFT_PASSWORD and account policy.',
+        );
+      }
+
+      if (!(await clickMicrosoftForwardAction(page))) await page.keyboard.press('Enter');
+      await waitForMicrosoftStep(page);
+      await page
+        .waitForURL((url) => !url.href.includes('login.microsoftonline.com'), { timeout: 8_000 })
+        .catch(() => undefined);
+      continue;
+    }
+
+    if (isPasswordPrompt) {
+      if (!password) {
+        const screenshotPath = await saveDebugScreenshot(page, 'microsoft-password-required', debugDir);
+        throw new Error(
+          `Microsoft password prompt appeared, but OHLQ_MICROSOFT_PASSWORD is not set. Debug screenshot: ${screenshotPath}`,
+        );
+      }
+
+      await waitForMicrosoftPasswordField(page);
+      continue;
+    }
+
+    if (await clickIfVisible(page, /^yes$/i)) {
+      await waitForMicrosoftStep(page);
+      continue;
+    }
+
     const accountChoice = page.getByText(username, { exact: false }).first();
     if (await accountChoice.isVisible().catch(() => false)) {
       await accountChoice.click();
@@ -307,39 +389,6 @@ async function handleMicrosoftSignIn(page: Page, debugDir: string) {
 
     if (await clickIfVisible(page, /use another account/i)) {
       await waitForMicrosoftStep(page);
-      continue;
-    }
-
-    const usernameInput = await firstVisibleLocator(page, MICROSOFT_USERNAME_INPUT_SELECTORS);
-    if (usernameInput) {
-      await usernameInput.fill(username);
-      if (!(await clickMicrosoftForwardAction(page))) await usernameInput.press('Enter');
-      await waitForMicrosoftStep(page);
-      continue;
-    }
-
-    const passwordInput = await firstVisibleLocator(page, MICROSOFT_PASSWORD_INPUT_SELECTORS);
-    if (passwordInput) {
-      if (!password) {
-        const screenshotPath = await saveDebugScreenshot(page, 'microsoft-password-required', debugDir);
-        throw new Error(
-          `Microsoft password prompt appeared, but OHLQ_MICROSOFT_PASSWORD is not set. Debug screenshot: ${screenshotPath}`,
-        );
-      }
-
-      await passwordInput.fill(password);
-      if (!(await clickMicrosoftForwardAction(page))) await passwordInput.press('Enter');
-      await waitForMicrosoftStep(page);
-      continue;
-    }
-
-    if (await clickIfVisible(page, /^yes$/i)) {
-      await waitForMicrosoftStep(page);
-      continue;
-    }
-
-    if (/enter password|forgot my password/i.test(pageSummary)) {
-      await waitForMicrosoftPasswordField(page);
       continue;
     }
 
