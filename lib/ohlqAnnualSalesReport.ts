@@ -608,6 +608,14 @@ async function waitForPowerBiReportFrame(
   let didReload = false;
 
   while (Date.now() - startedAt < POWER_BI_REPORT_FRAME_TIMEOUT_MS) {
+    if (page.url().includes('login.microsoftonline.com')) {
+      await handleMicrosoftSignIn(page, debugDir, restartUrl);
+      await page
+        .waitForURL((url) => url.href.includes(`/rdlreports/${report.reportId}`), { timeout: 60_000 })
+        .catch(() => undefined);
+      continue;
+    }
+
     for (const frame of page.frames()) {
       const fromDateInput = reportDateInput(frame, 'From date');
       if (await fromDateInput.isVisible({ timeout: 750 }).catch(() => false)) {
