@@ -18,6 +18,7 @@ type Logger = Pick<Console, 'error' | 'log'>;
 const MICROSOFT_SIGN_IN_TIMEOUT_MS = 150_000;
 const POWER_BI_REPORT_FRAME_TIMEOUT_MS = 180_000;
 const POWER_BI_REPORT_FRAME_RELOAD_AFTER_MS = 75_000;
+const MICROSOFT_INPUT_ACTION_TIMEOUT_MS = 5_000;
 const MICROSOFT_PASSWORD_PROMPT_TEXT = /enter password|forgot my password/i;
 const MICROSOFT_USERNAME_INPUT_SELECTORS = [
   'input[type="email"]',
@@ -200,8 +201,7 @@ async function saveDebugScreenshot(page: Page, label: string, debugDir: string) 
 async function clickIfVisible(page: Page, selectorName: string | RegExp) {
   const button = page.getByRole('button', { name: selectorName }).first();
   if (await button.isVisible().catch(() => false)) {
-    await button.click();
-    return true;
+    return button.click({ timeout: MICROSOFT_INPUT_ACTION_TIMEOUT_MS }).then(() => true, () => false);
   }
   return false;
 }
@@ -224,8 +224,7 @@ async function clickVisibleLocator(locator: Locator | null) {
   if (!locator) return false;
   if (!(await locator.isVisible().catch(() => false))) return false;
 
-  await locator.click();
-  return true;
+  return locator.click({ timeout: MICROSOFT_INPUT_ACTION_TIMEOUT_MS }).then(() => true, () => false);
 }
 
 async function clickMicrosoftForwardAction(page: Page) {
@@ -242,8 +241,7 @@ async function clickMicrosoftTextAction(page: Page, selectorName: string | RegEx
 
   const action = page.getByText(selectorName).first();
   if (await action.isVisible().catch(() => false)) {
-    await action.click();
-    return true;
+    return action.click({ timeout: MICROSOFT_INPUT_ACTION_TIMEOUT_MS }).then(() => true, () => false);
   }
 
   return false;
@@ -262,12 +260,55 @@ async function waitForMicrosoftStep(page: Page) {
   await page.waitForTimeout(750);
 }
 
+async function fillLocatorIfUsable(locator: Locator | null, value: string) {
+  if (!locator) return false;
+  if (!(await locator.isVisible().catch(() => false))) return false;
+
+  return locator
+    .fill(value, { timeout: MICROSOFT_INPUT_ACTION_TIMEOUT_MS })
+    .then(() => true, () => false);
+}
+
+async function fillMicrosoftUsername(page: Page, username: string) {
+  const usernameInput = await firstVisibleLocator(page, MICROSOFT_USERNAME_INPUT_SELECTORS);
+  if (await fillLocatorIfUsable(usernameInput, username)) return true;
+
+  return page
+    .evaluate(
+      ({ selectors, username: usernameValue }) => {
+        const isVisible = (input: HTMLInputElement) => {
+          const rect = input.getBoundingClientRect();
+          const style = window.getComputedStyle(input);
+          return (
+            rect.width > 0 &&
+            rect.height > 0 &&
+            style.display !== 'none' &&
+            style.visibility !== 'hidden' &&
+            style.opacity !== '0'
+          );
+        };
+
+        for (const selector of selectors) {
+          const input = document.querySelector<HTMLInputElement>(selector);
+          if (!input || input.disabled || input.readOnly || !isVisible(input)) continue;
+
+          input.focus();
+          input.value = usernameValue;
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+          return true;
+        }
+
+        return false;
+      },
+      { selectors: MICROSOFT_USERNAME_INPUT_SELECTORS, username },
+    )
+    .catch(() => false);
+}
+
 async function fillMicrosoftPassword(page: Page, password: string, options: { allowDomFallback?: boolean } = {}) {
   const passwordInput = await firstVisibleLocator(page, MICROSOFT_PASSWORD_INPUT_SELECTORS);
-  if (passwordInput) {
-    await passwordInput.fill(password);
-    return true;
-  }
+  if (await fillLocatorIfUsable(passwordInput, password)) return true;
 
   if (!options.allowDomFallback) return false;
 
@@ -365,11 +406,10 @@ async function handleMicrosoftSignIn(page: Page, debugDir: string) {
 
     const isPasswordPrompt = MICROSOFT_PASSWORD_PROMPT_TEXT.test(pageSummary);
     const hasAccountPickerError = /we couldn't sign you in|please try again/i.test(pageSummary);
-    const usernameInput = isPasswordPrompt ? null : await firstVisibleLocator(page, MICROSOFT_USERNAME_INPUT_SELECTORS);
-    if (usernameInput) {
+    const usernameWasFilled = isPasswordPrompt ? false : await fillMicrosoftUsername(page, username);
+    if (usernameWasFilled) {
       passwordSubmitAttempts = 0;
-      await usernameInput.fill(username);
-      if (!(await clickMicrosoftForwardAction(page))) await usernameInput.press('Enter');
+      if (!(await clickMicrosoftForwardAction(page))) await page.keyboard.press('Enter').catch(() => undefined);
       await waitForMicrosoftStep(page);
       continue;
     }
@@ -385,7 +425,7 @@ async function handleMicrosoftSignIn(page: Page, debugDir: string) {
         );
       }
 
-      if (!(await clickMicrosoftForwardAction(page))) await page.keyboard.press('Enter');
+      if (!(await clickMicrosoftForwardAction(page))) await page.keyboard.press('Enter').catch(() => undefined);
       await waitForMicrosoftStep(page);
       await page
         .waitForURL((url) => !url.href.includes('login.microsoftonline.com'), { timeout: 8_000 })
@@ -427,7 +467,10 @@ async function handleMicrosoftSignIn(page: Page, debugDir: string) {
 
     const accountChoice = page.getByText(username, { exact: false }).first();
     if (await accountChoice.isVisible().catch(() => false)) {
-      await accountChoice.click();
+      if (!(await accountChoice.click({ timeout: MICROSOFT_INPUT_ACTION_TIMEOUT_MS }).then(() => true, () => false))) {
+        await waitForMicrosoftStep(page);
+        continue;
+      }
       await waitForMicrosoftStep(page);
       continue;
     }
