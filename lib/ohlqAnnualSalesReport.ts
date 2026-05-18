@@ -292,6 +292,28 @@ async function clickMicrosoftTextAction(page: Page, selectorName: string | RegEx
     .catch(() => false);
 }
 
+async function clickMicrosoftAccountChoice(page: Page, username: string) {
+  const interactiveChoice = page
+    .locator('button, a, [role="button"], [role="link"], [tabindex]')
+    .filter({ hasText: username })
+    .first();
+  if (await clickVisibleLocator(interactiveChoice)) return true;
+
+  return page
+    .evaluate((accountName) => {
+      const candidates = Array.from(document.querySelectorAll<HTMLElement>('button, a, [role="button"], [tabindex], div'));
+      const accountElement = candidates.find((element) => {
+        const text = (element.innerText || element.textContent || '').replace(/\s+/g, ' ').trim();
+        return text.includes(accountName) && /signed in|agency/i.test(text);
+      });
+      const action =
+        accountElement?.closest<HTMLElement>('button, a, [role="button"], [tabindex]') ?? accountElement;
+      action?.click();
+      return Boolean(action);
+    }, username)
+    .catch(() => false);
+}
+
 async function waitForMicrosoftPasswordField(page: Page) {
   await page
     .locator(MICROSOFT_PASSWORD_INPUT_SELECTORS.join(', '))
@@ -461,6 +483,7 @@ async function handleMicrosoftSignIn(page: Page, debugDir: string, restartUrl?: 
   let passwordSubmitAttempts = 0;
   let accountPickerAttempts = 0;
   let accountPickerErrorCycles = 0;
+  let accountChoiceAttempts = 0;
   let authResetAttempts = 0;
 
   while (page.url().includes('login.microsoftonline.com') && Date.now() < deadline) {
@@ -531,11 +554,18 @@ async function handleMicrosoftSignIn(page: Page, debugDir: string, restartUrl?: 
       accountPickerAttempts += 1;
       if (hasAccountPickerError) accountPickerErrorCycles += 1;
 
+      if (accountChoiceAttempts < 2 && (await clickMicrosoftAccountChoice(page, username))) {
+        accountChoiceAttempts += 1;
+        await waitForMicrosoftStep(page);
+        continue;
+      }
+
       if (restartUrl && hasAccountPickerError && accountPickerErrorCycles >= 2 && authResetAttempts < 2) {
         console.log('Resetting Microsoft auth state after repeated account-picker sign-in failures.');
         authResetAttempts += 1;
         accountPickerAttempts = 0;
         accountPickerErrorCycles = 0;
+        accountChoiceAttempts = 0;
         passwordSubmitAttempts = 0;
         await resetMicrosoftAuthState(page, restartUrl);
         continue;
@@ -559,6 +589,7 @@ async function handleMicrosoftSignIn(page: Page, debugDir: string, restartUrl?: 
         authResetAttempts += 1;
         accountPickerAttempts = 0;
         accountPickerErrorCycles = 0;
+        accountChoiceAttempts = 0;
         passwordSubmitAttempts = 0;
         await resetMicrosoftAuthState(page, restartUrl);
       }
