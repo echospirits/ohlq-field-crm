@@ -3,7 +3,7 @@ import os from 'os';
 import path from 'path';
 import {
   chromium as playwrightChromium,
-  type FrameLocator,
+  type Frame,
   type LaunchOptions,
   type Locator,
   type Page,
@@ -16,6 +16,8 @@ const POWER_BI_TENANT_ID = '50f8fcc4-94d8-4f07-84eb-36ed57c7c8a2';
 type Logger = Pick<Console, 'error' | 'log'>;
 
 const MICROSOFT_SIGN_IN_TIMEOUT_MS = 150_000;
+const POWER_BI_REPORT_FRAME_TIMEOUT_MS = 180_000;
+const POWER_BI_REPORT_FRAME_RELOAD_AFTER_MS = 75_000;
 const MICROSOFT_PASSWORD_PROMPT_TEXT = /enter password|forgot my password/i;
 const MICROSOFT_USERNAME_INPUT_SELECTORS = [
   'input[type="email"]',
@@ -287,6 +289,21 @@ async function getMicrosoftPageSummary(page: Page) {
   return text.replace(/\s+/g, ' ').trim().slice(0, 500);
 }
 
+async function getFrameDebugSummary(page: Page) {
+  const summaries: string[] = [];
+
+  for (const [index, frame] of page.frames().entries()) {
+    const text = await frame
+      .locator('body')
+      .innerText({ timeout: 750 })
+      .catch(() => '');
+    const summary = text.replace(/\s+/g, ' ').trim().slice(0, 220);
+    summaries.push(`#${index} ${frame.url().slice(0, 180)}${summary ? ` :: ${summary}` : ''}`);
+  }
+
+  return summaries.join(' | ').slice(0, 1_200);
+}
+
 async function throwMicrosoftInterrupt(page: Page, debugDir: string, message: string) {
   const screenshotPath = await saveDebugScreenshot(page, 'microsoft-sign-in-interrupted', debugDir);
   const pageSummary = await getMicrosoftPageSummary(page);
@@ -400,16 +417,62 @@ async function handleMicrosoftSignIn(page: Page, debugDir: string) {
   }
 }
 
-async function setDate(frame: FrameLocator, label: 'From date' | 'To date', reportDate: ReportDate) {
-  const input = frame.locator(`input[aria-label="${label}"]`);
-  await input.waitFor({ state: 'visible', timeout: 120_000 });
+function reportDateInput(frame: Frame, label: 'From date' | 'To date') {
+  return frame.locator(`input[aria-label="${label}" i]`).first();
+}
+
+async function waitForPowerBiReportFrame(page: Page, report: OhlqPowerBiReportConfig, debugDir: string) {
+  const startedAt = Date.now();
+  let didReload = false;
+
+  while (Date.now() - startedAt < POWER_BI_REPORT_FRAME_TIMEOUT_MS) {
+    for (const frame of page.frames()) {
+      const fromDateInput = reportDateInput(frame, 'From date');
+      if (await fromDateInput.isVisible({ timeout: 750 }).catch(() => false)) {
+        return frame;
+      }
+    }
+
+    const elapsedMs = Date.now() - startedAt;
+    if (!didReload && elapsedMs >= POWER_BI_REPORT_FRAME_RELOAD_AFTER_MS) {
+      didReload = true;
+      await saveDebugScreenshot(page, `power-bi-${report.fileSlug}-frame-wait-reload`, debugDir).catch(() => undefined);
+      await page.reload({ waitUntil: 'domcontentloaded', timeout: 60_000 }).catch(() => undefined);
+      await handleMicrosoftSignIn(page, debugDir);
+      await page
+        .waitForURL((url) => url.href.includes(`/rdlreports/${report.reportId}`), { timeout: 60_000 })
+        .catch(() => undefined);
+    }
+
+    await page.waitForTimeout(1_000);
+  }
+
+  const screenshotPath = await saveDebugScreenshot(page, `power-bi-${report.fileSlug}-parameters-timeout`, debugDir);
+  const pageSummary = await getMicrosoftPageSummary(page);
+  const frameSummary = await getFrameDebugSummary(page);
+  throw new Error(
+    [
+      `Power BI report parameters did not load for ${report.fileSlug}.`,
+      `Expected the From date input in one of ${page.frames().length} frame(s).`,
+      `Page: ${pageSummary || page.url()}.`,
+      frameSummary ? `Frames: ${frameSummary}.` : '',
+      `Debug screenshot: ${screenshotPath}`,
+    ]
+      .filter(Boolean)
+      .join(' '),
+  );
+}
+
+async function setDate(frame: Frame, label: 'From date' | 'To date', reportDate: ReportDate) {
+  const input = reportDateInput(frame, label);
+  await input.waitFor({ state: 'visible', timeout: 30_000 });
   await input.click();
   await input.fill(reportDate.display).catch(() => undefined);
   await input.press('Tab').catch(() => undefined);
 
   if ((await input.inputValue().catch(() => '')) === reportDate.display) return;
 
-  await frame.locator(`input[aria-label="${label}"] + span[role="button"]`).click();
+  await frame.locator(`input[aria-label="${label}" i] + span[role="button"]`).click();
   await frame
     .getByRole('button', {
       name: `${reportDate.day}, ${reportDate.monthName}, ${reportDate.year}`,
@@ -418,7 +481,7 @@ async function setDate(frame: FrameLocator, label: 'From date' | 'To date', repo
   await input.waitFor({ state: 'visible', timeout: 30_000 });
 }
 
-async function selectAllVendors(frame: FrameLocator) {
+async function selectAllVendors(frame: Frame) {
   await frame.locator('span[aria-label="Open Vendor"]').click();
   const selectAll = frame.getByRole('menuitemcheckbox', { name: 'Select All' });
   await selectAll.waitFor({ state: 'visible', timeout: 30_000 });
@@ -430,7 +493,7 @@ async function selectAllVendors(frame: FrameLocator) {
   await frame.locator('body').press('Escape').catch(() => undefined);
 }
 
-async function viewReportIfReady(frame: FrameLocator) {
+async function viewReportIfReady(frame: Frame) {
   const viewReportButton = frame.getByRole('button', { name: 'View report' });
   if (await viewReportButton.isEnabled().catch(() => false)) {
     await viewReportButton.click();
@@ -537,7 +600,7 @@ async function downloadOhlqPowerBiReportFromPage(
     timeout: 120_000,
   });
 
-  const frame = page.frameLocator('iframe');
+  const frame = await waitForPowerBiReportFrame(page, report, debugDir);
   await setDate(frame, 'From date', reportDate);
   await setDate(frame, 'To date', reportDate);
 
