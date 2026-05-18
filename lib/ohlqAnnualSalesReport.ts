@@ -237,6 +237,18 @@ async function clickMicrosoftForwardAction(page: Page) {
   return false;
 }
 
+async function clickMicrosoftTextAction(page: Page, selectorName: string | RegExp) {
+  if (await clickIfVisible(page, selectorName)) return true;
+
+  const action = page.getByText(selectorName).first();
+  if (await action.isVisible().catch(() => false)) {
+    await action.click();
+    return true;
+  }
+
+  return false;
+}
+
 async function waitForMicrosoftPasswordField(page: Page) {
   await page
     .locator(MICROSOFT_PASSWORD_INPUT_SELECTORS.join(', '))
@@ -352,6 +364,7 @@ async function handleMicrosoftSignIn(page: Page, debugDir: string) {
     }
 
     const isPasswordPrompt = MICROSOFT_PASSWORD_PROMPT_TEXT.test(pageSummary);
+    const hasAccountPickerError = /we couldn't sign you in|please try again/i.test(pageSummary);
     const usernameInput = isPasswordPrompt ? null : await firstVisibleLocator(page, MICROSOFT_USERNAME_INPUT_SELECTORS);
     if (usernameInput) {
       passwordSubmitAttempts = 0;
@@ -392,6 +405,21 @@ async function handleMicrosoftSignIn(page: Page, debugDir: string) {
       continue;
     }
 
+    if (
+      (hasAccountPickerError || /pick an account/i.test(pageSummary)) &&
+      (await clickMicrosoftTextAction(page, /use another account/i))
+    ) {
+      passwordSubmitAttempts = 0;
+      await waitForMicrosoftStep(page);
+      continue;
+    }
+
+    if (hasAccountPickerError && (await clickMicrosoftTextAction(page, /try again/i))) {
+      passwordSubmitAttempts = 0;
+      await waitForMicrosoftStep(page);
+      continue;
+    }
+
     if (await clickIfVisible(page, /^yes$/i)) {
       await waitForMicrosoftStep(page);
       continue;
@@ -404,7 +432,7 @@ async function handleMicrosoftSignIn(page: Page, debugDir: string) {
       continue;
     }
 
-    if (await clickIfVisible(page, /use another account/i)) {
+    if (await clickMicrosoftTextAction(page, /use another account/i)) {
       await waitForMicrosoftStep(page);
       continue;
     }

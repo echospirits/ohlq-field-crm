@@ -1,6 +1,6 @@
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
-export const maxDuration = 300;
+export const maxDuration = 800;
 
 import { UserRole } from '@prisma/client';
 import { revalidatePath } from 'next/cache';
@@ -63,4 +63,10 @@ export async function POST(request: Request) {
       message: (error instanceof Error ? error.message : String(error)).slice(0, 180),
     });
   }
+}
+
+export async function GET(request: Request) {
+  return redirectToDataStatus(request, 'ohlq-error', {
+    message: 'Use the Data Status form to run an OHLQ import.',
+  });
 }
