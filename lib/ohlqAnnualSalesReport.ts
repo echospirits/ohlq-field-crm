@@ -1,13 +1,44 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { chromium as playwrightChromium, type FrameLocator, type LaunchOptions, type Page } from 'playwright-core';
+import {
+  chromium as playwrightChromium,
+  type FrameLocator,
+  type LaunchOptions,
+  type Locator,
+  type Page,
+} from 'playwright-core';
 
 const APP_ROOT = process.cwd();
 const POWER_BI_APP_ID = '1b854c43-d373-43ea-9f76-edefa2dd227f';
 const POWER_BI_TENANT_ID = '50f8fcc4-94d8-4f07-84eb-36ed57c7c8a2';
 
 type Logger = Pick<Console, 'error' | 'log'>;
+
+const MICROSOFT_SIGN_IN_TIMEOUT_MS = 150_000;
+const MICROSOFT_USERNAME_INPUT_SELECTORS = [
+  'input[type="email"]',
+  'input[name="loginfmt"]',
+  'input#i0116',
+  'input[autocomplete="username"]',
+  'input[aria-label*="email" i]',
+  'input[placeholder*="email" i]',
+];
+const MICROSOFT_PASSWORD_INPUT_SELECTORS = [
+  'input[type="password"]',
+  'input[name="passwd"]',
+  'input#i0118',
+  'input[autocomplete="current-password"]',
+  'input[aria-label*="password" i]',
+  'input[placeholder*="password" i]',
+];
+const MICROSOFT_FORWARD_ACTION_SELECTORS = [
+  'button[type="submit"]',
+  'input[type="submit"]',
+  'input#idSIButton9',
+  'input[value="Next"]',
+  'input[value="Sign in"]',
+];
 
 type OhlqPowerBiReportConfig = {
   fileSlug: string;
@@ -168,6 +199,45 @@ async function clickIfVisible(page: Page, selectorName: string | RegExp) {
   return false;
 }
 
+async function firstVisibleLocator(page: Page, selectors: string[]) {
+  for (const selector of selectors) {
+    const candidates = page.locator(selector);
+    const count = await candidates.count().catch(() => 0);
+
+    for (let index = 0; index < Math.min(count, 5); index += 1) {
+      const candidate = candidates.nth(index);
+      if (await candidate.isVisible().catch(() => false)) return candidate;
+    }
+  }
+
+  return null;
+}
+
+async function clickVisibleLocator(locator: Locator | null) {
+  if (!locator) return false;
+  if (!(await locator.isVisible().catch(() => false))) return false;
+
+  await locator.click();
+  return true;
+}
+
+async function clickMicrosoftForwardAction(page: Page) {
+  if (await clickIfVisible(page, /^(sign in|next)$/i)) return true;
+
+  const submitControl = await firstVisibleLocator(page, MICROSOFT_FORWARD_ACTION_SELECTORS);
+  if (await clickVisibleLocator(submitControl)) return true;
+
+  return false;
+}
+
+async function waitForMicrosoftPasswordField(page: Page) {
+  await page
+    .locator(MICROSOFT_PASSWORD_INPUT_SELECTORS.join(', '))
+    .first()
+    .waitFor({ state: 'visible', timeout: 5_000 })
+    .catch(() => undefined);
+}
+
 async function waitForMicrosoftStep(page: Page) {
   await page.waitForLoadState('domcontentloaded', { timeout: 5_000 }).catch(() => undefined);
   await page.waitForTimeout(750);
@@ -205,9 +275,11 @@ async function handleMicrosoftSignIn(page: Page, debugDir: string) {
     );
   }
 
-  const deadline = Date.now() + 90_000;
+  const deadline = Date.now() + MICROSOFT_SIGN_IN_TIMEOUT_MS;
 
   while (page.url().includes('login.microsoftonline.com') && Date.now() < deadline) {
+    const pageSummary = await getMicrosoftPageSummary(page);
+
     if (await page.getByText('There was an issue looking up your account').isVisible().catch(() => false)) {
       const screenshotPath = await saveDebugScreenshot(page, 'microsoft-account-lookup-error', debugDir);
       throw new Error(`Microsoft could not look up OHLQ_MICROSOFT_USERNAME. Debug screenshot: ${screenshotPath}`);
@@ -238,18 +310,16 @@ async function handleMicrosoftSignIn(page: Page, debugDir: string) {
       continue;
     }
 
-    const usernameInput = page
-      .locator('input[type="email"], input[name="loginfmt"], input[aria-label*="Email"], input[placeholder*="email" i]')
-      .first();
-    if (await usernameInput.isVisible().catch(() => false)) {
+    const usernameInput = await firstVisibleLocator(page, MICROSOFT_USERNAME_INPUT_SELECTORS);
+    if (usernameInput) {
       await usernameInput.fill(username);
-      await clickIfVisible(page, /next/i);
+      if (!(await clickMicrosoftForwardAction(page))) await usernameInput.press('Enter');
       await waitForMicrosoftStep(page);
       continue;
     }
 
-    const passwordInput = page.locator('input[type="password"]').first();
-    if (await passwordInput.isVisible().catch(() => false)) {
+    const passwordInput = await firstVisibleLocator(page, MICROSOFT_PASSWORD_INPUT_SELECTORS);
+    if (passwordInput) {
       if (!password) {
         const screenshotPath = await saveDebugScreenshot(page, 'microsoft-password-required', debugDir);
         throw new Error(
@@ -258,15 +328,18 @@ async function handleMicrosoftSignIn(page: Page, debugDir: string) {
       }
 
       await passwordInput.fill(password);
-      if (!(await clickIfVisible(page, /sign in/i))) {
-        await clickIfVisible(page, /next/i);
-      }
+      if (!(await clickMicrosoftForwardAction(page))) await passwordInput.press('Enter');
       await waitForMicrosoftStep(page);
       continue;
     }
 
     if (await clickIfVisible(page, /^yes$/i)) {
       await waitForMicrosoftStep(page);
+      continue;
+    }
+
+    if (/enter password|forgot my password/i.test(pageSummary)) {
+      await waitForMicrosoftPasswordField(page);
       continue;
     }
 
