@@ -239,12 +239,30 @@ async function clickMicrosoftForwardAction(page: Page) {
 async function clickMicrosoftTextAction(page: Page, selectorName: string | RegExp) {
   if (await clickIfVisible(page, selectorName)) return true;
 
-  const action = page.getByText(selectorName).first();
-  if (await action.isVisible().catch(() => false)) {
-    return action.click({ timeout: MICROSOFT_INPUT_ACTION_TIMEOUT_MS }).then(() => true, () => false);
+  const candidates = [
+    page.getByRole('link', { name: selectorName }).first(),
+    page.getByText(selectorName).first(),
+    page.locator('button, a, [role="button"], [role="link"], [tabindex]').filter({ hasText: selectorName }).first(),
+  ];
+
+  for (const action of candidates) {
+    if (await action.isVisible().catch(() => false)) {
+      const clicked = await action.click({ force: true, timeout: MICROSOFT_INPUT_ACTION_TIMEOUT_MS }).then(() => true, () => false);
+      if (clicked) return true;
+    }
   }
 
-  return false;
+  return page
+    .evaluate((rawPattern) => {
+      const pattern = new RegExp(rawPattern, 'i');
+      const candidates = Array.from(
+        document.querySelectorAll<HTMLElement>('button, a, [role="button"], [role="link"], [tabindex]'),
+      );
+      const action = candidates.find((element) => pattern.test(element.innerText || element.textContent || ''));
+      action?.click();
+      return Boolean(action);
+    }, typeof selectorName === 'string' ? selectorName : selectorName.source)
+    .catch(() => false);
 }
 
 async function waitForMicrosoftPasswordField(page: Page) {
@@ -445,17 +463,10 @@ async function handleMicrosoftSignIn(page: Page, debugDir: string) {
       continue;
     }
 
-    if (
-      (hasAccountPickerError || /pick an account/i.test(pageSummary)) &&
-      (await clickMicrosoftTextAction(page, /use another account/i))
-    ) {
+    if (hasAccountPickerError || /pick an account/i.test(pageSummary)) {
       passwordSubmitAttempts = 0;
-      await waitForMicrosoftStep(page);
-      continue;
-    }
-
-    if (hasAccountPickerError && (await clickMicrosoftTextAction(page, /try again/i))) {
-      passwordSubmitAttempts = 0;
+      await clickMicrosoftTextAction(page, /use another account/i);
+      if (hasAccountPickerError) await clickMicrosoftTextAction(page, /try again/i);
       await waitForMicrosoftStep(page);
       continue;
     }
