@@ -19,6 +19,14 @@ const MICROSOFT_SIGN_IN_TIMEOUT_MS = 150_000;
 const POWER_BI_REPORT_FRAME_TIMEOUT_MS = 180_000;
 const POWER_BI_REPORT_FRAME_RELOAD_AFTER_MS = 75_000;
 const MICROSOFT_INPUT_ACTION_TIMEOUT_MS = 5_000;
+const MICROSOFT_AUTH_RESET_DOMAINS = [
+  /(?:^|\.)live\.com$/i,
+  /(?:^|\.)microsoft\.com$/i,
+  /(?:^|\.)microsoftonline\.com$/i,
+  /(?:^|\.)msauth\.net$/i,
+  /(?:^|\.)powerbigov\.us$/i,
+  /(?:^|\.)windows\.net$/i,
+];
 const MICROSOFT_PASSWORD_PROMPT_TEXT = /enter password|forgot my password/i;
 const MICROSOFT_USERNAME_INPUT_SELECTORS = [
   'input[type="email"]',
@@ -381,7 +389,23 @@ async function throwMicrosoftInterrupt(page: Page, debugDir: string, message: st
   throw new Error(`${message} Last Microsoft page: ${pageSummary || page.url()}. Debug screenshot: ${screenshotPath}`);
 }
 
-async function handleMicrosoftSignIn(page: Page, debugDir: string) {
+async function resetMicrosoftAuthState(page: Page, restartUrl: string) {
+  await page
+    .evaluate(() => {
+      localStorage.clear();
+      sessionStorage.clear();
+    })
+    .catch(() => undefined);
+
+  for (const domain of MICROSOFT_AUTH_RESET_DOMAINS) {
+    await page.context().clearCookies({ domain }).catch(() => undefined);
+  }
+
+  await page.goto(restartUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 }).catch(() => undefined);
+  await waitForMicrosoftStep(page);
+}
+
+async function handleMicrosoftSignIn(page: Page, debugDir: string, restartUrl?: string) {
   if (!page.url().includes('login.microsoftonline.com')) return;
 
   const username = process.env.OHLQ_MICROSOFT_USERNAME?.trim();
@@ -400,6 +424,8 @@ async function handleMicrosoftSignIn(page: Page, debugDir: string) {
 
   const deadline = Date.now() + MICROSOFT_SIGN_IN_TIMEOUT_MS;
   let passwordSubmitAttempts = 0;
+  let accountPickerAttempts = 0;
+  let authResetAttempts = 0;
 
   while (page.url().includes('login.microsoftonline.com') && Date.now() < deadline) {
     const pageSummary = await getMicrosoftPageSummary(page);
@@ -427,6 +453,7 @@ async function handleMicrosoftSignIn(page: Page, debugDir: string) {
     const usernameWasFilled = isPasswordPrompt ? false : await fillMicrosoftUsername(page, username);
     if (usernameWasFilled) {
       passwordSubmitAttempts = 0;
+      accountPickerAttempts = 0;
       if (!(await clickMicrosoftForwardAction(page))) await page.keyboard.press('Enter').catch(() => undefined);
       await waitForMicrosoftStep(page);
       continue;
@@ -465,9 +492,22 @@ async function handleMicrosoftSignIn(page: Page, debugDir: string) {
 
     if (hasAccountPickerError || /pick an account/i.test(pageSummary)) {
       passwordSubmitAttempts = 0;
-      await clickMicrosoftTextAction(page, /use another account/i);
-      if (hasAccountPickerError) await clickMicrosoftTextAction(page, /try again/i);
+      accountPickerAttempts += 1;
+
+      const usedAnotherAccount = await clickMicrosoftTextAction(page, /use another account/i);
+      if (!usedAnotherAccount && hasAccountPickerError) {
+        await clickMicrosoftTextAction(page, /try again/i);
+      }
+
       await waitForMicrosoftStep(page);
+
+      if (restartUrl && accountPickerAttempts >= 2 && authResetAttempts < 2) {
+        authResetAttempts += 1;
+        accountPickerAttempts = 0;
+        passwordSubmitAttempts = 0;
+        await resetMicrosoftAuthState(page, restartUrl);
+      }
+
       continue;
     }
 
@@ -503,7 +543,12 @@ function reportDateInput(frame: Frame, label: 'From date' | 'To date') {
   return frame.locator(`input[aria-label="${label}" i]`).first();
 }
 
-async function waitForPowerBiReportFrame(page: Page, report: OhlqPowerBiReportConfig, debugDir: string) {
+async function waitForPowerBiReportFrame(
+  page: Page,
+  report: OhlqPowerBiReportConfig,
+  debugDir: string,
+  restartUrl: string,
+) {
   const startedAt = Date.now();
   let didReload = false;
 
@@ -520,7 +565,7 @@ async function waitForPowerBiReportFrame(page: Page, report: OhlqPowerBiReportCo
       didReload = true;
       await saveDebugScreenshot(page, `power-bi-${report.fileSlug}-frame-wait-reload`, debugDir).catch(() => undefined);
       await page.reload({ waitUntil: 'domcontentloaded', timeout: 60_000 }).catch(() => undefined);
-      await handleMicrosoftSignIn(page, debugDir);
+      await handleMicrosoftSignIn(page, debugDir, restartUrl);
       await page
         .waitForURL((url) => url.href.includes(`/rdlreports/${report.reportId}`), { timeout: 60_000 })
         .catch(() => undefined);
@@ -677,12 +722,12 @@ async function downloadOhlqPowerBiReportFromPage(
   logger.log(`Using report date ${reportDate.display} (${reportDate.iso}).`);
 
   await page.goto(ohlqReportRedirectUrl, { waitUntil: 'domcontentloaded' });
-  await handleMicrosoftSignIn(page, debugDir);
+  await handleMicrosoftSignIn(page, debugDir, ohlqReportRedirectUrl);
   await page.waitForURL((url) => url.href.includes(`/rdlreports/${report.reportId}`), {
     timeout: 120_000,
   });
 
-  const frame = await waitForPowerBiReportFrame(page, report, debugDir);
+  const frame = await waitForPowerBiReportFrame(page, report, debugDir, ohlqReportRedirectUrl);
   await setDate(frame, 'From date', reportDate);
   await setDate(frame, 'To date', reportDate);
 
