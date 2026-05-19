@@ -2,8 +2,11 @@ name: OHLQ Annual Sales Sync
 
 on:
   schedule:
-    # 8:00 AM America/New_York during daylight saving time.
+    # GitHub cron is UTC. These are the two possible UTC slots for 8:00 AM
+    # America/New_York; the job guards by Eastern offset so DST does not shift
+    # the import time.
     - cron: "0 12 * * *"
+    - cron: "0 13 * * *"
   workflow_dispatch:
     inputs:
       reportDate:
@@ -39,22 +42,54 @@ jobs:
       OHLQ_USE_SERVERLESS_CHROMIUM: "0"
 
     steps:
+      - name: Confirm 8 AM Eastern schedule window
+        id: schedule_window
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" != "schedule" ]]; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            echo "reason=manual dispatch" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          schedule="${{ github.event.schedule }}"
+          eastern_offset="$(TZ=America/New_York date '+%z')"
+          eastern_time="$(TZ=America/New_York date '+%Y-%m-%d %H:%M:%S %Z %z')"
+
+          if [[ "$schedule" == "0 12 * * *" && "$eastern_offset" == "-0400" ]]; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            echo "reason=scheduled DST 8 AM Eastern slot at $eastern_time" >> "$GITHUB_OUTPUT"
+          elif [[ "$schedule" == "0 13 * * *" && "$eastern_offset" == "-0500" ]]; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            echo "reason=scheduled standard-time 8 AM Eastern slot at $eastern_time" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+            echo "reason=skipping non-8 AM Eastern cron slot $schedule at $eastern_time" >> "$GITHUB_OUTPUT"
+          fi
+
+          echo "$eastern_time"
+
       - name: Check out repository
+        if: steps.schedule_window.outputs.should_run == 'true'
         uses: actions/checkout@v4
 
       - name: Set up Node.js
+        if: steps.schedule_window.outputs.should_run == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: npm
 
       - name: Install dependencies
+        if: steps.schedule_window.outputs.should_run == 'true'
         run: npm ci
 
       - name: Install Playwright Chromium
+        if: steps.schedule_window.outputs.should_run == 'true'
         run: npx playwright install --with-deps chromium
 
       - name: Validate required secrets
+        if: steps.schedule_window.outputs.should_run == 'true'
         shell: bash
         run: |
           missing=()
@@ -70,6 +105,7 @@ jobs:
           fi
 
       - name: Run OHLQ annual sales import
+        if: steps.schedule_window.outputs.should_run == 'true'
         shell: bash
         run: |
           report_date="${{ github.event.inputs.reportDate || '' }}"
@@ -82,10 +118,14 @@ jobs:
           fi
 
       - name: Upload OHLQ debug artifacts
-        if: always()
+        if: always() && steps.schedule_window.outputs.should_run == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: ohlq-sales-debug-${{ github.run_id }}
           path: output/
           if-no-files-found: ignore
           retention-days: 7
+
+      - name: Report skipped scheduled slot
+        if: steps.schedule_window.outputs.should_run != 'true'
+        run: echo "${{ steps.schedule_window.outputs.reason }}"

@@ -30,7 +30,7 @@ npm run dev
 - Deploy.
 
 ## OHLQ annual sales export
-- GitHub Actions runs `.github/workflows/ohlq-annual-sales.yml` at 12:00 UTC daily, which is 8:00 AM Eastern during daylight saving time.
+- GitHub Actions runs `.github/workflows/ohlq-annual-sales.yml` at the two UTC slots that can correspond to 8:00 AM Eastern, then the workflow checks `America/New_York` time and only performs the import during the true 8:00 AM Eastern slot.
 - The workflow uses a full Playwright Chromium install instead of Vercel serverless Chromium because the Microsoft/OHID Power BI sign-in flow rejects the serverless session context.
 - The Vercel cron route `/api/cron/ohlq-annual-sales` remains available for protected manual/diagnostic calls, but it is not scheduled in `vercel.json`.
 - The Data Status manual import button queues the GitHub Actions runner when `GITHUB_ACTIONS_DISPATCH_TOKEN` is configured in Vercel; production will show a configuration error instead of falling back to the known-bad serverless browser path.
