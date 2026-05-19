@@ -41,6 +41,17 @@ export async function POST(request: Request) {
   }
 
   try {
+    const { dispatchOhlqAnnualSalesWorkflow } = await import('../../../../lib/githubActionsDispatch');
+    const queuedWorkflow = await dispatchOhlqAnnualSalesWorkflow({ reportDate });
+
+    if (queuedWorkflow) {
+      return redirectToDataStatus(request, 'ohlq-queued', {
+        date: reportDate,
+        repo: queuedWorkflow.repository,
+        workflow: queuedWorkflow.workflowId,
+      });
+    }
+
     const { runOhlqAnnualSalesWorkflow } = await import('../../../../lib/ohlqAnnualSalesWorkflow');
     const result = await runOhlqAnnualSalesWorkflow({ reportDate });
 

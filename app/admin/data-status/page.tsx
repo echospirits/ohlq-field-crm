@@ -113,6 +113,10 @@ const brandMasterStatusMessage = (params: {
     } agency rows and ${params.wholesaleRows ?? '0'} wholesale rows loaded.`;
   }
 
+  if (params.status === 'ohlq-queued') {
+    return `OHLQ sales import queued in GitHub Actions for ${params.date ?? 'the selected date'}. Refresh this page after the workflow finishes.`;
+  }
+
   if (params.status === 'ohlq-invalid') return 'Choose a valid past OHLQ report date before running the import.';
   if (params.status === 'ohlq-error') {
     return `OHLQ sales import failed: ${params.message ?? 'Unknown error'}`;
@@ -288,8 +292,8 @@ export default async function DataStatusPage({
           </label>
           <button type="submit">Run or refresh import</button>
           <p className="muted data-status-form-note">
-            Runs both OHLQ sales reports for the selected From/To date. Existing rows for that date are replaced during
-            import, so this can refresh a completed day or recover a missed one.
+            Queues both OHLQ sales reports for the selected From/To date. Existing rows for that date are replaced
+            during import, so this can refresh a completed day or recover a missed one.
           </p>
         </form>
       </details>
