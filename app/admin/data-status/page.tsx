@@ -192,6 +192,8 @@ export default async function DataStatusPage({
   const params = (await searchParams) ?? {};
   const dates = getReportDateRange();
   const latestAllowedReportDate = getLatestManualOhlqReportDate();
+  const githubDispatchConfigured = Boolean(process.env.GITHUB_ACTIONS_DISPATCH_TOKEN?.trim());
+  const productionNeedsGithubDispatch = process.env.VERCEL === '1' && !githubDispatchConfigured;
   const startDate = toOhlqDateOnlyUtc(dates[0]);
   const endDate = toOhlqDateOnlyUtc(dates[dates.length - 1]);
 
@@ -290,10 +292,13 @@ export default async function DataStatusPage({
               required
             />
           </label>
-          <button type="submit">Run or refresh import</button>
+          <button disabled={productionNeedsGithubDispatch} type="submit">
+            {productionNeedsGithubDispatch ? 'Configure GitHub runner first' : 'Run or refresh import'}
+          </button>
           <p className="muted data-status-form-note">
-            Queues both OHLQ sales reports for the selected From/To date. Existing rows for that date are replaced
-            during import, so this can refresh a completed day or recover a missed one.
+            {productionNeedsGithubDispatch
+              ? 'Add GITHUB_ACTIONS_DISPATCH_TOKEN in Vercel before production can queue the cloud runner.'
+              : 'Queues both OHLQ sales reports for the selected From/To date. Existing rows for that date are replaced during import, so this can refresh a completed day or recover a missed one.'}
           </p>
         </form>
       </details>

@@ -33,7 +33,7 @@ npm run dev
 - GitHub Actions runs `.github/workflows/ohlq-annual-sales.yml` at 12:00 UTC daily, which is 8:00 AM Eastern during daylight saving time.
 - The workflow uses a full Playwright Chromium install instead of Vercel serverless Chromium because the Microsoft/OHID Power BI sign-in flow rejects the serverless session context.
 - The Vercel cron route `/api/cron/ohlq-annual-sales` remains available for protected manual/diagnostic calls, but it is not scheduled in `vercel.json`.
-- The Data Status manual import button queues the GitHub Actions runner when `GITHUB_ACTIONS_DISPATCH_TOKEN` is configured in Vercel; otherwise it falls back to the in-app runner for local/dev use.
+- The Data Status manual import button queues the GitHub Actions runner when `GITHUB_ACTIONS_DISPATCH_TOKEN` is configured in Vercel; production will show a configuration error instead of falling back to the known-bad serverless browser path.
 - The automation downloads yesterday's Annual Sales Summary and Annual Sales Summary by Wholesale reports.
 - The agency summary imports CSV rows into `OhlqAnnualSalesRow`; the wholesale summary imports rows into `OhlqAnnualSalesByWholesaleRow`.
 - The import stores `reportDate` from the report's From date parameter and replaces existing rows for that date, so reruns are idempotent.

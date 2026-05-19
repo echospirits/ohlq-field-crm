@@ -41,7 +41,17 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { dispatchOhlqAnnualSalesWorkflow } = await import('../../../../lib/githubActionsDispatch');
+    const { dispatchOhlqAnnualSalesWorkflow, getGithubActionsDispatchConfig } = await import(
+      '../../../../lib/githubActionsDispatch'
+    );
+    const dispatchConfig = getGithubActionsDispatchConfig();
+
+    if (!dispatchConfig && process.env.VERCEL === '1') {
+      return redirectToDataStatus(request, 'ohlq-error', {
+        message: 'GitHub Actions dispatch is not configured. Add GITHUB_ACTIONS_DISPATCH_TOKEN in Vercel.',
+      });
+    }
+
     const queuedWorkflow = await dispatchOhlqAnnualSalesWorkflow({ reportDate });
 
     if (queuedWorkflow) {
