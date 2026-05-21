@@ -4,9 +4,12 @@ import { OhlqReportDataSource, OhlqReportRunStatus } from '@prisma/client';
 import {
   DEFAULT_OHLQ_CRON_CATCHUP_DAYS,
   DEFAULT_OHLQ_CRON_MAX_REPORT_DATES,
+  DEFAULT_OHLQ_CRON_REFRESH_DAYS,
   getOhlqCronCandidateReportDates,
   getOhlqCronCatchupDays,
   getOhlqCronMaxReportDates,
+  getOhlqCronRefreshDays,
+  getOhlqCronReportDatesToRefresh,
   selectOhlqCronReportDatesNeedingImport,
 } from '../lib/ohlqAnnualSalesCron';
 
@@ -54,5 +57,14 @@ describe('OHLQ annual sales cron date selection', () => {
     assert.equal(getOhlqCronCatchupDays('99'), 14);
     assert.equal(getOhlqCronMaxReportDates(''), DEFAULT_OHLQ_CRON_MAX_REPORT_DATES);
     assert.equal(getOhlqCronMaxReportDates('99'), 5);
+  });
+
+  it('refreshes yesterday and two days ago by default for early scheduled dispatches', () => {
+    assert.equal(getOhlqCronRefreshDays(''), DEFAULT_OHLQ_CRON_REFRESH_DAYS);
+    assert.equal(getOhlqCronRefreshDays('99'), 5);
+    assert.deepEqual(getOhlqCronReportDatesToRefresh(new Date('2026-05-21T11:00:00.000Z')), [
+      '2026-05-20',
+      '2026-05-19',
+    ]);
   });
 });

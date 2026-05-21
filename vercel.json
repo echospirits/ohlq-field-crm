@@ -4,6 +4,10 @@
   "regions": ["iad1"],
   "crons": [
     {
+      "path": "/api/cron/ohlq-annual-sales",
+      "schedule": "7 11 * * *"
+    },
+    {
       "path": "/api/cron/weekly-digest",
       "schedule": "0 13 * * 5"
     }

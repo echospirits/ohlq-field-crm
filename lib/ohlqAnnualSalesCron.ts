@@ -14,6 +14,7 @@ import {
 export const OHLQ_CRON_TIME_ZONE = 'America/New_York';
 export const DEFAULT_OHLQ_CRON_CATCHUP_DAYS = 3;
 export const DEFAULT_OHLQ_CRON_MAX_REPORT_DATES = 2;
+export const DEFAULT_OHLQ_CRON_REFRESH_DAYS = 2;
 
 type ImportStatusSnapshot = Pick<OhlqReportImportStatus, 'dataSource' | 'reportDate' | 'status'>;
 
@@ -31,6 +32,10 @@ export function getOhlqCronCatchupDays(rawValue: string | null | undefined = pro
 
 export function getOhlqCronMaxReportDates(rawValue: string | null | undefined = process.env.OHLQ_CRON_MAX_REPORT_DATES) {
   return parsePositiveInteger(rawValue, DEFAULT_OHLQ_CRON_MAX_REPORT_DATES, { max: 5 });
+}
+
+export function getOhlqCronRefreshDays(rawValue: string | null | undefined = process.env.OHLQ_CRON_REFRESH_DAYS) {
+  return parsePositiveInteger(rawValue, DEFAULT_OHLQ_CRON_REFRESH_DAYS, { max: 5 });
 }
 
 function getEasternDateIso(now: Date) {
@@ -60,6 +65,10 @@ export function getOhlqCronCandidateReportDates(now = new Date(), catchupDays = 
   const yesterday = addDays(getEasternDateIso(now), -1);
 
   return Array.from({ length: catchupDays }, (_, index) => addDays(yesterday, -index));
+}
+
+export function getOhlqCronReportDatesToRefresh(now = new Date(), refreshDays = getOhlqCronRefreshDays()) {
+  return getOhlqCronCandidateReportDates(now, refreshDays);
 }
 
 export function selectOhlqCronReportDatesNeedingImport({

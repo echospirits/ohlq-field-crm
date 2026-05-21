@@ -7,7 +7,13 @@ import {
   getOhlqCronCatchupDays,
   getOhlqCronMaxReportDates,
   getOhlqCronReportDatesToRun,
+  getOhlqCronReportDatesToRefresh,
+  getOhlqCronRefreshDays,
 } from '../../../../lib/ohlqAnnualSalesCron';
+import {
+  dispatchOhlqAnnualSalesWorkflow,
+  getGithubActionsDispatchConfig,
+} from '../../../../lib/githubActionsDispatch';
 import { getOhlqAnnualSalesReportDate } from '../../../../lib/ohlqAnnualSalesReport';
 import { runOhlqAnnualSalesWorkflow } from '../../../../lib/ohlqAnnualSalesWorkflow';
 
@@ -26,12 +32,16 @@ export async function GET(request: Request) {
     const requestedReportDate = url.searchParams.get('date') ?? url.searchParams.get('reportDate');
     const catchupDays = getOhlqCronCatchupDays(url.searchParams.get('catchupDays') ?? undefined);
     const maxReportDates = getOhlqCronMaxReportDates(url.searchParams.get('maxDates') ?? undefined);
+    const refreshDays = getOhlqCronRefreshDays(url.searchParams.get('refreshDays') ?? undefined);
+    const dispatchConfig = getGithubActionsDispatchConfig();
     const reportDates = requestedReportDate
       ? [getOhlqAnnualSalesReportDate(requestedReportDate).iso]
-      : await getOhlqCronReportDatesToRun({
-          catchupDays,
-          maxReportDates,
-        });
+      : dispatchConfig
+        ? getOhlqCronReportDatesToRefresh(new Date(), refreshDays)
+        : await getOhlqCronReportDatesToRun({
+            catchupDays,
+            maxReportDates,
+          });
 
     if (reportDates.length === 0) {
       console.log('OHLQ annual sales cron skipped: all candidate report dates are already complete.');
@@ -44,6 +54,27 @@ export async function GET(request: Request) {
     }
 
     console.log(`OHLQ annual sales cron selected report date(s): ${reportDates.join(', ')}.`);
+
+    if (dispatchConfig) {
+      const queuedRuns = [];
+      for (const reportDate of reportDates) {
+        console.log(`OHLQ annual sales cron queued GitHub Actions workflow for report date ${reportDate}.`);
+        const result = await dispatchOhlqAnnualSalesWorkflow({ reportDate });
+        queuedRuns.push({ reportDate, result });
+      }
+
+      return NextResponse.json({
+        ok: true,
+        queued: true,
+        reportDates,
+        runCount: queuedRuns.length,
+        runs: queuedRuns,
+      });
+    }
+
+    if (process.env.VERCEL === '1') {
+      throw new Error('GitHub Actions dispatch is not configured. Add GITHUB_ACTIONS_DISPATCH_TOKEN in Vercel.');
+    }
 
     const runs = [];
     for (const reportDate of reportDates) {

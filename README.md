@@ -26,18 +26,19 @@ npm run dev
 ## Deploy to Vercel
 - Push this folder to GitHub.
 - Import the repo into Vercel.
-- Add `DATABASE_URL`, `APP_BASE_URL`, `CRON_SECRET`, `RESEND_API_KEY`, `EMAIL_FROM`, `BLOB_READ_WRITE_TOKEN`, `OHLQ_OPS_USERNAME`, `OHLQ_OPS_PASSWORD`, optional `OHLQ_REPORT_RETENTION_DAYS`, and optional `EVENTBRITE_TOKEN` as environment variables.
+- Add `DATABASE_URL`, `APP_BASE_URL`, `CRON_SECRET`, `RESEND_API_KEY`, `EMAIL_FROM`, `BLOB_READ_WRITE_TOKEN`, `GITHUB_ACTIONS_DISPATCH_TOKEN`, optional `OHLQ_REPORT_RETENTION_DAYS`, and optional `EVENTBRITE_TOKEN` as environment variables.
 - Deploy.
 
 ## OHLQ annual sales export
-- GitHub Actions runs `.github/workflows/ohlq-annual-sales.yml` daily at 8:17 AM America/New_York. The schedule is offset from the top of the hour because GitHub can delay or drop jobs during high-load top-of-hour cron windows.
+- Vercel Cron calls `/api/cron/ohlq-annual-sales` daily at 11:07 UTC, which is 7:07 AM Eastern during daylight saving time and 6:07 AM Eastern during standard time.
+- The cron route queues the GitHub Actions runner instead of running browser automation inside Vercel. It refreshes yesterday plus the previous report date so early runs can still correct data that posted late the prior day.
+- GitHub Actions still owns the browser work in `.github/workflows/ohlq-annual-sales.yml`; it is triggered by Vercel Cron or the Data Status manual import button.
 - The workflow uses a full Playwright Chromium install instead of Vercel serverless Chromium because the Microsoft/OHID Power BI sign-in flow rejects the serverless session context.
-- The Vercel cron route `/api/cron/ohlq-annual-sales` remains available for protected manual/diagnostic calls, but it is not scheduled in `vercel.json`.
 - The Data Status manual import button queues the GitHub Actions runner when `GITHUB_ACTIONS_DISPATCH_TOKEN` is configured in Vercel; production will show a configuration error instead of falling back to the known-bad serverless browser path.
 - The automation downloads yesterday's Annual Sales Summary and Annual Sales Summary by Wholesale reports.
 - The agency summary imports CSV rows into `OhlqAnnualSalesRow`; the wholesale summary imports rows into `OhlqAnnualSalesByWholesaleRow`.
 - The import stores `reportDate` from the report's From date parameter and replaces existing rows for that date, so reruns are idempotent.
-- The Vercel cron route checks recent report dates before running and imports missing dates first. Set `OHLQ_CRON_CATCHUP_DAYS` and `OHLQ_CRON_MAX_REPORT_DATES` to adjust the catch-up window and per-run limit if using that route for diagnostics.
+- The production cron route refreshes the latest two complete report dates by default. Set `OHLQ_CRON_REFRESH_DAYS` to adjust how many recent dates are force-refreshed; local diagnostic fallback still uses `OHLQ_CRON_CATCHUP_DAYS` and `OHLQ_CRON_MAX_REPORT_DATES`.
 - Raw OHLQ report rows are pruned after successful imports. Set `OHLQ_REPORT_RETENTION_DAYS` to adjust the window; the default is 30 report dates.
 - Import status is tracked in `OhlqReportImportStatus` and visible to admins at `/admin/data-status`.
 - Admins can also manually run or refresh a specific past report date from `/admin/data-status`.

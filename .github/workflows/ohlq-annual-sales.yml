@@ -1,12 +1,6 @@
 name: OHLQ Annual Sales Sync
 
 on:
-  schedule:
-    # GitHub may drop scheduled jobs at the top of the hour during high load.
-    # Run in the 8 AM Eastern hour, offset from :00, so the daily import is
-    # more likely to be queued reliably.
-    - cron: "17 8 * * *"
-      timezone: "America/New_York"
   workflow_dispatch:
     inputs:
       reportDate:
@@ -42,50 +36,22 @@ jobs:
       OHLQ_USE_SERVERLESS_CHROMIUM: "0"
 
     steps:
-      - name: Confirm 8 AM Eastern schedule window
-        id: schedule_window
-        shell: bash
-        run: |
-          if [[ "${{ github.event_name }}" != "schedule" ]]; then
-            echo "should_run=true" >> "$GITHUB_OUTPUT"
-            echo "reason=manual dispatch" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          schedule="${{ github.event.schedule }}"
-          eastern_time="$(TZ=America/New_York date '+%Y-%m-%d %H:%M:%S %Z %z')"
-
-          if [[ "$schedule" == "17 8 * * *" ]]; then
-            echo "should_run=true" >> "$GITHUB_OUTPUT"
-            echo "reason=scheduled 8:17 AM Eastern slot at $eastern_time" >> "$GITHUB_OUTPUT"
-          else
-            echo "should_run=false" >> "$GITHUB_OUTPUT"
-            echo "reason=skipping unexpected cron slot $schedule at $eastern_time" >> "$GITHUB_OUTPUT"
-          fi
-
-          echo "$eastern_time"
-
       - name: Check out repository
-        if: steps.schedule_window.outputs.should_run == 'true'
         uses: actions/checkout@v4
 
       - name: Set up Node.js
-        if: steps.schedule_window.outputs.should_run == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: npm
 
       - name: Install dependencies
-        if: steps.schedule_window.outputs.should_run == 'true'
         run: npm ci
 
       - name: Install Playwright Chromium
-        if: steps.schedule_window.outputs.should_run == 'true'
         run: npx playwright install --with-deps chromium
 
       - name: Validate required secrets
-        if: steps.schedule_window.outputs.should_run == 'true'
         shell: bash
         run: |
           missing=()
@@ -101,7 +67,6 @@ jobs:
           fi
 
       - name: Run OHLQ annual sales import
-        if: steps.schedule_window.outputs.should_run == 'true'
         shell: bash
         run: |
           report_date="${{ github.event.inputs.reportDate || '' }}"
@@ -114,14 +79,10 @@ jobs:
           fi
 
       - name: Upload OHLQ debug artifacts
-        if: always() && steps.schedule_window.outputs.should_run == 'true'
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ohlq-sales-debug-${{ github.run_id }}
           path: output/
           if-no-files-found: ignore
           retention-days: 7
-
-      - name: Report skipped scheduled slot
-        if: steps.schedule_window.outputs.should_run != 'true'
-        run: echo "${{ steps.schedule_window.outputs.reason }}"
