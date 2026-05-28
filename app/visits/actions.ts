@@ -6,6 +6,7 @@ import { redirect } from 'next/navigation';
 import { getUserDisplayName, requireUser } from '../../lib/auth';
 import { uploadVisitPhoto, validateVisitPhotoFile } from '../../lib/blob';
 import { prisma } from '../../lib/prisma';
+import { getSelectedVoiceFollowUps } from '../../lib/voiceVisitNoteShared';
 import { normalizeWholesaleLicenseeId } from '../../lib/wholesaleAccounts';
 
 const photoTypes: PhotoType[] = [PhotoType.DISPLAY, PhotoType.MENU, PhotoType.OTHER];
@@ -165,6 +166,7 @@ export async function createVisit(formData: FormData) {
       .join('\n') || null;
   const nextStep = toOptional(formData.get('nextStep'));
   const followUpDate = toDate(formData.get('followUpDate'));
+  const selectedVoiceFollowUps = getSelectedVoiceFollowUps(formData);
   const selectedTagIds = getSelectedTagIds(formData);
   const pendingPhotos = collectPhotos(formData, formOrigin, locationType);
 
@@ -325,25 +327,59 @@ export async function createVisit(formData: FormData) {
       },
     });
 
+    const taskCategory = locationType === 'agency' ? WorklistCategory.AGENCY : WorklistCategory.WHOLESALE;
+    const taskLocation = {
+      agencyId: locationType === 'agency' ? agencyId : null,
+      wholesaleAccountId: locationType === 'wholesale' ? wholesaleAccountId : null,
+    };
+    const visitTaskDetail =
+      [
+        summary ? `Summary: ${summary}` : null,
+        outcomes ? `Outcomes: ${outcomes}` : null,
+        nextStep ? `Next step: ${nextStep}` : null,
+      ]
+        .filter(Boolean)
+        .join('\n') || null;
+
     if (followUpDate) {
       await tx.worklistItem.create({
         data: {
           title: nextStep ? `Follow up: ${nextStep.slice(0, 120)}` : 'Follow up on visit',
-          detail:
-            [
-              summary ? `Summary: ${summary}` : null,
-              outcomes ? `Outcomes: ${outcomes}` : null,
-              nextStep ? `Next step: ${nextStep}` : null,
-            ]
-              .filter(Boolean)
-              .join('\n') || null,
+          detail: visitTaskDetail,
           status: WorklistStatus.OPEN,
           source: WorklistSource.VISIT_FOLLOW_UP,
-          category: locationType === 'agency' ? WorklistCategory.AGENCY : WorklistCategory.WHOLESALE,
-          agencyId: locationType === 'agency' ? agencyId : null,
-          wholesaleAccountId: locationType === 'wholesale' ? wholesaleAccountId : null,
+          category: taskCategory,
+          ...taskLocation,
           loggedVisitId: loggedVisit.id,
           dueDate: followUpDate,
+          assignedTo: actorName,
+          assignedToUserId: user.id,
+          createdBy: actorName,
+          createdByUserId: user.id,
+        },
+      });
+    }
+
+    for (const voiceFollowUp of selectedVoiceFollowUps) {
+      await tx.worklistItem.create({
+        data: {
+          title: voiceFollowUp.title,
+          detail:
+            [
+              voiceFollowUp.description,
+              voiceFollowUp.dueDateLabel && !voiceFollowUp.dueDate
+                ? `Date heard from voice note: ${voiceFollowUp.dueDateLabel}`
+                : null,
+              visitTaskDetail,
+            ]
+              .filter(Boolean)
+              .join('\n\n') || null,
+          status: WorklistStatus.OPEN,
+          source: WorklistSource.VISIT_FOLLOW_UP,
+          category: taskCategory,
+          ...taskLocation,
+          loggedVisitId: loggedVisit.id,
+          dueDate: voiceFollowUp.dueDate,
           assignedTo: actorName,
           assignedToUserId: user.id,
           createdBy: actorName,
