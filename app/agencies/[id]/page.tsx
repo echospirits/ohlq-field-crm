@@ -83,6 +83,9 @@ export default async function AgencyActivityPage({
         <Link className="btn compact-btn" href={`/visits/new?type=agency&agencyId=${agency.id}`}>
           Log visit
         </Link>
+        <Link className="btn compact-btn secondary" href={`/visits/new?type=agency&agencyId=${agency.id}&voice=1`}>
+          Voice note
+        </Link>
       </div>
 
       <h1>{agency.name}</h1>

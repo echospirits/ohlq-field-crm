@@ -214,6 +214,9 @@ export default async function WholesaleActivityPage({
         <Link className="btn compact-btn" href={`/visits/new?type=wholesale&wholesaleAccountId=${account.id}`}>
           Log visit
         </Link>
+        <Link className="btn compact-btn secondary" href={`/visits/new?type=wholesale&wholesaleAccountId=${account.id}&voice=1`}>
+          Voice note
+        </Link>
         <Link className="btn compact-btn secondary" href={`/wholesale/${account.id}/edit`}>
           Edit
         </Link>

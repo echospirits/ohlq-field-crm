@@ -27,7 +27,13 @@ const statusMessages: Record<string, string> = {
 export default async function NewVisitPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ status?: string; type?: string; agencyId?: string; wholesaleAccountId?: string }>;
+  searchParams?: Promise<{
+    status?: string;
+    type?: string;
+    agencyId?: string;
+    wholesaleAccountId?: string;
+    voice?: string;
+  }>;
 }) {
   const [params, user, agencyOptions, wholesaleAccountOptions, contacts, tags] = await Promise.all([
     (await searchParams) ?? {},
@@ -91,6 +97,7 @@ export default async function NewVisitPage({
           initialValues={{
             locationType: initialLocationType,
             agencyId: params.agencyId ?? null,
+            startVoiceNote: params.voice === '1',
             wholesaleAccountId: params.wholesaleAccountId ?? null,
           }}
           tags={tags}

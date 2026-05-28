@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { addEasternCalendarDays, EASTERN_TIME_ZONE } from '../../lib/dateTime';
 import type { VisitLocationType } from '../../lib/visitPickerOptions';
 import { DatePickerField } from '../components/DatePickerField';
+import { VoiceVisitNotePanel } from './VoiceVisitNotePanel';
 import { getVisitOutcomePrompts } from './visitPrompts';
 
 const photoTypes = [
@@ -67,6 +68,7 @@ type VisitFormInitialValues = {
   outcomes?: string | null;
   nextStep?: string | null;
   followUpDate?: string | null;
+  startVoiceNote?: boolean;
 };
 
 type LogVisitFormProps = {
@@ -132,6 +134,10 @@ export function LogVisitForm({
   const [wholesaleSearch, setWholesaleSearch] = useState('');
   const [contactSearch, setContactSearch] = useState('');
   const [followUpDate, setFollowUpDate] = useState(initialValues?.followUpDate ?? '');
+  const [summary, setSummary] = useState(initialValues?.summary ?? '');
+  const [outcomes, setOutcomes] = useState(initialValues?.outcomes ?? '');
+  const [nextStep, setNextStep] = useState(initialValues?.nextStep ?? '');
+  const [isVoiceNoteOpen, setIsVoiceNoteOpen] = useState(initialValues?.startVoiceNote ?? false);
 
   const agencySearchText = normalize(agencySearch);
   const wholesaleSearchText = normalize(wholesaleSearch);
@@ -139,6 +145,24 @@ export function LogVisitForm({
   const selectedAgency = agencies.find((agency) => agency.id === agencyId);
   const selectedWholesaleAccount = wholesaleAccounts.find((account) => account.id === wholesaleAccountId);
   const selectedContact = contacts.find((contact) => contact.id === contactId);
+  const voiceAccountContext =
+    locationType === 'agency' && selectedAgency
+      ? {
+          id: selectedAgency.id,
+          name: selectedAgency.name,
+          identifier: selectedAgency.agencyId,
+          city: selectedAgency.city,
+          phone: selectedAgency.phone,
+        }
+      : locationType === 'wholesale' && selectedWholesaleAccount
+        ? {
+            id: selectedWholesaleAccount.id,
+            name: selectedWholesaleAccount.name,
+            identifier: selectedWholesaleAccount.licenseeId,
+            city: selectedWholesaleAccount.city,
+            phone: selectedWholesaleAccount.phone,
+          }
+        : null;
 
   const visibleAgencies = useMemo(
     () =>
@@ -338,6 +362,24 @@ export function LogVisitForm({
         )}
       </fieldset>
 
+      <div className="voice-note-entry">
+        <button className="secondary voice-note-open" type="button" onClick={() => setIsVoiceNoteOpen((isOpen) => !isOpen)}>
+          {isVoiceNoteOpen ? 'Hide Voice Note' : 'Dictate Visit Note'}
+        </button>
+        {isVoiceNoteOpen ? (
+          <VoiceVisitNotePanel
+            accountContext={voiceAccountContext}
+            nextStep={nextStep}
+            outcomes={outcomes}
+            setNextStep={setNextStep}
+            setOutcomes={setOutcomes}
+            setSummary={setSummary}
+            summary={summary}
+            visitType={locationType}
+          />
+        ) : null}
+      </div>
+
       <details className="compact-details cardless-details">
         <summary>{selectedContact ? `Contact: ${selectedContact.name}` : 'Contact optional'}</summary>
         <div className="search-select">
@@ -395,7 +437,8 @@ export function LogVisitForm({
           name="summary"
           rows={2}
           placeholder="Optional dictated note or context"
-          defaultValue={initialValues?.summary ?? ''}
+          value={summary}
+          onChange={(event) => setSummary(event.target.value)}
         />
 
         <details className="compact-details nested-details">
@@ -405,7 +448,8 @@ export function LogVisitForm({
             name="outcomes"
             rows={2}
             placeholder="Wins, losses, placement notes"
-            defaultValue={initialValues?.outcomes ?? ''}
+            value={outcomes}
+            onChange={(event) => setOutcomes(event.target.value)}
           />
 
           <label>Next step</label>
@@ -413,7 +457,8 @@ export function LogVisitForm({
             name="nextStep"
             rows={2}
             placeholder="What should happen next?"
-            defaultValue={initialValues?.nextStep ?? ''}
+            value={nextStep}
+            onChange={(event) => setNextStep(event.target.value)}
           />
         </details>
       </fieldset>
