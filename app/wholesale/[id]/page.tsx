@@ -7,6 +7,7 @@ import { MenuPlacementStatus, MenuPlacementType, Prisma } from '@prisma/client';
 import { getUserDisplayName, requireUser } from '../../../lib/auth';
 import { getWholesaleRecentPurchases } from '../../../lib/ohlqSalesData';
 import { prisma } from '../../../lib/prisma';
+import { formatWholesaleLicenseeIds, getWholesaleLicenseeIdValues } from '../../../lib/wholesaleAccounts';
 import { MenuPlacementPanel } from '../../menu-placements/MenuPlacementPanel';
 import { addRecipeSuggestion, removeRecipeSuggestion } from '../../recipes/actions';
 import { AccountTagPanel } from '../../tags/AccountTagPanel';
@@ -72,12 +73,18 @@ export default async function WholesaleActivityPage({
         },
         orderBy: { createdAt: 'desc' },
       },
+      licenseeIds: {
+        orderBy: [{ isPrimary: 'desc' }, { licenseeId: 'asc' }],
+        select: { licenseeId: true },
+      },
     },
   });
 
   if (!account) {
     notFound();
   }
+
+  const accountLicenseeIds = getWholesaleLicenseeIdValues(account);
 
   const [visits, tags, recipeSuggestions, backingAccount, users, purchases] = await Promise.all([
     prisma.loggedVisit.findMany({
@@ -102,8 +109,12 @@ export default async function WholesaleActivityPage({
       },
       orderBy: [{ suggestedAt: 'desc' }, { createdAt: 'desc' }],
     }),
-    prisma.account.findUnique({
-      where: { licenseeId: account.licenseeId },
+    prisma.account.findFirst({
+      where: {
+        OR: accountLicenseeIds.map((licenseeId) => ({
+          licenseeId: { equals: licenseeId, mode: 'insensitive' as const },
+        })),
+      },
       select: { id: true },
     }),
     prisma.user.findMany({ orderBy: [{ name: 'asc' }, { email: 'asc' }] }),
@@ -211,7 +222,7 @@ export default async function WholesaleActivityPage({
       </div>
 
       <h1>{account.name}</h1>
-      <p className="muted">Licensee {account.licenseeId}</p>
+      <p className="muted">Licensee IDs {formatWholesaleLicenseeIds(account)}</p>
       {!account.isActive ? <p className="pill">Inactive</p> : null}
       {query.status ? <p className="toast-notice" role="status">{statusMessages[query.status] ?? query.status}</p> : null}
       {query.tagStatus ? <p className="pill">{tagStatusMessages[query.tagStatus] ?? query.tagStatus}</p> : null}

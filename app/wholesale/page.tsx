@@ -7,7 +7,17 @@ import { redirect } from 'next/navigation';
 import { AccountType, Prisma } from '@prisma/client';
 import { requireUser } from '../../lib/auth';
 import { prisma } from '../../lib/prisma';
-import { normalizeWholesaleLicenseeId } from '../../lib/wholesaleAccounts';
+import {
+  formatWholesaleLicenseeIds,
+  getPrimaryWholesaleLicenseeId,
+  getWholesaleLicenseeIdConflictWhere,
+  getWholesaleLicenseeIdCreateData,
+  getWholesaleLicenseeIdTextSearchWhere,
+  getWholesaleLicenseeIdValues,
+  normalizeWholesaleLicenseeId,
+  parseWholesaleLicenseeIds,
+  syncWholesaleAccountLicenseeIds,
+} from '../../lib/wholesaleAccounts';
 import { LiveFilterForm } from '../components/LiveFilterForm';
 import { TagBadges } from '../tags/TagBadges';
 import { activateOfficialWholesaleAccount } from './actions';
@@ -33,7 +43,10 @@ async function createWholesale(formData: FormData) {
   'use server';
 
   const user = await requireUser();
-  const licenseeId = normalizeWholesaleLicenseeId(String(formData.get('licenseeId') ?? ''));
+  const licenseeIds = parseWholesaleLicenseeIds(
+    String(formData.get('licenseeIds') ?? formData.get('licenseeId') ?? ''),
+  );
+  const licenseeId = getPrimaryWholesaleLicenseeId(licenseeIds);
   const name = String(formData.get('name') ?? '').trim();
 
   if (!licenseeId || !name) {
@@ -41,6 +54,17 @@ async function createWholesale(formData: FormData) {
   }
 
   const tagIds = getSelectedTagIds(formData);
+  const matchingAccounts = await prisma.wholesaleAccount.findMany({
+    where: getWholesaleLicenseeIdConflictWhere(licenseeIds),
+    select: { id: true },
+    take: 2,
+  });
+  const matchingAccountIds = Array.from(new Set(matchingAccounts.map((account) => account.id)));
+
+  if (matchingAccountIds.length > 1) {
+    redirect('/wholesale?status=duplicate-licensee');
+  }
+
   const officialAccount = await prisma.account.findFirst({
     where: {
       licenseeId: { equals: licenseeId, mode: 'insensitive' },
@@ -48,38 +72,45 @@ async function createWholesale(formData: FormData) {
     },
     select: { id: true },
   });
-  const account = await prisma.wholesaleAccount.upsert({
-    where: { licenseeId },
-    create: {
-      licenseeId,
-      isActive: true,
-      name,
-      officialAccountId: officialAccount?.id,
-      agencyId: toOptional(String(formData.get('agencyId') ?? '')),
-      address: toOptional(String(formData.get('address') ?? '')),
-      city: toOptional(String(formData.get('city') ?? '')),
-      county: toOptional(String(formData.get('county') ?? '')),
-      zip: toOptional(String(formData.get('zip') ?? '')),
-      phone: toOptional(String(formData.get('phone') ?? '')),
-      ownership: toOptional(String(formData.get('ownership') ?? '')),
-      districtId: toOptional(String(formData.get('districtId') ?? '')),
-      deliveryDay: toOptional(String(formData.get('deliveryDay') ?? '')),
-      createdByUserId: user.id,
-    },
-    update: {
-      isActive: true,
-      name,
-      officialAccountId: officialAccount?.id,
-      agencyId: toOptional(String(formData.get('agencyId') ?? '')),
-      address: toOptional(String(formData.get('address') ?? '')),
-      city: toOptional(String(formData.get('city') ?? '')),
-      county: toOptional(String(formData.get('county') ?? '')),
-      zip: toOptional(String(formData.get('zip') ?? '')),
-      phone: toOptional(String(formData.get('phone') ?? '')),
-      ownership: toOptional(String(formData.get('ownership') ?? '')),
-      districtId: toOptional(String(formData.get('districtId') ?? '')),
-      deliveryDay: toOptional(String(formData.get('deliveryDay') ?? '')),
-    },
+  const accountData = {
+    isActive: true,
+    name,
+    officialAccountId: officialAccount?.id,
+    agencyId: toOptional(String(formData.get('agencyId') ?? '')),
+    address: toOptional(String(formData.get('address') ?? '')),
+    city: toOptional(String(formData.get('city') ?? '')),
+    county: toOptional(String(formData.get('county') ?? '')),
+    zip: toOptional(String(formData.get('zip') ?? '')),
+    phone: toOptional(String(formData.get('phone') ?? '')),
+    ownership: toOptional(String(formData.get('ownership') ?? '')),
+    districtId: toOptional(String(formData.get('districtId') ?? '')),
+    deliveryDay: toOptional(String(formData.get('deliveryDay') ?? '')),
+  };
+  const account = await prisma.$transaction(async (tx) => {
+    const existingAccountId = matchingAccountIds[0];
+
+    if (existingAccountId) {
+      const updatedAccount = await tx.wholesaleAccount.update({
+        where: { id: existingAccountId },
+        data: {
+          ...accountData,
+          licenseeId,
+        },
+        select: { id: true },
+      });
+      await syncWholesaleAccountLicenseeIds(tx, updatedAccount.id, licenseeIds);
+      return updatedAccount;
+    }
+
+    return tx.wholesaleAccount.create({
+      data: {
+        ...accountData,
+        licenseeId,
+        licenseeIds: { create: getWholesaleLicenseeIdCreateData(licenseeIds) },
+        createdByUserId: user.id,
+      },
+      select: { id: true },
+    });
   });
 
   if (tagIds.length > 0) {
@@ -103,7 +134,7 @@ async function createWholesale(formData: FormData) {
 const wholesaleSearchWhere = (q: string): Prisma.WholesaleAccountWhereInput => ({
   OR: [
     { name: { contains: q, mode: 'insensitive' } },
-    { licenseeId: { contains: q, mode: 'insensitive' } },
+    ...getWholesaleLicenseeIdTextSearchWhere(q),
     { agencyId: { contains: q, mode: 'insensitive' } },
     { address: { contains: q, mode: 'insensitive' } },
     { phone: { contains: q, mode: 'insensitive' } },
@@ -147,6 +178,10 @@ export default async function WholesalePage({
       take: 300,
       where: accountWhere,
       include: {
+        licenseeIds: {
+          orderBy: [{ isPrimary: 'desc' }, { licenseeId: 'asc' }],
+          select: { licenseeId: true },
+        },
         tags: {
           include: { tag: true },
           orderBy: { createdAt: 'desc' },
@@ -182,15 +217,29 @@ export default async function WholesalePage({
     candidateLicenseeIds.length > 0
       ? await prisma.wholesaleAccount.findMany({
           where: {
-            OR: candidateLicenseeIds.map((licenseeId) => ({
-              licenseeId: { equals: licenseeId, mode: 'insensitive' },
-            })),
+            OR: [
+              ...candidateLicenseeIds.map((licenseeId) => ({
+                licenseeId: { equals: licenseeId, mode: 'insensitive' as const },
+              })),
+              {
+                licenseeIds: {
+                  some: {
+                    OR: candidateLicenseeIds.map((licenseeId) => ({
+                      licenseeId: { equals: licenseeId, mode: 'insensitive' as const },
+                    })),
+                  },
+                },
+              },
+            ],
           },
-          select: { licenseeId: true },
+          select: {
+            licenseeId: true,
+            licenseeIds: { select: { licenseeId: true } },
+          },
         })
       : [];
   const linkedLicenseeIds = new Set(
-    linkedWholesaleAccounts.map((account) => normalizeWholesaleLicenseeId(account.licenseeId)).filter(Boolean),
+    linkedWholesaleAccounts.flatMap((account) => getWholesaleLicenseeIdValues(account)),
   );
   const officialAccounts = officialCandidates.filter((account) => {
     const licenseeId = normalizeWholesaleLicenseeId(account.licenseeId);
@@ -228,14 +277,17 @@ export default async function WholesalePage({
         <input name="q" defaultValue={q} placeholder="Filter name, licensee ID, recipe, menu placement, phone" />
       </LiveFilterForm>
       {params.status === 'saved' ? <p className="pill">Wholesale account saved.</p> : null}
-      {params.status === 'invalid' ? <p className="pill">Name and Licensee ID are required.</p> : null}
+      {params.status === 'invalid' ? <p className="pill">Name and at least one Licensee ID are required.</p> : null}
+      {params.status === 'duplicate-licensee' ? (
+        <p className="pill">Those Licensee IDs are already split across multiple wholesale accounts.</p>
+      ) : null}
       {params.status === 'invalid-official' ? <p className="pill">Select a valid official wholesale record.</p> : null}
 
       <details className="card compact-details admin-panel">
         <summary>Create non-official wholesale account</summary>
         <form action={createWholesale}>
           <div className="form-grid">
-            <input name="licenseeId" placeholder="Licensee ID" required />
+            <textarea name="licenseeIds" placeholder="Licensee IDs" required rows={3} />
             <input name="name" placeholder="Name" required />
             <input name="phone" placeholder="Phone" />
             <input name="city" placeholder="City" />
@@ -275,7 +327,7 @@ export default async function WholesalePage({
           <tr>
             <th>Actions</th>
             <th>Status</th>
-            <th>Licensee ID</th>
+            <th>Licensee IDs</th>
             <th>Name</th>
             <th>Agency ID</th>
             <th>Address</th>
@@ -302,7 +354,7 @@ export default async function WholesalePage({
                 <td data-label="Status">
                   <span className="pill">Active</span>
                 </td>
-                <td data-label="Licensee ID">{account.licenseeId}</td>
+                <td data-label="Licensee IDs">{formatWholesaleLicenseeIds(account)}</td>
                 <td data-label="Name">
                   <Link className="table-link" href={`/wholesale/${account.id}`}>
                     {account.name}

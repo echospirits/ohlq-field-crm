@@ -4,8 +4,10 @@ import {
   getLegacyAccountCreateDataFromWholesaleAccount,
   getWholesaleCreateDataFromOfficialAccount,
   getWholesaleEditableValuesFromOfficialAccount,
+  getWholesaleLicenseeIdValues,
   mergeWholesaleEditableValuesWithOfficialDefaults,
   normalizeWholesaleLicenseeId,
+  parseWholesaleLicenseeIds,
 } from '../lib/wholesaleAccounts';
 
 describe('normalizeWholesaleLicenseeId', () => {
@@ -13,6 +15,28 @@ describe('normalizeWholesaleLicenseeId', () => {
     assert.equal(normalizeWholesaleLicenseeId(' 00072045-1 '), '00072045-1');
     assert.equal(normalizeWholesaleLicenseeId('t40949003'), 'T40949003');
     assert.equal(normalizeWholesaleLicenseeId(null), null);
+  });
+});
+
+describe('parseWholesaleLicenseeIds', () => {
+  it('normalizes multiple IDs while preserving entry order', () => {
+    assert.deepEqual(parseWholesaleLicenseeIds(' 00072045-1\n72045; t40949003,00072045-1 '), [
+      '00072045-1',
+      '72045',
+      'T40949003',
+    ]);
+  });
+});
+
+describe('getWholesaleLicenseeIdValues', () => {
+  it('uses the account primary ID first and includes aliases once', () => {
+    assert.deepEqual(
+      getWholesaleLicenseeIdValues({
+        licenseeId: '72045',
+        licenseeIds: [{ licenseeId: '00072045-1' }, { licenseeId: '72045' }],
+      }),
+      ['72045', '00072045-1'],
+    );
   });
 });
 
@@ -43,6 +67,7 @@ describe('getWholesaleCreateDataFromOfficialAccount', () => {
     assert.equal(data.deliveryDay, 'Tuesday');
     assert.equal(data.isActive, true);
     assert.deepEqual(data.officialAccount, { connect: { id: 'official-1' } });
+    assert.deepEqual(data.licenseeIds, { create: [{ isPrimary: true, licenseeId: 'T40949003' }] });
   });
 });
 

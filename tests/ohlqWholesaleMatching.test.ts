@@ -64,4 +64,24 @@ describe('OHLQ wholesale licensee matching', () => {
     assert.equal(lookup.permitNumbers.has('00072045-1'), true);
     assert.equal(salesPermitMatchesLookup('00072045-2', lookup), true);
   });
+
+  it('uses explicit wholesale account licensee aliases in the sales lookup', async () => {
+    const db = {
+      account: {
+        findMany: async () => [],
+      },
+    } as unknown as PrismaClient;
+
+    const lookup = await resolveOhlqWholesaleSalesLookup({
+      account: {
+        licenseeId: '72045',
+        licenseeIds: [{ licenseeId: '00072045-1' }, { licenseeId: 'T40949003' }],
+      },
+      db,
+    });
+
+    assert.equal(lookup.primaryLicenseeId, '72045');
+    assert.equal(salesPermitMatchesLookup('00072045-2', lookup), true);
+    assert.equal(salesPermitMatchesLookup('t40949003', lookup), true);
+  });
 });

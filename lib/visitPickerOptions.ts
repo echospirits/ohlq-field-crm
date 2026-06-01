@@ -1,5 +1,6 @@
 import type { PrismaClient } from '@prisma/client';
 import { prisma } from './prisma';
+import { formatWholesaleLicenseeIds } from './wholesaleAccounts';
 
 export type VisitLocationType = 'agency' | 'wholesale';
 
@@ -107,10 +108,13 @@ const toAgencyOption = (
 });
 
 const toWholesaleOption = (
-  account: Omit<VisitPickerWholesaleOption, 'lastVisitAt'>,
+  account: Omit<VisitPickerWholesaleOption, 'lastVisitAt'> & {
+    licenseeIds?: Array<{ licenseeId: string | null }> | null;
+  },
   lastVisitByAccountId: Map<string, Date>,
 ): VisitPickerWholesaleOption => ({
   ...account,
+  licenseeId: formatWholesaleLicenseeIds(account),
   lastVisitAt: toIsoString(lastVisitByAccountId.get(account.id)),
 });
 
@@ -191,6 +195,7 @@ export async function getWholesaleAccountsForVisitPicker({
       county: true,
       id: true,
       licenseeId: true,
+      licenseeIds: { select: { licenseeId: true } },
       name: true,
       phone: true,
     },
@@ -220,6 +225,7 @@ export async function getWholesaleVisitPickerOptionById({
       county: true,
       id: true,
       licenseeId: true,
+      licenseeIds: { select: { licenseeId: true } },
       name: true,
       phone: true,
     },

@@ -603,6 +603,7 @@ model WholesaleAccount {
   updatedAt         DateTime           @updatedAt
   createdByUser     User?              @relation("WholesaleAccountCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
   officialAccount   Account?           @relation("OfficialWholesaleAccount", fields: [officialAccountId], references: [id], onDelete: SetNull)
+  licenseeIds       WholesaleLicenseeId[]
   tags              LocationTag[]      @relation("WholesaleLocationTags")
   recipeSuggestions RecipeSuggestion[]
   menuPlacements    MenuPlacement[]
@@ -611,6 +612,19 @@ model WholesaleAccount {
   @@index([isActive])
   @@index([officialAccountId])
   @@index([ohlqLastEchoPurchaseDate])
+}
+
+model WholesaleLicenseeId {
+  id                 String           @id @default(cuid())
+  wholesaleAccountId String
+  licenseeId         String           @unique
+  isPrimary          Boolean          @default(false)
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  wholesaleAccount   WholesaleAccount @relation(fields: [wholesaleAccountId], references: [id], onDelete: Cascade)
+
+  @@index([wholesaleAccountId])
+  @@index([isPrimary])
 }
 
 model LocationTag {

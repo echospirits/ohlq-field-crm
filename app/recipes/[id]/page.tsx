@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getUserDisplayName, requireUser } from '../../../lib/auth';
 import { prisma } from '../../../lib/prisma';
+import { formatWholesaleLicenseeIds } from '../../../lib/wholesaleAccounts';
 import { addRecipeSuggestion, removeRecipeSuggestion } from '../actions';
 
 const formatDate = (date: Date | null | undefined) => (date ? new Date(date).toLocaleDateString() : '');
@@ -40,7 +41,14 @@ export default async function RecipeDetailPage({
       suggestions: {
         include: {
           createdByUser: true,
-          wholesaleAccount: true,
+          wholesaleAccount: {
+            include: {
+              licenseeIds: {
+                orderBy: [{ isPrimary: 'desc' }, { licenseeId: 'asc' }],
+                select: { licenseeId: true },
+              },
+            },
+          },
         },
         orderBy: [{ suggestedAt: 'desc' }, { createdAt: 'desc' }],
       },
@@ -62,6 +70,10 @@ export default async function RecipeDetailPage({
     select: {
       id: true,
       licenseeId: true,
+      licenseeIds: {
+        orderBy: [{ isPrimary: 'desc' }, { licenseeId: 'asc' }],
+        select: { licenseeId: true },
+      },
       name: true,
       city: true,
     },
@@ -170,7 +182,7 @@ export default async function RecipeDetailPage({
                 <option value="">-- Select wholesale account --</option>
                 {availableWholesaleAccounts.map((account) => (
                   <option key={account.id} value={account.id}>
-                    {account.name} / {account.licenseeId}
+                    {account.name} / {formatWholesaleLicenseeIds(account)}
                     {account.city ? ` / ${account.city}` : ''}
                   </option>
                 ))}
@@ -209,7 +221,7 @@ export default async function RecipeDetailPage({
                     {suggestion.wholesaleAccount.name}
                   </Link>
                 </td>
-                <td data-label="Licensee ID">{suggestion.wholesaleAccount.licenseeId}</td>
+                <td data-label="Licensee ID">{formatWholesaleLicenseeIds(suggestion.wholesaleAccount)}</td>
                 <td data-label="Date Suggested">{formatDate(suggestion.suggestedAt)}</td>
                 <td data-label="Note">{suggestion.note}</td>
                 <td data-label="Added By">
