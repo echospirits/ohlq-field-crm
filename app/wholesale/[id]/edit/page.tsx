@@ -8,9 +8,14 @@ import { AccountType } from '@prisma/client';
 import { requireUser } from '../../../../lib/auth';
 import { prisma } from '../../../../lib/prisma';
 import {
+  getPrimaryWholesaleLicenseeId,
   getWholesaleEditableValuesFromOfficialAccount,
+  getWholesaleLicenseeIdConflictWhere,
+  getWholesaleLicenseeIdValues,
   mergeWholesaleEditableValuesWithOfficialDefaults,
   normalizeWholesaleLicenseeId,
+  parseWholesaleLicenseeIds,
+  syncWholesaleAccountLicenseeIds,
   type WholesaleAccountEditableValues,
 } from '../../../../lib/wholesaleAccounts';
 
@@ -25,7 +30,10 @@ async function updateWholesaleAccount(formData: FormData) {
   await requireUser();
 
   const id = toOptional(formData.get('id'));
-  const licenseeId = normalizeWholesaleLicenseeId(String(formData.get('licenseeId') ?? ''));
+  const licenseeIds = parseWholesaleLicenseeIds(
+    String(formData.get('licenseeIds') ?? formData.get('licenseeId') ?? ''),
+  );
+  const licenseeId = getPrimaryWholesaleLicenseeId(licenseeIds);
   const name = toOptional(formData.get('name'));
   const isActive = formData.get('isActive') === 'true';
 
@@ -44,6 +52,7 @@ async function updateWholesaleAccount(formData: FormData) {
       districtId: true,
       id: true,
       licenseeId: true,
+      licenseeIds: { select: { licenseeId: true } },
       name: true,
       officialAccountId: true,
       ownership: true,
@@ -57,8 +66,8 @@ async function updateWholesaleAccount(formData: FormData) {
     notFound();
   }
 
-  const accountWithLicenseeId = await prisma.wholesaleAccount.findUnique({
-    where: { licenseeId },
+  const accountWithLicenseeId = await prisma.wholesaleAccount.findFirst({
+    where: getWholesaleLicenseeIdConflictWhere(licenseeIds, id),
     select: { id: true },
   });
 
@@ -130,24 +139,27 @@ async function updateWholesaleAccount(formData: FormData) {
         })
       : submittedValues;
 
-  await prisma.wholesaleAccount.update({
-    where: { id },
-    data: {
-      licenseeId,
-      isActive,
-      officialAccountId: officialAccount?.id ?? (licenseeIdChanged ? null : existingAccount.officialAccountId),
-      name: accountValues.name,
-      agencyId: accountValues.agencyId,
-      ownership: accountValues.ownership,
-      address: accountValues.address,
-      city: accountValues.city,
-      county: accountValues.county,
-      state: accountValues.state,
-      zip: accountValues.zip,
-      districtId: accountValues.districtId,
-      deliveryDay: accountValues.deliveryDay,
-      phone: accountValues.phone,
-    },
+  await prisma.$transaction(async (tx) => {
+    await tx.wholesaleAccount.update({
+      where: { id },
+      data: {
+        licenseeId,
+        isActive,
+        officialAccountId: officialAccount?.id ?? (licenseeIdChanged ? null : existingAccount.officialAccountId),
+        name: accountValues.name,
+        agencyId: accountValues.agencyId,
+        ownership: accountValues.ownership,
+        address: accountValues.address,
+        city: accountValues.city,
+        county: accountValues.county,
+        state: accountValues.state,
+        zip: accountValues.zip,
+        districtId: accountValues.districtId,
+        deliveryDay: accountValues.deliveryDay,
+        phone: accountValues.phone,
+      },
+    });
+    await syncWholesaleAccountLicenseeIds(tx, id, licenseeIds);
   });
 
   revalidatePath('/wholesale');
@@ -160,8 +172,8 @@ async function updateWholesaleAccount(formData: FormData) {
 }
 
 const statusMessages: Record<string, string> = {
-  invalid: 'Name and Licensee ID are required.',
-  'duplicate-licensee': 'Another wholesale account already uses that Licensee ID.',
+  invalid: 'Name and at least one Licensee ID are required.',
+  'duplicate-licensee': 'Another wholesale account already uses one of those Licensee IDs.',
   'duplicate-official': 'That official account is already linked to another wholesale account.',
 };
 
@@ -178,6 +190,12 @@ export default async function EditWholesaleAccountPage({
 
   const account = await prisma.wholesaleAccount.findUnique({
     where: { id },
+    include: {
+      licenseeIds: {
+        orderBy: [{ isPrimary: 'desc' }, { licenseeId: 'asc' }],
+        select: { licenseeId: true },
+      },
+    },
   });
 
   if (!account) {
@@ -199,8 +217,8 @@ export default async function EditWholesaleAccountPage({
           <input name="id" type="hidden" value={account.id} />
           <div className="form-grid">
             <label>
-              Licensee ID
-              <input name="licenseeId" defaultValue={account.licenseeId} required />
+              Licensee IDs
+              <textarea name="licenseeIds" defaultValue={getWholesaleLicenseeIdValues(account).join('\n')} required rows={3} />
             </label>
             <label>
               Account name

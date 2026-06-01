@@ -5,8 +5,12 @@ import { redirect } from 'next/navigation';
 import { requireUser } from '../../lib/auth';
 import { prisma } from '../../lib/prisma';
 import {
+  getWholesaleLicenseeIdCreateData,
+  getWholesaleLicenseeIdLookupWhere,
+  getWholesaleLicenseeIdValues,
   getWholesaleCreateDataFromOfficialAccount,
   normalizeWholesaleLicenseeId,
+  syncWholesaleAccountLicenseeIds,
 } from '../../lib/wholesaleAccounts';
 
 const toOptional = (value: FormDataEntryValue | null | undefined) => {
@@ -59,14 +63,39 @@ export async function activateOfficialWholesaleAccount(formData: FormData) {
     redirect('/wholesale?status=invalid-official');
   }
 
-  const account = await prisma.wholesaleAccount.upsert({
-    where: { licenseeId },
-    create: getWholesaleCreateDataFromOfficialAccount(officialAccount, user.id),
-    update: {
-      isActive: true,
-      officialAccountId: officialAccount.id,
-    },
-    select: { id: true },
+  const account = await prisma.$transaction(async (tx) => {
+    const existingAccount = await tx.wholesaleAccount.findFirst({
+      where: getWholesaleLicenseeIdLookupWhere(licenseeId),
+      select: {
+        id: true,
+        licenseeId: true,
+        licenseeIds: { select: { licenseeId: true } },
+      },
+    });
+
+    if (existingAccount) {
+      const updatedAccount = await tx.wholesaleAccount.update({
+        where: { id: existingAccount.id },
+        data: {
+          isActive: true,
+          officialAccountId: officialAccount.id,
+        },
+        select: { id: true },
+      });
+      await syncWholesaleAccountLicenseeIds(tx, updatedAccount.id, [
+        ...getWholesaleLicenseeIdValues(existingAccount),
+        licenseeId,
+      ]);
+      return updatedAccount;
+    }
+
+    return tx.wholesaleAccount.create({
+      data: {
+        ...getWholesaleCreateDataFromOfficialAccount(officialAccount, user.id),
+        licenseeIds: { create: getWholesaleLicenseeIdCreateData([licenseeId]) },
+      },
+      select: { id: true },
+    });
   });
 
   revalidateWholesalePaths(account.id);

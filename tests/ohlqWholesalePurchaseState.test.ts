@@ -123,4 +123,44 @@ describe('syncWholesaleAccountEchoPurchaseState', () => {
     assert.equal(result.updatedAccounts, 1);
     assert.equal(updates.length, 1);
   });
+
+  it('matches sales permits against secondary wholesale Licensee IDs', async () => {
+    const updates: unknown[] = [];
+    const db = {
+      account: {
+        findMany: async () => [],
+      },
+      ohlqBrandMasterItem: {
+        findMany: async () => [{ itemCode: '0100A', name: 'Echo Vodka' }],
+      },
+      wholesaleAccount: {
+        findMany: async () => [
+          {
+            address: null,
+            city: null,
+            id: 'wholesale-1',
+            licenseeId: 'PRIMARY-1',
+            licenseeIds: [{ licenseeId: '00072045-1' }],
+            name: 'Alias Buyer',
+            officialAccountId: null,
+            state: 'OH',
+            zip: null,
+          },
+        ],
+        updateMany: async ({ data }: { data: unknown }) => {
+          updates.push(data);
+          return { count: 1 };
+        },
+      },
+    } as unknown as PrismaClient;
+
+    const result = await syncWholesaleAccountEchoPurchaseState({
+      db,
+      rows: [purchaseRow()],
+    });
+
+    assert.equal(result.matchedPermitNumbers, 1);
+    assert.equal(result.updatedAccounts, 1);
+    assert.equal(updates.length, 1);
+  });
 });

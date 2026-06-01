@@ -5,6 +5,136 @@ export const normalizeWholesaleLicenseeId = (value: string | null | undefined) =
   return normalized || null;
 };
 
+type WholesaleLicenseeIdValue = string | { licenseeId: string | null } | null | undefined;
+
+type WholesaleLicenseeIdWriter = {
+  wholesaleLicenseeId: {
+    deleteMany(args: Prisma.WholesaleLicenseeIdDeleteManyArgs): Promise<Prisma.BatchPayload>;
+    updateMany(args: Prisma.WholesaleLicenseeIdUpdateManyArgs): Promise<Prisma.BatchPayload>;
+    upsert(args: Prisma.WholesaleLicenseeIdUpsertArgs): Promise<unknown>;
+  };
+};
+
+export const parseWholesaleLicenseeIds = (value: string | null | undefined) => {
+  const ids = String(value ?? '')
+    .split(/[\n,;]+/)
+    .map((id) => normalizeWholesaleLicenseeId(id))
+    .filter(Boolean) as string[];
+
+  return Array.from(new Set(ids));
+};
+
+export const getPrimaryWholesaleLicenseeId = (licenseeIds: string[]) => licenseeIds[0] ?? null;
+
+export const getWholesaleLicenseeIdValues = (account: {
+  licenseeId?: string | null;
+  licenseeIds?: WholesaleLicenseeIdValue[] | null;
+}) => {
+  const ids = [
+    normalizeWholesaleLicenseeId(account.licenseeId),
+    ...(account.licenseeIds ?? []).map((value) =>
+      normalizeWholesaleLicenseeId(typeof value === 'string' ? value : value?.licenseeId),
+    ),
+  ].filter(Boolean) as string[];
+
+  return Array.from(new Set(ids));
+};
+
+export const formatWholesaleLicenseeIds = (account: {
+  licenseeId?: string | null;
+  licenseeIds?: WholesaleLicenseeIdValue[] | null;
+}) => getWholesaleLicenseeIdValues(account).join(', ');
+
+export const getWholesaleLicenseeIdCreateData = (licenseeIds: string[]) =>
+  licenseeIds.map((licenseeId, index) => ({
+    isPrimary: index === 0,
+    licenseeId,
+  }));
+
+const getWholesaleLicenseeIdConditions = (licenseeIds: string[]) =>
+  licenseeIds.map((licenseeId) => ({
+    licenseeId: { equals: licenseeId, mode: 'insensitive' as const },
+  }));
+
+export const getWholesaleLicenseeIdLookupWhere = (licenseeId: string): Prisma.WholesaleAccountWhereInput => ({
+  OR: [
+    { licenseeId: { equals: licenseeId, mode: 'insensitive' } },
+    {
+      licenseeIds: {
+        some: { licenseeId: { equals: licenseeId, mode: 'insensitive' } },
+      },
+    },
+  ],
+});
+
+export const getWholesaleLicenseeIdConflictWhere = (
+  licenseeIds: string[],
+  excludeWholesaleAccountId?: string,
+): Prisma.WholesaleAccountWhereInput => {
+  const conditions = getWholesaleLicenseeIdConditions(licenseeIds);
+
+  return {
+    ...(excludeWholesaleAccountId ? { id: { not: excludeWholesaleAccountId } } : {}),
+    OR: [
+      ...conditions,
+      {
+        licenseeIds: {
+          some: { OR: conditions },
+        },
+      },
+    ],
+  };
+};
+
+export const getWholesaleLicenseeIdTextSearchWhere = (q: string): Prisma.WholesaleAccountWhereInput[] => [
+  { licenseeId: { contains: q, mode: 'insensitive' } },
+  {
+    licenseeIds: {
+      some: { licenseeId: { contains: q, mode: 'insensitive' } },
+    },
+  },
+];
+
+export async function syncWholesaleAccountLicenseeIds(
+  db: WholesaleLicenseeIdWriter,
+  wholesaleAccountId: string,
+  licenseeIds: string[],
+) {
+  const normalizedLicenseeIds = parseWholesaleLicenseeIds(licenseeIds.join('\n'));
+  const primaryLicenseeId = getPrimaryWholesaleLicenseeId(normalizedLicenseeIds);
+
+  await db.wholesaleLicenseeId.deleteMany({
+    where: {
+      wholesaleAccountId,
+      licenseeId: { notIn: normalizedLicenseeIds },
+    },
+  });
+
+  for (const [index, licenseeId] of normalizedLicenseeIds.entries()) {
+    await db.wholesaleLicenseeId.upsert({
+      where: { licenseeId },
+      create: {
+        wholesaleAccountId,
+        licenseeId,
+        isPrimary: index === 0,
+      },
+      update: {
+        isPrimary: index === 0,
+      },
+    });
+  }
+
+  if (primaryLicenseeId) {
+    await db.wholesaleLicenseeId.updateMany({
+      where: {
+        wholesaleAccountId,
+        licenseeId: { not: primaryLicenseeId },
+      },
+      data: { isPrimary: false },
+    });
+  }
+}
+
 export type OfficialWholesaleSource = Pick<
   Account,
   | 'address'
@@ -172,6 +302,7 @@ export function getWholesaleCreateDataFromOfficialAccount(
     districtId: officialAccount.districtId,
     isActive: true,
     licenseeId,
+    licenseeIds: { create: getWholesaleLicenseeIdCreateData([licenseeId]) },
     name: officialAccount.name,
     officialAccount: { connect: { id: officialAccount.id } },
     ownership: officialAccount.ownership,

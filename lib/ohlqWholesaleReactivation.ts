@@ -40,6 +40,7 @@ export type WholesaleReactivationPurchaseRow = {
 export type WholesaleReactivationAccount = {
   id: string;
   licenseeId: string;
+  licenseeIds?: Array<string | { licenseeId: string | null } | null> | null;
   name: string;
 };
 
@@ -79,6 +80,7 @@ export type ReactivationWorklistSnapshot = {
   completedAt: Date | null;
   id: string;
   licenseeId: string | null;
+  licenseeIds?: string[];
   status: WorklistStatus;
   updatedAt: Date;
   wholesaleAccountId: string | null;
@@ -148,6 +150,25 @@ const sortItems = (items: WholesaleReactivationItem[]) =>
       a.itemCode.localeCompare(b.itemCode),
   );
 
+const getAccountLicenseeIds = (account: {
+  licenseeId?: string | null;
+  licenseeIds?: Array<string | { licenseeId: string | null } | null> | null;
+}) => {
+  const ids = [
+    account.licenseeId,
+    ...(account.licenseeIds ?? []).map((value) => (typeof value === 'string' ? value : value?.licenseeId)),
+  ]
+    .map(normalizeOhlqId)
+    .filter(Boolean) as string[];
+
+  return Array.from(new Set(ids));
+};
+
+const accountHasAnyLicenseeKey = (account: WholesaleReactivationAccount, keys: string[]) =>
+  getAccountLicenseeIds(account).some((licenseeId) =>
+    getOhlqLicenseeMatchKeys(licenseeId).some((key) => keys.includes(key)),
+  );
+
 export function buildWholesaleReactivationAnalysis({
   accounts,
   itemNames = new Map<string, string>(),
@@ -164,10 +185,12 @@ export function buildWholesaleReactivationAnalysis({
   const windows = getWholesaleReactivationWindows({ runAt, timeZone });
   const accountByLicenseeKey = new Map<string, WholesaleReactivationAccount>();
   accounts.forEach((account) => {
-    getOhlqLicenseeMatchKeys(account.licenseeId).forEach((key) => {
-      if (!accountByLicenseeKey.has(key)) {
-        accountByLicenseeKey.set(key, account);
-      }
+    getAccountLicenseeIds(account).forEach((licenseeId) => {
+      getOhlqLicenseeMatchKeys(licenseeId).forEach((key) => {
+        if (!accountByLicenseeKey.has(key)) {
+          accountByLicenseeKey.set(key, account);
+        }
+      });
     });
   });
   const groups = new Map<
@@ -200,7 +223,9 @@ export function buildWholesaleReactivationAnalysis({
     if (hasRecentPurchase) {
       licenseeKeys.forEach((key) => recentBuyerLicenseeIds.add(key));
       if (account) {
-        getOhlqLicenseeMatchKeys(account.licenseeId).forEach((key) => recentBuyerLicenseeIds.add(key));
+        getAccountLicenseeIds(account).forEach((licenseeId) => {
+          getOhlqLicenseeMatchKeys(licenseeId).forEach((key) => recentBuyerLicenseeIds.add(key));
+        });
       }
     }
 
@@ -336,7 +361,11 @@ export function planWholesaleReactivationWorklistSync({
         item.wholesaleAccountId &&
         isOpenWorklistStatus(item.status) &&
         !candidateAccountIds.has(item.wholesaleAccountId) &&
-        Boolean(item.licenseeId && getOhlqLicenseeMatchKeys(item.licenseeId).some((key) => recentBuyerLicenseeIds.has(key))),
+        [...(item.licenseeIds ?? []), item.licenseeId]
+          .filter(Boolean)
+          .some((licenseeId) =>
+            getOhlqLicenseeMatchKeys(licenseeId).some((key) => recentBuyerLicenseeIds.has(key)),
+          ),
     ),
     createCandidates,
     skippedCandidates,
@@ -371,17 +400,34 @@ const findActiveWholesaleAccounts = async (db: PrismaClient, licenseeIds: string
           ...chunk.map((licenseeId) => ({
             licenseeId: { equals: licenseeId, mode: 'insensitive' as const },
           })),
+          ...chunk.map((licenseeId) => ({
+            licenseeIds: {
+              some: { licenseeId: { equals: licenseeId, mode: 'insensitive' as const } },
+            },
+          })),
           ...chunkKeys
             .filter((key) => key.length >= 4)
             .map((key) => ({
               licenseeId: { contains: key, mode: 'insensitive' as const },
             })),
+          ...chunkKeys
+            .filter((key) => key.length >= 4)
+            .map((key) => ({
+              licenseeIds: {
+                some: { licenseeId: { contains: key, mode: 'insensitive' as const } },
+              },
+            })),
         ],
       },
-      select: { id: true, licenseeId: true, name: true },
+      select: {
+        id: true,
+        licenseeId: true,
+        licenseeIds: { select: { licenseeId: true } },
+        name: true,
+      },
     });
     chunkAccounts
-      .filter((account) => getOhlqLicenseeMatchKeys(account.licenseeId).some((key) => targetKeys.has(key)))
+      .filter((account) => accountHasAnyLicenseeKey(account, Array.from(targetKeys)))
       .forEach((account) => accounts.set(account.id, account));
   }
 
@@ -413,6 +459,7 @@ export async function findOhlqWholesaleReactivationCandidates({
       select: {
         id: true,
         licenseeId: true,
+        licenseeIds: { select: { licenseeId: true } },
         name: true,
         ohlqLastEchoPurchaseBottles: true,
         ohlqLastEchoPurchaseDate: true,
@@ -428,12 +475,17 @@ export async function findOhlqWholesaleReactivationCandidates({
           lte: windows.runDate,
         },
       },
-      select: { licenseeId: true },
+      select: {
+        licenseeId: true,
+        licenseeIds: { select: { licenseeId: true } },
+      },
     }),
   ]);
   const recentBuyerLicenseeIds = new Set<string>();
   recentBuyerAccounts.forEach((account) => {
-    getOhlqLicenseeMatchKeys(account.licenseeId).forEach((key) => recentBuyerLicenseeIds.add(key));
+    getAccountLicenseeIds(account).forEach((licenseeId) => {
+      getOhlqLicenseeMatchKeys(licenseeId).forEach((key) => recentBuyerLicenseeIds.add(key));
+    });
   });
   const candidates = lapsedAccounts
     .filter((account) => account.ohlqLastEchoPurchaseDate)
@@ -534,10 +586,15 @@ export async function syncOhlqWholesaleReactivationWorklist({
     sourceAccountIds.length > 0
       ? await db.wholesaleAccount.findMany({
           where: { id: { in: sourceAccountIds } },
-          select: { id: true, licenseeId: true },
+          select: {
+            id: true,
+            licenseeId: true,
+            licenseeIds: { select: { licenseeId: true } },
+          },
         })
       : [];
   const licenseeByAccountId = new Map(sourceAccounts.map((account) => [account.id, account.licenseeId]));
+  const licenseesByAccountId = new Map(sourceAccounts.map((account) => [account.id, getAccountLicenseeIds(account)]));
   const plan = planWholesaleReactivationWorklistSync({
     candidates: analysis.candidates,
     existingItems: sourceItems.map((item) => ({
@@ -545,6 +602,7 @@ export async function syncOhlqWholesaleReactivationWorklist({
       completedAt: item.completedAt,
       id: item.id,
       licenseeId: item.wholesaleAccountId ? licenseeByAccountId.get(item.wholesaleAccountId) ?? null : null,
+      licenseeIds: item.wholesaleAccountId ? licenseesByAccountId.get(item.wholesaleAccountId) ?? [] : [],
       status: item.status,
       updatedAt: item.updatedAt,
       wholesaleAccountId: item.wholesaleAccountId,

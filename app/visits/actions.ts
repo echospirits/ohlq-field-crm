@@ -6,7 +6,13 @@ import { redirect } from 'next/navigation';
 import { getUserDisplayName, requireUser } from '../../lib/auth';
 import { uploadVisitPhoto, validateVisitPhotoFile } from '../../lib/blob';
 import { prisma } from '../../lib/prisma';
-import { normalizeWholesaleLicenseeId } from '../../lib/wholesaleAccounts';
+import {
+  getWholesaleLicenseeIdCreateData,
+  getWholesaleLicenseeIdLookupWhere,
+  getWholesaleLicenseeIdValues,
+  normalizeWholesaleLicenseeId,
+  syncWholesaleAccountLicenseeIds,
+} from '../../lib/wholesaleAccounts';
 
 const photoTypes: PhotoType[] = [PhotoType.DISPLAY, PhotoType.MENU, PhotoType.OTHER];
 
@@ -193,18 +199,29 @@ export async function createVisit(formData: FormData) {
           })
         : null;
       const existingAccount = newWholesaleLicenseeId
-        ? null
+        ? await tx.wholesaleAccount.findFirst({
+            where: getWholesaleLicenseeIdLookupWhere(licenseeId),
+            select: {
+              id: true,
+              licenseeId: true,
+              licenseeIds: { select: { licenseeId: true } },
+            },
+          })
         : await tx.wholesaleAccount.findFirst({
             where: { name: { equals: name, mode: 'insensitive' } },
-            select: { id: true },
+            select: {
+              id: true,
+              licenseeId: true,
+              licenseeIds: { select: { licenseeId: true } },
+            },
           });
 
       const wholesaleAccount = existingAccount
         ? existingAccount
-        : await tx.wholesaleAccount.upsert({
-            where: { licenseeId },
-            create: {
+        : await tx.wholesaleAccount.create({
+            data: {
               licenseeId,
+              licenseeIds: { create: getWholesaleLicenseeIdCreateData([licenseeId]) },
               officialAccountId: officialAccount?.id,
               isActive: true,
               name,
@@ -219,26 +236,15 @@ export async function createVisit(formData: FormData) {
               deliveryDay: toOptional(formData.get('newWholesaleDeliveryDay')),
               createdByUserId: user.id,
             },
-            update: {
-              isActive: true,
-              officialAccountId: officialAccount?.id,
-              name,
-              agencyId: toOptional(formData.get('newWholesaleAgencyId')),
-              address: toOptional(formData.get('newWholesaleAddress')),
-              city: toOptional(formData.get('newWholesaleCity')),
-              county: toOptional(formData.get('newWholesaleCounty')),
-              zip: toOptional(formData.get('newWholesaleZip')),
-              phone: toOptional(formData.get('newWholesalePhone')),
-              ownership: toOptional(formData.get('newWholesaleOwnership')),
-              districtId: toOptional(formData.get('newWholesaleDistrictId')),
-              deliveryDay: toOptional(formData.get('newWholesaleDeliveryDay')),
-            },
           });
 
       if (existingAccount) {
         await tx.wholesaleAccount.update({
           where: { id: existingAccount.id },
           data: {
+            isActive: true,
+            officialAccountId: officialAccount?.id ?? undefined,
+            name,
             agencyId: toOptional(formData.get('newWholesaleAgencyId')) ?? undefined,
             address: toOptional(formData.get('newWholesaleAddress')) ?? undefined,
             city: toOptional(formData.get('newWholesaleCity')) ?? undefined,
@@ -250,6 +256,12 @@ export async function createVisit(formData: FormData) {
             deliveryDay: toOptional(formData.get('newWholesaleDeliveryDay')) ?? undefined,
           },
         });
+        if (newWholesaleLicenseeId) {
+          await syncWholesaleAccountLicenseeIds(tx, existingAccount.id, [
+            ...getWholesaleLicenseeIdValues(existingAccount),
+            licenseeId,
+          ]);
+        }
       }
 
       wholesaleAccountId = wholesaleAccount.id;

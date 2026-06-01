@@ -111,6 +111,26 @@ describe('buildWholesaleReactivationAnalysis', () => {
 
     assert.equal(result.candidates.length, 0);
   });
+
+  it('treats secondary Licensee IDs as the same wholesale account', () => {
+    const result = buildWholesaleReactivationAnalysis({
+      accounts: [
+        {
+          id: 'wholesale-1',
+          licenseeId: 'PRIMARY-1',
+          licenseeIds: [{ licenseeId: '00072045-1' }],
+          name: 'Adriennes White Rabbit',
+        },
+      ],
+      itemNames: new Map([['0100A', 'Echo Vodka']]),
+      rows: [purchaseRow({ permitNumber: '00072045-1', reportDate: new Date('2026-04-01T00:00:00.000Z') })],
+      runAt,
+    });
+
+    assert.equal(result.candidates.length, 1);
+    assert.equal(result.candidates[0].wholesaleAccountId, 'wholesale-1');
+    assert.equal(result.candidates[0].licenseeId, 'PRIMARY-1');
+  });
 });
 
 describe('findOhlqWholesaleReactivationCandidates', () => {

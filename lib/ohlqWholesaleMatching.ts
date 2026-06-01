@@ -6,6 +6,7 @@ export type OhlqWholesaleLookupAccount = {
   address?: string | null;
   city?: string | null;
   licenseeId?: string | null;
+  licenseeIds?: Array<string | { licenseeId: string | null } | null> | null;
   officialAccountId?: string | null;
   state?: string | null;
   zip?: string | null;
@@ -160,6 +161,17 @@ const addLicenseeIdToLookup = (lookup: OhlqWholesaleSalesLookup, value: string |
   getOhlqLicenseeMatchKeys(value).forEach((key) => lookup.licenseeMatchKeys.add(key));
 };
 
+const getLookupAccountLicenseeIds = (account: OhlqWholesaleLookupAccount) => {
+  const ids = [
+    account.licenseeId,
+    ...(account.licenseeIds ?? []).map((value) => (typeof value === 'string' ? value : value?.licenseeId)),
+  ]
+    .map(normalizeOhlqId)
+    .filter(Boolean) as string[];
+
+  return Array.from(new Set(ids));
+};
+
 const getOfficialAccountCandidates = async ({
   account,
   db,
@@ -168,7 +180,7 @@ const getOfficialAccountCandidates = async ({
   db: PrismaClient;
 }) => {
   const ors: Prisma.AccountWhereInput[] = [];
-  const normalizedLicenseeId = normalizeOhlqId(account.licenseeId);
+  const normalizedLicenseeIds = getLookupAccountLicenseeIds(account);
   const streetNumber = getAddressStreetNumber(account.address);
   const zip = normalizeZip(account.zip);
   const city = normalizeOhlqAddressPart(account.city);
@@ -177,9 +189,9 @@ const getOfficialAccountCandidates = async ({
     ors.push({ id: account.officialAccountId });
   }
 
-  if (normalizedLicenseeId) {
-    ors.push({ licenseeId: { equals: normalizedLicenseeId, mode: 'insensitive' } });
-  }
+  normalizedLicenseeIds.forEach((licenseeId) => {
+    ors.push({ licenseeId: { equals: licenseeId, mode: 'insensitive' } });
+  });
 
   if (streetNumber) {
     ors.push({
@@ -218,19 +230,25 @@ export async function resolveOhlqWholesaleSalesLookup({
   account: OhlqWholesaleLookupAccount;
   db: PrismaClient;
 }) {
+  const accountLicenseeIds = getLookupAccountLicenseeIds(account);
+  const accountLicenseeMatchKeys = new Set(accountLicenseeIds.flatMap(getOhlqLicenseeMatchKeys));
   const lookup: OhlqWholesaleSalesLookup = {
     licenseeMatchKeys: new Set(),
     permitNumbers: new Set(),
-    primaryLicenseeId: normalizeOhlqId(account.licenseeId),
+    primaryLicenseeId: accountLicenseeIds[0] ?? null,
   };
 
-  addLicenseeIdToLookup(lookup, account.licenseeId);
+  accountLicenseeIds.forEach((licenseeId) => addLicenseeIdToLookup(lookup, licenseeId));
 
   const officialCandidates = await getOfficialAccountCandidates({ account, db });
   officialCandidates.forEach((candidate) => {
+    const candidateMatchesLicensee = getOhlqLicenseeMatchKeys(candidate.licenseeId).some((key) =>
+      accountLicenseeMatchKeys.has(key),
+    );
+
     if (
       candidate.id === account.officialAccountId ||
-      licenseeIdsMatch(candidate.licenseeId, account.licenseeId) ||
+      candidateMatchesLicensee ||
       areOhlqAddressesSame(account, candidate)
     ) {
       addLicenseeIdToLookup(lookup, candidate.licenseeId);

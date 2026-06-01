@@ -20,6 +20,7 @@ type WholesaleAccountCandidate = {
   city: string | null;
   id: string;
   licenseeId: string;
+  licenseeIds?: Array<{ licenseeId: string | null }> | null;
   name: string;
   officialAccountId: string | null;
   state: string | null;
@@ -73,6 +74,19 @@ const getPermitSearchConditions = (permitNumbers: string[]) => {
   ];
 };
 
+const getWholesalePermitSearchConditions = (permitNumbers: string[]) => {
+  const directConditions = getPermitSearchConditions(permitNumbers);
+
+  return [
+    ...directConditions,
+    ...directConditions.map((condition) => ({
+      licenseeIds: {
+        some: condition,
+      },
+    })),
+  ];
+};
+
 const getAddressSearchConditions = (officialAccounts: OfficialAccountCandidate[]): Prisma.WholesaleAccountWhereInput[] => {
   const conditions: Prisma.WholesaleAccountWhereInput[] = [];
 
@@ -93,6 +107,23 @@ const getAddressSearchConditions = (officialAccounts: OfficialAccountCandidate[]
 
   return conditions;
 };
+
+const getWholesaleAccountCandidateLicenseeIds = (account: WholesaleAccountCandidate) =>
+  Array.from(
+    new Set(
+      [
+        account.licenseeId,
+        ...(account.licenseeIds ?? []).map((licenseeId) => licenseeId.licenseeId),
+      ]
+        .map(normalizeOhlqId)
+        .filter(Boolean) as string[],
+    ),
+  );
+
+const wholesaleAccountCandidateHasKeyOverlap = (account: WholesaleAccountCandidate, keys: string[]) =>
+  getWholesaleAccountCandidateLicenseeIds(account).some((licenseeId) =>
+    hasKeyOverlap(keys, getOhlqLicenseeMatchKeys(licenseeId)),
+  );
 
 const getItemNameLookup = async (db: PrismaClient, itemCodes: string[]) => {
   if (itemCodes.length === 0) return new Map<string, string>();
@@ -117,20 +148,24 @@ async function findMatchingWholesaleAccounts({
   );
   const targetKeys = new Set(Array.from(permitKeysByNumber.values()).flat());
   const searchConditions = getPermitSearchConditions(permitNumbers);
+  const wholesaleSearchConditions = getWholesalePermitSearchConditions(permitNumbers);
 
-  if (searchConditions.length === 0) return new Map<string, WholesaleAccountCandidate[]>();
+  if (searchConditions.length === 0 || wholesaleSearchConditions.length === 0) {
+    return new Map<string, WholesaleAccountCandidate[]>();
+  }
 
   const [directAccounts, officialAccounts] = await Promise.all([
     db.wholesaleAccount.findMany({
       where: {
         isActive: true,
-        OR: searchConditions,
+        OR: wholesaleSearchConditions,
       },
       select: {
         address: true,
         city: true,
         id: true,
         licenseeId: true,
+        licenseeIds: { select: { licenseeId: true } },
         name: true,
         officialAccountId: true,
         state: true,
@@ -173,6 +208,7 @@ async function findMatchingWholesaleAccounts({
             city: true,
             id: true,
             licenseeId: true,
+            licenseeIds: { select: { licenseeId: true } },
             name: true,
             officialAccountId: true,
             state: true,
@@ -191,6 +227,7 @@ async function findMatchingWholesaleAccounts({
             city: true,
             id: true,
             licenseeId: true,
+            licenseeIds: { select: { licenseeId: true } },
             name: true,
             officialAccountId: true,
             state: true,
@@ -210,7 +247,7 @@ async function findMatchingWholesaleAccounts({
     const matches: WholesaleAccountCandidate[] = [];
 
     allAccounts.forEach((account) => {
-      if (hasKeyOverlap(permitKeys, getOhlqLicenseeMatchKeys(account.licenseeId))) {
+      if (wholesaleAccountCandidateHasKeyOverlap(account, permitKeys)) {
         matches.push(account);
         return;
       }

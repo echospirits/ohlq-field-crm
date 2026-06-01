@@ -10,6 +10,7 @@ import {
 import { getUserDisplayName } from './auth';
 import { getEmailAppBaseUrl, sendEmail, type SendEmailFn } from './email/sendEmail';
 import { prisma } from './prisma';
+import { formatWholesaleLicenseeIds } from './wholesaleAccounts';
 
 export const DEFAULT_DIGEST_TIME_ZONE = 'America/New_York';
 
@@ -470,7 +471,14 @@ const getLocationLookups = async (visits: VisitRecord[], workItems: WorklistReco
     }),
     prisma.wholesaleAccount.findMany({
       where: { id: { in: Array.from(wholesaleIds) } },
-      select: { id: true, licenseeId: true, name: true, city: true, county: true },
+      select: {
+        id: true,
+        licenseeId: true,
+        licenseeIds: { select: { licenseeId: true } },
+        name: true,
+        city: true,
+        county: true,
+      },
     }),
     prisma.locationContact.findMany({
       where: { id: { in: Array.from(contactIds) } },
@@ -511,7 +519,7 @@ const visitToDigestVisit = (
         : {
             name: wholesale?.name ?? 'Wholesale visit',
             href: visit.wholesaleAccountId ? `/wholesale/${visit.wholesaleAccountId}` : null,
-            meta: wholesale?.licenseeId ?? null,
+            meta: wholesale ? formatWholesaleLicenseeIds(wholesale) : null,
           },
     contactName: contact ? [contact.name, contact.role].filter(Boolean).join(', ') : null,
     summary: visit.summary,
@@ -541,7 +549,7 @@ const workItemToDigestItem = (
         ? {
             name: wholesale?.name ?? 'Wholesale account',
             href: item.wholesaleAccountId ? `/wholesale/${item.wholesaleAccountId}` : null,
-            meta: wholesale?.licenseeId ?? null,
+            meta: wholesale ? formatWholesaleLicenseeIds(wholesale) : null,
           }
         : {
             name: 'General',

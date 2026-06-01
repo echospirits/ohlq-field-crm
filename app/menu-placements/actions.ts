@@ -10,7 +10,10 @@ import {
   validateMenuPlacementProofFile,
 } from '../../lib/blob';
 import { prisma } from '../../lib/prisma';
-import { getLegacyAccountCreateDataFromWholesaleAccount } from '../../lib/wholesaleAccounts';
+import {
+  getLegacyAccountCreateDataFromWholesaleAccount,
+  getWholesaleLicenseeIdValues,
+} from '../../lib/wholesaleAccounts';
 
 type ProofInput =
   | { type: 'none' }
@@ -88,14 +91,22 @@ function getProofInput(formData: FormData, returnTo: string): ProofInput {
 async function ensureAccountForWholesale(wholesaleAccountId: string) {
   const wholesaleAccount = await prisma.wholesaleAccount.findUnique({
     where: { id: wholesaleAccountId },
+    include: {
+      licenseeIds: { select: { licenseeId: true } },
+    },
   });
 
   if (!wholesaleAccount) {
     notFound();
   }
 
-  const existingAccount = await prisma.account.findUnique({
-    where: { licenseeId: wholesaleAccount.licenseeId },
+  const licenseeIds = getWholesaleLicenseeIdValues(wholesaleAccount);
+  const existingAccount = await prisma.account.findFirst({
+    where: {
+      OR: licenseeIds.map((licenseeId) => ({
+        licenseeId: { equals: licenseeId, mode: 'insensitive' as const },
+      })),
+    },
     select: { id: true },
   });
 
