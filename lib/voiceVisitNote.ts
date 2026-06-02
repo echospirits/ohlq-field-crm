@@ -9,6 +9,7 @@ import {
 const DEFAULT_TIME_ZONE = 'America/New_York';
 
 const nullableText = z.string().trim().max(1000).nullable();
+const nullableRequestText = (max: number) => z.string().trim().max(max).nullable().optional();
 
 export const VoiceVisitNoteRequestSchema = z
   .object({
@@ -20,11 +21,11 @@ export const VoiceVisitNoteRequestSchema = z
     visitType: z.enum(['agency', 'wholesale']).optional(),
     accountContext: z
       .object({
-        id: z.string().trim().max(120).optional(),
-        name: z.string().trim().max(240).optional(),
-        identifier: z.string().trim().max(120).optional(),
-        city: z.string().trim().max(120).optional(),
-        phone: z.string().trim().max(80).optional(),
+        id: nullableRequestText(120),
+        name: nullableRequestText(240),
+        identifier: nullableRequestText(120),
+        city: nullableRequestText(120),
+        phone: nullableRequestText(80),
       })
       .optional()
       .nullable(),
