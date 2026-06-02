@@ -3,6 +3,7 @@ export const runtime = 'nodejs';
 
 import { WeeklyDigestStatus } from '@prisma/client';
 import { getUserDisplayName, requireAdminSession } from '../../../lib/auth';
+import { formatEasternDateTime } from '../../../lib/dateTime';
 import { prisma } from '../../../lib/prisma';
 import {
   getAdminWeeklyDigest,
@@ -20,17 +21,6 @@ const statusMessages: Record<string, string> = {
   'manual-failed': 'Manual weekly digest run failed.',
   'missing-admin-email': 'Your admin account needs an email address before test sends can run.',
 };
-
-const formatDateTime = (date: Date | null | undefined) =>
-  date
-    ? new Intl.DateTimeFormat('en-US', {
-        timeZone: 'America/New_York',
-        month: 'short',
-        day: 'numeric',
-        hour: 'numeric',
-        minute: '2-digit',
-      }).format(date)
-    : '';
 
 const getPreviewMode = (value: string | undefined) => (value === 'admin' ? 'admin' : 'user');
 
@@ -177,14 +167,14 @@ export default async function WeeklyDigestAdminPage({
                 </td>
                 <td data-label="Type">{log.digestType === 'ADMIN_WEEKLY' ? 'Admin team' : 'User'}</td>
                 <td data-label="Period">
-                  {formatDateTime(log.periodStart)} - {formatDateTime(log.periodEnd)}
+                  {formatEasternDateTime(log.periodStart)} - {formatEasternDateTime(log.periodEnd)}
                 </td>
                 <td data-label="Status">
                   <span className={log.status === WeeklyDigestStatus.FAILED ? 'pill danger-pill' : 'pill'}>
                     {log.status.toLowerCase()}
                   </span>
                 </td>
-                <td data-label="Run">{formatDateTime(log.runAt ?? log.scheduledFor)}</td>
+                <td data-label="Run">{formatEasternDateTime(log.runAt ?? log.scheduledFor)}</td>
                 <td data-label="Message">{log.errorMessage ?? log.lastSkipReason ?? log.providerMessageId}</td>
               </tr>
             ))}

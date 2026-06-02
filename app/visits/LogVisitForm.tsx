@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { addEasternCalendarDays, EASTERN_TIME_ZONE } from '../../lib/dateTime';
 import type { VisitLocationType } from '../../lib/visitPickerOptions';
 import { DatePickerField } from '../components/DatePickerField';
 import { getVisitOutcomePrompts } from './visitPrompts';
@@ -91,20 +92,7 @@ const includesSearch = (searchText: string, ...values: Array<string | null | und
 const withSelected = <T extends { id: string }>(items: T[], selected: T | undefined) =>
   selected && !items.some((item) => item.id === selected.id) ? [selected, ...items] : items;
 
-const toDateInputValue = (date: Date) => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-
-  return `${year}-${month}-${day}`;
-};
-
-const getFollowUpDate = (daysFromNow: number) => {
-  const date = new Date();
-  date.setDate(date.getDate() + daysFromNow);
-
-  return toDateInputValue(date);
-};
+const getFollowUpDate = (daysFromNow: number) => addEasternCalendarDays(daysFromNow);
 
 const getAgencyMeta = (agency: VisitFormAgencyOption) =>
   [agency.agencyId, agency.city, agency.phone].filter(Boolean).join(' / ');
@@ -118,6 +106,7 @@ const getContactMeta = (contact: VisitFormContactOption) =>
 const lastVisitFormatter = new Intl.DateTimeFormat('en-US', {
   day: 'numeric',
   month: 'short',
+  timeZone: EASTERN_TIME_ZONE,
 });
 
 const getLastVisitLabel = (lastVisitAt: string | null) =>

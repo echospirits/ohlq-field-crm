@@ -12,6 +12,7 @@ import {
 } from '@prisma/client';
 import Link from 'next/link';
 import { getUserDisplayName, requireUser } from '../lib/auth';
+import { EASTERN_TIME_ZONE, formatEasternDateTime } from '../lib/dateTime';
 import {
   formatOhlqDate,
   OHLQ_DATA_SOURCE_CONFIGS,
@@ -20,7 +21,7 @@ import {
 import { getOhlqWholesaleReactivationDashboardSummary } from '../lib/ohlqWholesaleReactivation';
 import { prisma } from '../lib/prisma';
 
-const dashboardTimeZone = 'America/New_York';
+const dashboardTimeZone = EASTERN_TIME_ZONE;
 const inactiveWorklistStatuses = [WorklistStatus.COMPLETED, WorklistStatus.CANCELLED];
 const dashboardDataStatusDays = 7;
 
@@ -133,13 +134,7 @@ const formatDateRange = (start: Date, end: Date) =>
 const formatReportDateLabel = (isoDate: string) =>
   shortDateFormatter.format(new Date(`${isoDate}T12:00:00.000Z`));
 
-const runTimeFormatter = new Intl.DateTimeFormat('en-US', {
-  dateStyle: 'medium',
-  timeStyle: 'short',
-  timeZone: dashboardTimeZone,
-});
-
-const formatRunTime = (date: Date | null | undefined) => (date ? runTimeFormatter.format(date) : 'No success yet');
+const formatRunTime = (date: Date | null | undefined) => formatEasternDateTime(date) || 'No success yet';
 
 const getRecentReportDates = (days: number) => {
   const today = getDateParts(new Date());

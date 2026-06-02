@@ -6,6 +6,7 @@ import { revalidatePath } from 'next/cache';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getUserDisplayName, requireUser } from '../../lib/auth';
+import { formatDateOnly } from '../../lib/dateTime';
 import { prisma } from '../../lib/prisma';
 import { getAgenciesForVisitPicker, getWholesaleAccountsForVisitPicker } from '../../lib/visitPickerOptions';
 import { DatePickerField } from '../components/DatePickerField';
@@ -73,8 +74,6 @@ const toWorklistSource = (value: FormDataEntryValue | string | null | undefined)
     ? (source as WorklistSource)
     : WorklistSource.MANUAL;
 };
-
-const formatDate = (date: Date | null) => (date ? new Date(date).toLocaleDateString() : '');
 
 async function createWorklistItem(formData: FormData) {
   'use server';
@@ -389,7 +388,7 @@ export default async function Alerts({
                         ) : (
                           <strong>{location || 'General'}</strong>
                         )}
-                        <div className="muted">{formatDate(item.dueDate) || 'No due date'}</div>
+                        <div className="muted">{formatDateOnly(item.dueDate) || 'No due date'}</div>
                       </td>
                       <td data-label="Owner">{item.assignedToUser ? getUserDisplayName(item.assignedToUser) : item.assignedTo}</td>
                       <td data-label="Actions">

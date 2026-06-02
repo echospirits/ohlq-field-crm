@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { AccountType, Prisma } from '@prisma/client';
 import { requireUser } from '../../lib/auth';
+import { formatEasternDate } from '../../lib/dateTime';
 import { prisma } from '../../lib/prisma';
 import {
   formatWholesaleLicenseeIds,
@@ -26,8 +27,6 @@ const toOptional = (value: string | undefined) => {
   const trimmed = (value ?? '').trim();
   return trimmed.length > 0 ? trimmed : null;
 };
-
-const formatDate = (date: Date | null | undefined) => (date ? new Date(date).toLocaleDateString() : '');
 
 const getSelectedTagIds = (formData: FormData) =>
   Array.from(
@@ -370,7 +369,7 @@ export default async function WholesalePage({
                 <td data-label="Menu Placements">{account._count.menuPlacements}</td>
                 <td data-label="Recipe Suggestions">{account._count.recipeSuggestions}</td>
                 <td data-label="Logged Visits">{stats.count}</td>
-                <td data-label="Most Recent Visit">{formatDate(stats.lastVisitAt)}</td>
+                <td data-label="Most Recent Visit">{formatEasternDate(stats.lastVisitAt)}</td>
               </tr>
             );
           })}
@@ -407,7 +406,7 @@ export default async function WholesalePage({
               <td data-label="Menu Placements">0</td>
               <td data-label="Recipe Suggestions">0</td>
               <td data-label="Logged Visits">0</td>
-              <td data-label="Most Recent Visit">{formatDate(null)}</td>
+              <td data-label="Most Recent Visit">{formatEasternDate(null)}</td>
             </tr>
           ))}
         </tbody>

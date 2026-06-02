@@ -8,11 +8,12 @@ import {
   WorklistStatus,
 } from '@prisma/client';
 import { getUserDisplayName } from './auth';
+import { EASTERN_TIME_ZONE } from './dateTime';
 import { getEmailAppBaseUrl, sendEmail, type SendEmailFn } from './email/sendEmail';
 import { prisma } from './prisma';
 import { formatWholesaleLicenseeIds } from './wholesaleAccounts';
 
-export const DEFAULT_DIGEST_TIME_ZONE = 'America/New_York';
+export const DEFAULT_DIGEST_TIME_ZONE = EASTERN_TIME_ZONE;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const inactiveWorklistStatuses: WorklistStatus[] = [WorklistStatus.COMPLETED, WorklistStatus.CANCELLED];
@@ -241,6 +242,7 @@ const formatDateTime = (date: Date | null | undefined, timeZone = DEFAULT_DIGEST
         day: 'numeric',
         hour: 'numeric',
         minute: '2-digit',
+        timeZoneName: 'short',
       }).format(date)
     : '';
 

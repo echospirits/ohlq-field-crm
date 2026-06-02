@@ -4,6 +4,7 @@ export const runtime = 'nodejs';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { requireUser } from '../../../lib/auth';
+import { formatEasternDate } from '../../../lib/dateTime';
 import { getAgencyRecentItemSales } from '../../../lib/ohlqSalesData';
 import { prisma } from '../../../lib/prisma';
 import { AgencyRecentSalesCard } from '../AgencyRecentSalesCard';
@@ -11,7 +12,7 @@ import { AccountTagPanel } from '../../tags/AccountTagPanel';
 import { TagBadges } from '../../tags/TagBadges';
 import { VisitActivityTable } from '../../visits/VisitActivityTable';
 
-const formatDate = (date: Date | null | undefined) => (date ? new Date(date).toLocaleDateString() : 'No visits yet');
+const formatVisitDate = (date: Date | null | undefined) => formatEasternDate(date) || 'No visits yet';
 const tagStatusMessages: Record<string, string> = {
   added: 'Tag added.',
   removed: 'Tag removed.',
@@ -97,7 +98,7 @@ export default async function AgencyActivityPage({
         </div>
         <div className="card metric-card">
           <h3>Most recent visit</h3>
-          <p className="metric-caption">{formatDate(latestVisitAt)}</p>
+          <p className="metric-caption">{formatVisitDate(latestVisitAt)}</p>
         </div>
         <div className="card account-detail-list">
           <h3>Account details</h3>

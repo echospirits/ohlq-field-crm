@@ -1,4 +1,5 @@
 import { getUserDisplayName } from '../../lib/auth';
+import { formatDateOnly, formatEasternDateTime } from '../../lib/dateTime';
 import { VisitPhotoGallery } from './VisitPhotoGallery';
 
 export type VisitActivity = {
@@ -27,9 +28,6 @@ type VisitActivityTableProps = {
   contactMap: Record<string, string>;
 };
 
-const formatDate = (date: Date | null) => (date ? new Date(date).toLocaleDateString() : '');
-const formatDateTime = (date: Date) => new Date(date).toLocaleString();
-
 export function VisitActivityTable({ visits, contactMap }: VisitActivityTableProps) {
   if (visits.length === 0) {
     return <p className="muted activity-empty">No visits have been logged for this account yet.</p>;
@@ -52,12 +50,12 @@ export function VisitActivityTable({ visits, contactMap }: VisitActivityTablePro
       <tbody>
         {visits.map((visit) => (
           <tr key={visit.id}>
-            <td data-label="Date">{formatDateTime(visit.visitAt)}</td>
+            <td data-label="Date">{formatEasternDateTime(visit.visitAt)}</td>
             <td data-label="Contact">{contactMap[visit.contactId ?? '']}</td>
             <td data-label="Summary">{visit.summary}</td>
             <td data-label="Outcomes">{visit.outcomes}</td>
             <td data-label="Next Step">{visit.nextStep}</td>
-            <td data-label="Follow-up">{formatDate(visit.followUpDate)}</td>
+            <td data-label="Follow-up">{formatDateOnly(visit.followUpDate)}</td>
             <td data-label="Created By">
               {visit.createdByUser ? getUserDisplayName(visit.createdByUser) : visit.createdBy}
             </td>

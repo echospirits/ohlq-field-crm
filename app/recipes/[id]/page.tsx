@@ -4,12 +4,12 @@ export const runtime = 'nodejs';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getUserDisplayName, requireUser } from '../../../lib/auth';
+import { formatDateOnly, formatEasternDate, formatEasternDateInputValue } from '../../../lib/dateTime';
 import { prisma } from '../../../lib/prisma';
 import { formatWholesaleLicenseeIds } from '../../../lib/wholesaleAccounts';
 import { addRecipeSuggestion, removeRecipeSuggestion } from '../actions';
 
-const formatDate = (date: Date | null | undefined) => (date ? new Date(date).toLocaleDateString() : '');
-const todayInputValue = () => new Date().toISOString().slice(0, 10);
+const todayInputValue = () => formatEasternDateInputValue();
 
 const statusMessages: Record<string, string> = {
   created: 'Recipe saved.',
@@ -151,14 +151,14 @@ export default async function RecipeDetailPage({
             <div>
               <dt>Created</dt>
               <dd>
-                {formatDate(recipe.createdAt)}
+                {formatEasternDate(recipe.createdAt)}
                 {recipe.createdByUser ? ` by ${getUserDisplayName(recipe.createdByUser)}` : ''}
               </dd>
             </div>
             <div>
               <dt>Edited</dt>
               <dd>
-                {formatDate(recipe.updatedAt)}
+                {formatEasternDate(recipe.updatedAt)}
                 {recipe.updatedByUser ? ` by ${getUserDisplayName(recipe.updatedByUser)}` : ''}
               </dd>
             </div>
@@ -222,7 +222,7 @@ export default async function RecipeDetailPage({
                   </Link>
                 </td>
                 <td data-label="Licensee ID">{formatWholesaleLicenseeIds(suggestion.wholesaleAccount)}</td>
-                <td data-label="Date Suggested">{formatDate(suggestion.suggestedAt)}</td>
+                <td data-label="Date Suggested">{formatDateOnly(suggestion.suggestedAt)}</td>
                 <td data-label="Note">{suggestion.note}</td>
                 <td data-label="Added By">
                   {suggestion.createdByUser ? getUserDisplayName(suggestion.createdByUser) : 'Unknown user'}

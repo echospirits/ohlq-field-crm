@@ -5,12 +5,13 @@ import { Prisma, WorklistCategory, WorklistSource, WorklistStatus } from '@prism
 import { revalidatePath } from 'next/cache';
 import Link from 'next/link';
 import { getUserDisplayName, requireUser } from '../../lib/auth';
+import { EASTERN_TIME_ZONE, formatDateOnly } from '../../lib/dateTime';
 import { prisma } from '../../lib/prisma';
 import { getAgenciesForVisitPicker, getWholesaleAccountsForVisitPicker } from '../../lib/visitPickerOptions';
 import { createVisit } from '../visits/actions';
 import { WorklistActions } from '../alerts/WorklistActions';
 
-const dashboardTimeZone = 'America/New_York';
+const dashboardTimeZone = EASTERN_TIME_ZONE;
 const inactiveWorklistStatuses = [WorklistStatus.COMPLETED, WorklistStatus.CANCELLED];
 
 const statusLabels: Record<WorklistStatus, string> = {
@@ -25,12 +26,6 @@ const sourceLabels: Record<WorklistSource, string> = {
   [WorklistSource.OHLQ_WHOLESALE_REACTIVATION]: 'OHLQ wholesale reactivation',
   [WorklistSource.VISIT_FOLLOW_UP]: 'Visit follow-up',
 };
-
-const shortDateFormatter = new Intl.DateTimeFormat('en-US', {
-  timeZone: dashboardTimeZone,
-  month: 'short',
-  day: 'numeric',
-});
 
 const weekLabelFormatter = new Intl.DateTimeFormat('en-US', {
   timeZone: dashboardTimeZone,
@@ -131,8 +126,6 @@ const getWeekRange = () => {
     weekEnd: zonedTimeToUtc(weekEndDate.year, weekEndDate.month, weekEndDate.day, 23, 59, 59),
   };
 };
-
-const formatDate = (date: Date | null) => (date ? shortDateFormatter.format(date) : '');
 
 async function updateWorklistStatus(formData: FormData) {
   'use server';
@@ -310,7 +303,7 @@ export default async function MyWeekPage() {
                           ) : (
                             <strong>{location || 'General'}</strong>
                           )}
-                          <div className="muted">{formatDate(item.dueDate) || 'No due date'}</div>
+                          <div className="muted">{formatDateOnly(item.dueDate) || 'No due date'}</div>
                         </td>
                         <td data-label="Source">{sourceLabels[item.source]}</td>
                         <td data-label="Actions">
