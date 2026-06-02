@@ -3,6 +3,7 @@ export const runtime = 'nodejs';
 
 import Link from 'next/link';
 import { getUserDisplayName, requireUser } from '../../lib/auth';
+import { formatDateOnly, formatEasternDateTime } from '../../lib/dateTime';
 import { prisma } from '../../lib/prisma';
 import { LiveFilterForm } from '../components/LiveFilterForm';
 import { VisitPhotoGallery } from './VisitPhotoGallery';
@@ -106,7 +107,7 @@ export default async function VisitsPage({
 
             return (
               <tr key={visit.id}>
-                <td data-label="Date">{new Date(visit.visitAt).toLocaleString()}</td>
+                <td data-label="Date">{formatEasternDateTime(visit.visitAt)}</td>
                 <td data-label="Type">{visit.locationType}</td>
                 <td data-label="Location">
                   {locationHref ? (
@@ -121,7 +122,7 @@ export default async function VisitsPage({
                 <td data-label="Summary">{visit.summary}</td>
                 <td data-label="Outcomes">{visit.outcomes}</td>
                 <td data-label="Next Step">{visit.nextStep}</td>
-                <td data-label="Follow-up">{visit.followUpDate ? new Date(visit.followUpDate).toLocaleDateString() : ''}</td>
+                <td data-label="Follow-up">{formatDateOnly(visit.followUpDate)}</td>
                 <td data-label="Created By">{visit.createdByUser ? getUserDisplayName(visit.createdByUser) : visit.createdBy}</td>
                 <td data-label="Photos"><VisitPhotoGallery photos={visit.photos} /></td>
               </tr>

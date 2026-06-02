@@ -4,10 +4,9 @@ export const runtime = 'nodejs';
 import type { Prisma } from '@prisma/client';
 import Link from 'next/link';
 import { requireUser } from '../../lib/auth';
+import { formatEasternDate } from '../../lib/dateTime';
 import { prisma } from '../../lib/prisma';
 import { LiveFilterForm } from '../components/LiveFilterForm';
-
-const formatDate = (date: Date | null | undefined) => (date ? new Date(date).toLocaleDateString() : '');
 
 const statusMessages: Record<string, string> = {
   deleted: 'Recipe deleted.',
@@ -135,7 +134,7 @@ export default async function RecipesPage({
                 {recipe.complexity ? <span className="pill">{recipe.complexity}</span> : null}
                 <span className="pill">{recipe._count.suggestions} suggested</span>
               </div>
-              <p className="muted item-meta">Updated {formatDate(recipe.updatedAt)}</p>
+              <p className="muted item-meta">Updated {formatEasternDate(recipe.updatedAt)}</p>
             </div>
           </article>
         ))}

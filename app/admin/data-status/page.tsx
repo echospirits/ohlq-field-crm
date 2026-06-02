@@ -6,6 +6,7 @@ import { OhlqReportDataSource, OhlqReportRunStatus } from '@prisma/client';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { requireAdminSession } from '../../../lib/auth';
+import { EASTERN_TIME_ZONE, formatEasternDateTime } from '../../../lib/dateTime';
 import { importOhlqBrandMasterCsv } from '../../../lib/ohlqBrandMasterImport';
 import {
   formatOhlqDate,
@@ -15,7 +16,7 @@ import {
 import { getLatestManualOhlqReportDate } from '../../../lib/ohlqManualImport';
 import { prisma } from '../../../lib/prisma';
 
-const statusTimeZone = 'America/New_York';
+const statusTimeZone = EASTERN_TIME_ZONE;
 const visibleDays = 14;
 
 type SourceCell = {
@@ -36,13 +37,7 @@ const reportDateFormatter = new Intl.DateTimeFormat('en-US', {
   year: 'numeric',
 });
 
-const runTimeFormatter = new Intl.DateTimeFormat('en-US', {
-  dateStyle: 'medium',
-  timeStyle: 'short',
-  timeZone: statusTimeZone,
-});
-
-const formatRunTime = (date: Date | null | undefined) => (date ? runTimeFormatter.format(date) : 'No success yet');
+const formatRunTime = (date: Date | null | undefined) => formatEasternDateTime(date) || 'No success yet';
 
 const todayInEastern = () => {
   const parts = new Intl.DateTimeFormat('en-US', {

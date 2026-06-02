@@ -7,6 +7,7 @@ import {
   type Visit,
 } from '@prisma/client';
 import { getUserDisplayName } from '../../lib/auth';
+import { formatDateOnly, formatDateOnlyInputValue, formatEasternDate } from '../../lib/dateTime';
 import { LiveFilterForm } from '../components/LiveFilterForm';
 import { createMenuPlacement, deleteMenuPlacement, updateMenuPlacement } from './actions';
 
@@ -55,9 +56,6 @@ const sourceLabels: Record<MenuPlacementSource, string> = {
   [MenuPlacementSource.ACCOUNT_REVIEW]: 'Account review',
   [MenuPlacementSource.IMPORT]: 'Import',
 };
-
-const dateInputValue = (date: Date | null | undefined) => (date ? new Date(date).toISOString().slice(0, 10) : '');
-const formatDate = (date: Date | null | undefined) => (date ? new Date(date).toLocaleDateString() : '');
 
 function PlacementFields({
   placement,
@@ -120,15 +118,15 @@ function PlacementFields({
         </label>
         <label>
           First seen
-          <input name="firstSeenAt" type="date" defaultValue={dateInputValue(placement?.firstSeenAt)} />
+          <input name="firstSeenAt" type="date" defaultValue={formatDateOnlyInputValue(placement?.firstSeenAt)} />
         </label>
         <label>
           Last verified
-          <input name="lastVerifiedAt" type="date" defaultValue={dateInputValue(placement?.lastVerifiedAt)} />
+          <input name="lastVerifiedAt" type="date" defaultValue={formatDateOnlyInputValue(placement?.lastVerifiedAt)} />
         </label>
         <label>
           Expected end
-          <input name="expectedEndAt" type="date" defaultValue={dateInputValue(placement?.expectedEndAt)} />
+          <input name="expectedEndAt" type="date" defaultValue={formatDateOnlyInputValue(placement?.expectedEndAt)} />
         </label>
       </div>
       <label>
@@ -168,7 +166,7 @@ export function MenuPlacementPanel({
                 <option value="">-- No related visit --</option>
                 {visits.map((visit) => (
                   <option key={visit.id} value={visit.id}>
-                    {formatDate(visit.visitDate)}
+                    {formatEasternDate(visit.visitDate)}
                     {visit.summary ? ` - ${visit.summary.slice(0, 80)}` : ''}
                   </option>
                 ))}
@@ -252,9 +250,9 @@ export function MenuPlacementPanel({
                 </td>
                 <td data-label="Dates">
                   <div className="placement-date-list">
-                    <span>First: {formatDate(placement.firstSeenAt) || 'Not set'}</span>
-                    <span>Verified: {formatDate(placement.lastVerifiedAt) || 'Not set'}</span>
-                    <span>Expected end: {formatDate(placement.expectedEndAt) || 'Not set'}</span>
+                    <span>First: {formatDateOnly(placement.firstSeenAt) || 'Not set'}</span>
+                    <span>Verified: {formatDateOnly(placement.lastVerifiedAt) || 'Not set'}</span>
+                    <span>Expected end: {formatDateOnly(placement.expectedEndAt) || 'Not set'}</span>
                   </div>
                 </td>
                 <td data-label="Proof">

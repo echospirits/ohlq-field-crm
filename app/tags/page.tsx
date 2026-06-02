@@ -3,6 +3,7 @@ export const runtime = 'nodejs';
 
 import Link from 'next/link';
 import { getUserDisplayName, requireUser } from '../../lib/auth';
+import { formatEasternDate } from '../../lib/dateTime';
 import { prisma } from '../../lib/prisma';
 import { createTag, deleteTag } from './actions';
 import { TagBadges } from './TagBadges';
@@ -12,8 +13,6 @@ const statusMessages: Record<string, string> = {
   deleted: 'Tag deleted.',
   invalid: 'A tag name is required.',
 };
-
-const formatDate = (date: Date) => new Date(date).toLocaleDateString();
 
 export default async function TagsPage({
   searchParams,
@@ -91,7 +90,7 @@ export default async function TagsPage({
               <td data-label="Accounts">
                 <Link href={`/tags/${tag.id}`}>{tag._count.locationTags}</Link>
               </td>
-              <td data-label="Created">{formatDate(tag.createdAt)}</td>
+              <td data-label="Created">{formatEasternDate(tag.createdAt)}</td>
               <td data-label="Created By">
                 {tag.createdByUser ? getUserDisplayName(tag.createdByUser) : 'Unknown user'}
               </td>

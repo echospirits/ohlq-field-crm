@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { requireUser } from '../../lib/auth';
+import { formatEasternDate } from '../../lib/dateTime';
 import { prisma } from '../../lib/prisma';
 import { LiveFilterForm } from '../components/LiveFilterForm';
 import { TagBadges } from '../tags/TagBadges';
@@ -19,8 +20,6 @@ const toOptional = (value: string | undefined) => {
 
 const parseBool = (value: string | undefined) =>
   ['1', 'true', 'yes', 'y'].includes((value ?? '').trim().toLowerCase());
-
-const formatDate = (date: Date | null | undefined) => (date ? new Date(date).toLocaleDateString() : '');
 
 async function importAgencies(formData: FormData) {
   'use server';
@@ -223,7 +222,7 @@ export default async function AgenciesPage({
                   <TagBadges tags={agency.tags.map((assignment) => assignment.tag)} />
                 </td>
                 <td data-label="Logged Visits">{stats.count}</td>
-                <td data-label="Most Recent Visit">{formatDate(stats.lastVisitAt)}</td>
+                <td data-label="Most Recent Visit">{formatEasternDate(stats.lastVisitAt)}</td>
               </tr>
             );
           })}

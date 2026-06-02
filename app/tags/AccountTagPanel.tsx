@@ -1,4 +1,5 @@
 import { getUserDisplayName } from '../../lib/auth';
+import { formatEasternDateTime } from '../../lib/dateTime';
 import { addLocationTag, removeLocationTag } from './actions';
 import { TagBadges, type TagBadgeData } from './TagBadges';
 
@@ -24,8 +25,6 @@ type AccountTagPanelProps = {
   locationId: string;
   returnTo: string;
 };
-
-const formatDateTime = (date: Date) => new Date(date).toLocaleString();
 
 export function AccountTagPanel({
   assignments,
@@ -73,7 +72,7 @@ export function AccountTagPanel({
               <div>
                 <TagBadges tags={[assignment.tag]} />
                 <p className="muted">
-                  Added {formatDateTime(assignment.createdAt)} by{' '}
+                  Added {formatEasternDateTime(assignment.createdAt)} by{' '}
                   {assignment.createdByUser ? getUserDisplayName(assignment.createdByUser) : 'Unknown user'}
                 </p>
                 {assignment.note ? <p className="muted preserve-lines">{assignment.note}</p> : null}

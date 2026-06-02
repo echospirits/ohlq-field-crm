@@ -4,10 +4,9 @@ export const runtime = 'nodejs';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getUserDisplayName, requireUser } from '../../../lib/auth';
+import { formatEasternDateTime } from '../../../lib/dateTime';
 import { prisma } from '../../../lib/prisma';
 import { TagBadges } from '../TagBadges';
-
-const formatDateTime = (date: Date) => new Date(date).toLocaleString();
 
 export default async function TagDetailPage({
   params,
@@ -54,7 +53,7 @@ export default async function TagDetailPage({
         <div className="card metric-card">
           <h3>Tag created</h3>
           <p className="metric-caption">
-            {formatDateTime(tag.createdAt)} by{' '}
+            {formatEasternDateTime(tag.createdAt)} by{' '}
             {tag.createdByUser ? getUserDisplayName(tag.createdByUser) : 'Unknown user'}
           </p>
         </div>
@@ -95,7 +94,7 @@ export default async function TagDetailPage({
                     )}
                   </td>
                   <td data-label="Type">{accountType}</td>
-                  <td data-label="Added">{formatDateTime(assignment.createdAt)}</td>
+                  <td data-label="Added">{formatEasternDateTime(assignment.createdAt)}</td>
                   <td data-label="Added By">
                     {assignment.createdByUser ? getUserDisplayName(assignment.createdByUser) : 'Unknown user'}
                   </td>

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { MenuPlacementStatus, MenuPlacementType, Prisma } from '@prisma/client';
 import { getUserDisplayName, requireUser } from '../../../lib/auth';
+import { formatDateOnly, formatEasternDate, formatEasternDateInputValue } from '../../../lib/dateTime';
 import { getWholesaleRecentPurchases } from '../../../lib/ohlqSalesData';
 import { prisma } from '../../../lib/prisma';
 import { formatWholesaleLicenseeIds, getWholesaleLicenseeIdValues } from '../../../lib/wholesaleAccounts';
@@ -15,8 +16,8 @@ import { TagBadges } from '../../tags/TagBadges';
 import { VisitActivityTable } from '../../visits/VisitActivityTable';
 import { WholesaleRecentPurchasesCard } from '../WholesaleRecentPurchasesCard';
 
-const formatDate = (date: Date | null | undefined) => (date ? new Date(date).toLocaleDateString() : 'No visits yet');
-const todayInputValue = () => new Date().toISOString().slice(0, 10);
+const formatVisitDate = (date: Date | null | undefined) => formatEasternDate(date) || 'No visits yet';
+const todayInputValue = () => formatEasternDateInputValue();
 const tagStatusMessages: Record<string, string> = {
   added: 'Tag added.',
   removed: 'Tag removed.',
@@ -241,7 +242,7 @@ export default async function WholesaleActivityPage({
         </div>
         <div className="card metric-card">
           <h3>Most recent visit</h3>
-          <p className="metric-caption">{formatDate(latestVisitAt)}</p>
+          <p className="metric-caption">{formatVisitDate(latestVisitAt)}</p>
         </div>
         <div className="card account-detail-list">
           <h3>Account details</h3>
@@ -348,7 +349,7 @@ export default async function WholesaleActivityPage({
                   </Link>
                 </td>
                 <td data-label="Primary Spirit">{suggestion.recipe.primarySpirit}</td>
-                <td data-label="Date Suggested">{formatDate(suggestion.suggestedAt)}</td>
+                <td data-label="Date Suggested">{formatDateOnly(suggestion.suggestedAt)}</td>
                 <td data-label="Note">{suggestion.note}</td>
                 <td data-label="Added By">
                   {suggestion.createdByUser ? getUserDisplayName(suggestion.createdByUser) : 'Unknown user'}
