@@ -25,6 +25,23 @@ test('voice note request validation rejects empty transcripts', () => {
   assert.equal(parsed.success, false);
 });
 
+test('voice note request validation accepts nullable account context from mobile selection', () => {
+  const parsed = VoiceVisitNoteRequestSchema.safeParse({
+    accountContext: {
+      city: null,
+      id: 'account-1',
+      identifier: null,
+      name: 'The Pearl',
+      phone: null,
+    },
+    timezone: 'America/New_York',
+    transcript: sampleTranscript,
+    visitType: 'wholesale',
+  });
+
+  assert.equal(parsed.success, true);
+});
+
 test('deterministic voice note parser returns the structured visit shape', () => {
   const note = structureVisitTranscript({
     accountName: 'The Pearl',
