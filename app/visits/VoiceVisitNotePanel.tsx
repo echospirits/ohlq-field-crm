@@ -214,7 +214,7 @@ export function VoiceVisitNotePanel({
       <textarea
         className="voice-transcript"
         rows={7}
-        placeholder="Example: Met with Sara, the bar manager. Discussed Echo Vodka for the summer cocktail menu. Price was a concern. Follow up next Tuesday with a sample and menu idea."
+        placeholder="Example: Met with Sara, the bar manager. Discussed our vodka for the summer cocktail menu. Price was a concern. Follow up next Tuesday with a sample and menu idea."
         value={transcript}
         onChange={(event) => setTranscript(event.target.value)}
       />

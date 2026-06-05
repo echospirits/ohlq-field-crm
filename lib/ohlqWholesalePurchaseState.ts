@@ -1,5 +1,5 @@
 import { AccountType, type Prisma, type PrismaClient } from '@prisma/client';
-import { isEchoItem } from './ohlqSalesData';
+import { isConfiguredTenantItem } from './ohlqSalesData';
 import {
   areOhlqAddressesSame,
   getOhlqLicenseeMatchKeys,
@@ -276,7 +276,7 @@ export async function syncWholesaleAccountEchoPurchaseState({
   db?: PrismaClient;
   rows: EchoPurchaseRow[];
 }) {
-  const echoRows = rows.filter((row) => isEchoItem(row.vendor, row.brand));
+  const echoRows = rows.filter((row) => isConfiguredTenantItem(row.vendor, row.brand));
   const permitNumbers = Array.from(new Set(echoRows.map((row) => normalizeOhlqId(row.permitNumber)).filter(Boolean) as string[]));
   const accountsByPermitNumber = await findMatchingWholesaleAccounts({ db, permitNumbers });
   const itemNames = await getItemNameLookup(

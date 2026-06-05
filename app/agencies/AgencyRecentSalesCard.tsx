@@ -1,4 +1,5 @@
 import type { AgencySalesWindow } from '../../lib/ohlqSalesData';
+import { getTenantConfig } from '../../lib/tenantConfig';
 
 const numberFormatter = new Intl.NumberFormat('en-US');
 
@@ -41,13 +42,14 @@ function SalesItemList({ emptyText, items }: { emptyText: string; items: AgencyS
 }
 
 export function AgencyRecentSalesCard({ salesWindows }: { salesWindows: AgencySalesWindow[] }) {
+  const tenantConfig = getTenantConfig();
   const sevenDayWindow = salesWindows.find((window) => window.days === 7) ?? salesWindows[0];
   const thirtyDayWindow = salesWindows.find((window) => window.days === 30) ?? salesWindows[1];
 
   return (
     <section className="dashboard-section ohlq-sales-section">
       <div className="section-heading">
-        <h2>Recent Echo Item Sales</h2>
+        <h2>Recent {tenantConfig.productLabel} Item Sales</h2>
         <span className="pill">{thirtyDayWindow?.endDate ? `Through ${thirtyDayWindow.endDate}` : 'No data'}</span>
       </div>
 
@@ -56,7 +58,10 @@ export function AgencyRecentSalesCard({ salesWindows }: { salesWindows: AgencySa
           <h3>Last 7 days</h3>
           <span className="pill">{sevenDayWindow ? formatRange(sevenDayWindow) : 'No data'}</span>
         </div>
-        <SalesItemList emptyText="No Echo item sales found in the last 7 days." items={sevenDayWindow?.items ?? []} />
+        <SalesItemList
+          emptyText={`No ${tenantConfig.productPluralLabel} sales found in the last 7 days.`}
+          items={sevenDayWindow?.items ?? []}
+        />
       </div>
 
       <details className="card compact-details ohlq-window-details">
@@ -65,7 +70,10 @@ export function AgencyRecentSalesCard({ salesWindows }: { salesWindows: AgencySa
           <span className="pill">{thirtyDayWindow?.items.length ?? 0} items</span>
         </summary>
         <p className="muted">{thirtyDayWindow ? formatRange(thirtyDayWindow) : 'No loaded sales dates'}</p>
-        <SalesItemList emptyText="No Echo item sales found in the last 30 days." items={thirtyDayWindow?.items ?? []} />
+        <SalesItemList
+          emptyText={`No ${tenantConfig.productPluralLabel} sales found in the last 30 days.`}
+          items={thirtyDayWindow?.items ?? []}
+        />
       </details>
     </section>
   );

@@ -11,6 +11,7 @@ import { getUserDisplayName } from './auth';
 import { EASTERN_TIME_ZONE } from './dateTime';
 import { getEmailAppBaseUrl, sendEmail, type SendEmailFn } from './email/sendEmail';
 import { prisma } from './prisma';
+import { getTenantConfig } from './tenantConfig';
 import { formatWholesaleLicenseeIds } from './wholesaleAccounts';
 
 export const DEFAULT_DIGEST_TIME_ZONE = EASTERN_TIME_ZONE;
@@ -850,12 +851,13 @@ const baseEmail = (preheader: string, body: string) => `
 </html>`;
 
 export function renderUserWeeklyDigestEmail(digest: UserWeeklyDigest, appBaseUrl = getEmailAppBaseUrl({ allowLocalFallback: true })) {
+  const tenantConfig = getTenantConfig();
   const rangeLabel = formatRangeLabel(digest.window);
-  const subject = `Your Echo CRM weekly summary: ${rangeLabel}`;
+  const subject = `Your ${tenantConfig.digestName} weekly summary: ${rangeLabel}`;
   const html = baseEmail(
     digest.focusSentence,
     `
-      <h1 style="font-size:24px;margin:0;color:#14213d;">Your Echo CRM weekly summary</h1>
+      <h1 style="font-size:24px;margin:0;color:#14213d;">Your ${escapeHtml(tenantConfig.digestName)} weekly summary</h1>
       <p style="margin:6px 0 0;color:#5f6b7a;">${escapeHtml(rangeLabel)}</p>
       <p style="font-size:16px;margin:18px 0;color:#1f2937;">${escapeHtml(digest.focusSentence)}</p>
       <table role="presentation" cellspacing="8" cellpadding="0" style="width:100%;border-collapse:separate;border-spacing:8px;margin:0 -8px 8px;">
@@ -941,14 +943,15 @@ const renderAdminUserDetails = (digest: AdminWeeklyDigest, appBaseUrl: string) =
     .join('');
 
 export function renderAdminWeeklyDigestEmail(digest: AdminWeeklyDigest, appBaseUrl = getEmailAppBaseUrl({ allowLocalFallback: true })) {
+  const tenantConfig = getTenantConfig();
   const rangeLabel = formatRangeLabel(digest.window);
-  const subject = `Echo CRM team weekly summary: ${rangeLabel}`;
+  const subject = `${tenantConfig.digestName} team weekly summary: ${rangeLabel}`;
   const allOverdue = digest.users.flatMap((userDigest) => userDigest.workBuckets.overdue);
   const allUpcoming = digest.users.flatMap((userDigest) => userDigest.upcomingWork);
   const html = baseEmail(
     `Team summary: ${digest.totals.visitsLogged} visits, ${digest.totals.overdue} overdue items.`,
     `
-      <h1 style="font-size:24px;margin:0;color:#14213d;">Echo CRM team weekly summary</h1>
+      <h1 style="font-size:24px;margin:0;color:#14213d;">${escapeHtml(tenantConfig.digestName)} team weekly summary</h1>
       <p style="margin:6px 0 0;color:#5f6b7a;">${escapeHtml(rangeLabel)}</p>
       <table role="presentation" cellspacing="8" cellpadding="0" style="width:100%;border-collapse:separate;border-spacing:8px;margin:16px -8px 8px;">
         <tr>

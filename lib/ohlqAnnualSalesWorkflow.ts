@@ -18,6 +18,7 @@ import {
   recordOhlqReportRunErrored,
   recordOhlqReportRunStarted,
 } from './ohlqDataStatus';
+import { getTenantConfig } from './tenantConfig';
 
 type Logger = Pick<Console, 'error' | 'log'>;
 
@@ -61,6 +62,7 @@ const safeMarkErrored = async ({
 
 export async function runOhlqAnnualSalesWorkflow(options: OhlqAnnualSalesWorkflowOptions = {}) {
   const logger = options.logger ?? console;
+  const tenantConfig = getTenantConfig();
   const reportDate = getOhlqAnnualSalesReportDate(options.reportDate).iso;
   const startedAt = Date.now();
   const completedSources = new Set<OhlqReportDataSource>();
@@ -104,7 +106,7 @@ export async function runOhlqAnnualSalesWorkflow(options: OhlqAnnualSalesWorkflo
       reportDate: wholesaleDownload.reportDate,
     });
     logger.log(
-      `OHLQ Echo purchase state updated ${wholesaleImport.echoPurchaseState.updatedAccounts} wholesale account(s); ` +
+      `OHLQ ${tenantConfig.productLabel} purchase state updated ${wholesaleImport.echoPurchaseState.updatedAccounts} wholesale account(s); ` +
         `${wholesaleImport.echoPurchaseState.unmatchedPermitNumbers.length} permit number(s) were not matched.`,
     );
 
@@ -125,7 +127,7 @@ export async function runOhlqAnnualSalesWorkflow(options: OhlqAnnualSalesWorkflo
     logger.log(
       `OHLQ wholesale reactivation found ${wholesaleReactivation.matchedAccountsNeedingAction} account(s); ` +
         `created ${wholesaleReactivation.createdItems}, updated ${wholesaleReactivation.updatedItems}, ` +
-        `cancelled ${wholesaleReactivation.cancelledItems}.`,
+        `flagged ${wholesaleReactivation.flaggedPurchasedAgainItems} purchased-again item(s).`,
     );
 
     return {

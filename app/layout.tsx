@@ -1,9 +1,11 @@
 import { getCurrentUser, getUserDisplayName } from '../lib/auth';
+import { getTenantConfig } from '../lib/tenantConfig';
 import { AppSidebarNavigation, MobileTabbar } from './components/AppNavigation';
 import './styles.css';
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const user = await getCurrentUser();
+  const tenantConfig = getTenantConfig();
 
   return (
     <html lang="en">
@@ -11,7 +13,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         {user ? (
           <>
             <aside>
-              <h2>Echo Spirits Distilling Co.</h2>
+              <h2>{tenantConfig.entityName}</h2>
               <AppSidebarNavigation isAdmin={user.role === 'ADMIN'} />
               <div className="user-card">
                 <span className="muted">Signed in as</span>

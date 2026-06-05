@@ -5,6 +5,7 @@ import { WeeklyDigestStatus } from '@prisma/client';
 import { getUserDisplayName, requireAdminSession } from '../../../lib/auth';
 import { formatEasternDateTime } from '../../../lib/dateTime';
 import { prisma } from '../../../lib/prisma';
+import { getTenantConfig } from '../../../lib/tenantConfig';
 import {
   getAdminWeeklyDigest,
   getUserWeeklyDigest,
@@ -39,6 +40,7 @@ export default async function WeeklyDigestAdminPage({
   }>;
 }) {
   const session = await requireAdminSession();
+  const tenantConfig = getTenantConfig();
   const params = (await searchParams) ?? {};
   const previewMode = getPreviewMode(params.digestType);
   const window = getWeeklyDigestWindow();
@@ -72,7 +74,7 @@ export default async function WeeklyDigestAdminPage({
     <>
       <h1>Weekly Digest</h1>
       <p className="muted">
-        Admin-only preview and send controls for the Friday 8:00 AM Eastern Echo CRM weekly email.
+        Admin-only preview and send controls for the Friday 8:00 AM Eastern {tenantConfig.digestName} weekly email.
       </p>
 
       {params.status ? (

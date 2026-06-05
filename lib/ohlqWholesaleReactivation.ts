@@ -4,21 +4,21 @@ import {
   WorklistStatus,
   type PrismaClient,
 } from '@prisma/client';
-import {
-  ECHO_VENDOR_ID,
-  EXCLUDED_ECHO_ITEM_CODES,
-  isEchoItem,
-} from './ohlqSalesData';
+import { isConfiguredTenantItem } from './ohlqSalesData';
 import { formatOhlqDate } from './ohlqDataStatus';
 import { getOhlqLicenseeMatchKeys, normalizeOhlqId } from './ohlqWholesaleMatching';
 import { prisma } from './prisma';
+import { getTenantConfig } from './tenantConfig';
 
 export const OHLQ_WHOLESALE_REACTIVATION_SOURCE = WorklistSource.OHLQ_WHOLESALE_REACTIVATION;
-export const OHLQ_WHOLESALE_REACTIVATION_TITLE = 'Follow up: no Echo purchase in 30 days';
+export const getOhlqWholesaleReactivationTitle = () =>
+  `Follow up: no ${getTenantConfig().productLabel} purchase in 30 days`;
+export const OHLQ_WHOLESALE_REACTIVATION_TITLE = getOhlqWholesaleReactivationTitle();
 export const OHLQ_WHOLESALE_REACTIVATION_TIME_ZONE = 'America/New_York';
 export const OHLQ_WHOLESALE_REACTIVATION_LOOKBACK_DAYS = 90;
 export const OHLQ_WHOLESALE_REACTIVATION_RECENT_DAYS = 30;
 export const OHLQ_WHOLESALE_REACTIVATION_DUE_DAYS = 7;
+export const REACTIVATION_PURCHASED_AGAIN_DETAIL_PREFIX = 'Account purchased again on ';
 
 const inactiveWorklistStatuses: WorklistStatus[] = [WorklistStatus.COMPLETED, WorklistStatus.CANCELLED];
 const dayMs = 24 * 60 * 60 * 1000;
@@ -64,6 +64,7 @@ export type WholesaleReactivationCandidate = {
 export type WholesaleReactivationAnalysis = {
   candidates: WholesaleReactivationCandidate[];
   recentBuyerLicenseeIds: Set<string>;
+  recentBuyerPurchaseDatesByLicenseeId: Map<string, Date>;
   unmatchedLicenseeIds: string[];
   windows: WholesaleReactivationWindows;
 };
@@ -87,8 +88,11 @@ export type ReactivationWorklistSnapshot = {
 };
 
 export type WholesaleReactivationWorklistPlan = {
-  cancelItems: ReactivationWorklistSnapshot[];
   createCandidates: WholesaleReactivationCandidate[];
+  reviewItems: Array<{
+    item: ReactivationWorklistSnapshot;
+    purchasedAgainAt: Date;
+  }>;
   skippedCandidates: WholesaleReactivationCandidate[];
   updateItems: Array<{
     candidate: WholesaleReactivationCandidate;
@@ -169,6 +173,57 @@ const accountHasAnyLicenseeKey = (account: WholesaleReactivationAccount, keys: s
     getOhlqLicenseeMatchKeys(licenseeId).some((key) => keys.includes(key)),
   );
 
+const setLatestDate = (dates: Map<string, Date>, key: string, date: Date) => {
+  const existing = dates.get(key);
+  if (!existing || date.getTime() > existing.getTime()) {
+    dates.set(key, date);
+  }
+};
+
+const recordRecentBuyerPurchase = ({
+  dates,
+  keys,
+  purchaseDate,
+  recentBuyerLicenseeIds,
+}: {
+  dates: Map<string, Date>;
+  keys: string[];
+  purchaseDate: Date;
+  recentBuyerLicenseeIds: Set<string>;
+}) => {
+  keys.forEach((key) => {
+    recentBuyerLicenseeIds.add(key);
+    setLatestDate(dates, key, purchaseDate);
+  });
+};
+
+export const getReactivationPurchasedAgainMessage = (purchaseDate: Date) =>
+  `${REACTIVATION_PURCHASED_AGAIN_DETAIL_PREFIX}${formatOhlqDate(
+    purchaseDate,
+  )}. This worklist item can be cancelled if no follow-up is needed.`;
+
+export const splitReactivationPurchasedAgainDetail = (detail: string | null | undefined) => {
+  const paragraphs = String(detail ?? '')
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean);
+  const purchasedAgainMessage =
+    paragraphs.find((paragraph) => paragraph.startsWith(REACTIVATION_PURCHASED_AGAIN_DETAIL_PREFIX)) ?? null;
+  const remainingDetail = paragraphs
+    .filter((paragraph) => !paragraph.startsWith(REACTIVATION_PURCHASED_AGAIN_DETAIL_PREFIX))
+    .join('\n\n');
+
+  return {
+    detail: remainingDetail || null,
+    purchasedAgainMessage,
+  };
+};
+
+const upsertPurchasedAgainReviewMessage = (detail: string | null | undefined, purchaseDate: Date) => {
+  const existing = splitReactivationPurchasedAgainDetail(detail);
+  return [getReactivationPurchasedAgainMessage(purchaseDate), existing.detail].filter(Boolean).join('\n\n');
+};
+
 export function buildWholesaleReactivationAnalysis({
   accounts,
   itemNames = new Map<string, string>(),
@@ -205,9 +260,10 @@ export function buildWholesaleReactivationAnalysis({
     }
   >();
   const recentBuyerLicenseeIds = new Set<string>();
+  const recentBuyerPurchaseDatesByLicenseeId = new Map<string, Date>();
 
   for (const row of rows) {
-    if (!isEchoItem(row.vendor, row.brand)) continue;
+    if (!isConfiguredTenantItem(row.vendor, row.brand)) continue;
 
     const licenseeId = normalizeOhlqId(row.permitNumber);
     const licenseeKeys = getOhlqLicenseeMatchKeys(row.permitNumber);
@@ -221,10 +277,20 @@ export function buildWholesaleReactivationAnalysis({
 
     const hasRecentPurchase = reportTime >= windows.recentStartDate.getTime();
     if (hasRecentPurchase) {
-      licenseeKeys.forEach((key) => recentBuyerLicenseeIds.add(key));
+      recordRecentBuyerPurchase({
+        dates: recentBuyerPurchaseDatesByLicenseeId,
+        keys: licenseeKeys,
+        purchaseDate: row.reportDate,
+        recentBuyerLicenseeIds,
+      });
       if (account) {
         getAccountLicenseeIds(account).forEach((licenseeId) => {
-          getOhlqLicenseeMatchKeys(licenseeId).forEach((key) => recentBuyerLicenseeIds.add(key));
+          recordRecentBuyerPurchase({
+            dates: recentBuyerPurchaseDatesByLicenseeId,
+            keys: getOhlqLicenseeMatchKeys(licenseeId),
+            purchaseDate: row.reportDate,
+            recentBuyerLicenseeIds,
+          });
         });
       }
     }
@@ -292,6 +358,7 @@ export function buildWholesaleReactivationAnalysis({
         a.accountName.localeCompare(b.accountName),
     ),
     recentBuyerLicenseeIds,
+    recentBuyerPurchaseDatesByLicenseeId,
     unmatchedLicenseeIds: unmatchedLicenseeIds.sort(),
     windows,
   };
@@ -305,11 +372,11 @@ const getClosedAt = (item: ReactivationWorklistSnapshot) =>
 export function planWholesaleReactivationWorklistSync({
   candidates,
   existingItems,
-  recentBuyerLicenseeIds,
+  recentBuyerPurchaseDatesByLicenseeId,
 }: {
   candidates: WholesaleReactivationCandidate[];
   existingItems: ReactivationWorklistSnapshot[];
-  recentBuyerLicenseeIds: Set<string>;
+  recentBuyerPurchaseDatesByLicenseeId: Map<string, Date>;
 }): WholesaleReactivationWorklistPlan {
   const openItemByAccountId = new Map<string, ReactivationWorklistSnapshot>();
   const closedItemsByAccountId = new Map<string, ReactivationWorklistSnapshot[]>();
@@ -333,6 +400,13 @@ export function planWholesaleReactivationWorklistSync({
   const skippedCandidates: WholesaleReactivationCandidate[] = [];
   const updateItems: WholesaleReactivationWorklistPlan['updateItems'] = [];
   const candidateAccountIds = new Set(candidates.map((candidate) => candidate.wholesaleAccountId));
+  const getRecentPurchaseDateForItem = (item: ReactivationWorklistSnapshot) =>
+    [...(item.licenseeIds ?? []), item.licenseeId]
+      .filter(Boolean)
+      .flatMap((licenseeId) => getOhlqLicenseeMatchKeys(licenseeId))
+      .map((key) => recentBuyerPurchaseDatesByLicenseeId.get(key))
+      .filter((date): date is Date => Boolean(date))
+      .sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
 
   for (const candidate of candidates) {
     const openItem = openItemByAccountId.get(candidate.wholesaleAccountId);
@@ -356,18 +430,19 @@ export function planWholesaleReactivationWorklistSync({
   }
 
   return {
-    cancelItems: existingItems.filter(
-      (item) =>
-        item.wholesaleAccountId &&
-        isOpenWorklistStatus(item.status) &&
-        !candidateAccountIds.has(item.wholesaleAccountId) &&
-        [...(item.licenseeIds ?? []), item.licenseeId]
-          .filter(Boolean)
-          .some((licenseeId) =>
-            getOhlqLicenseeMatchKeys(licenseeId).some((key) => recentBuyerLicenseeIds.has(key)),
-          ),
-    ),
     createCandidates,
+    reviewItems: existingItems.flatMap((item) => {
+      if (
+        !item.wholesaleAccountId ||
+        !isOpenWorklistStatus(item.status) ||
+        candidateAccountIds.has(item.wholesaleAccountId)
+      ) {
+        return [];
+      }
+
+      const purchasedAgainAt = getRecentPurchaseDateForItem(item);
+      return purchasedAgainAt ? [{ item, purchasedAgainAt }] : [];
+    }),
     skippedCandidates,
     updateItems,
   };
@@ -441,6 +516,7 @@ export async function findOhlqWholesaleReactivationCandidates({
   db?: PrismaClient;
   runAt?: Date;
 } = {}) {
+  const tenantConfig = getTenantConfig();
   const windows = getWholesaleReactivationWindows({ runAt });
   const [lapsedAccounts, recentBuyerAccounts] = await Promise.all([
     db.wholesaleAccount.findMany({
@@ -478,13 +554,23 @@ export async function findOhlqWholesaleReactivationCandidates({
       select: {
         licenseeId: true,
         licenseeIds: { select: { licenseeId: true } },
+        ohlqLastEchoPurchaseDate: true,
       },
     }),
   ]);
   const recentBuyerLicenseeIds = new Set<string>();
+  const recentBuyerPurchaseDatesByLicenseeId = new Map<string, Date>();
   recentBuyerAccounts.forEach((account) => {
+    const purchaseDate = account.ohlqLastEchoPurchaseDate;
+    if (!purchaseDate) return;
+
     getAccountLicenseeIds(account).forEach((licenseeId) => {
-      getOhlqLicenseeMatchKeys(licenseeId).forEach((key) => recentBuyerLicenseeIds.add(key));
+      recordRecentBuyerPurchase({
+        dates: recentBuyerPurchaseDatesByLicenseeId,
+        keys: getOhlqLicenseeMatchKeys(licenseeId),
+        purchaseDate,
+        recentBuyerLicenseeIds,
+      });
     });
   });
   const candidates = lapsedAccounts
@@ -495,7 +581,7 @@ export async function findOhlqWholesaleReactivationCandidates({
         account.ohlqLastEchoPurchaseItemCode || account.ohlqLastEchoPurchaseItemName
           ? [
               {
-                itemCode: account.ohlqLastEchoPurchaseItemCode ?? 'Echo item',
+                itemCode: account.ohlqLastEchoPurchaseItemCode ?? `${tenantConfig.productLabel} item`,
                 itemName: account.ohlqLastEchoPurchaseItemName ?? 'Name pending',
                 mostRecentPurchaseDate: purchaseDate,
                 wholesaleBottlesSold: account.ohlqLastEchoPurchaseBottles,
@@ -520,12 +606,14 @@ export async function findOhlqWholesaleReactivationCandidates({
   return {
     candidates,
     recentBuyerLicenseeIds,
+    recentBuyerPurchaseDatesByLicenseeId,
     unmatchedLicenseeIds: [],
     windows,
   } satisfies WholesaleReactivationAnalysis;
 }
 
 export const buildWholesaleReactivationDetail = (candidate: WholesaleReactivationCandidate) => {
+  const tenantConfig = getTenantConfig();
   const itemLines = candidate.items.slice(0, 8).map(
     (item) =>
       `- ${item.itemCode} - ${item.itemName}: ${item.wholesaleBottlesSold.toLocaleString(
@@ -535,24 +623,18 @@ export const buildWholesaleReactivationDetail = (candidate: WholesaleReactivatio
   const hiddenItemCount = candidate.items.length - itemLines.length;
 
   return [
-    `${candidate.accountName} (${candidate.licenseeId}) bought Echo items in the last 90 days, but not in the last 30 days.`,
-    `Most recent Echo purchase: ${formatOhlqDate(candidate.mostRecentPurchaseDate)} (${candidate.daysSinceLastEchoPurchase} day(s) ago).`,
-    `Latest Echo purchase bottles captured: ${candidate.totalWholesaleBottlesSold.toLocaleString('en-US')}.`,
-    itemLines.length > 0 ? 'Most recent Echo item captured:' : 'Most recent Echo item details were not captured.',
+    `${candidate.accountName} (${candidate.licenseeId}) bought ${tenantConfig.productPluralLabel} in the last 90 days, but not in the last 30 days.`,
+    `Most recent ${tenantConfig.productLabel} purchase: ${formatOhlqDate(candidate.mostRecentPurchaseDate)} (${candidate.daysSinceLastEchoPurchase} day(s) ago).`,
+    `Latest ${tenantConfig.productLabel} purchase bottles captured: ${candidate.totalWholesaleBottlesSold.toLocaleString('en-US')}.`,
+    itemLines.length > 0
+      ? `Most recent ${tenantConfig.productLabel} item captured:`
+      : `Most recent ${tenantConfig.productLabel} item details were not captured.`,
     itemLines.length > 0 ? itemLines.join('\n') : null,
     hiddenItemCount > 0 ? `- ${hiddenItemCount} more item(s)` : null,
   ]
     .filter(Boolean)
     .join('\n');
 };
-
-const appendCancellationNote = (detail: string | null, runAt: Date) =>
-  [
-    detail,
-    `Resolved automatically on ${formatOhlqDate(runAt)} because this account purchased Echo items again in the last 30 days.`,
-  ]
-    .filter(Boolean)
-    .join('\n\n');
 
 export async function syncOhlqWholesaleReactivationWorklist({
   db = prisma,
@@ -607,7 +689,7 @@ export async function syncOhlqWholesaleReactivationWorklist({
       updatedAt: item.updatedAt,
       wholesaleAccountId: item.wholesaleAccountId,
     })),
-    recentBuyerLicenseeIds: analysis.recentBuyerLicenseeIds,
+    recentBuyerPurchaseDatesByLicenseeId: analysis.recentBuyerPurchaseDatesByLicenseeId,
   });
 
   for (const candidate of plan.createCandidates) {
@@ -619,7 +701,7 @@ export async function syncOhlqWholesaleReactivationWorklist({
         dueDate: analysis.windows.dueDate,
         source: OHLQ_WHOLESALE_REACTIVATION_SOURCE,
         status: WorklistStatus.OPEN,
-        title: OHLQ_WHOLESALE_REACTIVATION_TITLE,
+        title: getOhlqWholesaleReactivationTitle(),
         wholesaleAccountId: candidate.wholesaleAccountId,
       },
     });
@@ -633,29 +715,29 @@ export async function syncOhlqWholesaleReactivationWorklist({
         detail: buildWholesaleReactivationDetail(candidate),
         dueDate: analysis.windows.dueDate,
         source: OHLQ_WHOLESALE_REACTIVATION_SOURCE,
-        title: OHLQ_WHOLESALE_REACTIVATION_TITLE,
+        title: getOhlqWholesaleReactivationTitle(),
       },
     });
   }
 
-  for (const item of plan.cancelItems) {
+  for (const { item, purchasedAgainAt } of plan.reviewItems) {
     const existing = sourceItems.find((sourceItem) => sourceItem.id === item.id);
     await db.worklistItem.update({
       where: { id: item.id },
       data: {
-        cancelledAt: runAt,
-        detail: appendCancellationNote(existing?.detail ?? null, runAt),
-        status: WorklistStatus.CANCELLED,
+        detail: upsertPurchasedAgainReviewMessage(existing?.detail ?? null, purchasedAgainAt),
       },
     });
   }
 
   return {
-    cancelledItems: plan.cancelItems.length,
+    cancelledItems: 0,
     createdItems: plan.createCandidates.length,
     dueDate: formatOhlqDate(analysis.windows.dueDate),
+    flaggedPurchasedAgainItems: plan.reviewItems.length,
     matchedAccountsNeedingAction: analysis.candidates.length,
-    openItemsAfterSync: analysis.candidates.length - plan.skippedCandidates.length,
+    openItemsAfterSync:
+      plan.createCandidates.length + plan.updateItems.length + plan.reviewItems.length,
     recentStartDate: formatOhlqDate(analysis.windows.recentStartDate),
     skippedRecentlyClosedItems: plan.skippedCandidates.length,
     unmatchedLicenseeIds: analysis.unmatchedLicenseeIds,
@@ -673,20 +755,79 @@ export async function getOhlqWholesaleReactivationDashboardSummary({
   runAt?: Date;
   take?: number;
 } = {}) {
-  const [analysis, openWorklistItems] = await Promise.all([
+  const activeSourceWhere = {
+    category: WorklistCategory.WHOLESALE,
+    source: OHLQ_WHOLESALE_REACTIVATION_SOURCE,
+    status: { notIn: inactiveWorklistStatuses },
+    wholesaleAccountId: { not: null },
+  };
+  const [analysis, topWorklistItems, openWorklistItems] = await Promise.all([
     findOhlqWholesaleReactivationCandidates({ db, runAt }),
-    db.worklistItem.count({
-      where: {
-        source: OHLQ_WHOLESALE_REACTIVATION_SOURCE,
-        status: { notIn: inactiveWorklistStatuses },
+    db.worklistItem.findMany({
+      where: activeSourceWhere,
+      take,
+      orderBy: [{ dueDate: 'asc' }, { createdAt: 'desc' }],
+      select: {
+        detail: true,
+        dueDate: true,
+        id: true,
+        title: true,
+        wholesaleAccountId: true,
       },
     }),
+    db.worklistItem.count({
+      where: activeSourceWhere,
+    }),
   ]);
+  const accountIds = Array.from(
+    new Set(topWorklistItems.map((item) => item.wholesaleAccountId).filter(Boolean) as string[]),
+  );
+  const accounts =
+    accountIds.length > 0
+      ? await db.wholesaleAccount.findMany({
+          where: { id: { in: accountIds } },
+          select: {
+            id: true,
+            name: true,
+            ohlqLastEchoPurchaseDate: true,
+            ohlqLastEchoPurchaseItemCode: true,
+            ohlqLastEchoPurchaseItemName: true,
+          },
+        })
+      : [];
+  const accountById = new Map(accounts.map((account) => [account.id, account]));
 
   return {
-    accountCount: analysis.candidates.length,
+    accountCount: openWorklistItems,
     openWorklistItems,
-    topAccounts: analysis.candidates.slice(0, take),
+    topAccounts: topWorklistItems.map((item) => {
+      const account = item.wholesaleAccountId ? accountById.get(item.wholesaleAccountId) : null;
+      const lastPurchaseDate = account?.ohlqLastEchoPurchaseDate ?? null;
+      const purchasedAgainAt =
+        lastPurchaseDate &&
+        lastPurchaseDate.getTime() >= analysis.windows.recentStartDate.getTime() &&
+        lastPurchaseDate.getTime() <= analysis.windows.runDate.getTime()
+          ? lastPurchaseDate
+          : null;
+      const daysSinceLastEchoPurchase = lastPurchaseDate
+        ? Math.max(0, Math.floor((analysis.windows.runDate.getTime() - lastPurchaseDate.getTime()) / dayMs))
+        : null;
+
+      return {
+        accountName: account?.name ?? 'Wholesale account',
+        daysSinceLastEchoPurchase,
+        detail: item.detail,
+        dueDate: item.dueDate,
+        lastItemLabel:
+          account?.ohlqLastEchoPurchaseItemCode || account?.ohlqLastEchoPurchaseItemName
+            ? [account.ohlqLastEchoPurchaseItemCode, account.ohlqLastEchoPurchaseItemName].filter(Boolean).join(' - ')
+            : null,
+        purchasedAgainAt,
+        title: item.title,
+        wholesaleAccountId: item.wholesaleAccountId,
+        worklistItemId: item.id,
+      };
+    }),
     unmatchedLicenseeCount: analysis.unmatchedLicenseeIds.length,
   };
 }
