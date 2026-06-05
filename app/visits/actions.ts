@@ -422,6 +422,8 @@ export async function createVisit(formData: FormData) {
   revalidatePath('/visits');
   revalidatePath('/visits/new');
   revalidatePath('/alerts');
+  revalidatePath('/my-week');
+  revalidatePath('/');
   revalidatePath('/agencies');
   revalidatePath('/wholesale');
   revalidatePath('/tags');

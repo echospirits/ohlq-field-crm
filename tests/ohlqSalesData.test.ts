@@ -80,6 +80,8 @@ describe('getWholesaleRecentPurchases', () => {
     assert.equal(result.echo.count, 1);
     assert.equal(result.echo.items[0].itemCode, '0100A');
     assert.equal(result.echo.items[0].totalBottlesSold, 5);
+    assert.equal(result.tracked.count, 1);
+    assert.equal(result.productLabel, 'Echo');
   });
 });
 

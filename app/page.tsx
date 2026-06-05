@@ -20,6 +20,7 @@ import {
 } from '../lib/ohlqDataStatus';
 import { getOhlqWholesaleReactivationDashboardSummary } from '../lib/ohlqWholesaleReactivation';
 import { prisma } from '../lib/prisma';
+import { getTenantConfig } from '../lib/tenantConfig';
 
 const dashboardTimeZone = EASTERN_TIME_ZONE;
 const inactiveWorklistStatuses = [WorklistStatus.COMPLETED, WorklistStatus.CANCELLED];
@@ -209,6 +210,7 @@ function MetricSplits({ agency, wholesale }: { agency: number; wholesale: number
 
 export default async function Dashboard() {
   const user = await requireUser();
+  const tenantConfig = getTenantConfig();
 
   const ranges = getDashboardRanges();
   const visitQueryStart = ranges.weekStart < ranges.monthStart ? ranges.weekStart : ranges.monthStart;
@@ -400,7 +402,9 @@ export default async function Dashboard() {
             </Link>
           </div>
           <p className="metric-value">{wholesaleReactivationSummary.accountCount}</p>
-          <p className="muted metric-caption">Bought Echo items in the last 90 days, but not in the last 30.</p>
+          <p className="muted metric-caption">
+            Bought {tenantConfig.productPluralLabel} in the last 90 days, but not in the last 30.
+          </p>
           <div className="metric-splits">
             <div className="metric-split">
               <span>Open worklist items</span>
@@ -414,19 +418,31 @@ export default async function Dashboard() {
           <div className="reactivation-list">
             {wholesaleReactivationSummary.topAccounts.length > 0 ? (
               wholesaleReactivationSummary.topAccounts.map((account) => {
-                const lastItem = account.items[0];
+                const itemLabel = account.lastItemLabel ?? `${tenantConfig.productLabel} item`;
 
                 return (
                   <Link
-                    className="reactivation-row"
+                    className={
+                      account.purchasedAgainAt ? 'reactivation-row reactivation-row-needs-review' : 'reactivation-row'
+                    }
                     href={`/wholesale/${account.wholesaleAccountId}`}
-                    key={account.wholesaleAccountId}
+                    key={account.worklistItemId}
                   >
                     <span>
                       <strong>{account.accountName}</strong>
-                      <small>{lastItem ? `${lastItem.itemCode} - ${lastItem.itemName}` : 'Echo item'}</small>
+                      {account.purchasedAgainAt ? (
+                        <small className="reactivation-warning-ribbon">
+                          Purchased again {formatOhlqDate(account.purchasedAgainAt)}. This worklist item can be cancelled.
+                        </small>
+                      ) : (
+                        <small>{itemLabel}</small>
+                      )}
                     </span>
-                    <em>{account.daysSinceLastEchoPurchase} days</em>
+                    <em>
+                      {account.daysSinceLastEchoPurchase === null
+                        ? 'Active'
+                        : `${account.daysSinceLastEchoPurchase} days`}
+                    </em>
                   </Link>
                 );
               })

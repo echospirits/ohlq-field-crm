@@ -7,12 +7,14 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getUserDisplayName, requireUser } from '../../lib/auth';
 import { formatDateOnly } from '../../lib/dateTime';
+import { splitReactivationPurchasedAgainDetail } from '../../lib/ohlqWholesaleReactivation';
 import { prisma } from '../../lib/prisma';
 import { getAgenciesForVisitPicker, getWholesaleAccountsForVisitPicker } from '../../lib/visitPickerOptions';
 import { DatePickerField } from '../components/DatePickerField';
 import { LiveFilterForm } from '../components/LiveFilterForm';
 import { createVisit } from '../visits/actions';
 import { WorklistActions } from './WorklistActions';
+import { WorklistDetail } from './WorklistDetail';
 
 const statusLabels: Record<WorklistStatus, string> = {
   [WorklistStatus.OPEN]: 'Open',
@@ -110,6 +112,7 @@ async function createWorklistItem(formData: FormData) {
   });
 
   revalidatePath('/alerts');
+  revalidatePath('/');
   redirect('/alerts?created=1');
 }
 
@@ -136,6 +139,8 @@ async function updateWorklistStatus(formData: FormData) {
   });
 
   revalidatePath('/alerts');
+  revalidatePath('/my-week');
+  revalidatePath('/');
 }
 
 export default async function Alerts({
@@ -352,6 +357,7 @@ export default async function Alerts({
               </thead>
               <tbody>
                 {group.items.map((item) => {
+                  const parsedDetail = splitReactivationPurchasedAgainDetail(item.detail);
                   const location =
                     item.category === WorklistCategory.AGENCY
                       ? agencyMap[item.agencyId ?? '']
@@ -373,7 +379,7 @@ export default async function Alerts({
                           <span className="pill">{sourceLabels[item.source]}</span>
                           <span className="pill">{statusLabels[item.status]}</span>
                         </div>
-                        {item.detail ? <div className="muted preserve-lines">{item.detail}</div> : null}
+                        <WorklistDetail detail={item.detail} />
                         <div className="muted item-meta">
                           Created by {item.createdByUser ? getUserDisplayName(item.createdByUser) : item.createdBy || 'Unknown user'}
                           {item.completedByUser ? `; completed by ${getUserDisplayName(item.completedByUser)}` : ''}
@@ -400,7 +406,7 @@ export default async function Alerts({
                           item={{
                             id: item.id,
                             title: item.title,
-                            detail: item.detail,
+                            detail: parsedDetail.detail,
                             status: item.status,
                             category: item.category,
                             agencyId: item.agencyId,

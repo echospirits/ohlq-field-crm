@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@prisma/client';
+import type { Prisma, PrismaClient } from '@prisma/client';
 import { formatOhlqDate } from './ohlqDataStatus';
 import {
   buildPermitNumberSearchConditions,
@@ -8,11 +8,16 @@ import {
   type OhlqWholesaleLookupAccount,
 } from './ohlqWholesaleMatching';
 import { prisma } from './prisma';
+import {
+  DEFAULT_TENANT_EXCLUDED_ITEM_CODES,
+  DEFAULT_TENANT_OHLQ_VENDOR_IDS,
+  getTenantConfig,
+  matchesTenantProduct,
+  type TenantConfig,
+} from './tenantConfig';
 
-export const ECHO_VENDOR_ID = 'Z90399001';
-export const EXCLUDED_ECHO_ITEM_CODES = ['3150B'] as const;
-
-const excludedEchoItemCodes = new Set<string>(EXCLUDED_ECHO_ITEM_CODES);
+export const ECHO_VENDOR_ID = DEFAULT_TENANT_OHLQ_VENDOR_IDS[0];
+export const EXCLUDED_ECHO_ITEM_CODES = DEFAULT_TENANT_EXCLUDED_ITEM_CODES;
 
 type AgencySalesGroup = {
   brand: string;
@@ -62,7 +67,10 @@ export type WholesaleRecentPurchases = {
   echo: WholesalePurchaseList;
   endDate: string | null;
   licenseeId: string | null;
+  productLabel: string;
+  productPluralLabel: string;
   startDate: string | null;
+  tracked: WholesalePurchaseList;
 };
 
 const addUtcDays = (date: Date, days: number) =>
@@ -70,8 +78,28 @@ const addUtcDays = (date: Date, days: number) =>
 
 export { normalizeOhlqId };
 
-export const isEchoItem = (vendor: string | null | undefined, itemCode: string | null | undefined) =>
-  normalizeOhlqId(vendor) === ECHO_VENDOR_ID && !excludedEchoItemCodes.has(normalizeOhlqId(itemCode) ?? '');
+export const isConfiguredTenantItem = (
+  vendor: string | null | undefined,
+  itemCode: string | null | undefined,
+  config: TenantConfig = getTenantConfig(),
+) => matchesTenantProduct({ config, itemCode, vendor });
+
+export const isEchoItem = isConfiguredTenantItem;
+
+const getTenantSalesWhere = (config: TenantConfig): Prisma.OhlqAnnualSalesRowWhereInput => {
+  if (config.productFilter.mode === 'item-list') {
+    return {
+      brand: { in: config.productFilter.itemCodes },
+    };
+  }
+
+  return {
+    vendor: { in: config.productFilter.vendorIds },
+    ...(config.productFilter.excludedItemCodes.length > 0
+      ? { brand: { notIn: config.productFilter.excludedItemCodes } }
+      : {}),
+  };
+};
 
 export const getOhlqWindowStartDate = (endDate: Date, days: number) => addUtcDays(endDate, -(days - 1));
 
@@ -125,6 +153,7 @@ export async function getAgencyRecentItemSales({
   db?: PrismaClient;
   windows?: number[];
 }) {
+  const tenantConfig = getTenantConfig();
   const latest = await db.ohlqAnnualSalesRow.findFirst({
     orderBy: { reportDate: 'desc' },
     select: { reportDate: true },
@@ -147,9 +176,8 @@ export async function getAgencyRecentItemSales({
         by: ['brand'],
         where: {
           agencyId,
-          brand: { notIn: [...EXCLUDED_ECHO_ITEM_CODES] },
+          ...getTenantSalesWhere(tenantConfig),
           reportDate: { gte: startDate, lte: endDate },
-          vendor: ECHO_VENDOR_ID,
         },
         _max: { reportDate: true },
         _sum: {
@@ -242,6 +270,7 @@ export async function getWholesaleRecentPurchases({
   takeAll?: number;
   takeEcho?: number;
 }) {
+  const tenantConfig = getTenantConfig();
   const lookupAccount = account ?? { licenseeId };
   const lookup = await resolveOhlqWholesaleSalesLookup({ account: lookupAccount, db });
   const linkedLicenseeId = lookup.primaryLicenseeId ?? Array.from(lookup.permitNumbers)[0] ?? null;
@@ -253,7 +282,10 @@ export async function getWholesaleRecentPurchases({
       echo: { count: 0, items: [], purchaseLineCount: 0, totalBottlesSold: 0 },
       endDate: null,
       licenseeId: null,
+      productLabel: tenantConfig.productLabel,
+      productPluralLabel: tenantConfig.productPluralLabel,
       startDate: null,
+      tracked: { count: 0, items: [], purchaseLineCount: 0, totalBottlesSold: 0 },
     } satisfies WholesaleRecentPurchases;
   }
 
@@ -268,7 +300,10 @@ export async function getWholesaleRecentPurchases({
       echo: { count: 0, items: [], purchaseLineCount: 0, totalBottlesSold: 0 },
       endDate: null,
       licenseeId: linkedLicenseeId,
+      productLabel: tenantConfig.productLabel,
+      productPluralLabel: tenantConfig.productPluralLabel,
       startDate: null,
+      tracked: { count: 0, items: [], purchaseLineCount: 0, totalBottlesSold: 0 },
     } satisfies WholesaleRecentPurchases;
   }
 
@@ -284,11 +319,17 @@ export async function getWholesaleRecentPurchases({
       orderBy: [{ reportDate: 'desc' }, { brand: 'asc' }, { agencyId: 'asc' }],
     })
   ).filter((row) => salesPermitMatchesLookup(row.permitNumber, lookup));
-  const echoRows = candidateRows.filter((row) => isEchoItem(row.vendor, row.brand));
+  const trackedRows = candidateRows.filter((row) => isConfiguredTenantItem(row.vendor, row.brand, tenantConfig));
   const itemCodes = candidateRows.map((record) => record.brand);
   const skuLookup = await getSkuLookup(db, itemCodes);
-  const echoItems = toPurchaseSummaryItems(echoRows, skuLookup).sort(sortPurchaseItemsByName);
+  const trackedItems = toPurchaseSummaryItems(trackedRows, skuLookup).sort(sortPurchaseItemsByName);
   const allItems = toPurchaseSummaryItems(candidateRows, skuLookup).sort(sortPurchaseItemsByName);
+  const tracked = {
+    count: trackedItems.length,
+    items: trackedItems.slice(0, takeEcho),
+    purchaseLineCount: trackedRows.length,
+    totalBottlesSold: trackedRows.reduce((total, row) => total + row.wholesaleBottlesSold, 0),
+  };
 
   return {
     all: {
@@ -297,14 +338,12 @@ export async function getWholesaleRecentPurchases({
       purchaseLineCount: candidateRows.length,
       totalBottlesSold: candidateRows.reduce((total, row) => total + row.wholesaleBottlesSold, 0),
     },
-    echo: {
-      count: echoItems.length,
-      items: echoItems.slice(0, takeEcho),
-      purchaseLineCount: echoRows.length,
-      totalBottlesSold: echoRows.reduce((total, row) => total + row.wholesaleBottlesSold, 0),
-    },
+    echo: tracked,
     endDate: formatDateOnly(endDate),
     licenseeId: linkedLicenseeId,
+    productLabel: tenantConfig.productLabel,
+    productPluralLabel: tenantConfig.productPluralLabel,
     startDate: formatDateOnly(startDate),
+    tracked,
   } satisfies WholesaleRecentPurchases;
 }

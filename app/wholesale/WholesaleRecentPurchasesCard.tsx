@@ -70,6 +70,9 @@ export function WholesaleRecentPurchasesCard({
 }: {
   purchases: WholesaleRecentPurchases;
 }) {
+  const productLabel = purchases.productLabel;
+  const productPluralLabel = purchases.productPluralLabel;
+
   if (!purchases.licenseeId) {
     return (
       <section className="dashboard-section ohlq-sales-section">
@@ -95,13 +98,16 @@ export function WholesaleRecentPurchasesCard({
 
       <div className="card ohlq-window-card">
         <div className="section-heading">
-          <h3>Echo purchases - last 30 days</h3>
-          <PurchaseSummary list={purchases.echo} />
+          <h3>{productLabel} purchases - last 30 days</h3>
+          <PurchaseSummary list={purchases.tracked} />
         </div>
-        {purchases.echo.count === 0 && purchases.all.count > 0 ? (
-          <p className="muted">This account has recent OHLQ purchases, but none for Echo item codes.</p>
+        {purchases.tracked.count === 0 && purchases.all.count > 0 ? (
+          <p className="muted">This account has recent OHLQ purchases, but none for {productPluralLabel}.</p>
         ) : null}
-        <PurchaseList emptyText="No Echo purchases found in the last 30 days." list={purchases.echo} />
+        <PurchaseList
+          emptyText={`No ${productLabel} purchases found in the last 30 days.`}
+          list={purchases.tracked}
+        />
       </div>
 
       <details className="card compact-details ohlq-window-details">

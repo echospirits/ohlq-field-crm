@@ -518,6 +518,34 @@ textarea:focus-visible {
   font-weight: 750;
 }
 
+.reactivation-row-needs-review {
+  border-top-color: #7f1d1d;
+}
+
+.reactivation-warning-ribbon,
+.worklist-warning-ribbon {
+  width: fit-content;
+  max-width: 100%;
+  margin-top: 6px;
+  padding: 5px 9px;
+  color: #fecaca;
+  background: #450a0a;
+  border: 1px solid #7f1d1d;
+  border-radius: 6px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.reactivation-row .reactivation-warning-ribbon {
+  color: #fecaca;
+  font-size: 11px;
+}
+
+.worklist-warning-ribbon {
+  display: inline-flex;
+  line-height: 1.35;
+}
+
 .pill {
   display: inline-flex;
   align-items: center;

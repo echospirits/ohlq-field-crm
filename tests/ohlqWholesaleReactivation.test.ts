@@ -4,8 +4,11 @@ import { WorklistStatus, type PrismaClient } from '@prisma/client';
 import {
   buildWholesaleReactivationAnalysis,
   findOhlqWholesaleReactivationCandidates,
+  getOhlqWholesaleReactivationDashboardSummary,
+  getReactivationPurchasedAgainMessage,
   getWholesaleReactivationWindows,
   planWholesaleReactivationWorklistSync,
+  splitReactivationPurchasedAgainDetail,
   type ReactivationWorklistSnapshot,
   type WholesaleReactivationCandidate,
   type WholesaleReactivationPurchaseRow,
@@ -152,7 +155,12 @@ describe('findOhlqWholesaleReactivationCandidates', () => {
                   ohlqLastEchoPurchaseItemName: 'Echo Vodka',
                 },
               ]
-            : [{ licenseeId: '00077777-1' }];
+            : [
+                {
+                  licenseeId: '00077777-1',
+                  ohlqLastEchoPurchaseDate: new Date('2026-05-06T00:00:00.000Z'),
+                },
+              ];
         },
       },
     };
@@ -170,12 +178,69 @@ describe('findOhlqWholesaleReactivationCandidates', () => {
   });
 });
 
+describe('getOhlqWholesaleReactivationDashboardSummary', () => {
+  it('uses active worklist items as the dashboard summary source of truth', async () => {
+    let worklistWhere: unknown = null;
+    const db = {
+      wholesaleAccount: {
+        findMany: async (args: { where?: { id?: { in?: string[] } } }) => {
+          if (!args.where?.id) return [];
+
+          return [
+            {
+              id: 'wholesale-1',
+              name: 'Adriennes White Rabbit',
+              ohlqLastEchoPurchaseDate: new Date('2026-05-06T00:00:00.000Z'),
+              ohlqLastEchoPurchaseItemCode: '0100A',
+              ohlqLastEchoPurchaseItemName: 'Echo Vodka',
+            },
+          ];
+        },
+      },
+      worklistItem: {
+        count: async (args: { where: unknown }) => {
+          worklistWhere = args.where;
+          return 1;
+        },
+        findMany: async (args: { where: unknown }) => {
+          worklistWhere = args.where;
+          return [
+            {
+              detail: 'Original follow-up context.',
+              dueDate: new Date('2026-05-21T00:00:00.000Z'),
+              id: 'worklist-1',
+              title: 'Follow up',
+              wholesaleAccountId: 'wholesale-1',
+            },
+          ];
+        },
+      },
+    };
+
+    const result = await getOhlqWholesaleReactivationDashboardSummary({
+      db: db as unknown as PrismaClient,
+      runAt,
+    });
+
+    assert.deepEqual(worklistWhere, {
+      category: 'WHOLESALE',
+      source: 'OHLQ_WHOLESALE_REACTIVATION',
+      status: { notIn: ['COMPLETED', 'CANCELLED'] },
+      wholesaleAccountId: { not: null },
+    });
+    assert.equal(result.accountCount, 1);
+    assert.equal(result.topAccounts.length, 1);
+    assert.equal(result.topAccounts[0].worklistItemId, 'worklist-1');
+    assert.equal(result.topAccounts[0].purchasedAgainAt?.toISOString(), '2026-05-06T00:00:00.000Z');
+  });
+});
+
 describe('planWholesaleReactivationWorklistSync', () => {
   it('creates one worklist item for a new qualifying account', () => {
     const plan = planWholesaleReactivationWorklistSync({
       candidates: [candidate()],
       existingItems: [],
-      recentBuyerLicenseeIds: new Set(),
+      recentBuyerPurchaseDatesByLicenseeId: new Map(),
     });
 
     assert.equal(plan.createCandidates.length, 1);
@@ -186,7 +251,7 @@ describe('planWholesaleReactivationWorklistSync', () => {
     const plan = planWholesaleReactivationWorklistSync({
       candidates: [candidate()],
       existingItems: [worklistItem({})],
-      recentBuyerLicenseeIds: new Set(),
+      recentBuyerPurchaseDatesByLicenseeId: new Map(),
     });
 
     assert.equal(plan.createCandidates.length, 0);
@@ -194,14 +259,20 @@ describe('planWholesaleReactivationWorklistSync', () => {
     assert.equal(plan.updateItems[0].item.id, 'worklist-1');
   });
 
-  it('cancels an open stale item when the account purchased again in the last 30 days', () => {
+  it('flags an open stale item for review when the account purchased again in the last 30 days', () => {
+    const purchasedAgainAt = new Date('2026-05-01T00:00:00.000Z');
     const plan = planWholesaleReactivationWorklistSync({
       candidates: [],
       existingItems: [worklistItem({})],
-      recentBuyerLicenseeIds: new Set(['00072045-1']),
+      recentBuyerPurchaseDatesByLicenseeId: new Map([
+        ['00072045-1', purchasedAgainAt],
+        ['72045', purchasedAgainAt],
+      ]),
     });
 
-    assert.equal(plan.cancelItems.length, 1);
+    assert.equal(plan.reviewItems.length, 1);
+    assert.equal(plan.reviewItems[0].item.id, 'worklist-1');
+    assert.equal(plan.reviewItems[0].purchasedAgainAt, purchasedAgainAt);
   });
 
   it('does not recreate a manually completed current-lapse item', () => {
@@ -213,7 +284,7 @@ describe('planWholesaleReactivationWorklistSync', () => {
           status: WorklistStatus.COMPLETED,
         }),
       ],
-      recentBuyerLicenseeIds: new Set(),
+      recentBuyerPurchaseDatesByLicenseeId: new Map(),
     });
 
     assert.equal(plan.createCandidates.length, 0);
@@ -229,9 +300,22 @@ describe('planWholesaleReactivationWorklistSync', () => {
           status: WorklistStatus.COMPLETED,
         }),
       ],
-      recentBuyerLicenseeIds: new Set(),
+      recentBuyerPurchaseDatesByLicenseeId: new Map(),
     });
 
     assert.equal(plan.createCandidates.length, 1);
+  });
+});
+
+describe('reactivation purchased-again detail helpers', () => {
+  it('parses the review ribbon message separately from the regular detail', () => {
+    const message = getReactivationPurchasedAgainMessage(new Date('2026-05-06T00:00:00.000Z'));
+    const result = splitReactivationPurchasedAgainDetail(`${message}\n\nOriginal follow-up context.`);
+
+    assert.equal(
+      result.purchasedAgainMessage,
+      'Account purchased again on 2026-05-06. This worklist item can be cancelled if no follow-up is needed.',
+    );
+    assert.equal(result.detail, 'Original follow-up context.');
   });
 });

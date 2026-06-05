@@ -6,10 +6,12 @@ import { revalidatePath } from 'next/cache';
 import Link from 'next/link';
 import { getUserDisplayName, requireUser } from '../../lib/auth';
 import { EASTERN_TIME_ZONE, formatDateOnly } from '../../lib/dateTime';
+import { splitReactivationPurchasedAgainDetail } from '../../lib/ohlqWholesaleReactivation';
 import { prisma } from '../../lib/prisma';
 import { getAgenciesForVisitPicker, getWholesaleAccountsForVisitPicker } from '../../lib/visitPickerOptions';
 import { createVisit } from '../visits/actions';
 import { WorklistActions } from '../alerts/WorklistActions';
+import { WorklistDetail } from '../alerts/WorklistDetail';
 
 const dashboardTimeZone = EASTERN_TIME_ZONE;
 const inactiveWorklistStatuses = [WorklistStatus.COMPLETED, WorklistStatus.CANCELLED];
@@ -151,6 +153,7 @@ async function updateWorklistStatus(formData: FormData) {
 
   revalidatePath('/my-week');
   revalidatePath('/alerts');
+  revalidatePath('/');
 }
 
 export default async function MyWeekPage() {
@@ -266,6 +269,7 @@ export default async function MyWeekPage() {
                 </thead>
                 <tbody>
                   {group.items.map((item) => {
+                    const parsedDetail = splitReactivationPurchasedAgainDetail(item.detail);
                     const location =
                       item.category === WorklistCategory.AGENCY
                         ? agencyMap[item.agencyId ?? '']
@@ -287,7 +291,7 @@ export default async function MyWeekPage() {
                             <span className="pill">{statusLabels[item.status]}</span>
                             <span className="pill">{item.category.toLowerCase()}</span>
                           </div>
-                          {item.detail ? <div className="muted preserve-lines">{item.detail}</div> : null}
+                          <WorklistDetail detail={item.detail} />
                           <div className="muted item-meta">
                             Created by{' '}
                             {item.createdByUser
@@ -315,7 +319,7 @@ export default async function MyWeekPage() {
                             item={{
                               id: item.id,
                               title: item.title,
-                              detail: item.detail,
+                              detail: parsedDetail.detail,
                               status: item.status as WorklistActionStatus,
                               category: item.category,
                               agencyId: item.agencyId,
