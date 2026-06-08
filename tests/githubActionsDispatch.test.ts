@@ -32,16 +32,31 @@ test('GitHub Actions dispatch config is disabled without a token', () => {
   assert.equal(getGithubActionsDispatchConfig(), null);
 });
 
-test('GitHub Actions dispatch config resolves repo and ref from environment', () => {
+test('GitHub Actions dispatch config resolves repo and defaults to main', () => {
   for (const key of envKeys) delete process.env[key];
 
   process.env.GITHUB_ACTIONS_DISPATCH_TOKEN = 'token';
-  process.env.VERCEL_GIT_COMMIT_REF = 'main';
+  process.env.VERCEL_GIT_COMMIT_REF = 'tst';
   process.env.VERCEL_GIT_REPO_OWNER = 'echospirits';
   process.env.VERCEL_GIT_REPO_SLUG = 'ohlq-field-crm';
 
   assert.deepEqual(getGithubActionsDispatchConfig(), {
     ref: 'main',
+    repository: 'echospirits/ohlq-field-crm',
+    token: 'token',
+    workflowId: 'ohlq-annual-sales.yml',
+  });
+});
+
+test('GitHub Actions dispatch config allows an explicit workflow ref override', () => {
+  for (const key of envKeys) delete process.env[key];
+
+  process.env.GITHUB_ACTIONS_DISPATCH_TOKEN = 'token';
+  process.env.GITHUB_ACTIONS_REF = 'tst';
+  process.env.GITHUB_ACTIONS_REPOSITORY = 'echospirits/ohlq-field-crm';
+
+  assert.deepEqual(getGithubActionsDispatchConfig(), {
+    ref: 'tst',
     repository: 'echospirits/ohlq-field-crm',
     token: 'token',
     workflowId: 'ohlq-annual-sales.yml',

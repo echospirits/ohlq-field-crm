@@ -5,6 +5,7 @@ export type GithubWorkflowDispatchResult = {
 };
 
 const OHLQ_WORKFLOW_ID = 'ohlq-annual-sales.yml';
+const DEFAULT_GITHUB_ACTIONS_REF = 'main';
 
 const resolveRepository = () => {
   const explicitRepository = process.env.GITHUB_ACTIONS_REPOSITORY?.trim() || process.env.GITHUB_REPOSITORY?.trim();
@@ -22,7 +23,7 @@ export function getGithubActionsDispatchConfig() {
   if (!token) return null;
 
   return {
-    ref: process.env.GITHUB_ACTIONS_REF?.trim() || process.env.VERCEL_GIT_COMMIT_REF?.trim() || 'main',
+    ref: process.env.GITHUB_ACTIONS_REF?.trim() || DEFAULT_GITHUB_ACTIONS_REF,
     repository: resolveRepository(),
     token,
     workflowId: process.env.GITHUB_ACTIONS_OHLQ_WORKFLOW_ID?.trim() || OHLQ_WORKFLOW_ID,

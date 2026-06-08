@@ -1,6 +1,12 @@
 name: OHLQ Annual Sales Sync
 
 on:
+  schedule:
+    # Backup scheduler. Vercel Cron remains the primary trigger; these UTC
+    # slots map to 7:27 AM America/New_York across daylight saving time, and
+    # the first workflow step skips whichever slot is not active for the season.
+    - cron: "27 11 * * *"
+    - cron: "27 12 * * *"
   workflow_dispatch:
     inputs:
       reportDate:
@@ -30,28 +36,61 @@ jobs:
       OHLQ_MICROSOFT_USERNAME: ${{ secrets.OHLQ_MICROSOFT_USERNAME }}
       OHLQ_MICROSOFT_PASSWORD: ${{ secrets.OHLQ_MICROSOFT_PASSWORD }}
       OHLQ_BROWSER_CHANNEL: ""
+      OHLQ_CRON_REFRESH_DAYS: ${{ vars.OHLQ_CRON_REFRESH_DAYS || '2' }}
       OHLQ_HEADLESS: "1"
       OHLQ_REPORT_RETENTION_DAYS: ${{ vars.OHLQ_REPORT_RETENTION_DAYS || '30' }}
       OHLQ_USE_PERSISTENT_BROWSER_CONTEXT: "1"
       OHLQ_USE_SERVERLESS_CHROMIUM: "0"
 
     steps:
+      - name: Confirm scheduled fallback window
+        id: schedule_window
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" != "schedule" ]]; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            echo "reason=manual dispatch" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          schedule="${{ github.event.schedule }}"
+          eastern_offset="$(TZ=America/New_York date '+%z')"
+          eastern_time="$(TZ=America/New_York date '+%Y-%m-%d %H:%M:%S %Z %z')"
+
+          if [[ "$schedule" == "27 11 * * *" && "$eastern_offset" == "-0400" ]]; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            echo "reason=scheduled daylight-time 7:27 AM Eastern fallback at $eastern_time" >> "$GITHUB_OUTPUT"
+          elif [[ "$schedule" == "27 12 * * *" && "$eastern_offset" == "-0500" ]]; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            echo "reason=scheduled standard-time 7:27 AM Eastern fallback at $eastern_time" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+            echo "reason=skipping inactive seasonal fallback slot $schedule at $eastern_time" >> "$GITHUB_OUTPUT"
+          fi
+
+          echo "$eastern_time"
+
       - name: Check out repository
+        if: steps.schedule_window.outputs.should_run == 'true'
         uses: actions/checkout@v4
 
       - name: Set up Node.js
+        if: steps.schedule_window.outputs.should_run == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: npm
 
       - name: Install dependencies
+        if: steps.schedule_window.outputs.should_run == 'true'
         run: npm ci
 
       - name: Install Playwright Chromium
+        if: steps.schedule_window.outputs.should_run == 'true'
         run: npx playwright install --with-deps chromium
 
       - name: Validate required secrets
+        if: steps.schedule_window.outputs.should_run == 'true'
         shell: bash
         run: |
           missing=()
@@ -67,10 +106,19 @@ jobs:
           fi
 
       - name: Run OHLQ annual sales import
+        if: steps.schedule_window.outputs.should_run == 'true'
         shell: bash
         run: |
           report_date="${{ github.event.inputs.reportDate || '' }}"
-          days="${{ github.event.inputs.days || '1' }}"
+          days="${{ github.event.inputs.days || '' }}"
+
+          if [[ -z "$days" ]]; then
+            if [[ "${{ github.event_name }}" == "schedule" ]]; then
+              days="${OHLQ_CRON_REFRESH_DAYS:-2}"
+            else
+              days="1"
+            fi
+          fi
 
           if [[ -n "$report_date" ]]; then
             npm run backfill:ohlq-annual-sales -- --date "$report_date"
@@ -79,10 +127,14 @@ jobs:
           fi
 
       - name: Upload OHLQ debug artifacts
-        if: always()
+        if: always() && steps.schedule_window.outputs.should_run == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: ohlq-sales-debug-${{ github.run_id }}
           path: output/
           if-no-files-found: ignore
           retention-days: 7
+
+      - name: Report skipped scheduled slot
+        if: steps.schedule_window.outputs.should_run != 'true'
+        run: echo "${{ steps.schedule_window.outputs.reason }}"
