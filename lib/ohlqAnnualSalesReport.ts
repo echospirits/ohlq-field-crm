@@ -16,11 +16,14 @@ const POWER_BI_APP_ID = '1b854c43-d373-43ea-9f76-edefa2dd227f';
 const POWER_BI_TENANT_ID = '50f8fcc4-94d8-4f07-84eb-36ed57c7c8a2';
 
 type Logger = Pick<Console, 'error' | 'log'>;
+type PageGotoOptions = NonNullable<Parameters<Page['goto']>[1]>;
 
 const MICROSOFT_SIGN_IN_TIMEOUT_MS = 150_000;
 const POWER_BI_REPORT_FRAME_TIMEOUT_MS = 180_000;
 const POWER_BI_REPORT_FRAME_RELOAD_AFTER_MS = 75_000;
 const MICROSOFT_INPUT_ACTION_TIMEOUT_MS = 5_000;
+const OHLQ_NAVIGATION_RETRY_ATTEMPTS = 3;
+const OHLQ_NAVIGATION_RETRY_DELAY_MS = 5_000;
 const BROWSER_COMPATIBILITY_LAUNCH_ARGS = ['--disable-blink-features=AutomationControlled'];
 const MICROSOFT_LOGOUT_URL = 'https://login.microsoftonline.com/common/oauth2/v2.0/logout';
 const MICROSOFT_AUTH_RESET_DOMAINS = [
@@ -327,6 +330,34 @@ async function waitForMicrosoftPasswordField(page: Page) {
 async function waitForMicrosoftStep(page: Page) {
   await page.waitForLoadState('domcontentloaded', { timeout: 5_000 }).catch(() => undefined);
   await page.waitForTimeout(750);
+}
+
+function isRetryableNavigationError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return /net::ERR_(CONNECTION_ABORTED|CONNECTION_CLOSED|CONNECTION_RESET|NETWORK_CHANGED|TIMED_OUT)|navigation timeout|timeout \d+ms exceeded/i.test(
+    message,
+  );
+}
+
+async function gotoWithRetry(
+  page: Page,
+  url: string,
+  options: PageGotoOptions,
+  attempts = OHLQ_NAVIGATION_RETRY_ATTEMPTS,
+) {
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await page.goto(url, options);
+    } catch (error) {
+      lastError = error;
+      if (attempt >= attempts || !isRetryableNavigationError(error)) throw error;
+      await page.waitForTimeout(OHLQ_NAVIGATION_RETRY_DELAY_MS * attempt).catch(() => undefined);
+    }
+  }
+
+  throw lastError;
 }
 
 async function isMicrosoftUsernameInputVisible(page: Page) {
@@ -829,7 +860,7 @@ async function signInToOhlqPartner(page: Page) {
   const ohlqUsername = requireEnv('OHLQ_OPS_USERNAME');
   const ohlqPassword = requireEnv('OHLQ_OPS_PASSWORD');
 
-  await page.goto('https://ops.ohlq.com/login', { waitUntil: 'domcontentloaded' });
+  await gotoWithRetry(page, 'https://ops.ohlq.com/login', { waitUntil: 'domcontentloaded', timeout: 60_000 });
   if (!page.url().includes('/partner')) {
     await page.getByPlaceholder('username or email').fill(ohlqUsername);
     await page.getByPlaceholder('please enter your password').fill(ohlqPassword);
@@ -852,7 +883,7 @@ async function downloadOhlqPowerBiReportFromPage(
 
   logger.log(`Using report date ${reportDate.display} (${reportDate.iso}).`);
 
-  await page.goto(ohlqReportRedirectUrl, { waitUntil: 'domcontentloaded' });
+  await gotoWithRetry(page, ohlqReportRedirectUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 });
   await handleMicrosoftSignIn(page, debugDir, ohlqReportRedirectUrl);
   await page.waitForURL((url) => url.href.includes(`/rdlreports/${report.reportId}`), {
     timeout: 120_000,
