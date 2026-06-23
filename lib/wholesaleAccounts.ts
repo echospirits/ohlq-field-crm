@@ -33,21 +33,42 @@ export const isGeneratedWholesaleLicenseeId = (value: string | null | undefined)
 
 export const getWholesaleOfficialLookupLicenseeIds = ({
   existingLicenseeId,
+  existingLicenseeIds,
   licenseeIds,
 }: {
   existingLicenseeId?: string | null;
+  existingLicenseeIds?: string[];
   licenseeIds: string[];
 }) => {
   const normalizedLicenseeIds = parseWholesaleLicenseeIds(licenseeIds.join('\n'));
+  const normalizedExistingLicenseeIds = parseWholesaleLicenseeIds((existingLicenseeIds ?? []).join('\n'));
+  const newlyEnteredLicenseeIds =
+    normalizedExistingLicenseeIds.length > 0
+      ? normalizedLicenseeIds.filter((licenseeId) => !normalizedExistingLicenseeIds.includes(licenseeId))
+      : [];
 
   if (!isGeneratedWholesaleLicenseeId(existingLicenseeId) && !isGeneratedWholesaleLicenseeId(normalizedLicenseeIds[0])) {
-    return normalizedLicenseeIds;
+    return Array.from(new Set([...newlyEnteredLicenseeIds, ...normalizedLicenseeIds]));
   }
 
-  return [
+  return Array.from(new Set([
+    ...newlyEnteredLicenseeIds,
     ...normalizedLicenseeIds.filter((licenseeId) => !isGeneratedWholesaleLicenseeId(licenseeId)),
     ...normalizedLicenseeIds.filter((licenseeId) => isGeneratedWholesaleLicenseeId(licenseeId)),
-  ];
+  ]));
+};
+
+export const wholesaleLicenseeIdListsMatch = (
+  leftLicenseeIds: string[],
+  rightLicenseeIds: string[],
+) => {
+  const normalizedLeftLicenseeIds = parseWholesaleLicenseeIds(leftLicenseeIds.join('\n'));
+  const normalizedRightLicenseeIds = parseWholesaleLicenseeIds(rightLicenseeIds.join('\n'));
+
+  return (
+    normalizedLeftLicenseeIds.length === normalizedRightLicenseeIds.length &&
+    normalizedLeftLicenseeIds.every((licenseeId, index) => licenseeId === normalizedRightLicenseeIds[index])
+  );
 };
 
 export const moveWholesaleLicenseeIdToPrimary = (
@@ -293,12 +314,7 @@ export function mergeWholesaleEditableValuesWithOfficialDefaults({
       officialValue: officialValues.districtId,
       submittedValue: submittedValues.districtId,
     }),
-    name:
-      chooseSubmittedChangeOrOfficialDefault({
-        existingValue: existingValues.name,
-        officialValue: officialValues.name,
-        submittedValue: submittedValues.name,
-      }) ?? submittedValues.name,
+    name: submittedValues.name,
     ownership: chooseSubmittedChangeOrOfficialDefault({
       existingValue: existingValues.ownership,
       officialValue: officialValues.ownership,

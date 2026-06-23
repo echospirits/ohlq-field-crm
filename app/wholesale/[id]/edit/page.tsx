@@ -20,6 +20,7 @@ import {
   parseWholesaleLicenseeIds,
   syncWholesaleAccountLicenseeIds,
   type WholesaleAccountEditableValues,
+  wholesaleLicenseeIdListsMatch,
 } from '../../../../lib/wholesaleAccounts';
 
 const toOptional = (value: FormDataEntryValue | null | undefined) => {
@@ -29,12 +30,18 @@ const toOptional = (value: FormDataEntryValue | null | undefined) => {
 
 async function findOfficialWholesaleAccountByLicenseeIds({
   existingLicenseeId,
+  existingLicenseeIds,
   licenseeIds,
 }: {
   existingLicenseeId: string | null;
+  existingLicenseeIds: string[];
   licenseeIds: string[];
 }) {
-  const lookupLicenseeIds = getWholesaleOfficialLookupLicenseeIds({ existingLicenseeId, licenseeIds });
+  const lookupLicenseeIds = getWholesaleOfficialLookupLicenseeIds({
+    existingLicenseeId,
+    existingLicenseeIds,
+    licenseeIds,
+  });
 
   for (const lookupLicenseeId of lookupLicenseeIds) {
     const officialAccount = await prisma.account.findFirst({
@@ -110,10 +117,15 @@ async function updateWholesaleAccount(formData: FormData) {
     notFound();
   }
 
-  const officialAccount = await findOfficialWholesaleAccountByLicenseeIds({
-    existingLicenseeId: existingAccount.licenseeId,
-    licenseeIds: submittedLicenseeIds,
-  });
+  const existingLicenseeIds = getWholesaleLicenseeIdValues(existingAccount);
+  const licenseeIdsChanged = !wholesaleLicenseeIdListsMatch(existingLicenseeIds, submittedLicenseeIds);
+  const officialAccount = licenseeIdsChanged
+    ? await findOfficialWholesaleAccountByLicenseeIds({
+        existingLicenseeId: existingAccount.licenseeId,
+        existingLicenseeIds,
+        licenseeIds: submittedLicenseeIds,
+      })
+    : null;
   const officialLicenseeId = normalizeWholesaleLicenseeId(officialAccount?.licenseeId);
   const shouldPromoteOfficialLicenseeId =
     isGeneratedWholesaleLicenseeId(existingAccount.licenseeId) || isGeneratedWholesaleLicenseeId(submittedLicenseeId);
@@ -170,7 +182,7 @@ async function updateWholesaleAccount(formData: FormData) {
     zip: existingAccount.zip,
   };
   const accountValues =
-    officialAccount && licenseeIdChanged
+    officialAccount && licenseeIdsChanged
       ? mergeWholesaleEditableValuesWithOfficialDefaults({
           existingValues,
           officialValues: getWholesaleEditableValuesFromOfficialAccount(officialAccount),
@@ -184,7 +196,7 @@ async function updateWholesaleAccount(formData: FormData) {
       data: {
         licenseeId,
         isActive,
-        officialAccountId: officialAccount?.id ?? (licenseeIdChanged ? null : existingAccount.officialAccountId),
+        officialAccountId: officialAccount?.id ?? (licenseeIdsChanged ? null : existingAccount.officialAccountId),
         name: accountValues.name,
         agencyId: accountValues.agencyId,
         ownership: accountValues.ownership,
