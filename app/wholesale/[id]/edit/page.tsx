@@ -8,11 +8,14 @@ import { AccountType } from '@prisma/client';
 import { requireUser } from '../../../../lib/auth';
 import { prisma } from '../../../../lib/prisma';
 import {
+  getWholesaleOfficialLookupLicenseeIds,
   getPrimaryWholesaleLicenseeId,
   getWholesaleEditableValuesFromOfficialAccount,
   getWholesaleLicenseeIdConflictWhere,
   getWholesaleLicenseeIdValues,
+  isGeneratedWholesaleLicenseeId,
   mergeWholesaleEditableValuesWithOfficialDefaults,
+  moveWholesaleLicenseeIdToPrimary,
   normalizeWholesaleLicenseeId,
   parseWholesaleLicenseeIds,
   syncWholesaleAccountLicenseeIds,
@@ -24,20 +27,61 @@ const toOptional = (value: FormDataEntryValue | null | undefined) => {
   return trimmed.length > 0 ? trimmed : null;
 };
 
+async function findOfficialWholesaleAccountByLicenseeIds({
+  existingLicenseeId,
+  licenseeIds,
+}: {
+  existingLicenseeId: string | null;
+  licenseeIds: string[];
+}) {
+  const lookupLicenseeIds = getWholesaleOfficialLookupLicenseeIds({ existingLicenseeId, licenseeIds });
+
+  for (const lookupLicenseeId of lookupLicenseeIds) {
+    const officialAccount = await prisma.account.findFirst({
+      where: {
+        licenseeId: { equals: lookupLicenseeId, mode: 'insensitive' },
+        type: AccountType.BAR_RESTAURANT,
+      },
+      select: {
+        address: true,
+        agencyRefId: true,
+        city: true,
+        county: true,
+        deliveryDay: true,
+        districtId: true,
+        id: true,
+        licenseeId: true,
+        name: true,
+        officialWholesale: { select: { id: true } },
+        ownership: true,
+        phone: true,
+        state: true,
+        zip: true,
+      },
+    });
+
+    if (officialAccount) {
+      return officialAccount;
+    }
+  }
+
+  return null;
+}
+
 async function updateWholesaleAccount(formData: FormData) {
   'use server';
 
   await requireUser();
 
   const id = toOptional(formData.get('id'));
-  const licenseeIds = parseWholesaleLicenseeIds(
+  const submittedLicenseeIds = parseWholesaleLicenseeIds(
     String(formData.get('licenseeIds') ?? formData.get('licenseeId') ?? ''),
   );
-  const licenseeId = getPrimaryWholesaleLicenseeId(licenseeIds);
+  const submittedLicenseeId = getPrimaryWholesaleLicenseeId(submittedLicenseeIds);
   const name = toOptional(formData.get('name'));
   const isActive = formData.get('isActive') === 'true';
 
-  if (!id || !licenseeId || !name) {
+  if (!id || !submittedLicenseeId || !name) {
     redirect(id ? `/wholesale/${id}/edit?status=invalid` : '/wholesale?status=invalid');
   }
 
@@ -66,6 +110,23 @@ async function updateWholesaleAccount(formData: FormData) {
     notFound();
   }
 
+  const officialAccount = await findOfficialWholesaleAccountByLicenseeIds({
+    existingLicenseeId: existingAccount.licenseeId,
+    licenseeIds: submittedLicenseeIds,
+  });
+  const officialLicenseeId = normalizeWholesaleLicenseeId(officialAccount?.licenseeId);
+  const shouldPromoteOfficialLicenseeId =
+    isGeneratedWholesaleLicenseeId(existingAccount.licenseeId) || isGeneratedWholesaleLicenseeId(submittedLicenseeId);
+  const licenseeIds =
+    shouldPromoteOfficialLicenseeId && officialLicenseeId
+      ? moveWholesaleLicenseeIdToPrimary(submittedLicenseeIds, officialLicenseeId)
+      : submittedLicenseeIds;
+  const licenseeId = getPrimaryWholesaleLicenseeId(licenseeIds);
+
+  if (!licenseeId) {
+    redirect(`/wholesale/${id}/edit?status=invalid`);
+  }
+
   const accountWithLicenseeId = await prisma.wholesaleAccount.findFirst({
     where: getWholesaleLicenseeIdConflictWhere(licenseeIds, id),
     select: { id: true },
@@ -90,28 +151,6 @@ async function updateWholesaleAccount(formData: FormData) {
   };
   const normalizedExistingLicenseeId = normalizeWholesaleLicenseeId(existingAccount.licenseeId);
   const licenseeIdChanged = normalizedExistingLicenseeId !== licenseeId;
-  const officialAccount = await prisma.account.findFirst({
-    where: {
-      licenseeId: { equals: licenseeId, mode: 'insensitive' },
-      type: AccountType.BAR_RESTAURANT,
-    },
-    select: {
-      address: true,
-      agencyRefId: true,
-      city: true,
-      county: true,
-      deliveryDay: true,
-      districtId: true,
-      id: true,
-      licenseeId: true,
-      name: true,
-      officialWholesale: { select: { id: true } },
-      ownership: true,
-      phone: true,
-      state: true,
-      zip: true,
-    },
-  });
 
   if (officialAccount?.officialWholesale && officialAccount.officialWholesale.id !== id) {
     redirect(`/wholesale/${id}/edit?status=duplicate-official`);

@@ -5,7 +5,10 @@ import {
   getWholesaleCreateDataFromOfficialAccount,
   getWholesaleEditableValuesFromOfficialAccount,
   getWholesaleLicenseeIdValues,
+  getWholesaleOfficialLookupLicenseeIds,
+  isGeneratedWholesaleLicenseeId,
   mergeWholesaleEditableValuesWithOfficialDefaults,
+  moveWholesaleLicenseeIdToPrimary,
   normalizeWholesaleLicenseeId,
   parseWholesaleLicenseeIds,
 } from '../lib/wholesaleAccounts';
@@ -25,6 +28,45 @@ describe('parseWholesaleLicenseeIds', () => {
       '72045',
       'T40949003',
     ]);
+  });
+});
+
+describe('isGeneratedWholesaleLicenseeId', () => {
+  it('recognizes manual IDs created while logging a visit', () => {
+    assert.equal(isGeneratedWholesaleLicenseeId('manual-new-bar-mbv71lfl'), true);
+    assert.equal(isGeneratedWholesaleLicenseeId(' 00072045-1 '), false);
+    assert.equal(isGeneratedWholesaleLicenseeId(null), false);
+  });
+});
+
+describe('getWholesaleOfficialLookupLicenseeIds', () => {
+  it('prefers real IDs when replacing a generated primary ID', () => {
+    assert.deepEqual(
+      getWholesaleOfficialLookupLicenseeIds({
+        existingLicenseeId: 'MANUAL-OLD-BAR-MBV71LFL',
+        licenseeIds: ['MANUAL-OLD-BAR-MBV71LFL', '00072045-1', 'T40949003'],
+      }),
+      ['00072045-1', 'T40949003', 'MANUAL-OLD-BAR-MBV71LFL'],
+    );
+  });
+
+  it('preserves entry order for established non-generated accounts', () => {
+    assert.deepEqual(
+      getWholesaleOfficialLookupLicenseeIds({
+        existingLicenseeId: '00072045-1',
+        licenseeIds: ['00072045-1', 'T40949003'],
+      }),
+      ['00072045-1', 'T40949003'],
+    );
+  });
+});
+
+describe('moveWholesaleLicenseeIdToPrimary', () => {
+  it('promotes an official ID while preserving the remaining aliases', () => {
+    assert.deepEqual(
+      moveWholesaleLicenseeIdToPrimary(['MANUAL-OLD-BAR-MBV71LFL', '00072045-1', 'T40949003'], '00072045-1'),
+      ['00072045-1', 'MANUAL-OLD-BAR-MBV71LFL', 'T40949003'],
+    );
   });
 });
 
