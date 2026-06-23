@@ -11,6 +11,7 @@ import {
   moveWholesaleLicenseeIdToPrimary,
   normalizeWholesaleLicenseeId,
   parseWholesaleLicenseeIds,
+  wholesaleLicenseeIdListsMatch,
 } from '../lib/wholesaleAccounts';
 
 describe('normalizeWholesaleLicenseeId', () => {
@@ -44,9 +45,21 @@ describe('getWholesaleOfficialLookupLicenseeIds', () => {
     assert.deepEqual(
       getWholesaleOfficialLookupLicenseeIds({
         existingLicenseeId: 'MANUAL-OLD-BAR-MBV71LFL',
+        existingLicenseeIds: ['MANUAL-OLD-BAR-MBV71LFL'],
         licenseeIds: ['MANUAL-OLD-BAR-MBV71LFL', '00072045-1', 'T40949003'],
       }),
       ['00072045-1', 'T40949003', 'MANUAL-OLD-BAR-MBV71LFL'],
+    );
+  });
+
+  it('prefers newly entered real IDs for established accounts', () => {
+    assert.deepEqual(
+      getWholesaleOfficialLookupLicenseeIds({
+        existingLicenseeId: '00011111-1',
+        existingLicenseeIds: ['00011111-1'],
+        licenseeIds: ['00011111-1', '00072045-1'],
+      }),
+      ['00072045-1', '00011111-1'],
     );
   });
 
@@ -58,6 +71,14 @@ describe('getWholesaleOfficialLookupLicenseeIds', () => {
       }),
       ['00072045-1', 'T40949003'],
     );
+  });
+});
+
+describe('wholesaleLicenseeIdListsMatch', () => {
+  it('compares normalized Licensee ID lists in saved order', () => {
+    assert.equal(wholesaleLicenseeIdListsMatch(['00072045-1', 'T40949003'], [' 00072045-1 ', 't40949003']), true);
+    assert.equal(wholesaleLicenseeIdListsMatch(['00072045-1', 'T40949003'], ['T40949003', '00072045-1']), false);
+    assert.equal(wholesaleLicenseeIdListsMatch(['00072045-1'], ['00072045-1', 'T40949003']), false);
   });
 });
 
@@ -130,7 +151,7 @@ describe('mergeWholesaleEditableValuesWithOfficialDefaults', () => {
     zip: '44011',
   });
 
-  it('replaces unchanged generated fields with official account defaults', () => {
+  it('replaces unchanged generated location fields with official account defaults', () => {
     const merged = mergeWholesaleEditableValuesWithOfficialDefaults({
       existingValues: {
         address: null,
@@ -161,7 +182,7 @@ describe('mergeWholesaleEditableValuesWithOfficialDefaults', () => {
       },
     });
 
-    assert.equal(merged.name, '1 Stop Beverage Shop');
+    assert.equal(merged.name, 'Old generated wholesale account');
     assert.equal(merged.agencyId, '40949');
     assert.equal(merged.address, '37565 Colorado Av');
     assert.equal(merged.deliveryDay, 'Tuesday');
