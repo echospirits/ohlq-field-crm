@@ -26,6 +26,47 @@ export const parseWholesaleLicenseeIds = (value: string | null | undefined) => {
 
 export const getPrimaryWholesaleLicenseeId = (licenseeIds: string[]) => licenseeIds[0] ?? null;
 
+export const isGeneratedWholesaleLicenseeId = (value: string | null | undefined) => {
+  const normalized = normalizeWholesaleLicenseeId(value);
+  return normalized ? normalized.startsWith('MANUAL-') : false;
+};
+
+export const getWholesaleOfficialLookupLicenseeIds = ({
+  existingLicenseeId,
+  licenseeIds,
+}: {
+  existingLicenseeId?: string | null;
+  licenseeIds: string[];
+}) => {
+  const normalizedLicenseeIds = parseWholesaleLicenseeIds(licenseeIds.join('\n'));
+
+  if (!isGeneratedWholesaleLicenseeId(existingLicenseeId) && !isGeneratedWholesaleLicenseeId(normalizedLicenseeIds[0])) {
+    return normalizedLicenseeIds;
+  }
+
+  return [
+    ...normalizedLicenseeIds.filter((licenseeId) => !isGeneratedWholesaleLicenseeId(licenseeId)),
+    ...normalizedLicenseeIds.filter((licenseeId) => isGeneratedWholesaleLicenseeId(licenseeId)),
+  ];
+};
+
+export const moveWholesaleLicenseeIdToPrimary = (
+  licenseeIds: string[],
+  primaryLicenseeId: string | null | undefined,
+) => {
+  const normalizedPrimaryLicenseeId = normalizeWholesaleLicenseeId(primaryLicenseeId);
+  const normalizedLicenseeIds = parseWholesaleLicenseeIds(licenseeIds.join('\n'));
+
+  if (!normalizedPrimaryLicenseeId || !normalizedLicenseeIds.includes(normalizedPrimaryLicenseeId)) {
+    return normalizedLicenseeIds;
+  }
+
+  return [
+    normalizedPrimaryLicenseeId,
+    ...normalizedLicenseeIds.filter((licenseeId) => licenseeId !== normalizedPrimaryLicenseeId),
+  ];
+};
+
 export const getWholesaleLicenseeIdValues = (account: {
   licenseeId?: string | null;
   licenseeIds?: WholesaleLicenseeIdValue[] | null;
