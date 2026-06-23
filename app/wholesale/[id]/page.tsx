@@ -4,20 +4,18 @@ export const runtime = 'nodejs';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { MenuPlacementStatus, MenuPlacementType, Prisma } from '@prisma/client';
-import { getUserDisplayName, requireUser } from '../../../lib/auth';
-import { formatDateOnly, formatEasternDate, formatEasternDateInputValue } from '../../../lib/dateTime';
+import { requireUser } from '../../../lib/auth';
+import { formatEasternDate } from '../../../lib/dateTime';
 import { getWholesaleRecentPurchases } from '../../../lib/ohlqSalesData';
 import { prisma } from '../../../lib/prisma';
 import { formatWholesaleLicenseeIds, getWholesaleLicenseeIdValues } from '../../../lib/wholesaleAccounts';
 import { MenuPlacementPanel } from '../../menu-placements/MenuPlacementPanel';
-import { addRecipeSuggestion, removeRecipeSuggestion } from '../../recipes/actions';
 import { AccountTagPanel } from '../../tags/AccountTagPanel';
 import { TagBadges } from '../../tags/TagBadges';
 import { VisitActivityTable } from '../../visits/VisitActivityTable';
 import { WholesaleRecentPurchasesCard } from '../WholesaleRecentPurchasesCard';
 
 const formatVisitDate = (date: Date | null | undefined) => formatEasternDate(date) || 'No visits yet';
-const todayInputValue = () => formatEasternDateInputValue();
 const tagStatusMessages: Record<string, string> = {
   added: 'Tag added.',
   removed: 'Tag removed.',
@@ -29,11 +27,6 @@ const statusMessages: Record<string, string> = {
   'visit-logged': 'Visit logged.',
   'visit-logged-photo-upload-failed': 'Visit logged, but one or more photos could not be uploaded.',
   'visit-logged-worklist-completed': 'Visit logged and worklist item completed.',
-};
-const suggestionStatusMessages: Record<string, string> = {
-  added: 'Recipe suggestion saved.',
-  removed: 'Recipe suggestion removed.',
-  invalid: 'Select a valid recipe and wholesale account.',
 };
 const menuPlacementStatusMessages: Record<string, string> = {
   created: 'Menu placement saved.',
@@ -53,7 +46,6 @@ export default async function WholesaleActivityPage({
   searchParams?: Promise<{
     status?: string;
     tagStatus?: string;
-    suggestionStatus?: string;
     placementStatus?: string;
     placementQ?: string;
     placementStatusFilter?: string;
@@ -87,7 +79,7 @@ export default async function WholesaleActivityPage({
 
   const accountLicenseeIds = getWholesaleLicenseeIdValues(account);
 
-  const [visits, tags, recipeSuggestions, backingAccount, users, purchases] = await Promise.all([
+  const [visits, tags, backingAccount, users, purchases] = await Promise.all([
     prisma.loggedVisit.findMany({
       where: {
         wholesaleAccountId: id,
@@ -102,14 +94,6 @@ export default async function WholesaleActivityPage({
       orderBy: [{ visitAt: 'desc' }],
     }),
     prisma.tag.findMany({ orderBy: [{ name: 'asc' }] }),
-    prisma.recipeSuggestion.findMany({
-      where: { wholesaleAccountId: id },
-      include: {
-        recipe: true,
-        createdByUser: true,
-      },
-      orderBy: [{ suggestedAt: 'desc' }, { createdAt: 'desc' }],
-    }),
     prisma.account.findFirst({
       where: {
         OR: accountLicenseeIds.map((licenseeId) => ({
@@ -188,18 +172,6 @@ export default async function WholesaleActivityPage({
         })
       : [],
   ]);
-  const suggestedRecipeIds = recipeSuggestions.map((suggestion) => suggestion.recipeId);
-  const recipes = await prisma.recipe.findMany({
-    where: suggestedRecipeIds.length > 0 ? { id: { notIn: suggestedRecipeIds } } : undefined,
-    orderBy: [{ name: 'asc' }],
-    take: 500,
-    select: {
-      id: true,
-      name: true,
-      primarySpirit: true,
-      complexity: true,
-    },
-  });
 
   const contacts = await prisma.locationContact.findMany({
     where: { id: { in: visits.map((visit) => visit.contactId).filter(Boolean) as string[] } },
@@ -227,9 +199,6 @@ export default async function WholesaleActivityPage({
       {!account.isActive ? <p className="pill">Inactive</p> : null}
       {query.status ? <p className="toast-notice" role="status">{statusMessages[query.status] ?? query.status}</p> : null}
       {query.tagStatus ? <p className="pill">{tagStatusMessages[query.tagStatus] ?? query.tagStatus}</p> : null}
-      {query.suggestionStatus ? (
-        <p className="pill">{suggestionStatusMessages[query.suggestionStatus] ?? query.suggestionStatus}</p>
-      ) : null}
       {query.placementStatus ? (
         <p className="pill">{menuPlacementStatusMessages[query.placementStatus] ?? query.placementStatus}</p>
       ) : null}
@@ -291,85 +260,6 @@ export default async function WholesaleActivityPage({
       />
 
       <WholesaleRecentPurchasesCard purchases={purchases} />
-
-      <section className="dashboard-section">
-        <div className="section-heading">
-          <h2>Recipe Suggestions</h2>
-          <span className="pill">{recipeSuggestions.length}</span>
-        </div>
-
-        <div className="card admin-panel">
-          <form action={addRecipeSuggestion} className="inline-suggestion-form">
-            <input name="wholesaleAccountId" type="hidden" value={account.id} />
-            <input name="returnTo" type="hidden" value={`/wholesale/${account.id}`} />
-            <label>
-              Recipe
-              <select disabled={recipes.length === 0} name="recipeId" required>
-                <option value="">-- Select recipe --</option>
-                {recipes.map((recipeOption) => (
-                  <option key={recipeOption.id} value={recipeOption.id}>
-                    {recipeOption.name}
-                    {recipeOption.primarySpirit ? ` / ${recipeOption.primarySpirit}` : ''}
-                    {recipeOption.complexity ? ` / ${recipeOption.complexity}` : ''}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Date suggested
-              <input name="suggestedAt" type="date" defaultValue={todayInputValue()} />
-            </label>
-            <label>
-              Note
-              <input name="note" placeholder="Optional note" />
-            </label>
-            <button disabled={recipes.length === 0} type="submit">
-              Save suggestion
-            </button>
-          </form>
-        </div>
-
-        <table className="responsive-table">
-          <thead>
-            <tr>
-              <th>Recipe</th>
-              <th>Primary Spirit</th>
-              <th>Date Suggested</th>
-              <th>Note</th>
-              <th>Added By</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {recipeSuggestions.map((suggestion) => (
-              <tr key={suggestion.id}>
-                <td data-label="Recipe">
-                  <Link className="table-link" href={`/recipes/${suggestion.recipe.id}`}>
-                    {suggestion.recipe.name}
-                  </Link>
-                </td>
-                <td data-label="Primary Spirit">{suggestion.recipe.primarySpirit}</td>
-                <td data-label="Date Suggested">{formatDateOnly(suggestion.suggestedAt)}</td>
-                <td data-label="Note">{suggestion.note}</td>
-                <td data-label="Added By">
-                  {suggestion.createdByUser ? getUserDisplayName(suggestion.createdByUser) : 'Unknown user'}
-                </td>
-                <td data-label="Action">
-                  <form action={removeRecipeSuggestion}>
-                    <input name="id" type="hidden" value={suggestion.id} />
-                    <input name="recipeId" type="hidden" value={suggestion.recipe.id} />
-                    <input name="wholesaleAccountId" type="hidden" value={account.id} />
-                    <input name="returnTo" type="hidden" value={`/wholesale/${account.id}`} />
-                    <button className="secondary compact-btn" type="submit">
-                      Remove
-                    </button>
-                  </form>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
 
       <section className="dashboard-section">
         <div className="section-heading">

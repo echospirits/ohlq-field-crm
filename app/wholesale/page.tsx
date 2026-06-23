@@ -138,8 +138,6 @@ const wholesaleSearchWhere = (q: string): Prisma.WholesaleAccountWhereInput => (
     { address: { contains: q, mode: 'insensitive' } },
     { phone: { contains: q, mode: 'insensitive' } },
     { tags: { some: { tag: { name: { contains: q, mode: 'insensitive' } } } } },
-    { recipeSuggestions: { some: { recipe: { name: { contains: q, mode: 'insensitive' } } } } },
-    { recipeSuggestions: { some: { recipe: { primarySpirit: { contains: q, mode: 'insensitive' } } } } },
     { menuPlacements: { some: { product: { contains: q, mode: 'insensitive' } } } },
     { menuPlacements: { some: { menuItemName: { contains: q, mode: 'insensitive' } } } },
   ],
@@ -186,7 +184,7 @@ export default async function WholesalePage({
           orderBy: { createdAt: 'desc' },
         },
         _count: {
-          select: { menuPlacements: true, recipeSuggestions: true },
+          select: { menuPlacements: true },
         },
       },
       orderBy: [{ name: 'asc' }, { licenseeId: 'asc' }],
@@ -273,7 +271,7 @@ export default async function WholesalePage({
       <p className="muted">Active accounts by default. Search also checks inactive official OHLQ records.</p>
 
       <LiveFilterForm className="filter-form narrow-filter" label="Filter wholesale accounts">
-        <input name="q" defaultValue={q} placeholder="Filter name, licensee ID, recipe, menu placement, phone" />
+        <input name="q" defaultValue={q} placeholder="Filter name, licensee ID, menu placement, phone" />
       </LiveFilterForm>
       {params.status === 'saved' ? <p className="pill">Wholesale account saved.</p> : null}
       {params.status === 'invalid' ? <p className="pill">Name and at least one Licensee ID are required.</p> : null}
@@ -334,7 +332,6 @@ export default async function WholesalePage({
             <th>Phone</th>
             <th>Tags</th>
             <th>Menu Placements</th>
-            <th>Recipe Suggestions</th>
             <th>Logged Visits</th>
             <th>Most Recent Visit</th>
           </tr>
@@ -367,7 +364,6 @@ export default async function WholesalePage({
                   <TagBadges tags={account.tags.map((assignment) => assignment.tag)} />
                 </td>
                 <td data-label="Menu Placements">{account._count.menuPlacements}</td>
-                <td data-label="Recipe Suggestions">{account._count.recipeSuggestions}</td>
                 <td data-label="Logged Visits">{stats.count}</td>
                 <td data-label="Most Recent Visit">{formatEasternDate(stats.lastVisitAt)}</td>
               </tr>
@@ -404,7 +400,6 @@ export default async function WholesalePage({
                 <span className="muted">Activate to tag</span>
               </td>
               <td data-label="Menu Placements">0</td>
-              <td data-label="Recipe Suggestions">0</td>
               <td data-label="Logged Visits">0</td>
               <td data-label="Most Recent Visit">{formatEasternDate(null)}</td>
             </tr>

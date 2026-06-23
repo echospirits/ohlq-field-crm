@@ -167,7 +167,6 @@ async function updateWholesaleAccount(formData: FormData) {
   revalidatePath('/visits/new');
   revalidatePath('/alerts');
   revalidatePath('/my-week');
-  revalidatePath('/recipes');
   redirect(`/wholesale/${id}?status=updated`);
 }
 
