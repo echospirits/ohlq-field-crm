@@ -17,7 +17,6 @@ const fieldNavItems: NavItem[] = [
 ];
 
 const secondaryNavItems: NavItem[] = [
-  { href: '/recipes', label: 'Recipes' },
   { href: '/tags', label: 'Tags' },
   { href: '/visits', label: 'Visits' },
   { href: '/my-week', label: 'My Week' },

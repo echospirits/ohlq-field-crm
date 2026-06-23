@@ -378,10 +378,6 @@ export default async function Dashboard() {
           <strong>Find wholesale</strong>
           <span>Search or create</span>
         </Link>
-        <Link className="quick-action-card" href="/recipes">
-          <strong>Recipe database</strong>
-          <span>Search and suggest</span>
-        </Link>
       </section>
 
       <div className="grid">

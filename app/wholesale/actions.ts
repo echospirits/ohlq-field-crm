@@ -22,7 +22,6 @@ const revalidateWholesalePaths = (accountId?: string) => {
   revalidatePath('/wholesale');
   revalidatePath('/visits/new');
   revalidatePath('/alerts');
-  revalidatePath('/recipes');
   if (accountId) revalidatePath(`/wholesale/${accountId}`);
 };
 
