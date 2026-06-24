@@ -14,6 +14,7 @@ describe('OHLQ wholesale licensee matching', () => {
     assert.equal(normalizeOhlqLicenseeMatchKey('00072045-1'), '72045');
     assert.equal(normalizeOhlqLicenseeMatchKey('72045'), '72045');
     assert.deepEqual(getOhlqLicenseeMatchKeys('00072045-2'), ['00072045-2', '72045']);
+    assert.deepEqual(getOhlqLicenseeMatchKeys('98185250010'), ['98185250010', '9818525']);
   });
 
   it('normalizes common address spelling differences for official account matching', () => {
@@ -63,6 +64,36 @@ describe('OHLQ wholesale licensee matching', () => {
     assert.equal(lookup.permitNumbers.has('72045'), true);
     assert.equal(lookup.permitNumbers.has('00072045-1'), true);
     assert.equal(salesPermitMatchesLookup('00072045-2', lookup), true);
+  });
+
+  it('does not add same-address official IDs when an address has too many licensees', async () => {
+    const db = {
+      account: {
+        findMany: async () =>
+          Array.from({ length: 13 }, (_, index) => ({
+            address: '492 Armstrong St',
+            city: 'Columbus',
+            id: `official-${index}`,
+            licenseeId: `AGENCY-${index}`,
+            state: 'OH',
+            zip: '43215',
+          })),
+      },
+    } as unknown as PrismaClient;
+
+    const lookup = await resolveOhlqWholesaleSalesLookup({
+      account: {
+        address: '492 Armstrong Street',
+        city: 'Columbus',
+        licenseeId: '98185250010',
+        state: 'OH',
+        zip: '43215',
+      },
+      db,
+    });
+
+    assert.equal(lookup.permitNumbers.has('98185250010'), true);
+    assert.equal(lookup.permitNumbers.has('AGENCY-0'), false);
   });
 
   it('uses explicit wholesale account licensee aliases in the sales lookup', async () => {

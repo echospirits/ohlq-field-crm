@@ -1,4 +1,5 @@
 import { AccountType, type Account, type Prisma } from '@prisma/client';
+import { areOhlqAddressesSame, getOhlqLicenseeMatchKeys, normalizeOhlqId } from './ohlqWholesaleMatching';
 
 export const normalizeWholesaleLicenseeId = (value: string | null | undefined) => {
   const normalized = String(value ?? '').trim().toUpperCase();
@@ -56,6 +57,112 @@ export const getWholesaleOfficialLookupLicenseeIds = ({
     ...normalizedLicenseeIds.filter((licenseeId) => !isGeneratedWholesaleLicenseeId(licenseeId)),
     ...normalizedLicenseeIds.filter((licenseeId) => isGeneratedWholesaleLicenseeId(licenseeId)),
   ]));
+};
+
+export const getWholesaleOfficialAccountSearchConditions = (licenseeIds: string[]): Prisma.AccountWhereInput[] => {
+  const normalizedLicenseeIds = parseWholesaleLicenseeIds(licenseeIds.join('\n'));
+  const matchKeys = Array.from(new Set(normalizedLicenseeIds.flatMap(getOhlqLicenseeMatchKeys)));
+  const stemKeys = matchKeys.filter((key) => key.length >= 4);
+
+  return [
+    ...Array.from(new Set([...normalizedLicenseeIds, ...matchKeys])).map((licenseeId) => ({
+      licenseeId: { equals: licenseeId, mode: 'insensitive' as const },
+    })),
+    ...stemKeys.map((key) => ({
+      licenseeId: { startsWith: `${key}-`, mode: 'insensitive' as const },
+    })),
+  ];
+};
+
+type OfficialWholesaleLookupCandidate = OfficialWholesaleSource & {
+  officialWholesale?: { id: string } | null;
+};
+
+type LiquorAgencyIdentity = {
+  address: string | null;
+  agencyId: string | null;
+  city: string | null;
+  state: string | null;
+  zip: string | null;
+};
+
+const getOfficialCandidateMatch = (candidate: OfficialWholesaleLookupCandidate, lookupLicenseeIds: string[]) => {
+  const candidateLicenseeId = normalizeOhlqId(candidate.licenseeId);
+  const candidateKeys = getOhlqLicenseeMatchKeys(candidate.licenseeId);
+  const candidateLocationSuffix = candidateLicenseeId?.match(/-(\d+)$/)?.[1] ?? null;
+
+  for (const [index, lookupLicenseeId] of lookupLicenseeIds.entries()) {
+    const lookupId = normalizeOhlqId(lookupLicenseeId);
+    const lookupKeys = getOhlqLicenseeMatchKeys(lookupLicenseeId);
+    const compactLookupId = lookupId?.replace(/[^A-Z0-9]/g, '') ?? null;
+    const lookupLocationSuffix =
+      compactLookupId && /^\d+$/.test(compactLookupId) && compactLookupId.length >= 10 && /^00\d{2}$/.test(compactLookupId.slice(-4))
+        ? compactLookupId.slice(-4)
+        : null;
+    const exact = Boolean(candidateLicenseeId && lookupId && candidateLicenseeId === lookupId);
+    const keyOverlap = candidateKeys.some((key) => lookupKeys.includes(key));
+    const locationSuffix = Boolean(
+      lookupLocationSuffix && candidateLocationSuffix && lookupLocationSuffix === candidateLocationSuffix,
+    );
+
+    if (exact || keyOverlap) {
+      return { exact, index, keyOverlap, locationSuffix };
+    }
+  }
+
+  return null;
+};
+
+const isLiquorAgencyAddress = (
+  candidate: OfficialWholesaleLookupCandidate,
+  liquorAgencies: LiquorAgencyIdentity[],
+) =>
+  liquorAgencies.some(
+    (agency) =>
+      agency.agencyId &&
+      candidate.agencyRefId === agency.agencyId &&
+      areOhlqAddressesSame(candidate, agency),
+  );
+
+export const chooseWholesaleOfficialAccountCandidate = ({
+  candidates,
+  liquorAgencies,
+  lookupLicenseeIds,
+}: {
+  candidates: OfficialWholesaleLookupCandidate[];
+  liquorAgencies: LiquorAgencyIdentity[];
+  lookupLicenseeIds: string[];
+}) => {
+  const scoredCandidates = candidates
+    .map((candidate) => {
+      const match = getOfficialCandidateMatch(candidate, lookupLicenseeIds);
+      if (!match) return null;
+
+      const normalizedCandidateLicenseeId = normalizeOhlqId(candidate.licenseeId);
+      const hasLocationSuffix = Boolean(normalizedCandidateLicenseeId?.match(/-\d+$/));
+      const agencyAddress = isLiquorAgencyAddress(candidate, liquorAgencies);
+      const placeholderName = candidate.name.toUpperCase().startsWith('LICENSEE ');
+      const score =
+        1000 -
+        match.index * 20 +
+        (match.exact ? 120 : 0) +
+        (match.locationSuffix ? 100 : 0) +
+        (match.keyOverlap && hasLocationSuffix ? 80 : 0) -
+        (agencyAddress ? 200 : 0) -
+        (placeholderName ? 5 : 0);
+
+      return { candidate, score };
+    })
+    .filter(Boolean) as Array<{ candidate: OfficialWholesaleLookupCandidate; score: number }>;
+
+  scoredCandidates.sort(
+    (left, right) =>
+      right.score - left.score ||
+      (left.candidate.licenseeId ?? '').localeCompare(right.candidate.licenseeId ?? '') ||
+      left.candidate.id.localeCompare(right.candidate.id),
+  );
+
+  return scoredCandidates[0]?.candidate ?? null;
 };
 
 export const wholesaleLicenseeIdListsMatch = (

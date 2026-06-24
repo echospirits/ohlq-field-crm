@@ -1,6 +1,7 @@
 import { AccountType, type Prisma, type PrismaClient } from '@prisma/client';
 
 const minimumStemSearchLength = 4;
+const maximumAddressAliasCandidates = 12;
 
 export type OhlqWholesaleLookupAccount = {
   address?: string | null;
@@ -137,7 +138,13 @@ export const normalizeOhlqLicenseeMatchKey = (value: string | null | undefined) 
 export const getOhlqLicenseeMatchKeys = (value: string | null | undefined) => {
   const normalized = normalizeOhlqId(value);
   const canonical = normalizeOhlqLicenseeMatchKey(value);
-  return Array.from(new Set([normalized, canonical].filter(Boolean) as string[]));
+  const compact = normalized?.replace(/[^A-Z0-9]/g, '') ?? null;
+  const compactLocationStem =
+    compact && /^\d+$/.test(compact) && compact.length >= 10 && /^00\d{2}$/.test(compact.slice(-4))
+      ? compact.slice(0, -4).replace(/^0+/, '') || null
+      : null;
+
+  return Array.from(new Set([normalized, canonical, compactLocationStem].filter(Boolean) as string[]));
 };
 
 export const licenseeIdsMatch = (left: string | null | undefined, right: string | null | undefined) => {
@@ -241,6 +248,10 @@ export async function resolveOhlqWholesaleSalesLookup({
   accountLicenseeIds.forEach((licenseeId) => addLicenseeIdToLookup(lookup, licenseeId));
 
   const officialCandidates = await getOfficialAccountCandidates({ account, db });
+  const addressMatchedCandidates = officialCandidates.filter((candidate) => areOhlqAddressesSame(account, candidate));
+  const shouldUseAddressAliases =
+    addressMatchedCandidates.length > 0 && addressMatchedCandidates.length <= maximumAddressAliasCandidates;
+
   officialCandidates.forEach((candidate) => {
     const candidateMatchesLicensee = getOhlqLicenseeMatchKeys(candidate.licenseeId).some((key) =>
       accountLicenseeMatchKeys.has(key),
@@ -249,7 +260,7 @@ export async function resolveOhlqWholesaleSalesLookup({
     if (
       candidate.id === account.officialAccountId ||
       candidateMatchesLicensee ||
-      areOhlqAddressesSame(account, candidate)
+      (shouldUseAddressAliases && areOhlqAddressesSame(account, candidate))
     ) {
       addLicenseeIdToLookup(lookup, candidate.licenseeId);
     }
