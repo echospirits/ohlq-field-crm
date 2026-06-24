@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
+  chooseWholesaleOfficialAccountCandidate,
   getLegacyAccountCreateDataFromWholesaleAccount,
   getWholesaleCreateDataFromOfficialAccount,
   getWholesaleEditableValuesFromOfficialAccount,
@@ -71,6 +72,68 @@ describe('getWholesaleOfficialLookupLicenseeIds', () => {
       }),
       ['00072045-1', 'T40949003'],
     );
+  });
+});
+
+describe('chooseWholesaleOfficialAccountCandidate', () => {
+  const baseCandidate = {
+    county: null,
+    deliveryDay: null,
+    districtId: null,
+    ownership: null,
+    phone: null,
+  };
+
+  it('prefers a stem-matched location account over an exact liquor-agency row', () => {
+    const selected = chooseWholesaleOfficialAccountCandidate({
+      candidates: [
+        {
+          ...baseCandidate,
+          address: '492 ARMSTRONG ST',
+          agencyRefId: '30748',
+          city: 'Columbus',
+          id: 'arena-official',
+          licenseeId: '98185250010',
+          name: 'ARENA WINE AND SPIRITS',
+          state: 'OH',
+          zip: '43215',
+        },
+        {
+          ...baseCandidate,
+          address: '1475 XENIA AVE',
+          agencyRefId: '30748',
+          city: 'YELLOW SPRINGS',
+          id: 'yellow-springs-home-official',
+          licenseeId: '9818525-0005',
+          name: 'Licensee 9818525-0005',
+          state: 'OH',
+          zip: '45387',
+        },
+        {
+          ...baseCandidate,
+          address: '2855 INDIANOLA AVE',
+          agencyRefId: '30748',
+          city: 'COLUMBUS',
+          id: 'yellow-springs-official',
+          licenseeId: '9818525-0010',
+          name: 'Licensee 9818525-0010',
+          state: 'OH',
+          zip: '43202',
+        },
+      ],
+      liquorAgencies: [
+        {
+          address: '492 Armstrong Street',
+          agencyId: '30748',
+          city: 'Columbus',
+          state: 'OH',
+          zip: '43215',
+        },
+      ],
+      lookupLicenseeIds: ['98185250010', '09818525-3'],
+    });
+
+    assert.equal(selected?.id, 'yellow-springs-official');
   });
 });
 

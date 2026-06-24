@@ -8,6 +8,8 @@ import { AccountType } from '@prisma/client';
 import { requireUser } from '../../../../lib/auth';
 import { prisma } from '../../../../lib/prisma';
 import {
+  chooseWholesaleOfficialAccountCandidate,
+  getWholesaleOfficialAccountSearchConditions,
   getWholesaleOfficialLookupLicenseeIds,
   getPrimaryWholesaleLicenseeId,
   getWholesaleEditableValuesFromOfficialAccount,
@@ -42,37 +44,61 @@ async function findOfficialWholesaleAccountByLicenseeIds({
     existingLicenseeIds,
     licenseeIds,
   });
+  const searchConditions = getWholesaleOfficialAccountSearchConditions(lookupLicenseeIds);
 
-  for (const lookupLicenseeId of lookupLicenseeIds) {
-    const officialAccount = await prisma.account.findFirst({
-      where: {
-        licenseeId: { equals: lookupLicenseeId, mode: 'insensitive' },
-        type: AccountType.BAR_RESTAURANT,
-      },
-      select: {
-        address: true,
-        agencyRefId: true,
-        city: true,
-        county: true,
-        deliveryDay: true,
-        districtId: true,
-        id: true,
-        licenseeId: true,
-        name: true,
-        officialWholesale: { select: { id: true } },
-        ownership: true,
-        phone: true,
-        state: true,
-        zip: true,
-      },
-    });
-
-    if (officialAccount) {
-      return officialAccount;
-    }
+  if (searchConditions.length === 0) {
+    return null;
   }
 
-  return null;
+  const candidates = await prisma.account.findMany({
+    where: {
+      type: AccountType.BAR_RESTAURANT,
+      OR: searchConditions,
+    },
+    select: {
+      address: true,
+      agencyRefId: true,
+      city: true,
+      county: true,
+      deliveryDay: true,
+      districtId: true,
+      id: true,
+      licenseeId: true,
+      name: true,
+      officialWholesale: { select: { id: true } },
+      ownership: true,
+      phone: true,
+      state: true,
+      zip: true,
+    },
+    take: 250,
+  });
+
+  const agencyRefIds = Array.from(
+    new Set(candidates.map((candidate) => candidate.agencyRefId).filter(Boolean) as string[]),
+  );
+  const liquorAgencies =
+    agencyRefIds.length > 0
+      ? await prisma.account.findMany({
+          where: {
+            agencyId: { in: agencyRefIds },
+            type: AccountType.LIQUOR_AGENCY,
+          },
+          select: {
+            address: true,
+            agencyId: true,
+            city: true,
+            state: true,
+            zip: true,
+          },
+        })
+      : [];
+
+  return chooseWholesaleOfficialAccountCandidate({
+    candidates,
+    liquorAgencies,
+    lookupLicenseeIds,
+  });
 }
 
 async function updateWholesaleAccount(formData: FormData) {
