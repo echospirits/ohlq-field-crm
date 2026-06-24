@@ -145,7 +145,8 @@ async function updateWholesaleAccount(formData: FormData) {
 
   const existingLicenseeIds = getWholesaleLicenseeIdValues(existingAccount);
   const licenseeIdsChanged = !wholesaleLicenseeIdListsMatch(existingLicenseeIds, submittedLicenseeIds);
-  const officialAccount = licenseeIdsChanged
+  const shouldRefreshOfficialAccount = licenseeIdsChanged || Boolean(existingAccount.officialAccountId);
+  const officialAccount = shouldRefreshOfficialAccount
     ? await findOfficialWholesaleAccountByLicenseeIds({
         existingLicenseeId: existingAccount.licenseeId,
         existingLicenseeIds,
@@ -189,6 +190,7 @@ async function updateWholesaleAccount(formData: FormData) {
   };
   const normalizedExistingLicenseeId = normalizeWholesaleLicenseeId(existingAccount.licenseeId);
   const licenseeIdChanged = normalizedExistingLicenseeId !== licenseeId;
+  const officialAccountChanged = Boolean(officialAccount && officialAccount.id !== existingAccount.officialAccountId);
 
   if (officialAccount?.officialWholesale && officialAccount.officialWholesale.id !== id) {
     redirect(`/wholesale/${id}/edit?status=duplicate-official`);
@@ -208,7 +210,7 @@ async function updateWholesaleAccount(formData: FormData) {
     zip: existingAccount.zip,
   };
   const accountValues =
-    officialAccount && licenseeIdsChanged
+    officialAccount && (licenseeIdsChanged || officialAccountChanged)
       ? mergeWholesaleEditableValuesWithOfficialDefaults({
           existingValues,
           officialValues: getWholesaleEditableValuesFromOfficialAccount(officialAccount),
