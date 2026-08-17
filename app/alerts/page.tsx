@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-import { Prisma, WorklistCategory, WorklistSource, WorklistStatus } from '@prisma/client';
+import { OpportunityStatus, Prisma, WorklistCategory, WorklistSource, WorklistStatus } from '@prisma/client';
 import { revalidatePath } from 'next/cache';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
@@ -207,6 +207,7 @@ export default async function Alerts({
     q?: string;
     source?: string;
     status?: string;
+    view?: string;
   }>;
 }) {
   const currentUser = await requireUser();
@@ -216,6 +217,7 @@ export default async function Alerts({
   const statusFilter = params.status ?? 'ACTIVE';
   const categoryFilter = params.category ?? 'ALL';
   const sourceFilter = params.source ?? 'ALL';
+  const pursuingView = params.view === 'pursuing';
   const where: Prisma.WorklistItemWhereInput = {};
 
   if (statusFilter === 'ACTIVE') {
@@ -230,6 +232,10 @@ export default async function Alerts({
 
   if (sourceFilter !== 'ALL') {
     where.source = toWorklistSource(sourceFilter);
+  }
+
+  if (pursuingView) {
+    where.salesOpportunity = { status: OpportunityStatus.ACTIONED };
   }
 
   if (q) {
@@ -306,7 +312,7 @@ export default async function Alerts({
           </p>
         </div>
       </header>
-      <WorkViewNavigation active="all" />
+      <WorkViewNavigation active={pursuingView ? 'pursuing' : 'all'} />
 
       {params.created === '1' ? <p className="pill">Worklist item created.</p> : null}
       {params.created === 'invalid' ? <p className="pill">A title is required.</p> : null}
