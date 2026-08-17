@@ -32,7 +32,6 @@ export async function uploadAccountResearchCsv(formData: FormData) {
     } else {
       revalidatePath('/admin/account-research');
       revalidatePath('/opportunities');
-      revalidatePath('/targets');
       revalidatePath('/alerts');
       revalidatePath('/');
       redirectValues = { status: dryRun ? 'dry-run' : 'completed', rows: result.parsedRows, imported: result.importedRows };

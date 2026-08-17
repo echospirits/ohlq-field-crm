@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { it } from 'node:test';
-import { OpportunityStatus, Prisma, type PrismaClient } from '@prisma/client';
+import { OpportunityStatus, type PrismaClient } from '@prisma/client';
 import {
   ACCOUNT_RESEARCH_HEADERS,
   compareResearchCandidates,
@@ -11,10 +11,9 @@ import {
   validateAccountResearchRows,
 } from '../lib/accountResearch';
 
-const candidate = ({ name, status, rank, refreshedAt }: { name: string; status?: OpportunityStatus; rank?: number; refreshedAt?: Date }) => ({
+const candidate = ({ name, status, score = 50, refreshedAt }: { name: string; status?: OpportunityStatus; score?: number; refreshedAt?: Date }) => ({
   name,
-  opportunities: status ? [{ status }] : [],
-  targetProfile: { currentRank: rank ?? null, currentScore: new Prisma.Decimal(50) },
+  opportunities: status ? [{ status, productionScore: score }] : [],
   targetPublicResearch: refreshedAt ? { lastRefreshedAt: refreshedAt } : null,
 });
 
@@ -39,22 +38,22 @@ it('bounds account research export size', () => {
   assert.equal(normalizeResearchExportLimit('999'), 250);
 });
 
-it('prioritizes pursued accounts, then open opportunities, then target rank', () => {
+it('prioritizes pursued accounts, then open opportunities, then opportunity score', () => {
   const candidates = [
-    candidate({ name: 'Rank one', rank: 1 }),
-    candidate({ name: 'Open', status: OpportunityStatus.OPEN, rank: 100 }),
-    candidate({ name: 'Pursued', status: OpportunityStatus.ACTIONED, rank: 500 }),
+    candidate({ name: 'Medium open', status: OpportunityStatus.OPEN, score: 50 }),
+    candidate({ name: 'High open', status: OpportunityStatus.OPEN, score: 90 }),
+    candidate({ name: 'Pursued', status: OpportunityStatus.ACTIONED, score: 20 }),
   ].sort(compareResearchCandidates);
-  assert.deepEqual(candidates.map((item) => item.name), ['Pursued', 'Open', 'Rank one']);
+  assert.deepEqual(candidates.map((item) => item.name), ['Pursued', 'High open', 'Medium open']);
 });
 
 it('prioritizes never-researched and oldest accounts before workflow status', () => {
   const candidates = [
     candidate({ name: 'Fresh pursued', status: OpportunityStatus.ACTIONED, refreshedAt: new Date('2026-08-16') }),
-    candidate({ name: 'Old target', rank: 1, refreshedAt: new Date('2026-01-01') }),
-    candidate({ name: 'Never researched', rank: 500 }),
+    candidate({ name: 'Old opportunity', status: OpportunityStatus.OPEN, refreshedAt: new Date('2026-01-01') }),
+    candidate({ name: 'Never researched', status: OpportunityStatus.OPEN }),
   ].sort(compareResearchCandidates);
-  assert.deepEqual(candidates.map((item) => item.name), ['Never researched', 'Old target', 'Fresh pursued']);
+  assert.deepEqual(candidates.map((item) => item.name), ['Never researched', 'Old opportunity', 'Fresh pursued']);
 });
 
 it('makes pursued research due after 30 days and other research due after 90 days', () => {
@@ -68,7 +67,7 @@ it('makes pursued research due after 30 days and other research due after 90 day
 it('creates a research CSV with immutable account identity and blank output fields', () => {
   const csv = createAccountResearchCsv([{
     id: 'acct_1', name: 'Example Bar', licenseeId: 'LIC-1', address: '1 Main St', city: 'Columbus', state: 'OH', zip: '43215',
-    targetProfile: null, targetPublicResearch: null, opportunities: [],
+    targetPublicResearch: null, opportunities: [],
   }]);
   assert.match(csv, /wholesale_account_id,licensee_id,account_name/);
   assert.match(csv, /acct_1,LIC-1,Example Bar/);

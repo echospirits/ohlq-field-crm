@@ -12,6 +12,7 @@ import { AccountTagPanel } from '../../tags/AccountTagPanel';
 import { TagBadges } from '../../tags/TagBadges';
 import { VisitActivityTable } from '../../visits/VisitActivityTable';
 import { AccountWorkspaceNavigation } from '../../components/AccountWorkspaceNavigation';
+import { OpportunityAccountPanel } from '../../wholesale/OpportunityAccountPanel';
 
 const formatVisitDate = (date: Date | null | undefined) => formatEasternDate(date) || 'No visits yet';
 const tagStatusMessages: Record<string, string> = {
@@ -98,6 +99,7 @@ export default async function AgencyActivityPage({
       <AccountWorkspaceNavigation sections={[
         { href: '#overview', label: 'Overview' },
         { href: '#sales', label: 'Sales' },
+        { href: '#intelligence', label: 'Opportunities' },
         { href: '#activity', label: 'Activity' },
       ]} />
 
@@ -140,6 +142,10 @@ export default async function AgencyActivityPage({
 
       <div className="account-workspace-section" id="sales">
         <AgencyRecentSalesCard salesWindows={salesWindows} />
+      </div>
+
+      <div className="account-workspace-section" id="intelligence">
+        <OpportunityAccountPanel agencyId={agency.agencyId} />
       </div>
 
       <section className="dashboard-section account-workspace-section" id="activity">

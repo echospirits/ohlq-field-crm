@@ -13,7 +13,7 @@ test('desktop navigation keeps work and account areas intentionally grouped', ()
   );
   assert.deepEqual(
     getNavigationItems('accounts').map((item) => item.key),
-    ['accounts', 'agencies', 'wholesale', 'targets'],
+    ['accounts', 'agencies', 'wholesale'],
   );
 });
 

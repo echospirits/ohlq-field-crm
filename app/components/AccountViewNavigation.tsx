@@ -4,7 +4,6 @@ const accountViews = [
   { key: 'overview', href: '/accounts', label: 'Overview' },
   { key: 'agencies', href: '/agencies', label: 'Agencies' },
   { key: 'wholesale', href: '/wholesale', label: 'Wholesale' },
-  { key: 'targets', href: '/targets', label: 'Targets' },
   { key: 'tags', href: '/tags', label: 'Tags' },
 ] as const;
 

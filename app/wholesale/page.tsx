@@ -4,7 +4,7 @@ export const runtime = 'nodejs';
 import { revalidatePath } from 'next/cache';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { AccountType, Prisma } from '@prisma/client';
+import { AccountType, OpportunityStatus, Prisma } from '@prisma/client';
 import { requireUser } from '../../lib/auth';
 import { formatEasternDate } from '../../lib/dateTime';
 import { getGeocodeResetForAddressChange } from '../../lib/location/geocode';
@@ -35,9 +35,9 @@ type WholesaleSortKey =
   | 'address'
   | 'city'
   | 'mostRecentVisit'
-  | 'targetTier'
+  | 'opportunityPriority'
   | 'opportunityScore'
-  | 'targetRank';
+  | 'nextAction';
 
 type WholesalePageParams = {
   dir?: string;
@@ -59,9 +59,9 @@ type WholesaleTableRow = {
   mostRecentVisit: Date | null;
   name: string;
   nameHref: string | null;
+  nextAction: string | null;
+  opportunityPriority: string | null;
   opportunityScore: number | null;
-  targetRank: number | null;
-  targetTier: string | null;
 };
 
 const MAX_WHOLESALE_ACCOUNT_ROWS = 5000;
@@ -75,15 +75,14 @@ const wholesaleSortColumns: Array<{ key: WholesaleSortKey; label: string }> = [
   { key: 'address', label: 'Address' },
   { key: 'city', label: 'City' },
   { key: 'mostRecentVisit', label: 'Most Recent Visit' },
-  { key: 'targetTier', label: 'Target Tier' },
+  { key: 'opportunityPriority', label: 'Opportunity Priority' },
   { key: 'opportunityScore', label: 'Opportunity Score' },
-  { key: 'targetRank', label: 'Target Rank' },
+  { key: 'nextAction', label: 'Next Action' },
 ];
 
 const numericSortKeys = new Set<WholesaleSortKey>([
   'opportunityScore',
-  'targetRank',
-  'targetTier',
+  'opportunityPriority',
 ]);
 
 const descendingDefaultSortKeys = new Set<WholesaleSortKey>([
@@ -91,26 +90,15 @@ const descendingDefaultSortKeys = new Set<WholesaleSortKey>([
   'opportunityScore',
 ]);
 
-const targetTierRanks: Record<string, number> = {
-  A: 1,
-  B: 2,
-  C: 3,
-  VERIFY: 4,
-  REVIEW: 5,
-  'DO NOT TARGET': 6,
-  INTERNAL: 7,
+const opportunityPriorityRanks: Record<string, number> = {
+  HIGH: 1,
+  MEDIUM: 2,
+  LOW: 3,
 };
 
 const toOptional = (value: string | undefined) => {
   const trimmed = (value ?? '').trim();
   return trimmed.length > 0 ? trimmed : null;
-};
-
-const toNullableNumber = (value: unknown) => {
-  if (value === null || value === undefined) return null;
-
-  const number = Number(value);
-  return Number.isFinite(number) ? number : null;
 };
 
 const formatMetric = (value: number | null, suffix = '') => (value === null ? 'n/a' : `${value.toFixed(1)}${suffix}`);
@@ -243,10 +231,8 @@ const getSortNumberValue = (row: WholesaleTableRow, sortKey: WholesaleSortKey) =
   switch (sortKey) {
     case 'opportunityScore':
       return row.opportunityScore;
-    case 'targetRank':
-      return row.targetRank;
-    case 'targetTier':
-      return row.targetTier ? targetTierRanks[row.targetTier.toUpperCase()] ?? 99 : null;
+    case 'opportunityPriority':
+      return row.opportunityPriority ? opportunityPriorityRanks[row.opportunityPriority.toUpperCase()] ?? 99 : null;
     default:
       return null;
   }
@@ -266,6 +252,8 @@ const getSortTextValue = (row: WholesaleTableRow, sortKey: WholesaleSortKey) => 
       return row.licenseeIdsText;
     case 'name':
       return row.name;
+    case 'nextAction':
+      return row.nextAction;
     default:
       return null;
   }
@@ -406,10 +394,9 @@ const wholesaleSearchWhere = (q: string): Prisma.WholesaleAccountWhereInput => (
     { tags: { some: { tag: { name: { contains: q, mode: 'insensitive' } } } } },
     { menuPlacements: { some: { product: { contains: q, mode: 'insensitive' } } } },
     { menuPlacements: { some: { menuItemName: { contains: q, mode: 'insensitive' } } } },
-    { targetProfile: { is: { currentPriorityTier: { contains: q, mode: 'insensitive' } } } },
-    { targetProfile: { is: { primaryOpportunity: { contains: q, mode: 'insensitive' } } } },
-    { targetProfile: { is: { researchStatus: { contains: q, mode: 'insensitive' } } } },
-    { targetSkuOpportunities: { some: { category: { contains: q, mode: 'insensitive' } } } },
+    { opportunities: { some: { title: { contains: q, mode: 'insensitive' } } } },
+    { opportunities: { some: { recommendedAction: { contains: q, mode: 'insensitive' } } } },
+    { opportunities: { some: { targetCategory: { contains: q, mode: 'insensitive' } } } },
   ],
 });
 
@@ -508,7 +495,7 @@ export default async function WholesalePage({
     return licenseeId && !linkedLicenseeIds.has(licenseeId);
   });
   const accountIds = accounts.map((account) => account.id);
-  const [visitStats, targetProfiles] =
+  const [visitStats, opportunities] =
     accountIds.length > 0
       ? await Promise.all([
           prisma.loggedVisit.groupBy({
@@ -519,13 +506,17 @@ export default async function WholesalePage({
             },
             _max: { visitAt: true },
           }),
-          prisma.targetAccountProfile.findMany({
-            where: { wholesaleAccountId: { in: accountIds } },
+          prisma.salesOpportunity.findMany({
+            where: {
+              wholesaleAccountId: { in: accountIds },
+              status: { in: [OpportunityStatus.OPEN, OpportunityStatus.ACTIONED, OpportunityStatus.SNOOZED] },
+            },
+            orderBy: [{ productionScore: 'desc' }, { lastDetectedAt: 'desc' }],
             select: {
-              currentPriorityTier: true,
-              currentRank: true,
-              currentScore: true,
               wholesaleAccountId: true,
+              priorityBand: true,
+              productionScore: true,
+              recommendedAction: true,
             },
           }),
         ])
@@ -536,10 +527,13 @@ export default async function WholesalePage({
       stat._max.visitAt,
     ]),
   );
-  const targetProfileMap = new Map(targetProfiles.map((profile) => [profile.wholesaleAccountId, profile]));
+  const opportunityMap = new Map<string, (typeof opportunities)[number]>();
+  opportunities.forEach((opportunity) => {
+    if (!opportunityMap.has(opportunity.wholesaleAccountId)) opportunityMap.set(opportunity.wholesaleAccountId, opportunity);
+  });
   const activeRows: WholesaleTableRow[] = accounts.map((account) => {
     const lastVisitAt = visitStatMap[account.id] ?? null;
-    const profile = targetProfileMap.get(account.id) ?? null;
+    const opportunity = opportunityMap.get(account.id) ?? null;
 
     return {
       actionHref: `/visits/new?type=wholesale&wholesaleAccountId=${account.id}`,
@@ -553,9 +547,9 @@ export default async function WholesalePage({
       mostRecentVisit: lastVisitAt,
       name: account.name,
       nameHref: `/wholesale/${account.id}`,
-      opportunityScore: toNullableNumber(profile?.currentScore),
-      targetRank: profile?.currentRank ?? null,
-      targetTier: profile?.currentPriorityTier ?? null,
+      nextAction: opportunity?.recommendedAction ?? null,
+      opportunityPriority: opportunity?.priorityBand ?? null,
+      opportunityScore: opportunity?.productionScore ?? null,
     };
   });
   const officialRows: WholesaleTableRow[] = officialAccounts.map((account) => ({
@@ -570,9 +564,9 @@ export default async function WholesalePage({
     mostRecentVisit: null,
     name: account.name,
     nameHref: null,
+    nextAction: null,
+    opportunityPriority: null,
     opportunityScore: null,
-    targetRank: null,
-    targetTier: null,
   }));
   const sortedRows = sortWholesaleRows([...activeRows, ...officialRows], sortKey, sortDirection);
   const totalPages = Math.max(1, Math.ceil(sortedRows.length / WHOLESALE_PAGE_SIZE));
@@ -717,11 +711,11 @@ export default async function WholesalePage({
                 <td data-label="Address">{row.address}</td>
                 <td data-label="City">{row.city}</td>
                 <td data-label="Most Recent Visit">{formatEasternDate(row.mostRecentVisit)}</td>
-                <td data-label="Target Tier">
-                  {row.targetTier ? <span className="pill">{row.targetTier}</span> : <span className="muted">Not scored</span>}
+                <td data-label="Opportunity Priority">
+                  {row.opportunityPriority ? <span className={`priority priority-${row.opportunityPriority.toLowerCase()}`}>{row.opportunityPriority}</span> : <span className="muted">None active</span>}
                 </td>
                 <td data-label="Opportunity Score">{formatMetric(row.opportunityScore)}</td>
-                <td data-label="Target Rank">{row.targetRank ?? 'n/a'}</td>
+                <td data-label="Next Action">{row.nextAction ?? '—'}</td>
               </tr>
             ))}
           </tbody>

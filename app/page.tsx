@@ -270,7 +270,7 @@ export default async function Dashboard() {
         </Link>
         <Link className="quick-action-card" href="/accounts">
           <strong>Find account</strong>
-          <span>Agency, wholesale, or target</span>
+          <span>Agency, wholesale, or opportunity</span>
         </Link>
         <Link className="quick-action-card" href="/my-week">
           <strong>My Week</strong>

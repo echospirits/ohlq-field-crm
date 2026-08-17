@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-import { WorklistStatus } from '@prisma/client';
+import { OpportunityStatus, WorklistStatus } from '@prisma/client';
 import Link from 'next/link';
 import { requireUser } from '../../lib/auth';
 import { formatWorklistDue } from '../../lib/dateTime';
@@ -46,6 +46,9 @@ export default async function SearchPage({ searchParams }: { searchParams?: Prom
               { city: { contains: query, mode: 'insensitive' } },
               { ownership: { contains: query, mode: 'insensitive' } },
               { licenseeIds: { some: { licenseeId: { contains: query, mode: 'insensitive' } } } },
+              { opportunities: { some: { title: { contains: query, mode: 'insensitive' } } } },
+              { opportunities: { some: { recommendedAction: { contains: query, mode: 'insensitive' } } } },
+              { opportunities: { some: { targetCategory: { contains: query, mode: 'insensitive' } } } },
             ],
           },
           orderBy: [{ name: 'asc' }],
@@ -56,7 +59,12 @@ export default async function SearchPage({ searchParams }: { searchParams?: Prom
             name: true,
             address: true,
             city: true,
-            targetProfile: { select: { currentPriorityTier: true, currentRank: true } },
+            opportunities: {
+              where: { status: { in: [OpportunityStatus.OPEN, OpportunityStatus.ACTIONED, OpportunityStatus.SNOOZED] } },
+              orderBy: [{ productionScore: 'desc' }, { lastDetectedAt: 'desc' }],
+              take: 1,
+              select: { priorityBand: true, recommendedAction: true },
+            },
           },
         }),
         prisma.worklistItem.findMany({
@@ -83,7 +91,7 @@ export default async function SearchPage({ searchParams }: { searchParams?: Prom
         <div>
           <span className="page-eyebrow">Universal search</span>
           <h1>Find accounts and work</h1>
-          <p className="muted">Search retail agencies, wholesale accounts, target accounts, and active work in one place.</p>
+          <p className="muted">Search retail agencies, wholesale accounts, active Opportunities, and work in one place.</p>
         </div>
       </header>
 
@@ -122,13 +130,13 @@ export default async function SearchPage({ searchParams }: { searchParams?: Prom
 
           {wholesaleAccounts.length > 0 ? (
             <section className="search-result-group">
-              <h3>Wholesale and Targets <span>{wholesaleAccounts.length}</span></h3>
+              <h3>Wholesale Accounts <span>{wholesaleAccounts.length}</span></h3>
               <div className="search-result-list">
                 {wholesaleAccounts.map((account) => (
                   <Link className="search-result-row" href={`/wholesale/${account.id}`} key={account.id}>
                     <span><strong>{account.name}</strong><small>{[account.address, account.city].filter(Boolean).join(', ') || 'No address'}</small></span>
                     <span>
-                      {account.targetProfile ? <small>Target {account.targetProfile.currentPriorityTier ?? 'Unscored'}{account.targetProfile.currentRank ? ` · #${account.targetProfile.currentRank}` : ''}</small> : <small>Wholesale</small>}
+                      {account.opportunities[0] ? <small>{account.opportunities[0].priorityBand} opportunity · {account.opportunities[0].recommendedAction}</small> : <small>Wholesale</small>}
                       <strong>{account.licenseeId}</strong>
                     </span>
                   </Link>

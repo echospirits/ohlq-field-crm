@@ -29,9 +29,8 @@ type ResearchCandidate = {
   state: string | null;
   zip: string | null;
   licenseeId: string;
-  targetProfile: { currentRank: number | null; currentScore: Prisma.Decimal | null } | null;
   targetPublicResearch: { lastRefreshedAt: Date | null } | null;
-  opportunities: Array<{ status: OpportunityStatus }>;
+  opportunities: Array<{ productionScore: number; status: OpportunityStatus }>;
 };
 
 export type ParsedAccountResearchRow = {
@@ -120,27 +119,26 @@ const parseResearchDate = (value: string | null, rowNumber: number, errors: Acco
   return parsed;
 };
 
-export const getResearchPriority = (candidate: Pick<ResearchCandidate, 'opportunities' | 'targetProfile' | 'targetPublicResearch' | 'name'>) => {
+export const getResearchPriority = (candidate: Pick<ResearchCandidate, 'opportunities' | 'targetPublicResearch' | 'name'>) => {
   const statuses = new Set(candidate.opportunities.map((item) => item.status));
   const workflowPriority = statuses.has(OpportunityStatus.ACTIONED) ? 0 : statuses.has(OpportunityStatus.OPEN) || statuses.has(OpportunityStatus.SNOOZED) ? 1 : 2;
   const refreshedAt = candidate.targetPublicResearch?.lastRefreshedAt?.getTime() ?? 0;
   const refreshInterval = statuses.has(OpportunityStatus.ACTIONED) ? PURSUED_RESEARCH_DAYS : STANDARD_RESEARCH_DAYS;
   return {
     workflowPriority,
-    targetRank: candidate.targetProfile?.currentRank ?? Number.MAX_SAFE_INTEGER,
-    targetScore: Number(candidate.targetProfile?.currentScore ?? 0),
+    opportunityScore: Math.max(0, ...candidate.opportunities.map((item) => item.productionScore)),
     dueAt: refreshedAt === 0 ? 0 : refreshedAt + refreshInterval * DAY,
     name: candidate.name,
   };
 };
 
 export const compareResearchCandidates = (
-  left: Pick<ResearchCandidate, 'opportunities' | 'targetProfile' | 'targetPublicResearch' | 'name'>,
-  right: Pick<ResearchCandidate, 'opportunities' | 'targetProfile' | 'targetPublicResearch' | 'name'>,
+  left: Pick<ResearchCandidate, 'opportunities' | 'targetPublicResearch' | 'name'>,
+  right: Pick<ResearchCandidate, 'opportunities' | 'targetPublicResearch' | 'name'>,
 ) => {
   const a = getResearchPriority(left);
   const b = getResearchPriority(right);
-  return a.dueAt - b.dueAt || a.workflowPriority - b.workflowPriority || a.targetRank - b.targetRank || b.targetScore - a.targetScore || a.name.localeCompare(b.name);
+  return a.dueAt - b.dueAt || a.workflowPriority - b.workflowPriority || b.opportunityScore - a.opportunityScore || a.name.localeCompare(b.name);
 };
 
 export const normalizeResearchExportLimit = (value: string | number | null | undefined): number => {
@@ -155,7 +153,7 @@ export async function getAccountResearchQueue({ db = prisma, now = new Date(), l
     where: {
       isActive: true,
       mergedIntoId: null,
-      OR: [{ targetProfile: { isNot: null } }, { opportunities: { some: { status: { in: activeStatuses } } } }],
+      opportunities: { some: { status: { in: activeStatuses } } },
       ...(!includeFresh ? { AND: [{ OR: [
         { targetPublicResearch: { is: null } },
         { targetPublicResearch: { is: { lastRefreshedAt: null } } },
@@ -171,9 +169,8 @@ export async function getAccountResearchQueue({ db = prisma, now = new Date(), l
     },
     select: {
       id: true, name: true, address: true, city: true, state: true, zip: true, licenseeId: true,
-      targetProfile: { select: { currentRank: true, currentScore: true } },
       targetPublicResearch: { select: { lastRefreshedAt: true } },
-      opportunities: { where: { status: { in: activeStatuses } }, select: { status: true } },
+      opportunities: { where: { status: { in: activeStatuses } }, select: { productionScore: true, status: true } },
     },
   });
   candidates.sort(compareResearchCandidates);

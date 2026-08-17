@@ -20,12 +20,6 @@ const accountAreas = [
     description: 'Manage on-premise accounts, sales signals, contacts, and follow-up history.',
     action: 'Browse wholesale',
   },
-  {
-    href: '/targets',
-    title: 'Target Queue',
-    description: 'Prioritize researched prospects and turn account intelligence into action.',
-    action: 'Open target queue',
-  },
 ];
 
 export default async function AccountsPage() {
@@ -38,7 +32,7 @@ export default async function AccountsPage() {
         <div>
           <span className="page-eyebrow">Accounts</span>
           <h1>Find the right account</h1>
-          <p className="muted">Start with the account type or open the target queue for prioritized opportunities.</p>
+          <p className="muted">Start with the account type, then use Opportunities to prioritize the next best work.</p>
         </div>
         <Link className="btn" href="/visits/new">Log Visit</Link>
       </header>
@@ -61,7 +55,10 @@ export default async function AccountsPage() {
           <h2>Account organization</h2>
           <p className="muted">Manage reusable tags that help the team group and find locations.</p>
         </div>
-        <Link className="btn secondary" href="/tags">Manage tags</Link>
+        <div className="page-actions">
+          <Link className="btn" href="/opportunities">View opportunities</Link>
+          <Link className="btn secondary" href="/tags">Manage tags</Link>
+        </div>
       </section>
     </>
   );
