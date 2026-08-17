@@ -140,12 +140,13 @@ export const compareResearchCandidates = (
   return a.workflowPriority - b.workflowPriority || a.targetRank - b.targetRank || b.targetScore - a.targetScore || a.refreshedAt - b.refreshedAt || a.name.localeCompare(b.name);
 };
 
-export const normalizeResearchExportLimit = (value: string | number | null | undefined) => {
+export const normalizeResearchExportLimit = (value: string | number | null | undefined): number | null => {
+  if (String(value ?? '').trim().toLowerCase() === 'all') return null;
   const parsed = Number.parseInt(String(value ?? ''), 10);
   return Number.isFinite(parsed) ? Math.max(1, Math.min(MAX_RESEARCH_EXPORT_LIMIT, parsed)) : DEFAULT_RESEARCH_EXPORT_LIMIT;
 };
 
-export async function getAccountResearchQueue({ db = prisma, now = new Date(), limit = DEFAULT_RESEARCH_EXPORT_LIMIT, includeFresh = false }: { db?: PrismaClient; now?: Date; limit?: number; includeFresh?: boolean } = {}) {
+export async function getAccountResearchQueue({ db = prisma, now = new Date(), limit = DEFAULT_RESEARCH_EXPORT_LIMIT, includeFresh = false }: { db?: PrismaClient; now?: Date; limit?: number | null; includeFresh?: boolean } = {}) {
   const staleCutoff = new Date(now.getTime() - RESEARCH_STALE_DAYS * DAY);
   const candidates = await db.wholesaleAccount.findMany({
     where: {
@@ -166,7 +167,8 @@ export async function getAccountResearchQueue({ db = prisma, now = new Date(), l
     },
   });
   candidates.sort(compareResearchCandidates);
-  return candidates.slice(0, normalizeResearchExportLimit(limit));
+  const normalizedLimit = normalizeResearchExportLimit(limit === null ? 'all' : limit);
+  return normalizedLimit === null ? candidates : candidates.slice(0, normalizedLimit);
 }
 
 export function createAccountResearchCsv(candidates: ResearchCandidate[]) {

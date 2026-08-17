@@ -36,6 +36,7 @@ it('bounds account research export size', () => {
   assert.equal(normalizeResearchExportLimit(undefined), 50);
   assert.equal(normalizeResearchExportLimit('0'), 1);
   assert.equal(normalizeResearchExportLimit('999'), 250);
+  assert.equal(normalizeResearchExportLimit('all'), null);
 });
 
 it('prioritizes pursued accounts, then open opportunities, then target rank', () => {

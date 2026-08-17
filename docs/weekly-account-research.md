@@ -5,7 +5,7 @@ The CRM uses a reviewed CSV handoff so public research can be completed with a C
 ## Weekly workflow
 
 1. An administrator opens **Administration → Account Research**.
-2. Download the next 25 due accounts. Accounts being pursued are prioritized, followed by open opportunities and target rank. Research becomes due again after seven days.
+2. Download all tracked research accounts in one CSV. The file includes target accounts and accounts with active opportunities, prioritized with pursued accounts first.
 3. Attach the CSV to a normal ChatGPT conversation and use the prompt shown on the page.
 4. Download ChatGPT's completed CSV without editing the identity columns.
 5. Upload it to the same page and run **Validate only**.
