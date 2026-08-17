@@ -15,7 +15,7 @@ export default async function OpportunityInbox({ searchParams }: { searchParams?
   const type = Object.values(OpportunityType).includes(query.type as OpportunityType) ? query.type as OpportunityType : undefined;
   const [opportunities, assignees] = await Promise.all([
     prisma.salesOpportunity.findMany({
-      where: { status: { in: [OpportunityStatus.OPEN, OpportunityStatus.ACTIONED] }, ...(type ? { type } : {}), ...(query.priority ? { priorityBand: query.priority.toUpperCase() } : {}) },
+      where: { status: OpportunityStatus.OPEN, ...(type ? { type } : {}), ...(query.priority ? { priorityBand: query.priority.toUpperCase() } : {}) },
       include: { wholesaleAccount: { select: { name: true, city: true } }, worklistItems: { where: { status: { in: ['OPEN', 'IN_PROGRESS'] } }, select: { id: true } } },
       orderBy: [{ productionScore: 'desc' }, { detectedAt: 'desc' }], take: 250,
     }),

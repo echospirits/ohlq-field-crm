@@ -108,6 +108,7 @@ export type TargetAccountImportRow = {
   categoryWhitespacePercent: number | null;
   city: string | null;
   cocktailFocus: string | null;
+  cocktailMenuUrl: string | null;
   consistencyScore: number | null;
   cordial9L: number;
   currentEtohioCategories: string[];
@@ -120,6 +121,7 @@ export type TargetAccountImportRow = {
   expansionScore: number | null;
   fitVolumePercentile: number | null;
   locationConfidence: string | null;
+  localBrandsOnMenu: string[];
   mapsSearchUrl: string | null;
   missingCategories: string[];
   momentumScore: number | null;
@@ -129,9 +131,12 @@ export type TargetAccountImportRow = {
   otherOhioCraft9L: number;
   otherOhioCraftVendors: number;
   ownership: string | null;
+  isNationalChain: boolean | null;
   patioOutdoor: string | null;
   permitNumber: string;
   popularitySignal: string | null;
+  googleRating: number | null;
+  googleReviewCount: number | null;
   portfolioCategory9L: number;
   portfolioPriceMedian: number | null;
   portfolioVolumePercentile: number | null;
@@ -150,10 +155,13 @@ export type TargetAccountImportRow = {
   strategicFlag: string | null;
   total9LCases: number;
   totalVolumePercentile: number | null;
+  websiteUrl: string | null;
   vodka9L: number;
   whiskey9L: number;
   wholesaleSpend: number;
   zip: string | null;
+  yelpRating: number | null;
+  yelpReviewCount: number | null;
 };
 
 export type TargetRecommendation = {
@@ -227,12 +235,14 @@ const sheetDefinitions: Record<RequiredSheetName, SheetDefinition> = {
       blendedScore: { aliases: ['Blended Score'], required: true },
       city: { aliases: ['City'] },
       cocktailFocus: { aliases: ['Cocktail Focus'] },
+      cocktailMenuUrl: { aliases: ['Cocktail Menu URL', 'Menu URL'] },
       consistencyScore: { aliases: ['Consistency Score'] },
       cordial9L: { aliases: ['Cordial 9L'] },
       dataScore: { aliases: ['Data Score'], required: true },
       eventsGroups: { aliases: ['Events / Groups'] },
       fitVolumePercentile: { aliases: ['Fit Volume Percentile'] },
       locationConfidence: { aliases: ['Location Confidence'] },
+      localBrandsOnMenu: { aliases: ['Local Brands on Menu', 'Local Spirits on Menu'] },
       mapsSearchUrl: { aliases: ['Maps Search URL'] },
       momentumScore: { aliases: ['Momentum Score'] },
       monthsActive: { aliases: ['Months Active'] },
@@ -241,8 +251,11 @@ const sheetDefinitions: Record<RequiredSheetName, SheetDefinition> = {
       otherOhioCraft9L: { aliases: ['Other Ohio Craft 9L'] },
       otherOhioCraftVendors: { aliases: ['Other Ohio Craft Vendors'] },
       patioOutdoor: { aliases: ['Patio / Outdoor'] },
+      isNationalChain: { aliases: ['National Chain', 'Is National Chain'] },
       permitNumber: { aliases: ['Permit Number', 'Licensee ID', 'OHLQ ID'], required: true },
       popularitySignal: { aliases: ['Popularity Signal'] },
+      googleRating: { aliases: ['Google Rating'] },
+      googleReviewCount: { aliases: ['Google Review Count', 'Google Reviews'] },
       portfolioCategory9L: { aliases: ['Portfolio Category 9L'] },
       portfolioPriceMedian: { aliases: ['Portfolio Price Median'] },
       premiumBottleSharePercent: { aliases: ['Premium Bottle Share %', 'Premium Share %'] },
@@ -258,10 +271,13 @@ const sheetDefinitions: Record<RequiredSheetName, SheetDefinition> = {
       strategicFlag: { aliases: ['Strategic Flag'] },
       total9LCases: { aliases: ['Total 9L Cases', 'Total 9L'], required: true },
       totalVolumePercentile: { aliases: ['Total Volume Percentile'] },
+      websiteUrl: { aliases: ['Website URL', 'Website'] },
       vodka9L: { aliases: ['Vodka 9L'] },
       whiskey9L: { aliases: ['American Whiskey 9L', 'Whiskey 9L'] },
       wholesaleSpend: { aliases: ['Wholesale Spend'] },
       zip: { aliases: ['Zip', 'ZIP'] },
+      yelpRating: { aliases: ['Yelp Rating'] },
+      yelpReviewCount: { aliases: ['Yelp Review Count', 'Yelp Reviews'] },
     },
   },
   'Research Queue': {
@@ -376,6 +392,8 @@ const toBool = (value: RowValue) => {
   const text = toText(value)?.toLowerCase();
   return text === 'yes' || text === 'true' || text === '1';
 };
+
+const toNullableBool = (value: RowValue) => toText(value) === null ? null : toBool(value);
 
 const cleanList = (value: RowValue) =>
   (toText(value) ?? '')
@@ -808,6 +826,7 @@ const toAccountRow = ({
     categoryWhitespacePercent: toNumber(getMappedValue(row, mapping, 'categoryWhitespacePercent')),
     city: toText(getMappedValue(row, mapping, 'city')),
     cocktailFocus: toText(getMappedValue(row, mapping, 'cocktailFocus')),
+    cocktailMenuUrl: toText(getMappedValue(row, mapping, 'cocktailMenuUrl')),
     consistencyScore: toNumber(getMappedValue(row, mapping, 'consistencyScore')),
     cordial9L: toNumber(getMappedValue(row, mapping, 'cordial9L')) ?? 0,
     currentEtohioCategories,
@@ -820,6 +839,7 @@ const toAccountRow = ({
     expansionScore: toNumber(getMappedValue(row, mapping, 'expansionScore')),
     fitVolumePercentile: toNumber(getMappedValue(row, mapping, 'fitVolumePercentile')),
     locationConfidence: toText(getMappedValue(row, mapping, 'locationConfidence')),
+    localBrandsOnMenu: cleanList(getMappedValue(row, mapping, 'localBrandsOnMenu')),
     mapsSearchUrl: toText(getMappedValue(row, mapping, 'mapsSearchUrl')),
     missingCategories: [] as string[],
     momentumScore: toNumber(getMappedValue(row, mapping, 'momentumScore')),
@@ -829,9 +849,12 @@ const toAccountRow = ({
     otherOhioCraft9L: toNumber(getMappedValue(row, mapping, 'otherOhioCraft9L')) ?? 0,
     otherOhioCraftVendors: toInteger(getMappedValue(row, mapping, 'otherOhioCraftVendors')) ?? 0,
     ownership: ownershipByPermit.get(permitNumber) ?? null,
+    isNationalChain: toNullableBool(getMappedValue(row, mapping, 'isNationalChain')),
     patioOutdoor: toText(getMappedValue(row, mapping, 'patioOutdoor')),
     permitNumber,
     popularitySignal: toText(getMappedValue(row, mapping, 'popularitySignal')),
+    googleRating: toNumber(getMappedValue(row, mapping, 'googleRating')),
+    googleReviewCount: toInteger(getMappedValue(row, mapping, 'googleReviewCount')),
     portfolioCategory9L: toNumber(getMappedValue(row, mapping, 'portfolioCategory9L')) ?? 0,
     portfolioPriceMedian: toNumber(getMappedValue(row, mapping, 'portfolioPriceMedian')),
     portfolioVolumePercentile: toNumber(getMappedValue(row, mapping, 'portfolioVolumePercentile')),
@@ -848,16 +871,21 @@ const toAccountRow = ({
     sourceSheet,
     sourceUrls: cleanUrls(
       getMappedValue(row, mapping, 'mapsSearchUrl'),
+      getMappedValue(row, mapping, 'websiteUrl'),
+      getMappedValue(row, mapping, 'cocktailMenuUrl'),
       getMappedValue(row, mapping, 'sourceUrl1'),
       getMappedValue(row, mapping, 'sourceUrl2'),
     ),
     strategicFlag: toText(getMappedValue(row, mapping, 'strategicFlag')),
     total9LCases: toNumber(getMappedValue(row, mapping, 'total9LCases')) ?? 0,
     totalVolumePercentile: toNumber(getMappedValue(row, mapping, 'totalVolumePercentile')),
+    websiteUrl: toText(getMappedValue(row, mapping, 'websiteUrl')),
     vodka9L: toNumber(getMappedValue(row, mapping, 'vodka9L')) ?? 0,
     whiskey9L: toNumber(getMappedValue(row, mapping, 'whiskey9L')) ?? 0,
     wholesaleSpend: toNumber(getMappedValue(row, mapping, 'wholesaleSpend')) ?? 0,
     zip: toText(getMappedValue(row, mapping, 'zip')),
+    yelpRating: toNumber(getMappedValue(row, mapping, 'yelpRating')),
+    yelpReviewCount: toInteger(getMappedValue(row, mapping, 'yelpReviewCount')),
   };
 
   return common;

@@ -1,5 +1,5 @@
 import { OpportunityType } from '@prisma/client';
-import { opportunityCategoryMap, opportunityRules, type PortfolioCategory } from './opportunityConfig';
+import { nationalChainNamePatterns, opportunityCategoryMap, opportunityRules, OPPORTUNITY_RANKING_VERSION, type PortfolioCategory } from './opportunityConfig';
 
 export type PurchaseSignal = {
   category: PortfolioCategory | null;
@@ -14,6 +14,7 @@ export type PurchaseSignal = {
 };
 
 export type AccountOpportunitySignals = {
+  accountName?: string;
   asOfDate: string;
   accountStatus: string;
   assignedUserId: string | null;
@@ -30,6 +31,27 @@ export type AccountOpportunitySignals = {
   openWorklistCount: number;
   purchases: PurchaseSignal[];
   targetStatus: string | null;
+  targetDataScore?: number | null;
+  targetPublicFitScore?: number | null;
+  targetPriceFitPercent?: number | null;
+  targetTotalVolumePercentile?: number | null;
+  targetConsistencyScore?: number | null;
+  targetMomentumScore?: number | null;
+  ohioCraft9L?: number | null;
+  ohioCraftAffinity?: number | null;
+  ownershipGroupName?: string | null;
+  isNationalChain?: boolean | null;
+  ownershipVerification?: string | null;
+  buyerStructure?: string | null;
+  patioOutdoor?: string | null;
+  cocktailProgram?: string | null;
+  popularitySignal?: string | null;
+  googleRating?: number | null;
+  googleReviewCount?: number | null;
+  yelpRating?: number | null;
+  yelpReviewCount?: number | null;
+  localBrandsOnMenu?: string[];
+  publicResearchSourceUrls?: string[];
   visits30: number;
   visits60: number;
   visits90: number;
@@ -50,6 +72,37 @@ const allForCategory = (s: AccountOpportunitySignals, category: PortfolioCategor
   s.purchases.filter((item) => item.category === category);
 const sum90 = (items: PurchaseSignal[]) => items.reduce((sum, item) => sum + item.bottles90, 0);
 const labels = (items: PurchaseSignal[]) => items.slice(0, 3).map((item) => `${item.itemCode} - ${item.itemName}`);
+const percent = (value?: number | null) => Math.max(0, Math.min(100, value ?? 0));
+const normalized = (value?: string | null) => (value ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+const hasText = (value: string | null | undefined, pattern: RegExp) => pattern.test(normalized(value));
+
+export function isNationalChainSignal(signals: AccountOpportunitySignals) {
+  if (signals.isNationalChain !== null && signals.isNationalChain !== undefined) return signals.isNationalChain;
+  const explicitResearch = `${signals.ownershipVerification ?? ''} ${signals.buyerStructure ?? ''}`;
+  if (/\bnational\b|\bcorporate chain\b|\bcentralized purchasing\b/i.test(explicitResearch)) return true;
+  const identity = normalized(`${signals.accountName ?? ''} ${signals.ownershipGroupName ?? ''}`);
+  return nationalChainNamePatterns.some((pattern) => identity.includes(normalized(pattern)));
+}
+
+const qualitativePublicScore = (signals: AccountOpportunitySignals) => {
+  let score = 0;
+  if (hasText(signals.patioOutdoor, /\byes\b|\bstrong\b|\blarge\b|\brooftop\b/)) score += 3;
+  if (hasText(signals.cocktailProgram, /\bstrong\b|\bextensive\b/)) score += 4;
+  else if (hasText(signals.cocktailProgram, /\bmoderate\b|\byes\b/)) score += 2;
+  if (hasText(signals.popularitySignal, /\bhigh\b|\bvery busy\b/)) score += 4;
+  else if (hasText(signals.popularitySignal, /\bmedium\b|\bmoderate\b/)) score += 2;
+  const ratingSignals = [
+    { rating: signals.googleRating, reviews: signals.googleReviewCount },
+    { rating: signals.yelpRating, reviews: signals.yelpReviewCount },
+  ].filter((item) => item.rating !== null && item.rating !== undefined);
+  if (ratingSignals.length > 0) {
+    const averageRating = ratingSignals.reduce((sum, item) => sum + Number(item.rating), 0) / ratingSignals.length;
+    const totalReviews = ratingSignals.reduce((sum, item) => sum + Math.max(0, item.reviews ?? 0), 0);
+    score += averageRating >= 4.5 ? 2 : averageRating >= 4 ? 1 : 0;
+    score += totalReviews >= 1000 ? 2 : totalReviews >= 250 ? 1 : 0;
+  }
+  return Math.min(15, score);
+};
 
 export function detectOpportunityHypotheses(signals: AccountOpportunitySignals): OpportunityHypothesis[] {
   if (signals.accountStatus === 'DO_NOT_PURSUE') return [];
@@ -137,14 +190,46 @@ export interface OpportunityRanker { rank(opportunity: OpportunityHypothesis, si
 export class RuleBasedOpportunityRanker implements OpportunityRanker {
   rank(opportunity: OpportunityHypothesis, signals: AccountOpportunitySignals): RankResult {
     const factors = [...opportunity.explanation];
-    let score = 30;
-    score += Math.min(30, signals.echoBottles90 * 0.8);
-    score += Math.min(20, opportunity.targetCategory ? sum90(allForCategory(signals, opportunity.targetCategory)) * 0.3 : 0);
-    score += Math.min(15, (signals.daysSinceLastVisit ?? 90) / 6);
-    score -= Math.min(10, signals.openWorklistCount * 2);
+    const categoryBottles = opportunity.targetCategory ? sum90(allForCategory(signals, opportunity.targetCategory)) : 0;
+    const categoryDemandScore = Math.min(15, categoryBottles * 0.25);
+    const hasTargetComponents = [signals.targetPriceFitPercent, signals.targetTotalVolumePercentile, signals.targetConsistencyScore, signals.targetMomentumScore]
+      .some((value) => value !== null && value !== undefined);
+    const targetMarketScore = hasTargetComponents
+      ? percent(signals.targetPriceFitPercent) * 0.08 + percent(signals.targetTotalVolumePercentile) * 0.07 + percent(signals.targetConsistencyScore) * 0.03 + percent(signals.targetMomentumScore) * 0.02
+      : percent(signals.targetDataScore) * 0.2;
+    const localCraftScore = (signals.ohioCraft9L ?? 0) > 0 || (signals.ohioCraftAffinity ?? 0) > 0
+      ? 12 + percent(signals.ohioCraftAffinity) * 0.13
+      : 0;
+    const publicFitScore = Math.max(percent(signals.targetPublicFitScore) * 0.15, qualitativePublicScore(signals));
+    const relationshipScore = Math.min(10, signals.echoBottles90 * 0.5);
+    const urgencyScore = Math.min(5, (signals.daysSinceLastVisit ?? 90) / 18);
+    let score = 10 + categoryDemandScore + targetMarketScore + localCraftScore + publicFitScore + relationshipScore + urgencyScore;
+    score -= Math.min(5, signals.openWorklistCount * 1.5);
+
+    if ((signals.ohioCraft9L ?? 0) > 0) factors.push(`Past purchases include ${Number(signals.ohioCraft9L).toFixed(1)} 9L of other Ohio craft brands`);
+    if ((signals.ohioCraftAffinity ?? 0) > 0) factors.push(`Ohio-craft affinity score ${Math.round(Number(signals.ohioCraftAffinity))}/100`);
+    if (signals.targetPriceFitPercent !== null && signals.targetPriceFitPercent !== undefined) factors.push(`Portfolio price-fit share ${Number(signals.targetPriceFitPercent).toFixed(1)}%`);
+    if (signals.targetTotalVolumePercentile !== null && signals.targetTotalVolumePercentile !== undefined) factors.push(`Sales volume percentile ${Math.round(Number(signals.targetTotalVolumePercentile))}`);
+    if (signals.patioOutdoor) factors.push(`Public research — patio: ${signals.patioOutdoor}`);
+    if (signals.cocktailProgram) factors.push(`Public research — cocktail program: ${signals.cocktailProgram}`);
+    if (signals.popularitySignal) factors.push(`Public research — popularity: ${signals.popularitySignal}`);
+    if (signals.googleRating) factors.push(`Google ${Number(signals.googleRating).toFixed(1)} from ${signals.googleReviewCount ?? 'unknown'} reviews`);
+    if (signals.yelpRating) factors.push(`Yelp ${Number(signals.yelpRating).toFixed(1)} from ${signals.yelpReviewCount ?? 'unknown'} reviews`);
+    if (signals.localBrandsOnMenu?.length) factors.push(`Local brands found on menu: ${signals.localBrandsOnMenu.slice(0, 4).join(', ')}`);
+    if (!signals.targetPublicFitScore && !signals.patioOutdoor && !signals.cocktailProgram && !signals.popularitySignal) factors.push('Public-fit research has not been completed; score currently relies on sales evidence');
+    if (isNationalChainSignal(signals)) {
+      score = Math.min(score, opportunityRules.nationalChainScoreCap);
+      factors.push(`National chain with likely centralized brand contracts; priority capped at ${opportunityRules.nationalChainScoreCap}`);
+    }
     score = Math.round(Math.max(0, Math.min(100, score)) * 10) / 10;
-    return { score, priorityBand: score >= 70 ? 'HIGH' : score >= 45 ? 'MEDIUM' : 'LOW', factors, version: 'RULE_BASED_V1' };
+    return { score, priorityBand: score >= 75 ? 'HIGH' : score >= 45 ? 'MEDIUM' : 'LOW', factors, version: OPPORTUNITY_RANKING_VERSION };
   }
+}
+
+export function selectPrimaryOpportunity(hypotheses: OpportunityHypothesis[], signals: AccountOpportunitySignals, ranker: OpportunityRanker = new RuleBasedOpportunityRanker()) {
+  return hypotheses
+    .map((hypothesis) => ({ hypothesis, ranking: ranker.rank(hypothesis, signals) }))
+    .sort((left, right) => right.ranking.score - left.ranking.score || left.hypothesis.type.localeCompare(right.hypothesis.type))[0] ?? null;
 }
 
 export function analyzeActivityToPurchases(activityAt: Date, purchases: Date[]) {

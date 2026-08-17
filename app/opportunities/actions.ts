@@ -45,7 +45,7 @@ export async function updateOpportunity(formData: FormData) {
     await prisma.opportunityEvent.create({ data: { opportunityId: id, eventType: OpportunityEventType.SNOOZED, eventKey: `SNOOZED:${snoozedUntil.toISOString()}`, wholesaleAccountId: opportunity.wholesaleAccountId, userId: user.id, metadata: { snoozedUntil }, occurredAt: now } }).catch(() => undefined);
   } else if (action === 'dismiss') {
     const reason = String(formData.get('reason') ?? 'Other'); if (!allowedReasons.has(reason)) return;
-    await prisma.salesOpportunity.update({ where: { id }, data: { status: OpportunityStatus.DISMISSED, dismissedAt: now, dismissalReason: reason, resolvedAt: now } });
+    await prisma.salesOpportunity.update({ where: { id }, data: { status: OpportunityStatus.DISMISSED, activeAccountKey: null, dismissedAt: now, dismissalReason: reason, resolvedAt: now } });
     await prisma.opportunityEvent.create({ data: { opportunityId: id, eventType: OpportunityEventType.DISMISSED, eventKey: 'DISMISSED:primary', wholesaleAccountId: opportunity.wholesaleAccountId, userId: user.id, metadata: { reason }, occurredAt: now } }).catch(() => undefined);
   }
   revalidatePath('/opportunities'); revalidatePath('/alerts'); revalidatePath('/my-week'); revalidatePath('/'); revalidatePath(`/wholesale/${opportunity.wholesaleAccountId}`);

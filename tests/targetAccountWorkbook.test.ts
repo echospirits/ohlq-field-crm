@@ -58,6 +58,14 @@ const makeWorkbookBuffer = async (overrides: Partial<Record<string, unknown[][]>
         'Ohio Craft Affinity Score',
         'Consistency Score',
         'Ohio Craft Volume Percentile',
+        'Website URL',
+        'Cocktail Menu URL',
+        'Local Brands on Menu',
+        'Google Rating',
+        'Google Reviews',
+        'Yelp Rating',
+        'Yelp Reviews',
+        'National Chain',
       ],
       [
         1,
@@ -104,6 +112,14 @@ const makeWorkbookBuffer = async (overrides: Partial<Record<string, unknown[][]>
         91.8,
         100,
         83.7,
+        'https://example.com',
+        'https://example.com/cocktails',
+        'Watershed; Middle West',
+        4.7,
+        1250,
+        4.5,
+        340,
+        'No',
       ],
     ],
     'Research Queue': [
@@ -235,6 +251,10 @@ describe('parseTargetAccountWorkbook', () => {
     assert.equal(parsed.portfolioSkus.length, 3);
     assert.equal(parsed.accountRows[0].permitNumber, '10001608-1');
     assert.equal(parsed.accountRows[0].ownership, 'Independent');
+    assert.equal(parsed.accountRows[0].googleRating, 4.7);
+    assert.equal(parsed.accountRows[0].googleReviewCount, 1250);
+    assert.equal(parsed.accountRows[0].isNationalChain, false);
+    assert.deepEqual(parsed.accountRows[0].localBrandsOnMenu, ['Watershed', 'Middle West']);
     assert.equal(parsed.accountRows[1].existingBuyer, true);
     assert.deepEqual(parsed.chainRows[0].locations, ['Location A', 'Location B']);
   });

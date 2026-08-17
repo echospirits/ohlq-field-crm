@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { OpportunityType } from '@prisma/client';
-import { analyzeActivityToPurchases, detectOpportunityHypotheses, rescoreHistoricalSnapshot, RuleBasedOpportunityRanker, type AccountOpportunitySignals } from '../lib/opportunityIntelligence';
+import { analyzeActivityToPurchases, detectOpportunityHypotheses, rescoreHistoricalSnapshot, RuleBasedOpportunityRanker, selectPrimaryOpportunity, type AccountOpportunitySignals } from '../lib/opportunityIntelligence';
 
 const base = (overrides: Partial<AccountOpportunitySignals> = {}): AccountOpportunitySignals => ({
   asOfDate: '2026-08-14', accountStatus: 'ACTIVE', assignedUserId: null, daysSinceLastEchoPurchase: null, daysSinceLastVisit: 60,
@@ -20,5 +20,39 @@ describe('opportunity detectors', () => {
 });
 
 it('ranker returns score, band, explanation, and swappable historical rescore without mutating snapshot', () => { const signal = base({ echoBottles90: 20 }); const hypothesis = { type: OpportunityType.NO_RECENT_TOUCH, cycleKey: 'x', targetCategory: null, title: 'x', recommendedAction: 'visit', explanation: ['No visit'] }; const before = structuredClone(signal); const result = rescoreHistoricalSnapshot(signal, hypothesis, new RuleBasedOpportunityRanker()); assert.ok(result.score > 0); assert.ok(result.factors.length); assert.deepEqual(signal, before); });
+
+it('strongly rewards demonstrated Ohio craft purchasing', () => {
+  const hypothesis = { type: OpportunityType.CATEGORY_CONQUEST, cycleKey: 'x', targetCategory: 'BOURBON' as const, title: 'x', recommendedAction: 'visit', explanation: ['Bourbon buyer'] };
+  const ranker = new RuleBasedOpportunityRanker();
+  const withoutLocal = ranker.rank(hypothesis, base({ purchases: [item({ isEcho: false, bottles90: 20 })] }));
+  const withLocal = ranker.rank(hypothesis, base({ purchases: [item({ isEcho: false, bottles90: 20 })], ohioCraft9L: 18, ohioCraftAffinity: 90 }));
+  assert.ok(withLocal.score - withoutLocal.score >= 20);
+  assert.match(withLocal.factors.join(' '), /Ohio craft/i);
+});
+
+it('caps national chains at very low priority even when volume is strong', () => {
+  const hypothesis = { type: OpportunityType.CATEGORY_CONQUEST, cycleKey: 'x', targetCategory: 'RUM' as const, title: 'x', recommendedAction: 'visit', explanation: ['Rum buyer'] };
+  const result = new RuleBasedOpportunityRanker().rank(hypothesis, base({ accountName: 'Olive Garden', purchases: [item({ category: 'RUM', isEcho: false, bottles90: 200 })], targetDataScore: 100, targetPublicFitScore: 100, ohioCraft9L: 20, ohioCraftAffinity: 100 }));
+  assert.equal(result.score, 20);
+  assert.equal(result.priorityBand, 'LOW');
+  assert.match(result.factors.join(' '), /National chain/i);
+});
+
+it('carries public research into the score and explanation', () => {
+  const hypothesis = { type: OpportunityType.CATEGORY_CONQUEST, cycleKey: 'x', targetCategory: 'BOURBON' as const, title: 'x', recommendedAction: 'visit', explanation: ['Bourbon buyer'] };
+  const signal = base({ purchases: [item({ isEcho: false, bottles90: 20 })], patioOutdoor: 'Yes', cocktailProgram: 'Strong', popularitySignal: 'High', googleRating: 4.7, googleReviewCount: 1200, localBrandsOnMenu: ['Watershed'] });
+  const result = new RuleBasedOpportunityRanker().rank(hypothesis, signal);
+  assert.match(result.factors.join(' '), /patio: Yes/);
+  assert.match(result.factors.join(' '), /Google 4.7/);
+  assert.match(result.factors.join(' '), /Watershed/);
+});
+
+it('selects only the highest-scoring current hypothesis for an account', () => {
+  const signals = base({ purchases: [item({ category: 'BOURBON', isEcho: false, bottles90: 40 }), item({ category: 'RUM', isEcho: false, bottles90: 8 })] });
+  const hypotheses = detectOpportunityHypotheses(signals);
+  assert.ok(hypotheses.length > 1);
+  const selected = selectPrimaryOpportunity(hypotheses, signals);
+  assert.equal(selected?.hypothesis.targetCategory, 'BOURBON');
+});
 
 it('visit/follow-up analysis uses inclusive 7/14/30-day windows and avoids causal labels', () => { const activity = new Date('2026-08-01T00:00:00Z'); assert.deepEqual(analyzeActivityToPurchases(activity, [new Date('2026-08-08T00:00:00Z')]), { purchaseWithin7Days: true, purchaseWithin14Days: true, purchaseWithin30Days: true, firstPurchaseAfterActivity: true, reorderAfterActivity: false, daysToNextPurchase: 7 }); assert.equal(analyzeActivityToPurchases(activity, []).daysToNextPurchase, null); });

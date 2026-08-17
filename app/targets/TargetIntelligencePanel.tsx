@@ -222,6 +222,7 @@ export async function TargetIntelligencePanel({ wholesaleAccountId }: { wholesal
       <section className="dashboard-section">
         <div className="section-heading">
           <h2>Public Research</h2>
+          <span className="pill">{research?.lastRefreshedAt ? `Refreshed ${formatEasternDate(research.lastRefreshedAt)}` : research?.refreshStatus ?? 'Awaiting weekly refresh'}</span>
         </div>
         <div className="card account-detail-list">
           <p>
@@ -241,9 +242,39 @@ export async function TargetIntelligencePanel({ wholesaleAccountId }: { wholesal
             <span>{research?.popularitySignal ?? 'Unknown'}</span>
           </p>
           <p>
+            <strong>Google</strong>
+            <span>{research?.googleRating ? `${toNumber(research.googleRating).toFixed(1)} · ${research.googleReviewCount ?? 'Unknown'} reviews` : 'Not captured'}</span>
+          </p>
+          <p>
+            <strong>Yelp</strong>
+            <span>{research?.yelpRating ? `${toNumber(research.yelpRating).toFixed(1)} · ${research.yelpReviewCount ?? 'Unknown'} reviews` : 'Not captured'}</span>
+          </p>
+          <p>
+            <strong>National chain</strong>
+            <span>{research?.isNationalChain === null || research?.isNationalChain === undefined ? 'Not verified' : research.isNationalChain ? 'Yes — deprioritize' : 'No'}</span>
+          </p>
+          <p>
+            <strong>Local brands on menu</strong>
+            <span>{Array.isArray(research?.localBrandsOnMenu) && research.localBrandsOnMenu.length ? research.localBrandsOnMenu.map(String).join(', ') : 'Not captured'}</span>
+          </p>
+          <p>
+            <strong>Website / cocktail menu</strong>
+            <span>{research?.websiteUrl ? <Link href={research.websiteUrl}>Website</Link> : 'Not captured'}{research?.cocktailMenuUrl ? <> · <Link href={research.cocktailMenuUrl}>Cocktail menu</Link></> : null}</span>
+          </p>
+          <p>
             <strong>Notes</strong>
             <span>{research?.notes ?? 'No research notes imported yet.'}</span>
           </p>
+          <p>
+            <strong>Confidence / source</strong>
+            <span>{research?.researchConfidence ?? 'Not rated'} · {research?.researcher ?? 'Imported research'}</span>
+          </p>
+          {Array.isArray(research?.sourceUrls) && research.sourceUrls.length ? (
+            <p>
+              <strong>Evidence</strong>
+              <span>{research.sourceUrls.slice(0, 5).map((url, index) => <span key={String(url)}>{index ? ' · ' : ''}<Link href={String(url)}>Source {index + 1}</Link></span>)}</span>
+            </p>
+          ) : null}
         </div>
       </section>
 

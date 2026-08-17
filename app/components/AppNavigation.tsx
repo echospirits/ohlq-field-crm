@@ -130,6 +130,7 @@ const getBreadcrumbs = (pathname: string): BreadcrumbItem[] => {
     { prefix: '/accounts', crumbs: [{ href: '/accounts', label: 'Accounts' }] },
     { prefix: '/users', crumbs: [{ href: '/users', label: 'Administration' }, { href: '/users', label: 'Users' }] },
     { prefix: '/admin/target-import', crumbs: [{ href: '/users', label: 'Administration' }, { href: pathname, label: 'Target Import' }] },
+    { prefix: '/admin/account-research', crumbs: [{ href: '/users', label: 'Administration' }, { href: pathname, label: 'Account Research' }] },
     { prefix: '/admin/data-status', crumbs: [{ href: '/users', label: 'Administration' }, { href: pathname, label: 'Data Health' }] },
     { prefix: '/admin/weekly-digest', crumbs: [{ href: '/users', label: 'Administration' }, { href: pathname, label: 'Weekly Digest' }] },
     { prefix: '/admin/opportunity-performance', crumbs: [{ href: '/users', label: 'Administration' }, { href: pathname, label: 'Opportunity Performance' }] },

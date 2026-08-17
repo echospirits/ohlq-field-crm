@@ -1,6 +1,6 @@
-export const OPPORTUNITY_RULES_VERSION = 'RULES_V1';
-export const OPPORTUNITY_SIGNAL_VERSION = 'SIGNALS_V1';
-export const OPPORTUNITY_RANKING_VERSION = 'RULE_BASED_V1';
+export const OPPORTUNITY_RULES_VERSION = 'RULES_V2';
+export const OPPORTUNITY_SIGNAL_VERSION = 'SIGNALS_V2';
+export const OPPORTUNITY_RANKING_VERSION = 'RULE_BASED_V2';
 
 export const opportunityRules = {
   lapseLookbackDays: 90,
@@ -11,6 +11,7 @@ export const opportunityRules = {
   activePurchaseBottles90Days: 6,
   conversionWindowDays: 90,
   expirationDays: 120,
+  nationalChainScoreCap: 20,
   autoCreateWorklist: {
     LAPSED_BUYER: true,
     FIRST_ORDER_FOLLOW_UP: true,
@@ -19,6 +20,28 @@ export const opportunityRules = {
     NO_RECENT_TOUCH: true,
   },
 } as const;
+
+// Explicit, reviewable fallbacks until public research marks isNationalChain directly.
+// Local and regional groups are intentionally excluded.
+export const nationalChainNamePatterns = [
+  'applebee',
+  'bj s restaurant',
+  'bjs restaurant',
+  'brio',
+  'buffalo wild wings',
+  'cheddar s',
+  'chili s',
+  'cracker barrel',
+  'first watch',
+  'longhorn steakhouse',
+  'olive garden',
+  'outback steakhouse',
+  'red lobster',
+  'red robin',
+  'smokey bones',
+  'texas roadhouse',
+  'yard house',
+] as const;
 
 export type PortfolioCategory = 'BOURBON' | 'RYE' | 'RUM';
 
