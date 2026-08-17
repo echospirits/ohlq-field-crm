@@ -5,6 +5,7 @@ import {
   ACCOUNT_RESEARCH_HEADERS,
   compareResearchCandidates,
   createAccountResearchCsv,
+  getResearchPriority,
   normalizeResearchExportLimit,
   parseAccountResearchCsv,
   validateAccountResearchRows,
@@ -36,7 +37,6 @@ it('bounds account research export size', () => {
   assert.equal(normalizeResearchExportLimit(undefined), 50);
   assert.equal(normalizeResearchExportLimit('0'), 1);
   assert.equal(normalizeResearchExportLimit('999'), 250);
-  assert.equal(normalizeResearchExportLimit('all'), null);
 });
 
 it('prioritizes pursued accounts, then open opportunities, then target rank', () => {
@@ -46,6 +46,23 @@ it('prioritizes pursued accounts, then open opportunities, then target rank', ()
     candidate({ name: 'Pursued', status: OpportunityStatus.ACTIONED, rank: 500 }),
   ].sort(compareResearchCandidates);
   assert.deepEqual(candidates.map((item) => item.name), ['Pursued', 'Open', 'Rank one']);
+});
+
+it('prioritizes never-researched and oldest accounts before workflow status', () => {
+  const candidates = [
+    candidate({ name: 'Fresh pursued', status: OpportunityStatus.ACTIONED, refreshedAt: new Date('2026-08-16') }),
+    candidate({ name: 'Old target', rank: 1, refreshedAt: new Date('2026-01-01') }),
+    candidate({ name: 'Never researched', rank: 500 }),
+  ].sort(compareResearchCandidates);
+  assert.deepEqual(candidates.map((item) => item.name), ['Never researched', 'Old target', 'Fresh pursued']);
+});
+
+it('makes pursued research due after 30 days and other research due after 90 days', () => {
+  const refreshedAt = new Date('2026-01-01T00:00:00.000Z');
+  const pursued = getResearchPriority(candidate({ name: 'Pursued', status: OpportunityStatus.ACTIONED, refreshedAt }));
+  const standard = getResearchPriority(candidate({ name: 'Standard', refreshedAt }));
+  assert.equal((pursued.dueAt - refreshedAt.getTime()) / 86_400_000, 30);
+  assert.equal((standard.dueAt - refreshedAt.getTime()) / 86_400_000, 90);
 });
 
 it('creates a research CSV with immutable account identity and blank output fields', () => {

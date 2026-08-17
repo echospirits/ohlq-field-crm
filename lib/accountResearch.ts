@@ -4,7 +4,8 @@ import { evaluateOpportunityIntelligence } from './opportunityEngine';
 import { prisma } from './prisma';
 
 const DAY = 86_400_000;
-export const RESEARCH_STALE_DAYS = 7;
+export const PURSUED_RESEARCH_DAYS = 30;
+export const STANDARD_RESEARCH_DAYS = 90;
 export const DEFAULT_RESEARCH_EXPORT_LIMIT = 50;
 export const MAX_RESEARCH_EXPORT_LIMIT = 250;
 const activeStatuses = [OpportunityStatus.OPEN, OpportunityStatus.ACTIONED, OpportunityStatus.SNOOZED];
@@ -122,11 +123,13 @@ const parseResearchDate = (value: string | null, rowNumber: number, errors: Acco
 export const getResearchPriority = (candidate: Pick<ResearchCandidate, 'opportunities' | 'targetProfile' | 'targetPublicResearch' | 'name'>) => {
   const statuses = new Set(candidate.opportunities.map((item) => item.status));
   const workflowPriority = statuses.has(OpportunityStatus.ACTIONED) ? 0 : statuses.has(OpportunityStatus.OPEN) || statuses.has(OpportunityStatus.SNOOZED) ? 1 : 2;
+  const refreshedAt = candidate.targetPublicResearch?.lastRefreshedAt?.getTime() ?? 0;
+  const refreshInterval = statuses.has(OpportunityStatus.ACTIONED) ? PURSUED_RESEARCH_DAYS : STANDARD_RESEARCH_DAYS;
   return {
     workflowPriority,
     targetRank: candidate.targetProfile?.currentRank ?? Number.MAX_SAFE_INTEGER,
     targetScore: Number(candidate.targetProfile?.currentScore ?? 0),
-    refreshedAt: candidate.targetPublicResearch?.lastRefreshedAt?.getTime() ?? 0,
+    dueAt: refreshedAt === 0 ? 0 : refreshedAt + refreshInterval * DAY,
     name: candidate.name,
   };
 };
@@ -137,17 +140,17 @@ export const compareResearchCandidates = (
 ) => {
   const a = getResearchPriority(left);
   const b = getResearchPriority(right);
-  return a.workflowPriority - b.workflowPriority || a.targetRank - b.targetRank || b.targetScore - a.targetScore || a.refreshedAt - b.refreshedAt || a.name.localeCompare(b.name);
+  return a.dueAt - b.dueAt || a.workflowPriority - b.workflowPriority || a.targetRank - b.targetRank || b.targetScore - a.targetScore || a.name.localeCompare(b.name);
 };
 
-export const normalizeResearchExportLimit = (value: string | number | null | undefined): number | null => {
-  if (String(value ?? '').trim().toLowerCase() === 'all') return null;
+export const normalizeResearchExportLimit = (value: string | number | null | undefined): number => {
   const parsed = Number.parseInt(String(value ?? ''), 10);
   return Number.isFinite(parsed) ? Math.max(1, Math.min(MAX_RESEARCH_EXPORT_LIMIT, parsed)) : DEFAULT_RESEARCH_EXPORT_LIMIT;
 };
 
 export async function getAccountResearchQueue({ db = prisma, now = new Date(), limit = DEFAULT_RESEARCH_EXPORT_LIMIT, includeFresh = false }: { db?: PrismaClient; now?: Date; limit?: number | null; includeFresh?: boolean } = {}) {
-  const staleCutoff = new Date(now.getTime() - RESEARCH_STALE_DAYS * DAY);
+  const pursuedCutoff = new Date(now.getTime() - PURSUED_RESEARCH_DAYS * DAY);
+  const standardCutoff = new Date(now.getTime() - STANDARD_RESEARCH_DAYS * DAY);
   const candidates = await db.wholesaleAccount.findMany({
     where: {
       isActive: true,
@@ -156,7 +159,14 @@ export async function getAccountResearchQueue({ db = prisma, now = new Date(), l
       ...(!includeFresh ? { AND: [{ OR: [
         { targetPublicResearch: { is: null } },
         { targetPublicResearch: { is: { lastRefreshedAt: null } } },
-        { targetPublicResearch: { is: { lastRefreshedAt: { lt: staleCutoff } } } },
+        { AND: [
+          { opportunities: { some: { status: OpportunityStatus.ACTIONED } } },
+          { targetPublicResearch: { is: { lastRefreshedAt: { lt: pursuedCutoff } } } },
+        ] },
+        { AND: [
+          { opportunities: { none: { status: OpportunityStatus.ACTIONED } } },
+          { targetPublicResearch: { is: { lastRefreshedAt: { lt: standardCutoff } } } },
+        ] },
       ] }] } : {}),
     },
     select: {
@@ -167,8 +177,7 @@ export async function getAccountResearchQueue({ db = prisma, now = new Date(), l
     },
   });
   candidates.sort(compareResearchCandidates);
-  const normalizedLimit = normalizeResearchExportLimit(limit === null ? 'all' : limit);
-  return normalizedLimit === null ? candidates : candidates.slice(0, normalizedLimit);
+  return limit === null ? candidates : candidates.slice(0, normalizeResearchExportLimit(limit));
 }
 
 export function createAccountResearchCsv(candidates: ResearchCandidate[]) {

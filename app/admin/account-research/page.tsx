@@ -4,7 +4,7 @@ export const maxDuration = 300;
 
 import Link from 'next/link';
 import { requireAdmin } from '../../../lib/auth';
-import { getAccountResearchQueue } from '../../../lib/accountResearch';
+import { getAccountResearchQueue, PURSUED_RESEARCH_DAYS, STANDARD_RESEARCH_DAYS } from '../../../lib/accountResearch';
 import { formatEasternDateTime } from '../../../lib/dateTime';
 import { prisma } from '../../../lib/prisma';
 import { PageHeader, SectionHeading } from '../../components/PageChrome';
@@ -22,8 +22,8 @@ const statusMessage = (params: { status?: string; rows?: string; imported?: stri
 export default async function AccountResearchPage({ searchParams }: { searchParams?: Promise<{ status?: string; rows?: string; imported?: string; errors?: string; detail?: string }> }) {
   await requireAdmin();
   const params = (await searchParams) ?? {};
-  const [trackedAccounts, latestResearch, completedCount] = await Promise.all([
-    getAccountResearchQueue({ limit: null, includeFresh: true }),
+  const [dueAccounts, latestResearch, completedCount] = await Promise.all([
+    getAccountResearchQueue({ limit: null }),
     prisma.targetPublicResearch.findFirst({ where: { lastRefreshedAt: { not: null } }, orderBy: { lastRefreshedAt: 'desc' }, select: { lastRefreshedAt: true } }),
     prisma.targetPublicResearch.count({ where: { refreshStatus: 'COMPLETE' } }),
   ]);
@@ -41,18 +41,19 @@ export default async function AccountResearchPage({ searchParams }: { searchPara
       {params.detail ? <p className="card danger-text research-import-errors">{params.detail}</p> : null}
 
       <div className="grid target-import-stats">
-        <div className="card metric-card"><h3>Tracked accounts</h3><p className="metric-value">{trackedAccounts.length}</p><p className="muted">Targets and accounts with active opportunities</p></div>
+        <div className="card metric-card"><h3>Accounts due</h3><p className="metric-value">{dueAccounts.length}</p><p className="muted">Pursued after {PURSUED_RESEARCH_DAYS} days; others after {STANDARD_RESEARCH_DAYS} days</p></div>
         <div className="card metric-card"><h3>Accounts researched</h3><p className="metric-value">{completedCount}</p></div>
         <div className="card metric-card"><h3>Latest refresh</h3><p className="metric-value metric-date">{formatEasternDateTime(latestResearch?.lastRefreshedAt) || 'Never'}</p></div>
       </div>
 
       <section className="dashboard-section">
-        <SectionHeading description="The export includes every tracked target and every account with an active opportunity." title="1. Download all research accounts" />
+        <SectionHeading description="Never-researched and oldest research records come first, so repeated exports cycle through the full queue without leaving accounts behind." title="1. Download the next research batch" />
         <div className="card research-workflow-card">
           <div className="segmented-submit">
-            <a className="btn" href="/api/admin/account-research/export?limit=all&amp;scope=all">Download all {trackedAccounts.length} accounts</a>
+            <a className="btn" href="/api/admin/account-research/export?limit=100">Download next 100 accounts</a>
+            <a className="btn secondary" href="/api/admin/account-research/export?limit=200">Download next 200 accounts</a>
           </div>
-          <p className="muted">The export contains CRM IDs and account identity fields. Do not edit those columns.</p>
+          <p className="muted">After a successful import, those accounts receive a new refresh date and move to the back of the queue. The export contains CRM IDs and account identity fields; do not edit those columns.</p>
         </div>
       </section>
 
