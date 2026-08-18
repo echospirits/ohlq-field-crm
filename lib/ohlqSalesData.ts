@@ -86,7 +86,7 @@ export const isConfiguredTenantItem = (
 
 export const isEchoItem = isConfiguredTenantItem;
 
-const getTenantSalesWhere = (config: TenantConfig): Prisma.OhlqAnnualSalesRowWhereInput => {
+export const getTenantSalesWhere = (config: TenantConfig): Prisma.OhlqAnnualSalesRowWhereInput => {
   if (config.productFilter.mode === 'item-list') {
     return {
       brand: { in: config.productFilter.itemCodes },

@@ -8,6 +8,7 @@ import { formatEasternDate } from '../../../lib/dateTime';
 import { getAgencyRecentItemSales } from '../../../lib/ohlqSalesData';
 import { prisma } from '../../../lib/prisma';
 import { AgencyRecentSalesCard } from '../AgencyRecentSalesCard';
+import { AgencyIntelligencePanel } from '../AgencyIntelligencePanel';
 import { AccountTagPanel } from '../../tags/AccountTagPanel';
 import { TagBadges } from '../../tags/TagBadges';
 import { VisitActivityTable } from '../../visits/VisitActivityTable';
@@ -98,8 +99,10 @@ export default async function AgencyActivityPage({
       {query.tagStatus ? <p className="pill">{tagStatusMessages[query.tagStatus] ?? query.tagStatus}</p> : null}
       <AccountWorkspaceNavigation sections={[
         { href: '#overview', label: 'Overview' },
+        { href: '#intelligence', label: 'Intelligence' },
+        { href: '#current-inventory', label: 'Inventory' },
         { href: '#sales', label: 'Sales' },
-        { href: '#intelligence', label: 'Opportunities' },
+        { href: '#wholesale-influence', label: 'Wholesale' },
         { href: '#activity', label: 'Activity' },
       ]} />
 
@@ -140,12 +143,16 @@ export default async function AgencyActivityPage({
         />
       </div>
 
-      <div className="account-workspace-section" id="sales">
-        <AgencyRecentSalesCard salesWindows={salesWindows} />
+      <div className="account-workspace-section">
+        <AgencyIntelligencePanel agencyId={agency.id} />
       </div>
 
-      <div className="account-workspace-section" id="intelligence">
+      <div className="account-workspace-section">
         <OpportunityAccountPanel agencyId={agency.agencyId} />
+      </div>
+
+      <div className="account-workspace-section" id="sales">
+        <AgencyRecentSalesCard salesWindows={salesWindows} />
       </div>
 
       <section className="dashboard-section account-workspace-section" id="activity">

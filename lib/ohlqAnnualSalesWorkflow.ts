@@ -8,6 +8,7 @@ import {
 import { importOhlqAgencyInventoryCsv } from './ohlqAgencyInventoryImport';
 import { pruneOhlqAnnualSalesRows } from './ohlqAnnualSalesRetention';
 import { runOpportunityIntelligenceAfterImport } from './opportunityEngine';
+import { refreshAgencyIntelligence } from './agencyIntelligenceService';
 import { toOhlqDateOnlyUtc } from './ohlqDataStatus';
 import {
   downloadOhlqAnnualSalesReports,
@@ -161,6 +162,15 @@ export async function runOhlqAnnualSalesWorkflow(options: OhlqAnnualSalesWorkflo
         `converted ${opportunityIntelligence.intelligence.converted} opportunity instance(s).`,
     );
 
+    const agencyIntelligence = await refreshAgencyIntelligence({
+      inventoryReportDate: toOhlqDateOnlyUtc(inventoryObservationDate),
+      salesReportDate: toOhlqDateOnlyUtc(reportDate),
+    });
+    logger.log(
+      `Agency intelligence refreshed ${agencyIntelligence.productsProcessed} Agency-product signal(s) across ` +
+        `${agencyIntelligence.agenciesProcessed} agencies and recorded ${agencyIntelligence.eventsCreated} meaningful change(s).`,
+    );
+
     const retention = await pruneOhlqAnnualSalesRows({ reportDate });
     logger.log(
       `OHLQ annual sales retention kept ${retention.retentionDays} day(s) from ${retention.cutoffDate}; ` +
@@ -170,6 +180,7 @@ export async function runOhlqAnnualSalesWorkflow(options: OhlqAnnualSalesWorkflo
     return {
       ok: true,
       durationMs: Date.now() - startedAt,
+      agencyIntelligence,
       retention,
       opportunityIntelligence,
       reports: {

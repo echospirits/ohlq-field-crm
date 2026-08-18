@@ -49,6 +49,7 @@ enum WorklistSource {
   OHLQ_WHOLESALE_REACTIVATION
   TARGET_ACCOUNT_INTELLIGENCE
   OPPORTUNITY_INTELLIGENCE
+  AGENCY_INTELLIGENCE
 }
 
 enum OpportunityType {
@@ -88,6 +89,47 @@ enum OpportunityEventType {
 enum OpportunityRankingMode {
   ACTIVE
   SHADOW
+}
+
+enum AgencyInventoryState {
+  HEALTHY
+  STOCKOUT
+  UNDERSTOCKED
+  DEAD_INVENTORY
+  MISSING_PLACEMENT
+  AT_RISK
+  INSUFFICIENT_DATA
+}
+
+enum AgencyProductOpportunityState {
+  WINNING
+  MAINTAIN
+  RESTOCK
+  STOCKOUT
+  PLACEMENT_OPPORTUNITY
+  ACTIVATION_OPPORTUNITY
+  AT_RISK
+  DEAD_INVENTORY
+  LOW_PRIORITY
+  INSUFFICIENT_EVIDENCE
+}
+
+enum AgencyRecommendedAction {
+  MAINTAIN
+  RESTOCK
+  PURSUE_PLACEMENT
+  SCHEDULE_TASTING
+  INVESTIGATE
+  REDUCE_PRIORITY
+  MONITOR
+  NO_ACTION
+}
+
+enum AgencyIntelligenceBand {
+  HIGH
+  MEDIUM
+  LOW
+  INSUFFICIENT_DATA
 }
 
 enum WorklistCategory {
@@ -800,6 +842,9 @@ model Agency {
   tags                     LocationTag[] @relation("AgencyLocationTags")
   inventorySnapshots       OhlqAgencyInventorySnapshot[] @relation("AgencyInventorySnapshots")
   currentInventory         OhlqAgencyInventoryCurrent[]  @relation("AgencyInventoryCurrent")
+  productIntelligence      AgencyProductIntelligence[]
+  intelligenceSummary      AgencyIntelligenceSummary?
+  intelligenceEvents       AgencyIntelligenceEvent[]
 
   @@index([latitude, longitude])
   @@index([geocodeStatus])
@@ -1049,23 +1094,23 @@ model TargetPublicResearch {
   buyerStructure        String?
   websiteUrl             String?
   cocktailMenuUrl        String?
-  localBrandsOnMenu      Json               @default("[]")
-  googleRating           Decimal?
-  googleReviewCount      Int?
-  yelpRating             Decimal?
-  yelpReviewCount        Int?
-  isNationalChain        Boolean?
-  researchConfidence     String?
+  localBrandsOnMenu     Json               @default("[]")
+  googleRating          Decimal?
+  googleReviewCount     Int?
+  yelpRating            Decimal?
+  yelpReviewCount       Int?
+  isNationalChain       Boolean?
+  researchConfidence    String?
   notes                 String?
   sourceUrls            Json               @default("[]")
   completedAt           DateTime?
   researcher            String?
-  lastAttemptedAt        DateTime?
-  lastRefreshedAt        DateTime?
-  refreshStatus          String?
-  refreshError           String?
-  researchModel          String?
-  researchResponseId     String?
+  lastAttemptedAt         DateTime?
+  lastRefreshedAt         DateTime?
+  refreshStatus           String?
+  refreshError            String?
+  researchModel           String?
+  researchResponseId      String?
   createdAt             DateTime           @default(now())
   updatedAt             DateTime           @updatedAt
   wholesaleAccount      WholesaleAccount   @relation(fields: [wholesaleAccountId], references: [id], onDelete: Cascade)
@@ -1271,6 +1316,7 @@ model WorklistItem {
   wholesaleAccountId String?
   loggedVisitId      String?
   salesOpportunityId String?
+  agencyProductIntelligenceId String?
   dueDate            DateTime?
   dueTimeMinutes     Int?
   assignedTo         String?
@@ -1290,6 +1336,7 @@ model WorklistItem {
   loggedVisit        LoggedVisit?            @relation(fields: [loggedVisitId], references: [id], onDelete: SetNull)
   calendarEvents     WorklistCalendarEvent[]
   salesOpportunity   SalesOpportunity?       @relation(fields: [salesOpportunityId], references: [id], onDelete: SetNull)
+  agencyProductIntelligence AgencyProductIntelligence? @relation(fields: [agencyProductIntelligenceId], references: [id], onDelete: SetNull)
 
   @@index([status])
   @@index([category])
@@ -1297,11 +1344,134 @@ model WorklistItem {
   @@index([agencyId])
   @@index([wholesaleAccountId])
   @@index([source, status, wholesaleAccountId])
+  @@index([source, status, agencyId])
   @@index([createdByUserId])
   @@index([assignedToUserId])
   @@index([completedByUserId])
   @@index([cancelledByUserId])
   @@index([salesOpportunityId])
+  @@index([agencyProductIntelligenceId])
+}
+
+model AgencyProductIntelligence {
+  id                       String                        @id @default(cuid())
+  agencyId                 String
+  itemCode                 String
+  itemName                 String
+  asOfDate                 DateTime                      @db.Date
+  inventorySnapshotDate    DateTime?                     @db.Date
+  onHand                   Int?
+  minimum                  Int?
+  inventoryStatus          String?
+  coverageGroup            String?
+  retailSales7             Int                           @default(0)
+  retailSales30            Int                           @default(0)
+  historicalRetailSales    Int                           @default(0)
+  lastSaleDate             DateTime?                     @db.Date
+  daysSinceLastSale        Int?
+  estimatedMonthlyVelocity Float                         @default(0)
+  daysOfSupply             Float?
+  peerGroupKey             String?
+  peerAgencyCount          Int                           @default(0)
+  peerCarryPercent         Float?
+  peerAverageSales30       Float?
+  peerAverageInventory     Float?
+  fitScore                 Int
+  fitBand                  AgencyIntelligenceBand
+  inventoryState           AgencyInventoryState
+  opportunityState         AgencyProductOpportunityState
+  recommendedAction        AgencyRecommendedAction
+  priorityScore            Int
+  priorityBand             AgencyIntelligenceBand
+  tastingEligible          Boolean                       @default(false)
+  tastingOpportunity       Boolean                       @default(false)
+  reasons                  Json
+  signalSnapshot           Json
+  rulesVersion             String
+  scoringVersion           String
+  status                   OpportunityStatus             @default(OPEN)
+  detectedAt               DateTime                      @default(now())
+  lastDetectedAt           DateTime                      @default(now())
+  stateChangedAt           DateTime                      @default(now())
+  snoozedUntil             DateTime?
+  dismissedAt              DateTime?
+  dismissalReason          String?
+  resolvedAt               DateTime?
+  createdAt                DateTime                      @default(now())
+  updatedAt                DateTime                      @updatedAt
+  agency                   Agency                        @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  worklistItems            WorklistItem[]
+
+  @@unique([agencyId, itemCode])
+  @@index([agencyId, priorityScore])
+  @@index([itemCode, fitBand])
+  @@index([asOfDate])
+  @@index([inventoryState, priorityScore])
+  @@index([opportunityState, priorityScore])
+  @@index([tastingOpportunity, priorityScore])
+  @@index([status, priorityScore])
+  @@index([rulesVersion])
+  @@index([scoringVersion])
+}
+
+model AgencyIntelligenceSummary {
+  id                            String                 @id @default(cuid())
+  agencyId                      String                 @unique
+  asOfDate                      DateTime               @db.Date
+  retailBand                    AgencyIntelligenceBand
+  wholesaleInfluenceBand        AgencyIntelligenceBand
+  currentSkuCount               Int                    @default(0)
+  retailSales30                 Int                    @default(0)
+  lastEchoSaleDate              DateTime?              @db.Date
+  openProductOpportunityCount   Int                    @default(0)
+  stockoutCount                 Int                    @default(0)
+  placementOpportunityCount     Int                    @default(0)
+  tastingOpportunityCount       Int                    @default(0)
+  deadInventoryCount            Int                    @default(0)
+  linkedWholesaleCount          Int                    @default(0)
+  activeWholesaleCount          Int                    @default(0)
+  echoWholesaleBuyerCount       Int                    @default(0)
+  wholesaleEchoBottles30        Int                    @default(0)
+  lapsedWholesaleCount          Int                    @default(0)
+  openWholesaleOpportunityCount Int                    @default(0)
+  recommendedFocus              Json
+  retailReasons                 Json
+  wholesaleReasons              Json
+  signalSnapshot                Json
+  rulesVersion                  String
+  scoringVersion                String
+  createdAt                     DateTime               @default(now())
+  updatedAt                     DateTime               @updatedAt
+  agency                        Agency                 @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  @@index([retailBand, asOfDate])
+  @@index([wholesaleInfluenceBand, asOfDate])
+  @@index([stockoutCount])
+  @@index([placementOpportunityCount])
+  @@index([tastingOpportunityCount])
+  @@index([deadInventoryCount])
+}
+
+model AgencyIntelligenceEvent {
+  id                          String                         @id @default(cuid())
+  agencyId                    String
+  agencyProductIntelligenceId String?
+  itemCode                    String?
+  eventType                   String
+  eventKey                    String                         @unique
+  previousInventoryState      AgencyInventoryState?
+  inventoryState              AgencyInventoryState?
+  previousOpportunityState    AgencyProductOpportunityState?
+  opportunityState            AgencyProductOpportunityState?
+  snapshot                    Json
+  occurredAt                  DateTime
+  createdAt                   DateTime                       @default(now())
+  agency                      Agency                         @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  @@index([agencyId, occurredAt])
+  @@index([agencyProductIntelligenceId, occurredAt])
+  @@index([itemCode, occurredAt])
+  @@index([eventType, occurredAt])
 }
 
 model OpportunityAccountSignal {
@@ -1367,7 +1537,7 @@ model SalesOpportunity {
   wholesaleAccountId   String
   type                 OpportunityType
   status               OpportunityStatus  @default(OPEN)
-  activeAccountKey     String?             @unique
+  activeAccountKey     String?            @unique
   cycleKey             String
   targetCategory       String?
   title                String

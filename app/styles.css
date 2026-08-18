@@ -3782,3 +3782,78 @@ legend {
 .account-opportunity-next strong { color:var(--accent-2); font-size:.68rem; letter-spacing:.05em; margin-right:.18rem; text-transform:uppercase; }
 .unified-timeline { margin-top:1rem; }.timeline-event { display:grid; grid-template-columns:7rem 1fr; gap:1rem; padding:.75rem 0 .75rem 1rem; border-left:3px solid var(--line); }.timeline-event time { color:var(--muted); font-size:.84rem; }.timeline-event p { margin:.2rem 0 0; }.timeline-purchase { border-color:#15803d; }.timeline-visit { border-color:#2563eb; }.timeline-opportunity { border-color:#d97706; }
 @media (max-width:700px) { .opportunity-actions form,.opportunity-dismiss,.opportunity-feedback { align-items:stretch; flex-direction:column; width:100%; }.opportunity-actions button,.opportunity-actions select,.opportunity-dismiss button,.opportunity-dismiss select,.opportunity-feedback button,.opportunity-feedback input,.opportunity-feedback select { max-width:none; width:100%; }.account-opportunity-panel { padding:.85rem; }.account-opportunity-heading { align-items:flex-end; }.account-intelligence-facts { grid-template-columns:repeat(2,minmax(0,1fr)); }.timeline-event { grid-template-columns:1fr; gap:.2rem; } }
+
+.agency-intelligence-stack { display:grid; gap:1rem; }
+.agency-intelligence-overview,.agency-wholesale-influence { padding:1rem; }
+.agency-intelligence-heading { align-items:flex-end; }
+.agency-intelligence-snapshot { display:grid; gap:.5rem; grid-template-columns:repeat(6,minmax(0,1fr)); margin:.85rem 0 0; }
+.agency-intelligence-snapshot div { background:var(--panel-2); border:1px solid var(--line); border-radius:.5rem; display:grid; gap:.2rem; min-width:0; padding:.55rem .65rem; }
+.agency-intelligence-snapshot dt { color:var(--muted-2); font-size:.68rem; font-weight:700; letter-spacing:.035em; text-transform:uppercase; }
+.agency-intelligence-snapshot dd { color:var(--text); font-size:.92rem; font-weight:800; margin:0; overflow-wrap:anywhere; }
+.agency-focus-summary { border-top:1px solid var(--line); margin-top:.85rem; padding-top:.75rem; }
+.agency-focus-summary h3 { font-size:.78rem; margin:0 0 .45rem; text-transform:uppercase; }
+.agency-focus-summary ol { display:flex; flex-wrap:wrap; gap:.4rem 1.2rem; margin:0; padding-left:1.25rem; }
+.agency-focus-summary li { font-size:.82rem; line-height:1.35; }
+.agency-product-list { display:grid; gap:.45rem; }
+.agency-product-card { padding:.75rem .85rem; }
+.agency-product-card summary { align-items:center; cursor:pointer; display:flex; gap:.75rem; justify-content:space-between; list-style:none; }
+.agency-product-card summary::-webkit-details-marker { display:none; }
+.agency-product-title { align-items:baseline; display:flex; flex-wrap:wrap; gap:.3rem .55rem; min-width:0; }
+.agency-product-title strong { font-size:.9rem; }
+.agency-product-title small { color:var(--muted-2); font-size:.7rem; font-weight:700; text-transform:uppercase; }
+.agency-product-body { border-top:1px solid var(--line); margin-top:.65rem; padding-top:.65rem; }
+.agency-product-metrics { display:grid; gap:.4rem; grid-template-columns:repeat(6,minmax(0,1fr)); margin:0; }
+.agency-product-metrics div { min-width:0; }
+.agency-product-metrics dt { color:var(--muted-2); font-size:.65rem; font-weight:700; text-transform:uppercase; }
+.agency-product-metrics dd { font-size:.82rem; font-weight:800; margin:.15rem 0 0; overflow-wrap:anywhere; }
+.agency-product-action { font-size:.82rem; margin:.65rem 0 .25rem; }
+.agency-product-action strong { color:var(--accent-2); }
+.agency-product-reasons { color:var(--muted); display:grid; font-size:.78rem; gap:.15rem; margin:.25rem 0 0; padding-left:1.1rem; }
+.agency-inventory-details { padding:.85rem 1rem; }
+.agency-inventory-details summary span:first-child { display:grid; gap:.12rem; }
+.agency-inventory-details summary small { color:var(--muted-2); font-size:.7rem; font-weight:500; }
+.agency-current-inventory-list { display:grid; margin-top:.55rem; }
+.agency-current-inventory-row { align-items:center; border-top:1px solid var(--line); display:grid; gap:.75rem; grid-template-columns:minmax(0,1fr) auto; padding:.55rem 0; }
+.agency-inventory-metrics { display:flex; justify-content:flex-end; }
+.agency-inventory-metrics span { border-left:1px solid var(--line); display:grid; gap:.05rem; min-width:4.2rem; padding:0 .55rem; text-align:right; }
+.agency-inventory-metrics span:first-child { border-left:0; }
+.agency-inventory-metrics strong { font-size:.82rem; }
+.agency-inventory-metrics small { color:var(--muted-2); font-size:.58rem; text-transform:uppercase; }
+.agency-dashboard-grid { display:grid; gap:.65rem; grid-template-columns:repeat(5,minmax(0,1fr)); }
+.agency-dashboard-tile { display:grid; gap:.2rem; padding:.75rem .85rem; }
+.agency-dashboard-tile span { color:var(--muted-2); font-size:.72rem; font-weight:700; text-transform:uppercase; }
+.agency-dashboard-tile strong { color:var(--text); font-size:1.35rem; line-height:1; }
+.agency-dashboard-tile small { color:var(--muted); font-size:.68rem; line-height:1.25; }
+.agency-focus-list { display:grid; gap:.75rem; }
+.agency-focus-card { display:grid; gap:.65rem; padding:.9rem 1rem; }
+.agency-focus-card-heading { align-items:start; display:flex; gap:1rem; justify-content:space-between; }
+.agency-focus-card-heading h2 { font-size:1rem; margin:.25rem 0 0; }
+.agency-focus-card-heading small { color:var(--muted-2); font-size:.7rem; margin-left:.35rem; text-transform:uppercase; }
+.agency-focus-card-heading p { font-size:.72rem; margin:.15rem 0 0; }
+.agency-focus-item { align-items:baseline; display:flex; gap:.4rem; text-align:right; }
+.agency-focus-item strong { font-size:.82rem; }
+.agency-focus-actions { align-items:center; display:flex; flex-wrap:wrap; gap:.45rem; }
+.agency-focus-actions form { display:flex; flex-wrap:wrap; gap:.45rem; margin:0; }
+.agency-focus-dismiss summary { color:var(--muted); cursor:pointer; font-size:.72rem; }
+.agency-focus-dismiss form { align-items:center; display:flex; gap:.45rem; margin-top:.45rem; max-width:28rem; }
+.agency-focus-dismiss select { min-height:2.2rem; }
+
+@media (max-width:900px) {
+  .agency-intelligence-snapshot,.agency-product-metrics { grid-template-columns:repeat(3,minmax(0,1fr)); }
+  .agency-dashboard-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .agency-current-inventory-row { grid-template-columns:1fr; }
+  .agency-inventory-metrics { justify-content:flex-start; }
+  .agency-inventory-metrics span { text-align:left; }
+}
+
+@media (max-width:520px) {
+  .agency-intelligence-overview,.agency-wholesale-influence,.agency-inventory-details { padding:.8rem; }
+  .agency-intelligence-snapshot,.agency-product-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .agency-dashboard-grid { grid-template-columns:1fr; }
+  .agency-focus-card-heading { display:grid; }
+  .agency-focus-item { text-align:left; }
+  .agency-inventory-metrics { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); width:100%; }
+  .agency-inventory-metrics span { border-left:0; border-top:1px solid var(--line); min-width:0; padding:.35rem .25rem 0; }
+  .agency-focus-actions,.agency-focus-actions form,.agency-focus-dismiss form { align-items:stretch; display:grid; width:100%; }
+  .agency-focus-actions a,.agency-focus-actions button,.agency-focus-dismiss button,.agency-focus-dismiss select { width:100%; }
+}

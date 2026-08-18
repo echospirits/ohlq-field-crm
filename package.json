@@ -20,6 +20,7 @@
     "import:ohlq-agency-inventory": "tsx scripts/import-ohlq-agency-inventory.ts",
     "backfill:ohlq-annual-sales": "tsx scripts/backfill-ohlq-annual-sales.ts",
     "seed:ohlq-wholesale-purchase-state": "tsx scripts/seed-ohlq-wholesale-purchase-state.ts",
+    "refresh:agency-intelligence": "tsx scripts/refresh-agency-intelligence.ts",
     "audit:ohlq-storage": "tsx scripts/audit-ohlq-storage.ts",
     "import:target-account-model": "tsx scripts/import-target-account-model.ts",
     "backfill:account-geocodes": "tsx scripts/backfill-account-geocodes.ts",

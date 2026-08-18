@@ -11,6 +11,7 @@ import { getUserDisplayName, requireUser } from '../lib/auth';
 import { EASTERN_TIME_ZONE } from '../lib/dateTime';
 import { prisma } from '../lib/prisma';
 import { DashboardOpportunitySummary } from './components/DashboardOpportunitySummary';
+import { DashboardAgencyIntelligence } from './components/DashboardAgencyIntelligence';
 
 const dashboardTimeZone = EASTERN_TIME_ZONE;
 const inactiveWorklistStatuses = [WorklistStatus.COMPLETED, WorklistStatus.CANCELLED];
@@ -287,6 +288,8 @@ export default async function Dashboard() {
       </div>
 
       <DashboardOpportunitySummary />
+
+      <DashboardAgencyIntelligence />
 
       <div className="grid">
         <div className="card metric-card">
