@@ -1859,13 +1859,20 @@ fieldset {
 
 .ohlq-sales-section {
   display: grid;
-  gap: 14px;
+  gap: 10px;
+}
+
+.ohlq-sales-heading h2 {
+  font-size: 1.25rem;
+  line-height: 1.2;
+  margin: 0;
 }
 
 .ohlq-window-card,
 .ohlq-window-details {
   display: grid;
-  gap: 12px;
+  gap: 7px;
+  padding: 14px 16px;
 }
 
 .ohlq-window-card h3,
@@ -1879,19 +1886,29 @@ fieldset {
   gap: 10px;
 }
 
+.ohlq-window-heading {
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ohlq-window-range {
+  font-size: 11px;
+  margin: -2px 0 2px;
+}
+
 .ohlq-item-list,
 .ohlq-purchase-list {
   display: grid;
-  gap: 10px;
+  gap: 0;
 }
 
 .ohlq-item-row,
 .ohlq-purchase-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px;
+  gap: 10px;
   align-items: center;
-  padding: 10px 0;
+  padding: 7px 0;
   border-top: 1px solid var(--line);
 }
 
@@ -1900,18 +1917,33 @@ fieldset {
   border-top: 0;
 }
 
-.ohlq-item-row strong,
-.ohlq-purchase-row strong {
-  display: block;
+.ohlq-item-identity > div {
+  align-items: baseline;
+  display: flex;
+  gap: 7px;
+  min-width: 0;
+}
+
+.ohlq-item-identity strong {
   color: #f8fafc;
+  font-size: 13px;
+  line-height: 1.3;
   overflow-wrap: anywhere;
+}
+
+.ohlq-item-code {
+  color: #a5b4fc;
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .04em;
 }
 
 .ohlq-item-row .muted,
 .ohlq-purchase-row .muted {
   display: block;
-  margin-top: 3px;
-  font-size: 12px;
+  margin-top: 1px;
+  font-size: 11px;
 }
 
 .ohlq-item-metrics,
@@ -1919,30 +1951,37 @@ fieldset {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 0;
 }
 
 .ohlq-item-metrics span,
 .ohlq-purchase-summary span {
-  min-width: 74px;
+  min-width: 54px;
   display: grid;
-  gap: 2px;
-  padding: 7px 9px;
-  background: #101014;
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  gap: 1px;
+  padding: 1px 8px;
+  border-left: 1px solid var(--line);
   text-align: right;
+}
+
+.ohlq-item-metrics span:first-child,
+.ohlq-purchase-summary span:first-child {
+  border-left: 0;
 }
 
 .ohlq-item-metrics strong,
 .ohlq-purchase-summary strong {
   color: #f8fafc;
-  font-size: 16px;
+  font-size: 14px;
   line-height: 1;
 }
 
 .ohlq-item-metrics small,
-.ohlq-purchase-summary small,
+.ohlq-purchase-summary small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
 .tap-to-activate,
 .view-more-note {
   color: var(--muted);
@@ -3575,7 +3614,7 @@ legend {
 
   .ohlq-item-metrics span,
   .ohlq-purchase-summary span {
-    min-width: 88px;
+    min-width: 62px;
     text-align: left;
   }
 

@@ -36,10 +36,8 @@ function PurchaseList({
             className="ohlq-purchase-row"
             key={item.itemCode}
           >
-            <div>
-              <strong>
-                {item.itemCode} - {item.itemName}
-              </strong>
+            <div className="ohlq-item-identity">
+              <div><span className="ohlq-item-code">{item.itemCode}</span><strong>{item.itemName}</strong></div>
               <span className="muted">
                 {numberFormatter.format(item.purchaseLineCount)} purchase line{item.purchaseLineCount === 1 ? '' : 's'}
                 {' · '}
@@ -76,7 +74,7 @@ export function WholesaleRecentPurchasesCard({
   if (!purchases.licenseeId) {
     return (
       <section className="dashboard-section ohlq-sales-section">
-        <div className="section-heading">
+        <div className="section-heading ohlq-sales-heading">
           <h2>Recent OHLQ Purchases</h2>
           <span className="pill">Not linked</span>
         </div>
@@ -89,7 +87,7 @@ export function WholesaleRecentPurchasesCard({
 
   return (
     <section className="dashboard-section ohlq-sales-section">
-      <div className="section-heading">
+      <div className="section-heading ohlq-sales-heading">
         <h2>Recent OHLQ Purchases</h2>
         <span className="pill">
           {purchases.startDate && purchases.endDate ? `${purchases.startDate} to ${purchases.endDate}` : 'No data'}
@@ -97,8 +95,8 @@ export function WholesaleRecentPurchasesCard({
       </div>
 
       <div className="card ohlq-window-card">
-        <div className="section-heading">
-          <h3>{productLabel} purchases - last 30 days</h3>
+        <div className="section-heading ohlq-window-heading">
+          <h3>{productLabel} · 30 days</h3>
           <PurchaseSummary list={purchases.tracked} />
         </div>
         {purchases.tracked.count === 0 && purchases.all.count > 0 ? (
@@ -112,7 +110,7 @@ export function WholesaleRecentPurchasesCard({
 
       <details className="card compact-details ohlq-window-details">
         <summary>
-          All purchases - last 30 days
+          All purchases · 30 days
           <PurchaseSummary list={purchases.all} />
         </summary>
         <PurchaseList emptyText="No purchases found in the last 30 days." list={purchases.all} />
