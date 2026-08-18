@@ -59,14 +59,16 @@ SEED_ADMIN_LAST_NAME="Admin"
 SEED_ADMIN_PASSWORD="<set-a-secure-password>"
 ```
 
-## OHLQ annual sales export
+## OHLQ daily sales and agency inventory export
 - Vercel Cron calls `/api/cron/ohlq-annual-sales` daily at 11:07 UTC, which is 7:07 AM Eastern during daylight saving time and 6:07 AM Eastern during standard time.
 - The cron route queues the GitHub Actions runner instead of running browser automation inside Vercel. It refreshes yesterday plus the previous report date so early runs can still correct data that posted late the prior day.
 - GitHub Actions still owns the browser work in `.github/workflows/ohlq-annual-sales.yml`; it is triggered by Vercel Cron, the Data Status manual import button, or a scheduled GitHub fallback at 7:27 AM Eastern.
 - The workflow uses a full Playwright Chromium install instead of Vercel serverless Chromium because the Microsoft/OHID Power BI sign-in flow rejects the serverless session context.
 - The Data Status manual import button queues the GitHub Actions runner when `GITHUB_ACTIONS_DISPATCH_TOKEN` is configured in Vercel; production will show a configuration error instead of falling back to the known-bad serverless browser path.
-- The automation downloads yesterday's Annual Sales Summary and Annual Sales Summary by Wholesale reports.
+- The automation downloads yesterday's Annual Sales Summary and Annual Sales Summary by Wholesale reports, plus the current Agency Inventory Report.
 - The agency summary imports CSV rows into `OhlqAnnualSalesRow`; the wholesale summary imports rows into `OhlqAnnualSalesByWholesaleRow`.
+- Qualifying tenant products from Agency Inventory Report are atomically written to `OhlqAgencyInventoryCurrent` and retained by observation day in `OhlqAgencyInventorySnapshot`. A failed, empty, malformed, or unexpectedly sparse report never clears the last valid current state.
+- Agency inventory has no report date parameter, so its observation date is the successful download date in `America/New_York`. Sales catch-up dates remain independent.
 - The import stores `reportDate` from the report's From date parameter and replaces existing rows for that date, so reruns are idempotent.
 - The production cron route refreshes the latest two complete report dates by default. Set `OHLQ_CRON_REFRESH_DAYS` to adjust how many recent dates are force-refreshed; local diagnostic fallback still uses `OHLQ_CRON_CATCHUP_DAYS` and `OHLQ_CRON_MAX_REPORT_DATES`.
 - The GitHub scheduled fallback also refreshes the latest two complete report dates by default, using `OHLQ_CRON_REFRESH_DAYS` when that repository variable is set.
@@ -81,6 +83,8 @@ Local command:
 ```bash
 npm run download:ohlq-annual-sales
 npm run download:ohlq-annual-sales:wholesale
+npm run download:ohlq-agency-inventory
+npm run import:ohlq-agency-inventory -- --file "C:\path\Agency Inventory Report.csv" --date 2026-08-18
 npm run backfill:ohlq-annual-sales -- --days 7
 npm run backfill:ohlq-annual-sales -- --date 2026-05-11
 npm run audit:ohlq-storage
@@ -89,6 +93,9 @@ npm run audit:ohlq-storage
 Required OHLQ env vars:
 - `OHLQ_OPS_USERNAME`: OHLQ portal username.
 - `OHLQ_OPS_PASSWORD`: OHLQ portal password.
+- `OHLQ_INVENTORY_MIN_QUALIFYING_ROWS`: optional safety floor before current inventory can be replaced; defaults to `25`.
+
+The Agency Inventory Power BI report UUID is fixed in code from the confirmed OHLQ report URL. Browser automation signs into OHLQ and Microsoft, leaves the report's pre-set Vendor unchanged, opens the required Brand parameter, checks Select All, runs the report, and exports CSV. Inventory rows are mapped by header name. Identifiers remain strings, blank quantities become `null`, and invalid quantities are skipped and counted. Tenant vendor/item filtering reuses `tenantConfig`; Echo defaults exclude `3150B`, `3750B`, and `4359B`. Rows whose trimmed detail is exactly `A3A Distillery Only` are also excluded. Official agency numbers are normalized and linked when found; unmatched numbers remain in inventory with a null relation and are reported in diagnostics. A valid report is treated as a complete current snapshot, so absent rows are removed only inside the same transaction that writes the validated replacement and daily history.
 
 ## Weekly digest email
 - Vercel cron calls `/api/cron/weekly-digest` at 13:00 UTC on Fridays. The route only sends when the current `America/New_York` local hour is 8 or 9, so daylight saving time is handled by the app while staying compatible with Vercel Hobby cron limits.

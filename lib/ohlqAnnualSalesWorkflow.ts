@@ -5,11 +5,13 @@ import {
   importOhlqAnnualSalesByWholesaleCsv,
   importOhlqAnnualSalesCsv,
 } from './ohlqAnnualSalesImport';
+import { importOhlqAgencyInventoryCsv } from './ohlqAgencyInventoryImport';
 import { pruneOhlqAnnualSalesRows } from './ohlqAnnualSalesRetention';
 import { runOpportunityIntelligenceAfterImport } from './opportunityEngine';
 import { toOhlqDateOnlyUtc } from './ohlqDataStatus';
 import {
   downloadOhlqAnnualSalesReports,
+  getOhlqAgencyInventoryObservationDate,
   getOhlqAnnualSalesReportDate,
   type OhlqAnnualSalesDownloadOptions,
 } from './ohlqAnnualSalesReport';
@@ -43,18 +45,18 @@ const safeMarkErrored = async ({
   completedSources,
   error,
   logger,
-  reportDate,
+  reportDates,
 }: {
   completedSources: Set<OhlqReportDataSource>;
   error: unknown;
   logger: Logger;
-  reportDate: string;
+  reportDates: Map<OhlqReportDataSource, string>;
 }) => {
   const pendingSources = sourceOrder.filter((source) => !completedSources.has(source));
 
   await Promise.all(
     pendingSources.map((source) =>
-      recordOhlqReportRunErrored({ error, reportDate, source }).catch((statusError) => {
+      recordOhlqReportRunErrored({ error, reportDate: reportDates.get(source)!, source }).catch((statusError) => {
         logger.error(`Unable to record OHLQ import error status for ${source}:`, statusError);
       }),
     ),
@@ -65,13 +67,25 @@ export async function runOhlqAnnualSalesWorkflow(options: OhlqAnnualSalesWorkflo
   const logger = options.logger ?? console;
   const tenantConfig = getTenantConfig();
   const reportDate = getOhlqAnnualSalesReportDate(options.reportDate).iso;
+  const inventoryObservationDate = getOhlqAgencyInventoryObservationDate();
+  const reportDates = new Map<OhlqReportDataSource, string>([
+    [OhlqReportDataSource.ANNUAL_SALES_SUMMARY, reportDate],
+    [OhlqReportDataSource.ANNUAL_SALES_SUMMARY_BY_WHOLESALE, reportDate],
+    [OhlqReportDataSource.AGENCY_INVENTORY_REPORT, inventoryObservationDate],
+  ]);
   const startedAt = Date.now();
   const completedSources = new Set<OhlqReportDataSource>();
 
-  await Promise.all(sourceOrder.map((source) => recordOhlqReportRunStarted({ reportDate, source })));
+  await Promise.all(
+    sourceOrder.map((source) => recordOhlqReportRunStarted({ reportDate: reportDates.get(source)!, source })),
+  );
 
   try {
-    const { annualSalesSummary: annualSalesDownload, annualSalesSummaryByWholesale: wholesaleDownload } =
+    const {
+      agencyInventoryReport: inventoryDownload,
+      annualSalesSummary: annualSalesDownload,
+      annualSalesSummaryByWholesale: wholesaleDownload,
+    } =
       await downloadOhlqAnnualSalesReports({
         ...defaultDownloadOptions(),
         ...options.downloadOptions,
@@ -118,6 +132,26 @@ export async function runOhlqAnnualSalesWorkflow(options: OhlqAnnualSalesWorkflo
     });
     completedSources.add(OhlqReportDataSource.ANNUAL_SALES_SUMMARY_BY_WHOLESALE);
 
+    if (!inventoryDownload.csvBuffer) {
+      throw new Error('Agency Inventory Report CSV download completed, but no CSV buffer was returned for import.');
+    }
+
+    const inventoryImport = await importOhlqAgencyInventoryCsv({
+      csv: inventoryDownload.csvBuffer,
+      reportDate: inventoryDownload.reportDate,
+    });
+    logger.log(
+      `OHLQ agency inventory captured ${inventoryImport.importedRows} current snapshot row(s) across ` +
+        `${inventoryImport.diagnostics.uniqueAgencies} agencies and ${inventoryImport.diagnostics.uniqueItems} items; ` +
+        `${inventoryImport.diagnostics.unmatchedAgencyNumbers.length} agency number(s) were not matched.`,
+    );
+    await recordOhlqReportRunCompleted({
+      downloadResult: inventoryDownload,
+      importResult: inventoryImport,
+      source: OhlqReportDataSource.AGENCY_INVENTORY_REPORT,
+    });
+    completedSources.add(OhlqReportDataSource.AGENCY_INVENTORY_REPORT);
+
     const opportunityIntelligence = await runOpportunityIntelligenceAfterImport({
       reportDate: toOhlqDateOnlyUtc(reportDate),
     });
@@ -139,6 +173,17 @@ export async function runOhlqAnnualSalesWorkflow(options: OhlqAnnualSalesWorkflo
       retention,
       opportunityIntelligence,
       reports: {
+        agencyInventoryReport: {
+          diagnostics: inventoryImport.diagnostics,
+          filename: inventoryDownload.filename,
+          importedRows: inventoryImport.importedRows,
+          parsedRows: inventoryImport.parsedRows,
+          reportDate: inventoryDownload.reportDate,
+          replacedRows: inventoryImport.deletedRows,
+          runDate: inventoryDownload.runDate,
+          skippedRows: inventoryImport.skippedRows,
+          sizeBytes: inventoryDownload.sizeBytes,
+        },
         annualSalesSummary: {
           filename: annualSalesDownload.filename,
           importedRows: annualSalesImport.importedRows,
@@ -163,7 +208,7 @@ export async function runOhlqAnnualSalesWorkflow(options: OhlqAnnualSalesWorkflo
       },
     };
   } catch (error) {
-    await safeMarkErrored({ completedSources, error, logger, reportDate });
+    await safeMarkErrored({ completedSources, error, logger, reportDates });
     throw error;
   }
 }

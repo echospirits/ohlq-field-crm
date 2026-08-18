@@ -75,6 +75,7 @@ export async function POST(request: Request) {
     return redirectToDataStatus(request, 'ohlq-imported', {
       annualRows: result.reports.annualSalesSummary.importedRows,
       date: reportDate,
+      inventoryRows: result.reports.agencyInventoryReport.importedRows,
       wholesaleRows: result.reports.annualSalesSummaryByWholesale.importedRows,
     });
   } catch (error) {

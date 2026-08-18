@@ -1,11 +1,16 @@
 import {
   OhlqReportDataSource,
   OhlqReportRunStatus,
+  Prisma,
   type PrismaClient,
 } from '@prisma/client';
 import { prisma } from './prisma';
 import type { OhlqAnnualSalesImportResult } from './ohlqAnnualSalesImport';
 import type { OhlqAnnualSalesDownloadResult } from './ohlqAnnualSalesReport';
+
+type OhlqReportImportResult = OhlqAnnualSalesImportResult & {
+  diagnostics?: unknown;
+};
 
 export const OHLQ_DATA_SOURCE_CONFIGS = [
   {
@@ -17,6 +22,11 @@ export const OHLQ_DATA_SOURCE_CONFIGS = [
     source: OhlqReportDataSource.ANNUAL_SALES_SUMMARY_BY_WHOLESALE,
     label: 'Annual Sales Summary by Wholesale',
     tableName: 'OhlqAnnualSalesByWholesaleRow',
+  },
+  {
+    source: OhlqReportDataSource.AGENCY_INVENTORY_REPORT,
+    label: 'Agency Inventory Report',
+    tableName: 'OhlqAgencyInventorySnapshot',
   },
 ] as const;
 
@@ -65,6 +75,7 @@ export async function recordOhlqReportRunStarted({
     update: {
       completedAt: null,
       errorMessage: null,
+      diagnostics: Prisma.DbNull,
       filename: null,
       parsedRows: 0,
       replacedRows: 0,
@@ -85,7 +96,7 @@ export async function recordOhlqReportRunCompleted({
 }: {
   db?: PrismaClient;
   downloadResult: OhlqAnnualSalesDownloadResult;
-  importResult: OhlqAnnualSalesImportResult;
+  importResult: OhlqReportImportResult;
   source: OhlqReportDataSource;
 }) {
   const reportDateValue = toOhlqDateOnlyUtc(importResult.reportDate);
@@ -102,6 +113,7 @@ export async function recordOhlqReportRunCompleted({
       completedAt,
       dataSource: source,
       errorMessage: null,
+      diagnostics: importResult.diagnostics as Prisma.InputJsonValue | undefined,
       filename: downloadResult.filename,
       lastSuccessfulAt: completedAt,
       parsedRows: importResult.parsedRows,
@@ -116,6 +128,7 @@ export async function recordOhlqReportRunCompleted({
     update: {
       completedAt,
       errorMessage: null,
+      diagnostics: importResult.diagnostics as Prisma.InputJsonValue | undefined,
       filename: downloadResult.filename,
       lastSuccessfulAt: completedAt,
       parsedRows: importResult.parsedRows,

@@ -1,13 +1,12 @@
 import {
+  OhlqReportDataSource,
   OhlqReportRunStatus,
-  type OhlqReportDataSource,
   type OhlqReportImportStatus,
   type PrismaClient,
 } from '@prisma/client';
 import { prisma } from './prisma';
 import {
   formatOhlqDate,
-  OHLQ_DATA_SOURCE_CONFIGS,
   toOhlqDateOnlyUtc,
 } from './ohlqDataStatus';
 
@@ -18,7 +17,13 @@ export const DEFAULT_OHLQ_CRON_REFRESH_DAYS = 2;
 
 type ImportStatusSnapshot = Pick<OhlqReportImportStatus, 'dataSource' | 'reportDate' | 'status'>;
 
-const requiredSources = OHLQ_DATA_SOURCE_CONFIGS.map((config) => config.source);
+// Inventory is observed on the actual Eastern download date, while the two cumulative
+// sales reports are keyed to their requested report date. Dated catch-up selection is
+// therefore based on the sales sources; every selected workflow still requires inventory.
+const requiredSources: OhlqReportDataSource[] = [
+  OhlqReportDataSource.ANNUAL_SALES_SUMMARY,
+  OhlqReportDataSource.ANNUAL_SALES_SUMMARY_BY_WHOLESALE,
+];
 
 function parsePositiveInteger(rawValue: string | undefined | null, fallback: number, { max }: { max: number }) {
   const parsed = Number(rawValue);

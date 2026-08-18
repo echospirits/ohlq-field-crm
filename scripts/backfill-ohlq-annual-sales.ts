@@ -100,6 +100,7 @@ async function main() {
         {
           annualSalesSummary: result.reports.annualSalesSummary,
           annualSalesSummaryByWholesale: result.reports.annualSalesSummaryByWholesale,
+          agencyInventoryReport: result.reports.agencyInventoryReport,
           durationMs: result.durationMs,
           ok: result.ok,
         },

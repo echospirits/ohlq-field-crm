@@ -69,7 +69,12 @@ const MICROSOFT_FORWARD_ACTION_SELECTORS = [
 ];
 
 type OhlqPowerBiReportConfig = {
+  dateRange: boolean;
   fileSlug: string;
+  parameter: {
+    name: 'Brand' | 'Vendor';
+    values: 'all' | string[];
+  };
   reportId: string;
   renderedTitle: string | RegExp;
 };
@@ -78,16 +83,32 @@ const buildPowerBiReportUrl = (reportId: string) =>
   `https://app.powerbigov.us/groups/me/apps/${POWER_BI_APP_ID}/rdlreports/${reportId}?ctid=${POWER_BI_TENANT_ID}`;
 
 export const OHLQ_ANNUAL_SALES_SUMMARY_REPORT = {
+  dateRange: true,
   fileSlug: 'annual-sales-summary',
+  parameter: { name: 'Vendor', values: 'all' },
   reportId: '9781fc23-73de-4ee8-b0b8-77ae6f9b7c4e',
   renderedTitle: 'Annual Sales Summary',
 } satisfies OhlqPowerBiReportConfig;
 
 export const OHLQ_ANNUAL_SALES_BY_WHOLESALE_REPORT = {
+  dateRange: true,
   fileSlug: 'annual-sales-summary-by-wholesale',
+  parameter: { name: 'Vendor', values: 'all' },
   reportId: 'dea7572c-2ea4-45bb-bbbc-29600bd326cc',
   renderedTitle: /Annual Sales Summary By Wholesale Account/i,
 } satisfies OhlqPowerBiReportConfig;
+
+export const OHLQ_AGENCY_INVENTORY_REPORT_ID = '5079ab3f-ff48-4f50-a1b4-3264862af239';
+
+export function getOhlqAgencyInventoryReportConfig() {
+  return {
+    dateRange: false,
+    fileSlug: 'agency-inventory-report',
+    parameter: { name: 'Brand', values: 'all' },
+    reportId: OHLQ_AGENCY_INVENTORY_REPORT_ID,
+    renderedTitle: /Agency Inventory Report/i,
+  } satisfies OhlqPowerBiReportConfig;
+}
 
 export type ReportDate = {
   day: number;
@@ -195,6 +216,8 @@ function todayIsoEastern() {
   const today = todayInEastern();
   return formatDateParts(today.year, today.month, today.day).iso;
 }
+
+export const getOhlqAgencyInventoryObservationDate = () => todayIsoEastern();
 
 function parseReportDate(rawDate: string | undefined) {
   if (!rawDate) return defaultReportDate();
@@ -724,8 +747,10 @@ async function waitForPowerBiReportFrame(
     }
 
     for (const frame of page.frames()) {
-      const fromDateInput = reportDateInput(frame, 'From date');
-      if (await fromDateInput.isVisible({ timeout: 750 }).catch(() => false)) {
+      const parameterControl = report.dateRange
+        ? reportDateInput(frame, 'From date')
+        : frame.locator(`span[aria-label="Open ${report.parameter.name}"]`).first();
+      if (await parameterControl.isVisible({ timeout: 750 }).catch(() => false)) {
         return frame;
       }
     }
@@ -750,7 +775,7 @@ async function waitForPowerBiReportFrame(
   throw new Error(
     [
       `Power BI report parameters did not load for ${report.fileSlug}.`,
-      `Expected the From date input in one of ${page.frames().length} frame(s).`,
+      `Expected the report parameter controls in one of ${page.frames().length} frame(s).`,
       `Page: ${pageSummary || page.url()}.`,
       frameSummary ? `Frames: ${frameSummary}.` : '',
       `Debug screenshot: ${screenshotPath}`,
@@ -778,13 +803,28 @@ async function setDate(frame: Frame, label: 'From date' | 'To date', reportDate:
   await input.waitFor({ state: 'visible', timeout: 30_000 });
 }
 
-async function selectAllVendors(frame: Frame) {
-  await frame.locator('span[aria-label="Open Vendor"]').click();
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+async function selectReportParameter(frame: Frame, parameter: OhlqPowerBiReportConfig['parameter']) {
+  await frame.locator(`span[aria-label="Open ${parameter.name}"]`).click();
   const selectAll = frame.getByRole('menuitemcheckbox', { name: 'Select All' });
   await selectAll.waitFor({ state: 'visible', timeout: 30_000 });
 
-  if ((await selectAll.getAttribute('aria-checked')) !== 'true') {
-    await selectAll.click();
+  if (parameter.values === 'all') {
+    if ((await selectAll.getAttribute('aria-checked')) !== 'true') await selectAll.click();
+  } else {
+    if ((await selectAll.getAttribute('aria-checked')) !== 'false') {
+      await selectAll.click();
+      if ((await selectAll.getAttribute('aria-checked')) === 'true') await selectAll.click();
+    }
+
+    for (const value of parameter.values) {
+      const option = frame
+        .getByRole('menuitemcheckbox', { name: new RegExp(escapeRegExp(value), 'i') })
+        .first();
+      await option.waitFor({ state: 'visible', timeout: 30_000 });
+      if ((await option.getAttribute('aria-checked')) !== 'true') await option.click();
+    }
   }
 
   await frame.locator('body').press('Escape').catch(() => undefined);
@@ -792,9 +832,7 @@ async function selectAllVendors(frame: Frame) {
 
 async function viewReportIfReady(frame: Frame) {
   const viewReportButton = frame.getByRole('button', { name: 'View report' });
-  if (await viewReportButton.isEnabled().catch(() => false)) {
-    await viewReportButton.click();
-  }
+  if (await viewReportButton.isVisible().catch(() => false)) await viewReportButton.click({ timeout: 30_000 });
 }
 
 async function getLaunchOptions(options: OhlqAnnualSalesDownloadOptions): Promise<LaunchOptions> {
@@ -980,10 +1018,12 @@ async function downloadOhlqPowerBiReportFromPage(
   await openOhlqPowerBiReportWithSessionRetry(page, report, runtime, ohlqReportRedirectUrl);
 
   const frame = await waitForPowerBiReportFrame(page, report, debugDir, ohlqReportRedirectUrl);
-  await setDate(frame, 'From date', reportDate);
-  await setDate(frame, 'To date', reportDate);
+  if (report.dateRange) {
+    await setDate(frame, 'From date', reportDate);
+    await setDate(frame, 'To date', reportDate);
+  }
 
-  await selectAllVendors(frame);
+  await selectReportParameter(frame, report.parameter);
 
   await viewReportIfReady(frame);
   await frame.getByText(report.renderedTitle, { exact: typeof report.renderedTitle === 'string' }).waitFor({
@@ -1013,7 +1053,7 @@ async function downloadOhlqPowerBiReportFromPage(
     csvBuffer,
     filename,
     outputPath,
-    reportDate: reportDate.iso,
+    reportDate: report.dateRange ? reportDate.iso : runDateIso,
     runDate: runDateIso,
     sizeBytes,
   } satisfies OhlqAnnualSalesDownloadResult;
@@ -1064,15 +1104,23 @@ export async function downloadOhlqAnnualSalesSummaryByWholesale(options: OhlqAnn
   return downloadOhlqPowerBiReport(OHLQ_ANNUAL_SALES_BY_WHOLESALE_REPORT, options);
 }
 
+export async function downloadOhlqAgencyInventoryReport(options: OhlqAnnualSalesDownloadOptions = {}) {
+  return downloadOhlqPowerBiReport(getOhlqAgencyInventoryReportConfig(), options);
+}
+
 export async function downloadOhlqAnnualSalesReports(options: OhlqAnnualSalesDownloadOptions = {}) {
-  const [annualSalesSummary, annualSalesSummaryByWholesale] = await downloadOhlqPowerBiReports(
-    [OHLQ_ANNUAL_SALES_SUMMARY_REPORT, OHLQ_ANNUAL_SALES_BY_WHOLESALE_REPORT],
+  const [annualSalesSummary, annualSalesSummaryByWholesale, agencyInventoryReport] = await downloadOhlqPowerBiReports(
+    [
+      OHLQ_ANNUAL_SALES_SUMMARY_REPORT,
+      OHLQ_ANNUAL_SALES_BY_WHOLESALE_REPORT,
+      getOhlqAgencyInventoryReportConfig(),
+    ],
     options,
   );
 
-  if (!annualSalesSummary || !annualSalesSummaryByWholesale) {
-    throw new Error('Unable to download both OHLQ annual sales reports.');
+  if (!annualSalesSummary || !annualSalesSummaryByWholesale || !agencyInventoryReport) {
+    throw new Error('Unable to download all required OHLQ reports.');
   }
 
-  return { annualSalesSummary, annualSalesSummaryByWholesale };
+  return { agencyInventoryReport, annualSalesSummary, annualSalesSummaryByWholesale };
 }

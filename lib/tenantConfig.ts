@@ -24,7 +24,7 @@ export const DEFAULT_TENANT_DIGEST_NAME = 'Echo CRM';
 export const DEFAULT_TENANT_PRODUCT_LABEL = 'Echo';
 export const DEFAULT_TENANT_PRODUCT_PLURAL_LABEL = 'Echo items';
 export const DEFAULT_TENANT_OHLQ_VENDOR_IDS = ['Z90399001'] as const;
-export const DEFAULT_TENANT_EXCLUDED_ITEM_CODES = ['3150B'] as const;
+export const DEFAULT_TENANT_EXCLUDED_ITEM_CODES = ['3150B', '3750B', '4359B'] as const;
 
 const normalizeToken = (value: string | null | undefined) => {
   const normalized = String(value ?? '').trim().toUpperCase();

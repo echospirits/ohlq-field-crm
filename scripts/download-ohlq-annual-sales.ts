@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import {
+  downloadOhlqAgencyInventoryReport,
   downloadOhlqAnnualSalesSummary,
   downloadOhlqAnnualSalesSummaryByWholesale,
 } from '../lib/ohlqAnnualSalesReport';
@@ -34,7 +35,11 @@ function loadEnvFile(fileName: string) {
 
 const reportName = process.argv[2] ?? 'summary';
 const downloader =
-  reportName === 'wholesale' ? downloadOhlqAnnualSalesSummaryByWholesale : downloadOhlqAnnualSalesSummary;
+  reportName === 'inventory'
+    ? downloadOhlqAgencyInventoryReport
+    : reportName === 'wholesale'
+      ? downloadOhlqAnnualSalesSummaryByWholesale
+      : downloadOhlqAnnualSalesSummary;
 
 loadEnvFile('.env.local');
 loadEnvFile('.env');

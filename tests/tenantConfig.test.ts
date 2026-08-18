@@ -12,6 +12,8 @@ describe('tenant product configuration', () => {
     assert.equal(config.entityName, 'Echo Spirits Distilling Co.');
     assert.equal(matchesTenantProduct({ config, vendor: 'Z90399001', itemCode: '0100A' }), true);
     assert.equal(matchesTenantProduct({ config, vendor: 'z90399001', itemCode: '3150B' }), false);
+    assert.equal(matchesTenantProduct({ config, vendor: 'Z90399001', itemCode: '3750B' }), false);
+    assert.equal(matchesTenantProduct({ config, vendor: 'Z90399001', itemCode: '4359B' }), false);
     assert.equal(matchesTenantProduct({ config, vendor: 'OTHER', itemCode: '0100A' }), false);
   });
 

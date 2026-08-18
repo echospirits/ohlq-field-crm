@@ -24,6 +24,7 @@ const visibleDays = 14;
 type SourceCell = {
   count: number;
   delta: number | null;
+  diagnostics: unknown;
   errorMessage: string | null;
   lastSuccessfulAt: Date | null;
   source: OhlqReportDataSource;
@@ -66,7 +67,7 @@ const getReportDateRange = () => {
   const today = todayInEastern();
 
   return Array.from({ length: visibleDays }, (_, index) => {
-    const offset = visibleDays - index;
+    const offset = visibleDays - 1 - index;
     return formatOhlqDate(new Date(Date.UTC(today.year, today.month - 1, today.day - offset, 12)));
   });
 };
@@ -98,6 +99,7 @@ const brandMasterStatusMessage = (params: {
   annualRows?: string;
   count?: string;
   date?: string;
+  inventoryRows?: string;
   message?: string;
   replaced?: string;
   skipped?: string;
@@ -105,9 +107,11 @@ const brandMasterStatusMessage = (params: {
   wholesaleRows?: string;
 }) => {
   if (params.status === 'ohlq-imported') {
-    return `OHLQ sales import finished for ${params.date ?? 'the selected date'}: ${
+    return `OHLQ data refresh finished for ${params.date ?? 'the selected sales date'}: ${
       params.annualRows ?? '0'
-    } agency rows and ${params.wholesaleRows ?? '0'} wholesale rows loaded.`;
+    } agency sales rows, ${params.wholesaleRows ?? '0'} wholesale rows, and ${
+      params.inventoryRows ?? '0'
+    } current inventory rows loaded.`;
   }
 
   if (params.status === 'ohlq-queued') {
@@ -181,6 +185,7 @@ export default async function DataStatusPage({
     status?: string;
     annualRows?: string;
     date?: string;
+    inventoryRows?: string;
     wholesaleRows?: string;
   }>;
 }) {
@@ -197,9 +202,11 @@ export default async function DataStatusPage({
   const [
     annualCounts,
     wholesaleCounts,
+    inventoryCounts,
     statusRows,
     annualTotalRows,
     wholesaleTotalRows,
+    inventoryTotalRows,
     brandMasterRows,
     latestBrandMasterRow,
   ] = await Promise.all([
@@ -215,12 +222,19 @@ export default async function DataStatusPage({
       _count: { _all: true },
       orderBy: { reportDate: 'asc' },
     }),
+    prisma.ohlqAgencyInventorySnapshot.groupBy({
+      by: ['snapshotDate'],
+      where: { snapshotDate: { gte: startDate, lte: endDate } },
+      _count: { _all: true },
+      orderBy: { snapshotDate: 'asc' },
+    }),
     prisma.ohlqReportImportStatus.findMany({
       where: { reportDate: { gte: startDate, lte: endDate } },
       orderBy: [{ reportDate: 'asc' }, { dataSource: 'asc' }],
     }),
     prisma.ohlqAnnualSalesRow.count(),
     prisma.ohlqAnnualSalesByWholesaleRow.count(),
+    prisma.ohlqAgencyInventorySnapshot.count(),
     prisma.ohlqBrandMasterItem.count(),
     prisma.ohlqBrandMasterItem.findFirst({
       orderBy: { updatedAt: 'desc' },
@@ -231,10 +245,14 @@ export default async function DataStatusPage({
   const countsBySource = {
     [OhlqReportDataSource.ANNUAL_SALES_SUMMARY]: buildCountMap(annualCounts),
     [OhlqReportDataSource.ANNUAL_SALES_SUMMARY_BY_WHOLESALE]: buildCountMap(wholesaleCounts),
+    [OhlqReportDataSource.AGENCY_INVENTORY_REPORT]: new Map(
+      inventoryCounts.map((item) => [formatOhlqDate(item.snapshotDate), item._count._all]),
+    ),
   };
   const totalRowsBySource = {
     [OhlqReportDataSource.ANNUAL_SALES_SUMMARY]: annualTotalRows,
     [OhlqReportDataSource.ANNUAL_SALES_SUMMARY_BY_WHOLESALE]: wholesaleTotalRows,
+    [OhlqReportDataSource.AGENCY_INVENTORY_REPORT]: inventoryTotalRows,
   };
   const statusBySourceDate = new Map(statusRows.map((row) => [`${row.dataSource}:${formatOhlqDate(row.reportDate)}`, row]));
   const lastSuccessBySource = new Map<OhlqReportDataSource, Date>();
@@ -260,6 +278,7 @@ export default async function DataStatusPage({
         return {
           count,
           delta: previousCount === null ? null : count - previousCount,
+          diagnostics: statusRow?.diagnostics ?? null,
           errorMessage: statusRow?.errorMessage ?? null,
           lastSuccessfulAt: statusRow?.lastSuccessfulAt ?? null,
           source,
@@ -279,7 +298,7 @@ export default async function DataStatusPage({
       />
       {brandMasterStatusMessage(params) ? <p className="toast-notice page-status">{brandMasterStatusMessage(params)}</p> : null}
       <details className="card compact-details admin-panel" open>
-        <summary>Run OHLQ Sales Import</summary>
+        <summary>Run OHLQ Data Refresh</summary>
         <form action="/api/admin/ohlq-manual-import" method="post" className="data-status-action-form">
           <label>
             Report date
@@ -297,7 +316,7 @@ export default async function DataStatusPage({
           <p className="muted data-status-form-note">
             {productionNeedsGithubDispatch
               ? 'Add GITHUB_ACTIONS_DISPATCH_TOKEN in Vercel before production can queue the cloud runner.'
-              : 'Queues both OHLQ sales reports for the selected From/To date. Existing rows for that date are replaced during import, so this can refresh a completed day or recover a missed one.'}
+              : 'Queues both dated OHLQ sales reports plus the current Agency Inventory Report. Sales rows use the selected date; inventory uses its actual Eastern download date.'}
           </p>
         </form>
       </details>
@@ -372,6 +391,12 @@ export default async function DataStatusPage({
                       </span>
                       <span className="muted">Success: {formatRunTime(cell.lastSuccessfulAt)}</span>
                       {cell.errorMessage ? <span className="data-error-text">{cell.errorMessage}</span> : null}
+                      {cell.diagnostics ? (
+                        <details className="compact-details">
+                          <summary>Import diagnostics</summary>
+                          <pre>{JSON.stringify(cell.diagnostics, null, 2)}</pre>
+                        </details>
+                      ) : null}
                     </div>
                   </td>
                 ))}

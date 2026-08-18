@@ -163,6 +163,7 @@ enum MenuPlacementSource {
 enum OhlqReportDataSource {
   ANNUAL_SALES_SUMMARY
   ANNUAL_SALES_SUMMARY_BY_WHOLESALE
+  AGENCY_INVENTORY_REPORT
 }
 
 enum OhlqReportRunStatus {
@@ -483,6 +484,64 @@ model OhlqAnnualSalesByWholesaleRow {
   @@index([permitNumber, vendor, reportDate, brand])
 }
 
+model OhlqAgencyInventorySnapshot {
+  snapshotDate          DateTime @db.Date
+  agencyNumber          String
+  itemCode              String
+  agencyId              String?
+  agencyName            String
+  itemName              String
+  status                String?
+  detailCodeDescription String?
+  coverageGroup         String?
+  minimum               Int?
+  onHand                Int?
+  vendorId              String
+  vendorName            String?
+  brokerId              String?
+  brokerName            String?
+  district              String?
+  importedAt            DateTime @default(now())
+  agency                Agency?  @relation("AgencyInventorySnapshots", fields: [agencyId], references: [id], onDelete: SetNull)
+
+  @@id([snapshotDate, agencyNumber, itemCode])
+  @@index([agencyId, snapshotDate])
+  @@index([agencyNumber, snapshotDate])
+  @@index([agencyNumber, itemCode])
+  @@index([itemCode, snapshotDate])
+  @@index([snapshotDate])
+  @@index([status])
+  @@index([onHand])
+}
+
+model OhlqAgencyInventoryCurrent {
+  agencyNumber          String
+  itemCode              String
+  agencyId              String?
+  agencyName            String
+  itemName              String
+  status                String?
+  detailCodeDescription String?
+  coverageGroup         String?
+  minimum               Int?
+  onHand                Int?
+  vendorId              String
+  vendorName            String?
+  brokerId              String?
+  brokerName            String?
+  district              String?
+  snapshotDate          DateTime @db.Date
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  agency                Agency?  @relation("AgencyInventoryCurrent", fields: [agencyId], references: [id], onDelete: SetNull)
+
+  @@id([agencyNumber, itemCode])
+  @@index([agencyId, itemCode])
+  @@index([itemCode, onHand])
+  @@index([snapshotDate])
+  @@index([status])
+}
+
 model OhlqBrandMasterItem {
   itemCode           String   @id
   name               String
@@ -518,6 +577,7 @@ model OhlqReportImportStatus {
   completedAt      DateTime?
   lastSuccessfulAt DateTime?
   errorMessage     String?
+  diagnostics      Json?
   createdAt        DateTime             @default(now())
   updatedAt        DateTime             @updatedAt
 
@@ -735,6 +795,8 @@ model Agency {
   createdAt                DateTime      @default(now())
   updatedAt                DateTime      @updatedAt
   tags                     LocationTag[] @relation("AgencyLocationTags")
+  inventorySnapshots       OhlqAgencyInventorySnapshot[] @relation("AgencyInventorySnapshots")
+  currentInventory         OhlqAgencyInventoryCurrent[]  @relation("AgencyInventoryCurrent")
 
   @@index([latitude, longitude])
   @@index([geocodeStatus])
