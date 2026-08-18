@@ -1,9 +1,14 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import type { PrismaClient } from '@prisma/client';
 import {
   getWholesaleMergeDestinationFallbacks,
+  getWholesaleMergeCandidates,
   getWholesaleMergeLicenseeIds,
+  isEligibleWholesaleMergeTarget,
+  rankWholesaleMergeCandidates,
   type MergeAccountValues,
+  type WholesaleMergeCandidate,
 } from '../lib/wholesaleAccountMerge';
 
 const account = ({
@@ -25,6 +30,30 @@ const account = ({
   name: 'Account',
   ownership: null,
   phone: null,
+  state: 'OH',
+  zip: null,
+  ...overrides,
+});
+
+const candidate = ({
+  id,
+  licenseeId,
+  licenseeIds = [licenseeId],
+  ...overrides
+}: Omit<Partial<WholesaleMergeCandidate>, 'id' | 'licenseeId' | 'licenseeIds'> & {
+  id: string;
+  licenseeId: string;
+  licenseeIds?: string[];
+}): WholesaleMergeCandidate => ({
+  address: null,
+  city: null,
+  id,
+  isActive: true,
+  licenseeId,
+  licenseeIds: licenseeIds.map((value) => ({ licenseeId: value })),
+  mergedIntoId: null,
+  name: `Account ${id}`,
+  officialAccountId: null,
   state: 'OH',
   zip: null,
   ...overrides,
@@ -88,5 +117,78 @@ describe('getWholesaleMergeDestinationFallbacks', () => {
       state: 'OH',
       zip: null,
     });
+  });
+});
+
+describe('wholesale merge destination discovery', () => {
+  const source = candidate({
+    id: 'manual-ethyl',
+    licenseeId: 'manual-ethyl-and-tank-mrb49ss2',
+    name: 'Ethyl and Tank',
+  });
+  const destination = candidate({
+    city: 'COLUMBUS',
+    id: 'ethyl-official',
+    licenseeId: '06430432-1',
+    name: 'Ethyl & Tank',
+    zip: '43201',
+  });
+
+  it('accepts an active destination with a real Licensee ID even without an officialAccountId link', () => {
+    assert.equal(isEligibleWholesaleMergeTarget(destination), true);
+    assert.equal(isEligibleWholesaleMergeTarget(source), false);
+  });
+
+  it('ranks ampersand and word variants as the most likely name match', () => {
+    const ranked = rankWholesaleMergeCandidates({
+      candidates: [
+        candidate({ id: 'other', licenseeId: '10000001', name: 'Ethyl Beverage Company' }),
+        destination,
+      ],
+      query: '',
+      source,
+    });
+
+    assert.equal(ranked[0].id, destination.id);
+  });
+
+  it('searches normalized names and exact Licensee IDs', () => {
+    const candidates = [destination, candidate({ id: 'other', licenseeId: '10000001' })];
+
+    assert.equal(
+      rankWholesaleMergeCandidates({ candidates, query: 'Ethyl and Tank', source })[0].id,
+      destination.id,
+    );
+    assert.equal(
+      rankWholesaleMergeCandidates({ candidates, query: '06430432-1', source })[0].id,
+      destination.id,
+    );
+  });
+
+  it('loads the full active pool before ranking instead of taking the first 50 alphabetically', async () => {
+    let findManyArgs: Record<string, unknown> | undefined;
+    const alphabeticallyEarlier = Array.from({ length: 60 }, (_, index) =>
+      candidate({
+        id: `account-${index}`,
+        licenseeId: `1000${String(index).padStart(4, '0')}`,
+        name: `A Account ${String(index).padStart(2, '0')}`,
+      }),
+    );
+    const db = {
+      wholesaleAccount: {
+        findMany: async (args: Record<string, unknown>) => {
+          findManyArgs = args;
+          return [...alphabeticallyEarlier, destination];
+        },
+      },
+    } as unknown as PrismaClient;
+
+    const result = await getWholesaleMergeCandidates({ db, query: '', source });
+
+    assert.equal(findManyArgs?.take, undefined);
+    assert.equal(result.eligibleCount, 61);
+    assert.equal(result.matchCount, 61);
+    assert.equal(result.candidates.length, 50);
+    assert.equal(result.candidates[0].id, destination.id);
   });
 });

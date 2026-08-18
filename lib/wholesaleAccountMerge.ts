@@ -1,4 +1,4 @@
-import { Prisma } from '@prisma/client';
+import { Prisma, type PrismaClient } from '@prisma/client';
 import { prisma } from './prisma';
 import {
   getWholesaleLicenseeIdValues,
@@ -22,6 +22,178 @@ export type MergeAccountValues = {
   state: string | null;
   zip: string | null;
 };
+
+export type WholesaleMergeCandidate = Pick<
+  MergeAccountValues,
+  'address' | 'city' | 'licenseeId' | 'licenseeIds' | 'name' | 'state' | 'zip'
+> & {
+  id: string;
+  isActive: boolean;
+  mergedIntoId: string | null;
+  officialAccountId: string | null;
+};
+
+const MERGE_CANDIDATE_LIMIT = 50;
+const SEARCH_STOP_WORDS = new Set(['and', 'at', 'of', 'the']);
+
+const normalizeMergeText = (value: string | null | undefined) =>
+  String(value ?? '')
+    .normalize('NFKD')
+    .replace(/&/g, ' and ')
+    .replace(/[’']/g, '')
+    .replace(/[^a-zA-Z0-9]+/g, ' ')
+    .trim()
+    .toLowerCase();
+
+const normalizeMergeAddress = (value: string | null | undefined) =>
+  normalizeMergeText(value)
+    .replace(/\bstreet\b/g, 'st')
+    .replace(/\bavenue\b/g, 'ave')
+    .replace(/\bboulevard\b/g, 'blvd')
+    .replace(/\bdrive\b/g, 'dr')
+    .replace(/\broad\b/g, 'rd')
+    .replace(/\blane\b/g, 'ln')
+    .replace(/\bhighway\b/g, 'hwy')
+    .replace(/\bsuite\b/g, 'ste');
+
+const getSignificantTokens = (value: string) => {
+  const tokens = value.split(' ').filter(Boolean);
+  const significant = tokens.filter((token) => !SEARCH_STOP_WORDS.has(token));
+  return significant.length > 0 ? significant : tokens;
+};
+
+const getTokenOverlap = (left: string, right: string) => {
+  const leftTokens = new Set(getSignificantTokens(left));
+  const rightTokens = new Set(getSignificantTokens(right));
+  if (leftTokens.size === 0 || rightTokens.size === 0) return 0;
+  let intersection = 0;
+  leftTokens.forEach((token) => {
+    if (rightTokens.has(token)) intersection += 1;
+  });
+  return intersection / Math.max(leftTokens.size, rightTokens.size);
+};
+
+const getSourceMatchScore = (source: WholesaleMergeCandidate, candidate: WholesaleMergeCandidate) => {
+  const sourceName = normalizeMergeText(source.name);
+  const candidateName = normalizeMergeText(candidate.name);
+  let score = getTokenOverlap(sourceName, candidateName) * 2_000;
+
+  if (sourceName && sourceName === candidateName) score += 6_000;
+  else if (sourceName && (sourceName.includes(candidateName) || candidateName.includes(sourceName))) score += 3_000;
+
+  const sourceAddress = normalizeMergeAddress(source.address);
+  const candidateAddress = normalizeMergeAddress(candidate.address);
+  if (sourceAddress && candidateAddress) {
+    score += getTokenOverlap(sourceAddress, candidateAddress) * 1_000;
+    if (sourceAddress === candidateAddress) score += 3_000;
+  }
+
+  const sourceCity = normalizeMergeText(source.city);
+  const candidateCity = normalizeMergeText(candidate.city);
+  if (sourceCity && sourceCity === candidateCity) score += 500;
+  if (source.zip && candidate.zip && source.zip.trim() === candidate.zip.trim()) score += 750;
+
+  return score;
+};
+
+const getSearchScore = (candidate: WholesaleMergeCandidate, query: string) => {
+  const normalizedQuery = normalizeMergeText(query);
+  if (!normalizedQuery) return 0;
+
+  const fields = [
+    candidate.name,
+    candidate.licenseeId,
+    ...candidate.licenseeIds.map(({ licenseeId }) => licenseeId),
+    candidate.address,
+    candidate.city,
+    candidate.state,
+    candidate.zip,
+  ].map(normalizeMergeText).filter(Boolean);
+  const combined = fields.join(' ');
+
+  if (fields.some((field) => field === normalizedQuery)) return 10_000;
+  if (fields.some((field) => field.startsWith(normalizedQuery))) return 8_000;
+  if (fields.some((field) => field.includes(normalizedQuery))) return 6_000;
+
+  const queryTokens = getSignificantTokens(normalizedQuery);
+  if (queryTokens.length > 0 && queryTokens.every((token) => combined.includes(token))) {
+    return 4_000 + getTokenOverlap(normalizedQuery, combined) * 1_000;
+  }
+
+  return Number.NEGATIVE_INFINITY;
+};
+
+export const isEligibleWholesaleMergeTarget = (candidate: WholesaleMergeCandidate) =>
+  candidate.isActive &&
+  !candidate.mergedIntoId &&
+  (Boolean(candidate.officialAccountId) ||
+    getWholesaleLicenseeIdValues(candidate).some((licenseeId) => !isGeneratedWholesaleLicenseeId(licenseeId)));
+
+export function rankWholesaleMergeCandidates({
+  candidates,
+  query,
+  source,
+}: {
+  candidates: WholesaleMergeCandidate[];
+  query: string;
+  source: WholesaleMergeCandidate;
+}) {
+  return candidates
+    .filter(isEligibleWholesaleMergeTarget)
+    .map((candidate) => ({
+      candidate,
+      searchScore: getSearchScore(candidate, query),
+      sourceScore: getSourceMatchScore(source, candidate),
+    }))
+    .filter(({ searchScore }) => Number.isFinite(searchScore))
+    .sort(
+      (left, right) =>
+        right.searchScore - left.searchScore ||
+        right.sourceScore - left.sourceScore ||
+        left.candidate.name.localeCompare(right.candidate.name) ||
+        left.candidate.id.localeCompare(right.candidate.id),
+    )
+    .map(({ candidate }) => candidate);
+}
+
+export async function getWholesaleMergeCandidates({
+  db = prisma,
+  query,
+  source,
+}: {
+  db?: PrismaClient;
+  query: string;
+  source: WholesaleMergeCandidate;
+}) {
+  const allCandidates = await db.wholesaleAccount.findMany({
+    where: {
+      id: { not: source.id },
+      isActive: true,
+      mergedIntoId: null,
+    },
+    select: {
+      address: true,
+      city: true,
+      id: true,
+      isActive: true,
+      licenseeId: true,
+      licenseeIds: { select: { licenseeId: true } },
+      mergedIntoId: true,
+      name: true,
+      officialAccountId: true,
+      state: true,
+      zip: true,
+    },
+  });
+  const eligibleCount = allCandidates.filter(isEligibleWholesaleMergeTarget).length;
+  const rankedCandidates = rankWholesaleMergeCandidates({ candidates: allCandidates, query, source });
+
+  return {
+    candidates: rankedCandidates.slice(0, MERGE_CANDIDATE_LIMIT),
+    eligibleCount,
+    matchCount: rankedCandidates.length,
+  };
+}
 
 export type WholesaleMergeErrorCode =
   | 'already-merged'
@@ -186,8 +358,11 @@ function assertMergeTarget(
   target: Awaited<ReturnType<typeof getAccountForMerge>>,
 ): asserts target is MergeAccountRecord {
   if (!target) throw new WholesaleMergeError('invalid-target', 'The official account no longer exists.');
-  if (!target.officialAccountId || target.mergedIntoId || !target.isActive) {
-    throw new WholesaleMergeError('target-is-not-official', 'The destination must be an active official account.');
+  if (!isEligibleWholesaleMergeTarget(target)) {
+    throw new WholesaleMergeError(
+      'target-is-not-official',
+      'The destination must be an active account with a real Licensee ID.',
+    );
   }
 }
 

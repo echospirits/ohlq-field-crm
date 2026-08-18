@@ -7,6 +7,7 @@ import { requireAdmin } from '../../../../lib/auth';
 import { prisma } from '../../../../lib/prisma';
 import {
   getWholesaleAccountMergePreview,
+  getWholesaleMergeCandidates,
   WholesaleMergeError,
 } from '../../../../lib/wholesaleAccountMerge';
 import { formatWholesaleLicenseeIds } from '../../../../lib/wholesaleAccounts';
@@ -22,7 +23,7 @@ const statusMessages: Record<string, string> = {
   'source-is-official': 'Only a non-official account can be used as the merge source.',
   'target-has-target-data-conflict':
     'Both accounts contain target intelligence. Resolve that data before merging.',
-  'target-is-not-official': 'Choose an active official account as the destination.',
+  'target-is-not-official': 'Choose an active destination with a real Licensee ID.',
 };
 
 const formatAddress = (account: {
@@ -57,33 +58,8 @@ export default async function MergeWholesaleAccountPage({
   if (!source) notFound();
   if (source.mergedIntoId) redirect(`/wholesale/${source.mergedIntoId}`);
 
-  const candidates = await prisma.wholesaleAccount.findMany({
-    where: {
-      id: { not: sourceId },
-      isActive: true,
-      mergedIntoId: null,
-      officialAccountId: { not: null },
-      ...(q
-        ? {
-            OR: [
-              { name: { contains: q, mode: 'insensitive' } },
-              { licenseeId: { contains: q, mode: 'insensitive' } },
-              { licenseeIds: { some: { licenseeId: { contains: q, mode: 'insensitive' } } } },
-              { address: { contains: q, mode: 'insensitive' } },
-              { city: { contains: q, mode: 'insensitive' } },
-            ],
-          }
-        : {}),
-    },
-    include: {
-      licenseeIds: {
-        orderBy: [{ isPrimary: 'desc' }, { licenseeId: 'asc' }],
-        select: { licenseeId: true },
-      },
-    },
-    orderBy: [{ name: 'asc' }],
-    take: 50,
-  });
+  const candidateResults = await getWholesaleMergeCandidates({ query: q, source });
+  const { candidates } = candidateResults;
 
   let preview: Awaited<ReturnType<typeof getWholesaleAccountMergePreview>> | null = null;
   let previewError: string | null = null;
@@ -137,6 +113,10 @@ export default async function MergeWholesaleAccountPage({
         <>
           <div className="card">
             <h2>Choose the official destination</h2>
+            <p className="muted">
+              Likely matches are ranked using the source name and address. Search checks every eligible wholesale
+              account, including real Licensee-ID accounts that are not linked to a legacy official record.
+            </p>
             <form action={`/wholesale/${sourceId}/merge`} method="get">
               <label>
                 Search by name, Licensee ID, address, or city
@@ -146,6 +126,13 @@ export default async function MergeWholesaleAccountPage({
                 Search
               </button>
             </form>
+
+            <h3>{q ? 'Search results' : 'Likely matches'}</h3>
+            <p className="muted">
+              {q
+                ? `${candidateResults.matchCount} match${candidateResults.matchCount === 1 ? '' : 'es'} found across ${candidateResults.eligibleCount} eligible destinations.`
+                : `Showing the ${Math.min(candidates.length, candidateResults.eligibleCount)} most likely of ${candidateResults.eligibleCount} eligible destinations.`}
+            </p>
 
             <div className="table-scroll">
               <table className="responsive-table">
@@ -158,9 +145,11 @@ export default async function MergeWholesaleAccountPage({
                   </tr>
                 </thead>
                 <tbody>
-                  {candidates.map((candidate) => (
+                  {candidates.map((candidate, index) => (
                     <tr key={candidate.id}>
-                      <td data-label="Account">{candidate.name}</td>
+                      <td data-label="Account">
+                        {candidate.name} {!q && index === 0 ? <span className="pill">Best match</span> : null}
+                      </td>
                       <td data-label="Licensee IDs">{formatWholesaleLicenseeIds(candidate)}</td>
                       <td data-label="Address">{formatAddress(candidate)}</td>
                       <td data-label="Action">
