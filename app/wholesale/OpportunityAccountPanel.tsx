@@ -1,6 +1,7 @@
 import { OpportunityStatus, Prisma } from '@prisma/client';
 import Link from 'next/link';
 import { formatEasternDate } from '../../lib/dateTime';
+import { getOhlqWindowStartDate, summarizeLinkedWholesaleAccountSales } from '../../lib/ohlqSalesData';
 import { prisma } from '../../lib/prisma';
 
 const activeStatuses = [OpportunityStatus.OPEN, OpportunityStatus.ACTIONED, OpportunityStatus.SNOOZED];
@@ -52,14 +53,25 @@ export async function OpportunityAccountPanel({ agencyId, wholesaleAccountId }: 
     ? { wholesaleAccountId, status: { in: activeStatuses } }
     : { status: { in: activeStatuses }, wholesaleAccount: { agencyId: { equals: agencyId, mode: 'insensitive' } } };
   if (isAgencyRollup) {
-    const [opportunities, linkedAccountCount, openFollowUps] = await Promise.all([
+    const [linkedAccounts, latestWholesaleReport] = await Promise.all([
+      prisma.wholesaleAccount.findMany({
+        where: { agencyId: { equals: agencyId, mode: 'insensitive' }, mergedIntoId: null },
+        include: { licenseeIds: { select: { licenseeId: true } } },
+        orderBy: [{ isActive: 'desc' }, { name: 'asc' }],
+      }),
+      prisma.ohlqAnnualSalesByWholesaleRow.findFirst({
+        orderBy: { reportDate: 'desc' },
+        select: { reportDate: true },
+      }),
+    ]);
+    const salesStart = latestWholesaleReport ? getOhlqWindowStartDate(latestWholesaleReport.reportDate, 30) : null;
+    const [opportunities, openFollowUps, salesRows] = await Promise.all([
       prisma.salesOpportunity.findMany({
         where: opportunityWhere,
         include: { wholesaleAccount: { select: { id: true, name: true } } },
         orderBy: [{ productionScore: 'desc' }, { lastDetectedAt: 'desc' }],
         take: 12,
       }),
-      prisma.wholesaleAccount.count({ where: { agencyId: { equals: agencyId, mode: 'insensitive' }, isActive: true, mergedIntoId: null } }),
       prisma.worklistItem.count({
         where: {
           status: { in: ['OPEN', 'IN_PROGRESS'] },
@@ -71,9 +83,25 @@ export async function OpportunityAccountPanel({ agencyId, wholesaleAccountId }: 
           },
         },
       }),
+      salesStart ? prisma.ohlqAnnualSalesByWholesaleRow.findMany({
+        where: {
+          agencyId: { equals: agencyId, mode: 'insensitive' },
+          reportDate: { gte: salesStart, lte: latestWholesaleReport!.reportDate },
+        },
+        select: { brand: true, permitNumber: true, vendor: true, wholesaleBottlesSold: true },
+      }) : Promise.resolve([]),
     ]);
+    const salesByAccount = summarizeLinkedWholesaleAccountSales({ accounts: linkedAccounts, rows: salesRows });
     const pursuing = opportunities.filter((item) => item.status === OpportunityStatus.ACTIONED).length;
     const highPriority = opportunities.filter((item) => item.priorityBand === 'HIGH').length;
+    const accountSales = linkedAccounts.map((account) => ({
+      account,
+      sales: salesByAccount.get(account.id) ?? { accountId: account.id, allBottles: 0, echoBottles: 0 },
+    }));
+    const echoBottles30 = accountSales.reduce((total, item) => total + item.sales.echoBottles, 0);
+    const allBottles30 = accountSales.reduce((total, item) => total + item.sales.allBottles, 0);
+    const buyingAccounts = accountSales.filter((item) => item.sales.allBottles > 0).length;
+    const opportunityByAccount = new Map(opportunities.map((item) => [item.wholesaleAccountId, item]));
 
     return <section className="card account-opportunity-panel">
       <div className="section-heading account-opportunity-heading"><div><span className="page-eyebrow">Linked wholesale accounts</span><h2>Opportunity intelligence</h2></div><Link className="btn secondary compact-btn" href="/opportunities">View inbox</Link></div>
@@ -82,18 +110,25 @@ export async function OpportunityAccountPanel({ agencyId, wholesaleAccountId }: 
         { label: 'High priority', value: highPriority },
         { label: 'Pursuing', value: pursuing },
         { label: 'Follow-ups', value: openFollowUps },
-        { label: 'Linked accounts', value: linkedAccountCount },
+        { label: 'Linked accounts', value: linkedAccounts.length },
+        { label: 'Buying / 30d', value: buyingAccounts },
+        { label: 'Echo bottles / 30d', value: echoBottles30 },
+        { label: 'All bottles / 30d', value: allBottles30 },
       ]} />
-      {opportunities.slice(0, 5).map((item) => <OpportunityRow
-        accountHref={`/wholesale/${item.wholesaleAccountId}`}
-        accountName={item.wholesaleAccount.name}
-        explanation={firstExplanation(item.explanation)}
-        key={item.id}
-        priorityBand={item.priorityBand}
-        recommendedAction={item.recommendedAction}
-        title={item.title}
-      />)}
-      {opportunities.length === 0 ? <p className="muted activity-empty">No active Opportunities are linked to this agency’s wholesale accounts.</p> : null}
+      {accountSales.slice(0, 12).map(({ account, sales }) => {
+        const opportunity = opportunityByAccount.get(account.id);
+        const salesExplanation = `${sales.echoBottles} Echo · ${sales.allBottles} total bottles in 30 days`;
+        return <OpportunityRow
+          accountHref={`/wholesale/${account.id}`}
+          accountName={account.name}
+          explanation={opportunity ? `${firstExplanation(opportunity.explanation)} · ${salesExplanation}` : salesExplanation}
+          key={account.id}
+          priorityBand={opportunity?.priorityBand ?? (sales.echoBottles > 0 ? 'MEDIUM' : 'LOW')}
+          recommendedAction={opportunity?.recommendedAction ?? (sales.echoBottles > 0 ? 'Maintain relationship' : 'Review account')}
+          title={opportunity?.title ?? (sales.allBottles > 0 ? 'Recent wholesale activity' : 'No recent wholesale purchases')}
+        />;
+      })}
+      {linkedAccounts.length === 0 ? <p className="muted activity-empty">No wholesale accounts are linked to this agency.</p> : null}
     </section>;
   }
 

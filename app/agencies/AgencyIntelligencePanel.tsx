@@ -70,7 +70,7 @@ export async function AgencyIntelligencePanel({ agencyId }: { agencyId: string }
         <IntelligenceBand label="Retail" value={summary.retailBand} />
         <IntelligenceBand label="Wholesale influence" value={summary.wholesaleInfluenceBand} />
         <div><dt>Echo SKUs</dt><dd>{summary.currentSkuCount}</dd></div>
-        <div><dt>Retail / 30d</dt><dd>{summary.retailSales30}</dd></div>
+        <div><dt>Agency sales / 30d</dt><dd>{summary.retailSales30}</dd></div>
         <div><dt>Last Echo sale</dt><dd>{summary.lastEchoSaleDate ? formatEasternDate(summary.lastEchoSaleDate) : 'None'}</dd></div>
         <div><dt>D8 opportunities</dt><dd>{summary.tastingOpportunityCount}</dd></div>
       </dl>

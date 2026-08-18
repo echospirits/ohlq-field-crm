@@ -2,6 +2,7 @@ import type { Prisma, PrismaClient } from '@prisma/client';
 import { formatOhlqDate } from './ohlqDataStatus';
 import {
   buildPermitNumberSearchConditions,
+  getOhlqLicenseeMatchKeys,
   normalizeOhlqId,
   resolveOhlqWholesaleSalesLookup,
   salesPermitMatchesLookup,
@@ -101,7 +102,68 @@ export const getTenantSalesWhere = (config: TenantConfig): Prisma.OhlqAnnualSale
   };
 };
 
+export type LinkedWholesaleAccountSalesRollup = {
+  accountId: string;
+  allBottles: number;
+  echoBottles: number;
+};
+
+export const getTenantWholesaleSalesWhere = (
+  config: TenantConfig,
+): Prisma.OhlqAnnualSalesByWholesaleRowWhereInput => {
+  if (config.productFilter.mode === 'item-list') {
+    return {
+      brand: { in: config.productFilter.itemCodes },
+    };
+  }
+
+  return {
+    vendor: { in: config.productFilter.vendorIds },
+    ...(config.productFilter.excludedItemCodes.length > 0
+      ? { brand: { notIn: config.productFilter.excludedItemCodes } }
+      : {}),
+  };
+};
+
 export const getOhlqWindowStartDate = (endDate: Date, days: number) => addUtcDays(endDate, -(days - 1));
+
+export function summarizeLinkedWholesaleAccountSales({
+  accounts,
+  config = getTenantConfig(),
+  rows,
+}: {
+  accounts: Array<{
+    id: string;
+    licenseeId: string | null;
+    licenseeIds?: Array<{ licenseeId: string | null }>;
+  }>;
+  config?: TenantConfig;
+  rows: Array<{
+    brand: string;
+    permitNumber: string;
+    vendor: string;
+    wholesaleBottlesSold: number;
+  }>;
+}) {
+  const accountByPermitKey = new Map<string, string>();
+  const rollups = new Map<string, LinkedWholesaleAccountSalesRollup>();
+  accounts.forEach((account) => {
+    rollups.set(account.id, { accountId: account.id, allBottles: 0, echoBottles: 0 });
+    [account.licenseeId, ...(account.licenseeIds ?? []).map((value) => value.licenseeId)].forEach((licenseeId) => {
+      getOhlqLicenseeMatchKeys(licenseeId).forEach((matchKey) => accountByPermitKey.set(matchKey, account.id));
+    });
+  });
+  rows.forEach((row) => {
+    const accountId = getOhlqLicenseeMatchKeys(row.permitNumber)
+      .map((matchKey) => accountByPermitKey.get(matchKey))
+      .find(Boolean);
+    if (!accountId) return;
+    const rollup = rollups.get(accountId)!;
+    rollup.allBottles += row.wholesaleBottlesSold;
+    if (isConfiguredTenantItem(row.vendor, row.brand, config)) rollup.echoBottles += row.wholesaleBottlesSold;
+  });
+  return rollups;
+}
 
 const formatDateOnly = (date: Date | null | undefined) => (date ? formatOhlqDate(date) : null);
 

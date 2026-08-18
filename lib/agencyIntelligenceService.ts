@@ -19,8 +19,8 @@ import {
 } from './agencyIntelligence';
 import { agencyIntelligenceConfig } from './agencyIntelligenceConfig';
 import { getTenantAgencyInventoryWhere } from './ohlqAgencyInventory';
-import { getTenantSalesWhere } from './ohlqSalesData';
-import { normalizeOhlqId } from './ohlqWholesaleMatching';
+import { getTenantSalesWhere, getTenantWholesaleSalesWhere } from './ohlqSalesData';
+import { getOhlqLicenseeMatchKeys, normalizeOhlqId } from './ohlqWholesaleMatching';
 import { prisma } from './prisma';
 import { getTenantConfig } from './tenantConfig';
 
@@ -101,6 +101,41 @@ const daysBetween = (later: Date, earlier: Date | null) =>
 const key = (agencyNumber: string, itemCode: string) => `${agencyNumber}|${itemCode}`;
 const asJson = (value: unknown) => value as Prisma.InputJsonValue;
 
+export function aggregateAgencyProductSales(
+  rows: Array<{
+    agencyId: string;
+    brand: string;
+    reportDate: Date;
+    retailBottlesSold: number;
+    wholesaleBottlesSold: number;
+  }>,
+  sales7Start: Date,
+) {
+  const salesByKey = new Map<string, MutableSales>();
+  rows.forEach((row) => {
+    const agencyNumber = normalizeOhlqId(row.agencyId);
+    if (!agencyNumber) return;
+    const salesKey = key(agencyNumber, row.brand);
+    const value = salesByKey.get(salesKey) ?? {
+      lastSaleDate: null,
+      retailSales7: 0,
+      retailSales30: 0,
+      wholesaleSales30: 0,
+    };
+    // Store velocity includes bottles sold at the retail counter and bottles
+    // purchased by wholesale licensees through the Agency.
+    const agencyBottlesSold = row.retailBottlesSold + row.wholesaleBottlesSold;
+    value.retailSales30 += agencyBottlesSold;
+    value.wholesaleSales30 += row.wholesaleBottlesSold;
+    if (row.reportDate >= sales7Start) value.retailSales7 += agencyBottlesSold;
+    if (agencyBottlesSold > 0 && (!value.lastSaleDate || row.reportDate > value.lastSaleDate)) {
+      value.lastSaleDate = row.reportDate;
+    }
+    salesByKey.set(salesKey, value);
+  });
+  return salesByKey;
+}
+
 const retailBandForProducts = (products: ProductResult[]): IntelligenceBand => {
   if (products.length === 0) return 'INSUFFICIENT_DATA';
   const actionable = products.filter((product) => isActionableAgencyOpportunity(product.analysis.opportunityState));
@@ -169,7 +204,7 @@ export async function refreshAgencyIntelligence({
   const sales7Start = addDays(salesReportDate, -6);
   const placementHistoryStart = addDays(inventoryReportDate, -179);
 
-  const [agencies, inventory, salesRows, placementHistory, visits, wholesaleAccounts, previousProducts] =
+  const [agencies, inventory, salesRows, placementHistory, visits, wholesaleAccounts, wholesaleSalesRows, previousProducts] =
     await Promise.all([
       db.agency.findMany({
         select: { id: true, agencyId: true, name: true, county: true, d8Permit: true },
@@ -221,12 +256,21 @@ export async function refreshAgencyIntelligence({
           id: true,
           agencyId: true,
           isActive: true,
+          licenseeId: true,
+          licenseeIds: { select: { licenseeId: true } },
           ohlqLastEchoPurchaseDate: true,
           opportunities: {
             where: { status: { in: [OpportunityStatus.OPEN, OpportunityStatus.ACTIONED] } },
             select: { id: true },
           },
         },
+      }),
+      db.ohlqAnnualSalesByWholesaleRow.findMany({
+        where: {
+          ...getTenantWholesaleSalesWhere(tenantConfig),
+          reportDate: { gte: salesStart, lte: salesReportDate },
+        },
+        select: { permitNumber: true, wholesaleBottlesSold: true },
       }),
       db.agencyProductIntelligence.findMany({
         select: {
@@ -255,23 +299,7 @@ export async function refreshAgencyIntelligence({
   }));
   const itemNames = new Map<string, string>();
   inventory.forEach((row) => itemNames.set(row.itemCode, row.itemName));
-  const salesByKey = new Map<string, MutableSales>();
-  salesRows.forEach((row) => {
-    const agencyNumber = normalizeOhlqId(row.agencyId);
-    if (!agencyNumber) return;
-    const salesKey = key(agencyNumber, row.brand);
-    const value = salesByKey.get(salesKey) ?? {
-      lastSaleDate: null,
-      retailSales7: 0,
-      retailSales30: 0,
-      wholesaleSales30: 0,
-    };
-    value.retailSales30 += row.retailBottlesSold;
-    value.wholesaleSales30 += row.wholesaleBottlesSold;
-    if (row.reportDate >= sales7Start) value.retailSales7 += row.retailBottlesSold;
-    if (row.retailBottlesSold > 0 && (!value.lastSaleDate || row.reportDate > value.lastSaleDate)) value.lastSaleDate = row.reportDate;
-    salesByKey.set(salesKey, value);
-  });
+  const salesByKey = aggregateAgencyProductSales(salesRows, sales7Start);
   const observedItemCodes = new Set([
     ...inventory.map((row) => row.itemCode),
     ...salesRows.map((row) => row.brand),
@@ -313,22 +341,20 @@ export async function refreshAgencyIntelligence({
     if (!agencyNumber) return;
     wholesaleByAgencyNumber.set(agencyNumber, [...(wholesaleByAgencyNumber.get(agencyNumber) ?? []), account]);
   });
-  const wholesaleAccountIds = wholesaleAccounts.map((account) => account.id);
-  const wholesaleEvents = wholesaleAccountIds.length
-    ? await db.accountSalesEvent.findMany({
-        where: {
-          wholesaleAccountId: { in: wholesaleAccountIds },
-          isTenantProduct: true,
-          reportDate: { gte: salesStart, lte: salesReportDate },
-        },
-        select: { wholesaleAccountId: true, bottles: true },
-      })
-    : [];
+  const wholesaleAccountByPermitKey = new Map<string, string>();
+  wholesaleAccounts.forEach((account) => {
+    [account.licenseeId, ...account.licenseeIds.map((value) => value.licenseeId)].forEach((licenseeId) => {
+      getOhlqLicenseeMatchKeys(licenseeId).forEach((matchKey) => wholesaleAccountByPermitKey.set(matchKey, account.id));
+    });
+  });
   const bottlesByWholesaleAccount = new Map<string, number>();
-  wholesaleEvents.forEach((event) => bottlesByWholesaleAccount.set(
-    event.wholesaleAccountId,
-    (bottlesByWholesaleAccount.get(event.wholesaleAccountId) ?? 0) + event.bottles,
-  ));
+  wholesaleSalesRows.forEach((row) => {
+    const accountId = getOhlqLicenseeMatchKeys(row.permitNumber)
+      .map((matchKey) => wholesaleAccountByPermitKey.get(matchKey))
+      .find(Boolean);
+    if (!accountId) return;
+    bottlesByWholesaleAccount.set(accountId, (bottlesByWholesaleAccount.get(accountId) ?? 0) + row.wholesaleBottlesSold);
+  });
 
   const peerTotals = new Map<string, { carry: number; inventory: number; sales30: number }>();
   agenciesByGroup.forEach((peerAgencies, group) => {
@@ -356,9 +382,7 @@ export async function refreshAgencyIntelligence({
     const wholesale = analyzeWholesaleInfluence({
       linkedWholesaleCount: linkedWholesale.length,
       activeWholesaleCount: linkedWholesale.filter((account) => account.isActive).length,
-      echoBuyerCount: linkedWholesale.filter((account) =>
-        account.ohlqLastEchoPurchaseDate && account.ohlqLastEchoPurchaseDate >= salesStart,
-      ).length,
+      echoBuyerCount: linkedWholesale.filter((account) => (bottlesByWholesaleAccount.get(account.id) ?? 0) > 0).length,
       echoBottles30: linkedWholesale.reduce((total, account) => total + (bottlesByWholesaleAccount.get(account.id) ?? 0), 0),
       lapsedWholesaleCount: linkedWholesale.filter((account) =>
         account.ohlqLastEchoPurchaseDate && account.ohlqLastEchoPurchaseDate < salesStart,

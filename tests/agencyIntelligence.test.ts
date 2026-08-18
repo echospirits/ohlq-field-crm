@@ -10,9 +10,12 @@ import {
 } from '../lib/agencyIntelligence';
 import {
   agencyIntelligenceInputsComplete,
+  aggregateAgencyProductSales,
   buildAgencyIntelligenceEventKey,
   getNextAgencyOpportunityStatus,
 } from '../lib/agencyIntelligenceService';
+import { getTenantWholesaleSalesWhere } from '../lib/ohlqSalesData';
+import type { TenantConfig } from '../lib/tenantConfig';
 
 const base = (overrides: Partial<AgencyProductSignals> = {}): AgencyProductSignals => ({
   itemCode: '2804B',
@@ -168,5 +171,46 @@ describe('daily Agency intelligence safety and idempotency', () => {
       changed: false,
       previous: { status: OpportunityStatus.ACTIONED, snoozedUntil: null },
     }), OpportunityStatus.ACTIONED);
+  });
+});
+
+test('uses the tenant product filter for wholesale rows', () => {
+  const config = {
+    productFilter: {
+      excludedItemCodes: ['EXCLUDED'],
+      itemCodes: [],
+      mode: 'vendor-exclusions',
+      vendorIds: ['ECHO'],
+    },
+  } as TenantConfig;
+  assert.deepEqual(getTenantWholesaleSalesWhere(config), {
+    brand: { notIn: ['EXCLUDED'] },
+    vendor: { in: ['ECHO'] },
+  });
+});
+
+test('counts retail and wholesale-through-agency bottles in store velocity and last sale', () => {
+  const sales = aggregateAgencyProductSales([
+    {
+      agencyId: ' 10562 ',
+      brand: '2847B',
+      reportDate: new Date('2026-07-23T00:00:00Z'),
+      retailBottlesSold: 0,
+      wholesaleBottlesSold: 7,
+    },
+    {
+      agencyId: '10562',
+      brand: '2847B',
+      reportDate: new Date('2026-08-12T00:00:00Z'),
+      retailBottlesSold: 0,
+      wholesaleBottlesSold: 9,
+    },
+  ], new Date('2026-08-11T00:00:00Z'));
+
+  assert.deepEqual(sales.get('10562|2847B'), {
+    lastSaleDate: new Date('2026-08-12T00:00:00Z'),
+    retailSales7: 9,
+    retailSales30: 16,
+    wholesaleSales30: 16,
   });
 });

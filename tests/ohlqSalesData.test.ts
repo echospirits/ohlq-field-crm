@@ -7,6 +7,7 @@ import {
   getOhlqWindowStartDate,
   isEchoItem,
   normalizeOhlqId,
+  summarizeLinkedWholesaleAccountSales,
   toAgencySalesSummaryItems,
 } from '../lib/ohlqSalesData';
 
@@ -82,6 +83,24 @@ describe('getWholesaleRecentPurchases', () => {
     assert.equal(result.echo.items[0].totalBottlesSold, 5);
     assert.equal(result.tracked.count, 1);
     assert.equal(result.productLabel, 'Echo');
+  });
+});
+
+describe('summarizeLinkedWholesaleAccountSales', () => {
+  it('populates every linked account from raw permit sales, including Echo volume', () => {
+    const result = summarizeLinkedWholesaleAccountSales({
+      accounts: [
+        { id: 'account-1', licenseeId: '1998001', licenseeIds: [] },
+        { id: 'account-2', licenseeId: '72045', licenseeIds: [] },
+      ],
+      rows: [
+        { brand: '2847B', permitNumber: '01998001-1', vendor: ECHO_VENDOR_ID, wholesaleBottlesSold: 9 },
+        { brand: 'OTHER', permitNumber: '01998001-1', vendor: 'OTHER', wholesaleBottlesSold: 12 },
+      ],
+    });
+
+    assert.deepEqual(result.get('account-1'), { accountId: 'account-1', allBottles: 21, echoBottles: 9 });
+    assert.deepEqual(result.get('account-2'), { accountId: 'account-2', allBottles: 0, echoBottles: 0 });
   });
 });
 
