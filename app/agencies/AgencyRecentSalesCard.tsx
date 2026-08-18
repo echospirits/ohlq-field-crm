@@ -55,45 +55,53 @@ function combineSalesItems(
   );
 }
 
-function SalesMetrics({ item, label }: { item: AgencySalesSummaryItem | null; label: string }) {
-  return (
-    <div className="ohlq-item-window-metrics" aria-label={`${label} sales`}>
-      <strong className="ohlq-item-window-label">{label}</strong>
-      <span>
-        <strong>{numberFormatter.format(item?.totalBottlesSold ?? 0)}</strong>
-        <small>total</small>
-      </span>
-      <span>
-        <strong>{numberFormatter.format(item?.retailBottlesSold ?? 0)}</strong>
-        <small>retail</small>
-      </span>
-      <span>
-        <strong>{numberFormatter.format(item?.wholesaleBottlesSold ?? 0)}</strong>
-        <small>wholesale</small>
-      </span>
-    </div>
-  );
-}
-
 function SalesItemList({ emptyText, items }: { emptyText: string; items: CombinedSalesItem[] }) {
   if (items.length === 0) {
     return <p className="muted activity-empty">{emptyText}</p>;
   }
 
   return (
-    <div className="ohlq-item-list">
-      {items.map((item) => (
-        <article className="ohlq-item-row" key={item.itemCode}>
-          <div className="ohlq-item-identity">
-            <div><span className="ohlq-item-code">{item.itemCode}</span><strong>{item.itemName}</strong></div>
-            <span className="muted">Latest sale {item.mostRecentSaleDate ?? 'unknown'}</span>
-          </div>
-          <div className="ohlq-item-metrics" aria-label={`${item.itemCode} sales metrics`}>
-            <SalesMetrics item={item.sevenDay} label="7 days" />
-            <SalesMetrics item={item.thirtyDay} label="30 days" />
-          </div>
-        </article>
-      ))}
+    <div className="table-wrap ohlq-sales-table-wrap">
+      <table className="ohlq-sales-table">
+        <colgroup>
+          <col className="ohlq-sales-item-column" />
+          <col className="ohlq-sales-date-column" />
+          <col span={6} className="ohlq-sales-number-column" />
+        </colgroup>
+        <thead>
+          <tr>
+            <th rowSpan={2} scope="col">Item</th>
+            <th rowSpan={2} scope="col">Latest sale</th>
+            <th className="ohlq-sales-window-heading" colSpan={3} scope="colgroup">7 days</th>
+            <th className="ohlq-sales-window-heading window-start" colSpan={3} scope="colgroup">30 days</th>
+          </tr>
+          <tr>
+            <th scope="col">Total</th>
+            <th scope="col">Retail</th>
+            <th scope="col">Wholesale</th>
+            <th className="window-start" scope="col">Total</th>
+            <th scope="col">Retail</th>
+            <th scope="col">Wholesale</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((item) => (
+            <tr key={item.itemCode}>
+              <th className="ohlq-sales-item" scope="row">
+                <span className="ohlq-item-code">{item.itemCode}</span>
+                <strong>{item.itemName}</strong>
+              </th>
+              <td className="ohlq-sales-date">{item.mostRecentSaleDate ?? 'Unknown'}</td>
+              <td className="numeric">{numberFormatter.format(item.sevenDay?.totalBottlesSold ?? 0)}</td>
+              <td className="numeric">{numberFormatter.format(item.sevenDay?.retailBottlesSold ?? 0)}</td>
+              <td className="numeric">{numberFormatter.format(item.sevenDay?.wholesaleBottlesSold ?? 0)}</td>
+              <td className="numeric window-start">{numberFormatter.format(item.thirtyDay?.totalBottlesSold ?? 0)}</td>
+              <td className="numeric">{numberFormatter.format(item.thirtyDay?.retailBottlesSold ?? 0)}</td>
+              <td className="numeric">{numberFormatter.format(item.thirtyDay?.wholesaleBottlesSold ?? 0)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

@@ -1910,6 +1910,101 @@ fieldset {
   text-transform: uppercase;
 }
 
+.ohlq-sales-table-wrap {
+  margin-top: 2px;
+  overflow-x: auto;
+}
+
+.ohlq-sales-table {
+  border-collapse: collapse;
+  min-width: 720px;
+  table-layout: fixed;
+  width: 100%;
+}
+
+.ohlq-sales-item-column {
+  width: 32%;
+}
+
+.ohlq-sales-date-column {
+  width: 14%;
+}
+
+.ohlq-sales-number-column {
+  width: 9%;
+}
+
+.ohlq-sales-table th,
+.ohlq-sales-table td {
+  border-top: 1px solid var(--line);
+  padding: 7px 8px;
+  vertical-align: middle;
+}
+
+.ohlq-sales-table thead th {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-align: right;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.ohlq-sales-table thead tr:first-child th {
+  border-top: 0;
+  padding-bottom: 4px;
+}
+
+.ohlq-sales-table thead tr:last-child th {
+  padding-top: 4px;
+}
+
+.ohlq-sales-table thead th:first-child,
+.ohlq-sales-table thead th:nth-child(2) {
+  text-align: left;
+}
+
+.ohlq-sales-table .ohlq-sales-window-heading {
+  color: #a5b4fc;
+  text-align: center;
+}
+
+.ohlq-sales-table .window-start {
+  border-left: 1px solid var(--line);
+}
+
+.ohlq-sales-item {
+  text-align: left;
+}
+
+.ohlq-sales-item .ohlq-item-code {
+  display: block;
+  margin-bottom: 2px;
+}
+
+.ohlq-sales-item strong {
+  color: #f8fafc;
+  display: block;
+  font-size: 12px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.ohlq-sales-date {
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.ohlq-sales-table td.numeric {
+  color: #f8fafc;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  text-align: right;
+}
+
 .ohlq-window-range {
   font-size: 11px;
   margin: -2px 0 2px;
