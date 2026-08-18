@@ -97,6 +97,8 @@ Required OHLQ env vars:
 
 The Agency Inventory Power BI report UUID is fixed in code from the confirmed OHLQ report URL. Browser automation signs into OHLQ and Microsoft, leaves the report's pre-set Vendor unchanged, opens the required Brand parameter, checks Select All, runs the report, and exports CSV. Inventory rows are mapped by header name. Identifiers remain strings, blank quantities become `null`, and invalid quantities are skipped and counted. Tenant vendor/item filtering reuses `tenantConfig`; Echo defaults exclude `3150B`, `3750B`, and `4359B`. Rows whose trimmed detail is exactly `A3A Distillery Only` are also excluded. Official agency numbers are normalized and linked when found; unmatched numbers remain in inventory with a null relation and are reported in diagnostics. A valid report is treated as a complete current snapshot, so absent rows are removed only inside the same transaction that writes the validated replacement and daily history.
 
+Reusable inventory reads live in `lib/ohlqAgencyInventory.ts`. They query the compact current-state table for present inventory and the dated snapshot table for history. Both paths reapply the shared tenant-product and distillery-only rules. Inventory joins to agency sales on `agencyNumber = OhlqAnnualSalesRow.agencyId`, `itemCode = OhlqAnnualSalesRow.brand`, and the relevant snapshot/report date window.
+
 ## Weekly digest email
 - Vercel cron calls `/api/cron/weekly-digest` at 13:00 UTC on Fridays. The route only sends when the current `America/New_York` local hour is 8 or 9, so daylight saving time is handled by the app while staying compatible with Vercel Hobby cron limits.
 - The cron route requires `Authorization: Bearer $CRON_SECRET`.

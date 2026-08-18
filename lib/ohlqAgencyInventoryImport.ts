@@ -1,8 +1,15 @@
 import { Prisma, type PrismaClient } from '@prisma/client';
 import Papa from 'papaparse';
+import {
+  isDistilleryOnlyInventoryDetail,
+  isTenantAgencyInventoryItem,
+} from './ohlqAgencyInventory';
 import { normalizeOhlqId } from './ohlqWholesaleMatching';
 import { prisma } from './prisma';
-import { getTenantConfig, matchesTenantProduct } from './tenantConfig';
+import {
+  DEFAULT_TENANT_EXCLUDED_ITEM_CODES,
+  getTenantConfig,
+} from './tenantConfig';
 
 const REQUIRED_HEADERS = [
   'Store',
@@ -21,8 +28,6 @@ const REQUIRED_HEADERS = [
   'District',
 ] as const;
 
-const DISTILLERY_ONLY_DETAIL = 'A3A DISTILLERY ONLY';
-const INVENTORY_EXCLUDED_ITEM_CODES = new Set(['3150B', '3750B', '4359B']);
 export const DEFAULT_OHLQ_INVENTORY_MIN_QUALIFYING_ROWS = 25;
 
 type RawInventoryRow = Record<(typeof REQUIRED_HEADERS)[number], string>;
@@ -36,11 +41,14 @@ export type OhlqAgencyInventoryDiagnostics = {
   currentRecordsInserted: number;
   currentRecordsRemoved: number;
   currentRecordsUpdated: number;
+  duplicateAgencyItemRows: number;
   durationMs: number;
   excludedDistilleryOnlyRows: number;
   excludedItemRows: Record<'3150B' | '3750B' | '4359B', number>;
   malformedIdentifierRows: number;
   malformedNumericRows: number;
+  missingAgencyNameRows: number;
+  missingItemNameRows: number;
   qualifyingRows: number;
   rawRows: number;
   rowsMatchingVendor: number;
@@ -122,10 +130,13 @@ export function parseOhlqAgencyInventoryCsv(
   const tenantConfig = getTenantConfig();
   const rowsByKey = new Map<string, Prisma.OhlqAgencyInventorySnapshotCreateManyInput>();
   const stats = {
+    duplicateAgencyItemRows: 0,
     excludedDistilleryOnlyRows: 0,
     excludedItemRows: { '3150B': 0, '3750B': 0, '4359B': 0 },
     malformedIdentifierRows: 0,
     malformedNumericRows: 0,
+    missingAgencyNameRows: 0,
+    missingItemNameRows: 0,
     qualifyingRows: 0,
     rawRows: parsed.data.length,
     rowsMatchingVendor: 0,
@@ -142,18 +153,26 @@ export function parseOhlqAgencyInventoryCsv(
 
     const matchesConfiguredVendor = tenantConfig.productFilter.vendorIds.includes(vendorId);
     if (matchesConfiguredVendor) stats.rowsMatchingVendor += 1;
-    if (matchesConfiguredVendor && (itemCode === '3150B' || itemCode === '3750B' || itemCode === '4359B')) {
-      stats.excludedItemRows[itemCode] += 1;
+    const excludedItemCode = DEFAULT_TENANT_EXCLUDED_ITEM_CODES.find((code) => code === itemCode);
+    if (matchesConfiguredVendor && excludedItemCode) {
+      stats.excludedItemRows[excludedItemCode] += 1;
     }
 
     const detailCodeDescription = clean(row.Detail_Code_Description);
-    if (matchesConfiguredVendor && detailCodeDescription?.toUpperCase() === DISTILLERY_ONLY_DETAIL) {
+    if (matchesConfiguredVendor && isDistilleryOnlyInventoryDetail(detailCodeDescription)) {
       stats.excludedDistilleryOnlyRows += 1;
     }
 
-    if (INVENTORY_EXCLUDED_ITEM_CODES.has(itemCode)) continue;
-    if (!matchesTenantProduct({ config: tenantConfig, itemCode, vendor: vendorId })) continue;
-    if (detailCodeDescription?.toUpperCase() === DISTILLERY_ONLY_DETAIL) continue;
+    if (
+      !isTenantAgencyInventoryItem({
+        config: tenantConfig,
+        detailCodeDescription,
+        itemCode,
+        vendorId,
+      })
+    ) {
+      continue;
+    }
 
     const minimum = parseQuantity(row.Minimum);
     const onHand = parseQuantity(row.On_Hand);
@@ -164,13 +183,17 @@ export function parseOhlqAgencyInventoryCsv(
 
     const agencyName = clean(row.Store_Name);
     const itemName = clean(row.Brand_Name);
+    if (!agencyName) stats.missingAgencyNameRows += 1;
+    if (!itemName) stats.missingItemNameRows += 1;
     if (!agencyName || !itemName) {
       stats.malformedIdentifierRows += 1;
       continue;
     }
 
     stats.qualifyingRows += 1;
-    rowsByKey.set(`${agencyNumber}:${itemCode}`, {
+    const rowKey = `${agencyNumber}:${itemCode}`;
+    if (rowsByKey.has(rowKey)) stats.duplicateAgencyItemRows += 1;
+    rowsByKey.set(rowKey, {
       agencyName,
       agencyNumber,
       brokerId: normalizeOhlqId(row.Broker),

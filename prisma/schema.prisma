@@ -506,10 +506,12 @@ model OhlqAgencyInventorySnapshot {
 
   @@id([snapshotDate, agencyNumber, itemCode])
   @@index([agencyId, snapshotDate])
+  @@index([agencyId, itemCode, snapshotDate])
   @@index([agencyNumber, snapshotDate])
-  @@index([agencyNumber, itemCode])
+  @@index([agencyNumber, itemCode, snapshotDate])
   @@index([itemCode, snapshotDate])
   @@index([snapshotDate])
+  @@index([vendorId])
   @@index([status])
   @@index([onHand])
 }
@@ -540,6 +542,7 @@ model OhlqAgencyInventoryCurrent {
   @@index([itemCode, onHand])
   @@index([snapshotDate])
   @@index([status])
+  @@index([vendorId])
 }
 
 model OhlqBrandMasterItem {

@@ -19,6 +19,7 @@ const row = ({
   minimum = '3',
   onHand = '6',
   store = '10509',
+  storeName = `STORE ${store}`,
   vendor = 'Z90399001',
 }: {
   brand?: string;
@@ -27,11 +28,12 @@ const row = ({
   minimum?: string;
   onHand?: string;
   store?: string;
+  storeName?: string;
   vendor?: string;
 } = {}) =>
   [
     store,
-    `STORE ${store}`,
+    storeName,
     brand,
     brandName,
     'Active',
@@ -123,6 +125,23 @@ describe('parseOhlqAgencyInventoryCsv', () => {
       () => parseOhlqAgencyInventoryCsv(header, '2026-08-18', { minimumQualifyingRows: 1 }),
       /no data rows/i,
     );
+  });
+
+  it('diagnoses duplicate agency/item rows and missing source names', () => {
+    const csv = [
+      header,
+      row(),
+      row({ onHand: '8' }),
+      row({ brand: '2806B', brandName: '' }),
+      row({ brand: '2847B', storeName: '' }),
+    ].join('\n');
+    const result = parseOhlqAgencyInventoryCsv(csv, '2026-08-18', { minimumQualifyingRows: 1 });
+
+    assert.equal(result.rows.length, 1);
+    assert.equal(result.rows[0].onHand, 8);
+    assert.equal(result.stats.duplicateAgencyItemRows, 1);
+    assert.equal(result.stats.missingItemNameRows, 1);
+    assert.equal(result.stats.missingAgencyNameRows, 1);
   });
 });
 
