@@ -76,7 +76,7 @@ type OhlqPowerBiReportConfig = {
     values: 'all' | string[];
   };
   reportId: string;
-  renderedTitle: string | RegExp;
+  renderedTitle?: string | RegExp;
 };
 
 const buildPowerBiReportUrl = (reportId: string) =>
@@ -106,7 +106,6 @@ export function getOhlqAgencyInventoryReportConfig() {
     fileSlug: 'agency-inventory-report',
     parameter: { name: 'Brand', values: 'all' },
     reportId: OHLQ_AGENCY_INVENTORY_REPORT_ID,
-    renderedTitle: /Agency Inventory Report/i,
   } satisfies OhlqPowerBiReportConfig;
 }
 
@@ -835,6 +834,18 @@ async function viewReportIfReady(frame: Frame) {
   if (await viewReportButton.isVisible().catch(() => false)) await viewReportButton.click({ timeout: 30_000 });
 }
 
+async function waitForReportExport(frame: Frame, report: OhlqPowerBiReportConfig) {
+  if (report.renderedTitle) {
+    await frame.getByText(report.renderedTitle, { exact: typeof report.renderedTitle === 'string' }).waitFor({
+      timeout: 240_000,
+    });
+  }
+
+  const exportMenu = frame.getByRole('menuitem', { name: /^Export\b/i }).first();
+  await exportMenu.waitFor({ state: 'visible', timeout: 240_000 });
+  return exportMenu;
+}
+
 async function getLaunchOptions(options: OhlqAnnualSalesDownloadOptions): Promise<LaunchOptions> {
   const useServerlessChromium =
     options.useServerlessChromium ?? envFlag('OHLQ_USE_SERVERLESS_CHROMIUM', process.env.VERCEL === '1');
@@ -1026,9 +1037,7 @@ async function downloadOhlqPowerBiReportFromPage(
   await selectReportParameter(frame, report.parameter);
 
   await viewReportIfReady(frame);
-  await frame.getByText(report.renderedTitle, { exact: typeof report.renderedTitle === 'string' }).waitFor({
-    timeout: 240_000,
-  });
+  const exportMenu = await waitForReportExport(frame, report);
   await frame
     .getByText(`From: ${reportDate.display.replace(/^0/, '').replace('/0', '/')}`)
     .waitFor({
@@ -1036,7 +1045,7 @@ async function downloadOhlqPowerBiReportFromPage(
     })
     .catch(() => undefined);
 
-  await frame.getByRole('menuitem', { name: /Export/ }).click();
+  await exportMenu.click({ timeout: 240_000 });
   const downloadPromise = page.waitForEvent('download', { timeout: 180_000 });
   await frame.getByRole('menuitem', { name: /Comma Separated Values \(\.csv\)/ }).click();
   const download = await downloadPromise;

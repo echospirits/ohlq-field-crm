@@ -52,6 +52,7 @@ describe('parseOhlqAgencyInventoryCsv', () => {
     assert.equal(OHLQ_AGENCY_INVENTORY_REPORT_ID, '5079ab3f-ff48-4f50-a1b4-3264862af239');
     assert.equal(config.reportId, OHLQ_AGENCY_INVENTORY_REPORT_ID);
     assert.deepEqual(config.parameter, { name: 'Brand', values: 'all' });
+    assert.equal(config.renderedTitle, undefined);
   });
 
   it('maps values by header name rather than column position', () => {
