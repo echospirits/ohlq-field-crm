@@ -3,10 +3,19 @@ import { getTenantConfig } from '../../lib/tenantConfig';
 
 const numberFormatter = new Intl.NumberFormat('en-US');
 
-function SalesWindowSummary({ items }: { items: AgencySalesWindow['items'] }) {
+function SalesWindowSummary({
+  className,
+  items,
+  label,
+}: {
+  className: string;
+  items: AgencySalesWindow['items'];
+  label: string;
+}) {
   const totalBottles = items.reduce((total, item) => total + item.totalBottlesSold, 0);
 
-  return <div className="ohlq-purchase-summary" aria-label="Sales window summary">
+  return <div className={`ohlq-window-summary-group ${className}`} aria-label={`${label} sales summary`}>
+    <strong>{label}</strong>
     <span><strong>{numberFormatter.format(items.length)}</strong><small>items</small></span>
     <span><strong>{numberFormatter.format(totalBottles)}</strong><small>bottles</small></span>
   </div>;
@@ -120,17 +129,19 @@ export function AgencyRecentSalesCard({ salesWindows }: { salesWindows: AgencySa
       </div>
 
       <div className="card ohlq-window-card">
-        <div className="section-heading ohlq-window-heading">
-          <h3>7 and 30 day sales</h3>
-          <div className="ohlq-combined-sales-summary">
-            <div><strong>7 days</strong><SalesWindowSummary items={sevenDayWindow?.items ?? []} /></div>
-            <div><strong>30 days</strong><SalesWindowSummary items={thirtyDayWindow?.items ?? []} /></div>
+        <div className="ohlq-sales-grid-scroll">
+          <div className="section-heading ohlq-window-heading">
+            <h3>7 and 30 day sales</h3>
+            <div className="ohlq-combined-sales-summary">
+              <SalesWindowSummary className="seven-day-summary" items={sevenDayWindow?.items ?? []} label="7 days" />
+              <SalesWindowSummary className="thirty-day-summary" items={thirtyDayWindow?.items ?? []} label="30 days" />
+            </div>
           </div>
+          <SalesItemList
+            emptyText={`No ${tenantConfig.productPluralLabel} sales found in the last 30 days.`}
+            items={combinedItems}
+          />
         </div>
-        <SalesItemList
-          emptyText={`No ${tenantConfig.productPluralLabel} sales found in the last 30 days.`}
-          items={combinedItems}
-        />
       </div>
     </section>
   );
