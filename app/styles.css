@@ -1891,6 +1891,25 @@ fieldset {
   justify-content: space-between;
 }
 
+.ohlq-combined-sales-summary {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.ohlq-combined-sales-summary > div {
+  align-items: center;
+  display: flex;
+  gap: 4px;
+}
+
+.ohlq-combined-sales-summary > div > strong {
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
 .ohlq-window-range {
   font-size: 11px;
   margin: -2px 0 2px;
@@ -1952,6 +1971,25 @@ fieldset {
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 0;
+}
+
+.ohlq-item-window-metrics {
+  display: flex;
+  align-items: center;
+}
+
+.ohlq-item-window-metrics + .ohlq-item-window-metrics {
+  border-left: 1px solid var(--line);
+  margin-left: 8px;
+  padding-left: 8px;
+}
+
+.ohlq-item-metrics .ohlq-item-window-label {
+  color: #a5b4fc;
+  font-size: 10px;
+  line-height: 1.1;
+  max-width: 30px;
+  text-transform: uppercase;
 }
 
 .ohlq-item-metrics span,
@@ -3610,6 +3648,17 @@ legend {
   .ohlq-item-metrics,
   .ohlq-purchase-summary {
     justify-content: flex-start;
+  }
+
+  .ohlq-item-metrics {
+    display: grid;
+    gap: 6px;
+  }
+
+  .ohlq-item-window-metrics + .ohlq-item-window-metrics {
+    border-left: 0;
+    margin-left: 0;
+    padding-left: 0;
   }
 
   .ohlq-item-metrics span,

@@ -1,10 +1,7 @@
-import type { AgencySalesWindow } from '../../lib/ohlqSalesData';
+import type { AgencySalesSummaryItem, AgencySalesWindow } from '../../lib/ohlqSalesData';
 import { getTenantConfig } from '../../lib/tenantConfig';
 
 const numberFormatter = new Intl.NumberFormat('en-US');
-
-const formatRange = (window: AgencySalesWindow) =>
-  window.startDate && window.endDate ? `${window.startDate} to ${window.endDate}` : 'No loaded sales dates';
 
 function SalesWindowSummary({ items }: { items: AgencySalesWindow['items'] }) {
   const totalBottles = items.reduce((total, item) => total + item.totalBottlesSold, 0);
@@ -15,7 +12,70 @@ function SalesWindowSummary({ items }: { items: AgencySalesWindow['items'] }) {
   </div>;
 }
 
-function SalesItemList({ emptyText, items }: { emptyText: string; items: AgencySalesWindow['items'] }) {
+type CombinedSalesItem = {
+  itemCode: string;
+  itemName: string;
+  mostRecentSaleDate: string | null;
+  sevenDay: AgencySalesSummaryItem | null;
+  thirtyDay: AgencySalesSummaryItem | null;
+};
+
+function combineSalesItems(
+  sevenDayItems: AgencySalesWindow['items'],
+  thirtyDayItems: AgencySalesWindow['items'],
+) {
+  const itemsByCode = new Map<string, CombinedSalesItem>();
+
+  thirtyDayItems.forEach((item) => {
+    itemsByCode.set(item.itemCode, {
+      itemCode: item.itemCode,
+      itemName: item.itemName,
+      mostRecentSaleDate: item.mostRecentSaleDate,
+      sevenDay: null,
+      thirtyDay: item,
+    });
+  });
+
+  sevenDayItems.forEach((item) => {
+    const existing = itemsByCode.get(item.itemCode);
+    itemsByCode.set(item.itemCode, {
+      itemCode: item.itemCode,
+      itemName: item.itemName,
+      mostRecentSaleDate: item.mostRecentSaleDate ?? existing?.mostRecentSaleDate ?? null,
+      sevenDay: item,
+      thirtyDay: existing?.thirtyDay ?? null,
+    });
+  });
+
+  return Array.from(itemsByCode.values()).sort(
+    (left, right) =>
+      (right.thirtyDay?.totalBottlesSold ?? 0) - (left.thirtyDay?.totalBottlesSold ?? 0) ||
+      (right.sevenDay?.totalBottlesSold ?? 0) - (left.sevenDay?.totalBottlesSold ?? 0) ||
+      left.itemCode.localeCompare(right.itemCode),
+  );
+}
+
+function SalesMetrics({ item, label }: { item: AgencySalesSummaryItem | null; label: string }) {
+  return (
+    <div className="ohlq-item-window-metrics" aria-label={`${label} sales`}>
+      <strong className="ohlq-item-window-label">{label}</strong>
+      <span>
+        <strong>{numberFormatter.format(item?.totalBottlesSold ?? 0)}</strong>
+        <small>total</small>
+      </span>
+      <span>
+        <strong>{numberFormatter.format(item?.retailBottlesSold ?? 0)}</strong>
+        <small>retail</small>
+      </span>
+      <span>
+        <strong>{numberFormatter.format(item?.wholesaleBottlesSold ?? 0)}</strong>
+        <small>wholesale</small>
+      </span>
+    </div>
+  );
+}
+
+function SalesItemList({ emptyText, items }: { emptyText: string; items: CombinedSalesItem[] }) {
   if (items.length === 0) {
     return <p className="muted activity-empty">{emptyText}</p>;
   }
@@ -29,18 +89,8 @@ function SalesItemList({ emptyText, items }: { emptyText: string; items: AgencyS
             <span className="muted">Latest sale {item.mostRecentSaleDate ?? 'unknown'}</span>
           </div>
           <div className="ohlq-item-metrics" aria-label={`${item.itemCode} sales metrics`}>
-            <span>
-              <strong>{numberFormatter.format(item.totalBottlesSold)}</strong>
-              <small>total</small>
-            </span>
-            <span>
-              <strong>{numberFormatter.format(item.retailBottlesSold)}</strong>
-              <small>retail</small>
-            </span>
-            <span>
-              <strong>{numberFormatter.format(item.wholesaleBottlesSold)}</strong>
-              <small>wholesale</small>
-            </span>
+            <SalesMetrics item={item.sevenDay} label="7 days" />
+            <SalesMetrics item={item.thirtyDay} label="30 days" />
           </div>
         </article>
       ))}
@@ -52,6 +102,7 @@ export function AgencyRecentSalesCard({ salesWindows }: { salesWindows: AgencySa
   const tenantConfig = getTenantConfig();
   const sevenDayWindow = salesWindows.find((window) => window.days === 7) ?? salesWindows[0];
   const thirtyDayWindow = salesWindows.find((window) => window.days === 30) ?? salesWindows[1];
+  const combinedItems = combineSalesItems(sevenDayWindow?.items ?? [], thirtyDayWindow?.items ?? []);
 
   return (
     <section className="dashboard-section ohlq-sales-section">
@@ -62,27 +113,17 @@ export function AgencyRecentSalesCard({ salesWindows }: { salesWindows: AgencySa
 
       <div className="card ohlq-window-card">
         <div className="section-heading ohlq-window-heading">
-          <h3>Last 7 days</h3>
-          <SalesWindowSummary items={sevenDayWindow?.items ?? []} />
+          <h3>7 and 30 day sales</h3>
+          <div className="ohlq-combined-sales-summary">
+            <div><strong>7 days</strong><SalesWindowSummary items={sevenDayWindow?.items ?? []} /></div>
+            <div><strong>30 days</strong><SalesWindowSummary items={thirtyDayWindow?.items ?? []} /></div>
+          </div>
         </div>
-        <p className="muted ohlq-window-range">{sevenDayWindow ? formatRange(sevenDayWindow) : 'No data'}</p>
-        <SalesItemList
-          emptyText={`No ${tenantConfig.productPluralLabel} sales found in the last 7 days.`}
-          items={sevenDayWindow?.items ?? []}
-        />
-      </div>
-
-      <details className="card compact-details ohlq-window-details">
-        <summary>
-          Last 30 days
-          <SalesWindowSummary items={thirtyDayWindow?.items ?? []} />
-        </summary>
-        <p className="muted ohlq-window-range">{thirtyDayWindow ? formatRange(thirtyDayWindow) : 'No loaded sales dates'}</p>
         <SalesItemList
           emptyText={`No ${tenantConfig.productPluralLabel} sales found in the last 30 days.`}
-          items={thirtyDayWindow?.items ?? []}
+          items={combinedItems}
         />
-      </details>
+      </div>
     </section>
   );
 }
