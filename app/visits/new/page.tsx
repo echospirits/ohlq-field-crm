@@ -46,25 +46,12 @@ export default async function NewVisitPage({
   const [params, user] = await Promise.all([(await searchParams) ?? {}, requireUser({ allowTaster: true })]);
 
   if (user.role === UserRole.TASTER) {
-    const agencies = (
-      await prisma.agency.findMany({
-        orderBy: { name: 'asc' },
-        take: 750,
-        select: {
-          agencyId: true,
-          city: true,
-          county: true,
-          id: true,
-          name: true,
-          phone: true,
-        },
-      })
-    ).map((agency) => ({ ...agency, lastVisitAt: null }));
+    const agencies = await getAgenciesForVisitPicker({ take: 8 });
 
     return (
       <>
         <PageHeader
-          description="Choose the agency, leave your comments, and add one picture."
+          description="Find a nearby store, review its Echo inventory and recent sales, then log your visit."
           eyebrow="Field activity"
           title="Log Agency Visit"
         />

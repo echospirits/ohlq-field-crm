@@ -3913,6 +3913,56 @@ legend {
   margin-bottom: 0.35rem;
 }
 
+.taster-agency-picker .quick-picker-list {
+  gap: 0.35rem;
+}
+
+.taster-store-option {
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-height: 46px;
+  padding: 7px 10px;
+}
+
+.taster-store-option strong,
+.taster-store-option > span:first-of-type {
+  grid-column: 1;
+}
+
+.taster-store-option .quick-picker-last {
+  align-self: center;
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  text-align: right;
+}
+
+.taster-visit-form .selected-location-card small {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.taster-inventory-panel {
+  border-top: 1px solid var(--line);
+  margin-top: 0.85rem;
+  padding-top: 0.85rem;
+}
+
+.taster-inventory-heading {
+  align-items: center;
+  margin-bottom: 0.25rem;
+}
+
+.taster-inventory-heading h2 {
+  font-size: 1rem;
+  margin: 0.1rem 0 0;
+}
+
+.taster-inventory-list {
+  max-height: 320px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 0.2rem;
+}
+
 @media (max-width: 700px) {
   .integration-summary div {
     grid-template-columns: 1fr;
@@ -3926,6 +3976,16 @@ legend {
   .nearby-location-control .compact-btn {
     min-height: 2.75rem;
     width: 100%;
+  }
+
+  .taster-store-option {
+    grid-template-columns: 1fr;
+  }
+
+  .taster-store-option .quick-picker-last {
+    grid-column: 1;
+    grid-row: auto;
+    text-align: left;
   }
 
   .nearby-account-row {
