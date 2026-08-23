@@ -7,7 +7,7 @@ import {
   zonedDateTimeToUtc,
 } from '../dateTime';
 import { prisma } from '../prisma';
-import { getTenantConfig } from '../tenantConfig';
+import { APP_NAME } from '../appBrand';
 import { getCalendarProvider } from './index';
 import { CalendarProviderError, type CalendarEventInput, type ExternalCalendarEvent } from './types';
 
@@ -53,14 +53,13 @@ export const buildWorklistCalendarInput = ({
 }): CalendarEventInput => {
   if (!item.dueDate) throw new Error('A due date is required to build a calendar event.');
   const date = formatDateOnlyInputValue(item.dueDate);
-  const config = getTenantConfig();
   const appBaseUrl = process.env.APP_BASE_URL?.replace(/\/$/, '');
   const context = [
     accountName ? `Account: ${accountName}` : null,
     item.detail ? `Task: ${item.detail}` : null,
     `Source: ${item.source.toLowerCase().replaceAll('_', ' ')}`,
-    appBaseUrl ? `CRM: ${appBaseUrl}/alerts?worklistItemId=${encodeURIComponent(item.id)}` : null,
-    `Managed by ${config.digestName}. Reschedule this event to update the CRM task.`,
+    appBaseUrl ? `${APP_NAME}: ${appBaseUrl}/alerts?worklistItemId=${encodeURIComponent(item.id)}` : null,
+    `Managed by ${APP_NAME}. Reschedule this event to update the follow-up.`,
   ].filter(Boolean).join('\n\n');
   const startsAt = item.dueTimeMinutes == null ? null : zonedDateTimeToUtc(date, item.dueTimeMinutes);
   const schedule = item.dueTimeMinutes == null
@@ -72,7 +71,7 @@ export const buildWorklistCalendarInput = ({
         timeZone: EASTERN_TIME_ZONE,
       };
   return {
-    title: `${config.digestName}: ${item.title}`,
+    title: `${APP_NAME}: ${item.title}`,
     description: context,
     schedule,
     privateMetadata: { echoCrmManaged: 'true', worklistItemId: item.id },

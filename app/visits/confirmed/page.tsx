@@ -3,6 +3,7 @@ export const runtime = 'nodejs';
 
 import { UserRole } from '@prisma/client';
 import Link from 'next/link';
+import { buildPageMetadata } from '../../../lib/appBrand';
 import { redirect } from 'next/navigation';
 import { requireUser } from '../../../lib/auth';
 import { prisma } from '../../../lib/prisma';
@@ -10,6 +11,8 @@ import { getSignedInHomePath } from '../../../lib/userAccess';
 import { getVisitContinueTarget, type VisitFormOrigin } from '../../../lib/visitConfirmation';
 import { resolveVisitOrigin } from './actions';
 import { getVisitOriginResolution } from '../../../lib/visitOriginResolution';
+
+export const metadata = buildPageMetadata('Visit Confirmed');
 
 export default async function VisitConfirmedPage({
   searchParams,

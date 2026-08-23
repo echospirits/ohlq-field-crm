@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 import { WeeklyDigestStatus } from '@prisma/client';
+import { buildPageMetadata } from '../../../lib/appBrand';
 import { getUserDisplayName, requireAdminSession } from '../../../lib/auth';
 import { formatEasternDateTime } from '../../../lib/dateTime';
 import { prisma } from '../../../lib/prisma';
@@ -15,6 +16,8 @@ import {
 } from '../../../lib/weeklyDigest';
 import { sendWeeklyDigestManualAction, sendWeeklyDigestTestAction } from './actions';
 import { PageHeader, SectionHeading } from '../../components/PageChrome';
+
+export const metadata = buildPageMetadata('Weekly Digest');
 
 const statusMessages: Record<string, string> = {
   'test-sent': 'Test digest sent to your email.',
@@ -92,7 +95,7 @@ export default async function WeeklyDigestAdminPage({
       ) : null}
 
       <section className="dashboard-section">
-        <SectionHeading actions={<span className="pill">{previewMode === 'admin' ? 'Team digest' : 'User digest'}</span>} description="Validate content with live CRM data before sending." title="Preview" />
+        <SectionHeading actions={<span className="pill">{previewMode === 'admin' ? 'Team digest' : 'User digest'}</span>} description="Validate content with live Neat data before sending." title="Preview" />
 
         <div className="card admin-panel digest-admin-panel">
           <form className="digest-control-form">
@@ -133,7 +136,7 @@ export default async function WeeklyDigestAdminPage({
         <div className="digest-preview-shell">
           <div className="digest-preview-meta">
             <strong>{rendered.subject}</strong>
-            <span className="muted">Rendered with current CRM data. Test sends use your admin email.</span>
+            <span className="muted">Rendered with current Neat data. Test sends use your admin email.</span>
           </div>
           <iframe className="digest-preview-frame" srcDoc={rendered.html} title="Weekly digest email preview" />
           <details className="compact-details cardless-details">

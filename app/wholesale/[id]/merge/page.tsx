@@ -3,6 +3,7 @@ export const runtime = 'nodejs';
 
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
+import { buildPageMetadata } from '../../../../lib/appBrand';
 import { requireAdmin } from '../../../../lib/auth';
 import { prisma } from '../../../../lib/prisma';
 import {
@@ -13,6 +14,8 @@ import {
 import { formatWholesaleLicenseeIds } from '../../../../lib/wholesaleAccounts';
 import { mergeWholesaleAccountAction } from './actions';
 import { PageHeader } from '../../../components/PageChrome';
+
+export const metadata = buildPageMetadata('Merge Wholesale Account');
 
 const statusMessages: Record<string, string> = {
   'already-merged': 'This manual account has already been merged.',

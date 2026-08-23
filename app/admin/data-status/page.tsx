@@ -6,6 +6,7 @@ import { OhlqReportDataSource, OhlqReportRunStatus } from '@prisma/client';
 import { revalidatePath } from 'next/cache';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import { buildPageMetadata } from '../../../lib/appBrand';
 import { requireAdminSession } from '../../../lib/auth';
 import { EASTERN_TIME_ZONE, formatEasternDateTime } from '../../../lib/dateTime';
 import { importOhlqBrandMasterCsv } from '../../../lib/ohlqBrandMasterImport';
@@ -17,6 +18,8 @@ import {
 import { getLatestManualOhlqReportDate } from '../../../lib/ohlqManualImport';
 import { prisma } from '../../../lib/prisma';
 import { PageHeader, SectionHeading } from '../../components/PageChrome';
+
+export const metadata = buildPageMetadata('Data Status');
 
 const statusTimeZone = EASTERN_TIME_ZONE;
 const visibleDays = 14;

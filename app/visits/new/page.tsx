@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 import { UserRole, WorklistStatus } from '@prisma/client';
+import { buildPageMetadata } from '../../../lib/appBrand';
 import { getUserDisplayName, requireUser } from '../../../lib/auth';
 import { prisma } from '../../../lib/prisma';
 import { PageHeader } from '../../components/PageChrome';
@@ -17,6 +18,8 @@ import { createVisit } from '../actions';
 import { LogVisitForm } from '../LogVisitForm';
 import { TasterVisitForm } from '../TasterVisitForm';
 
+export const metadata = buildPageMetadata('Log Visit');
+
 const statusMessages: Record<string, string> = {
   'invalid-agency': 'Select an agency before logging an agency visit.',
   'invalid-wholesale': 'Select an existing wholesale account or create one before logging a wholesale visit.',
@@ -28,7 +31,7 @@ const statusMessages: Record<string, string> = {
   'photo-verification-failed': 'The picture could not be verified, so the visit was not saved. Try uploading it again.',
   'comments-required': 'Enter comments before logging the visit.',
   'photo-required': 'Add one picture before logging the visit.',
-  'invalid-assignee': 'Choose an active CRM user for the follow-up.',
+  'invalid-assignee': 'Choose an active team member for the follow-up.',
   'invalid-context': 'The originating task or opportunity no longer matches this account. Start the action again from its source.',
   'visit-logged': 'Agency visit logged.',
 };

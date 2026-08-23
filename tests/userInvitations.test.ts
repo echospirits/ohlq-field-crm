@@ -31,9 +31,11 @@ test('invitation URL encodes the token and email includes the password setup act
 
   assert.equal(inviteUrl, 'https://crm.example.com/accept-invite?token=token%20with%20spaces');
   assert.match(rendered.subject, /invited/i);
+  assert.match(rendered.subject, /Neat/);
   assert.match(rendered.text, /Create your .* password/i);
   assert.match(rendered.html, /Create my password/);
   assert.match(rendered.html, /Alex &amp; Taylor/);
+  assert.match(rendered.html, /Neat · Echo Spirits/);
 });
 
 test('activation reminder clearly identifies itself and uses a unique reminder send key', async () => {

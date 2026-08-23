@@ -3,11 +3,14 @@ export const runtime = 'nodejs';
 
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { buildPageMetadata } from '../../../lib/appBrand';
 import { getUserDisplayName, requireUser } from '../../../lib/auth';
 import { formatEasternDateTime } from '../../../lib/dateTime';
 import { prisma } from '../../../lib/prisma';
 import { TagBadges } from '../TagBadges';
 import { EmptyState, PageHeader, SectionHeading } from '../../components/PageChrome';
+
+export const metadata = buildPageMetadata('Tag');
 
 export default async function TagDetailPage({
   params,

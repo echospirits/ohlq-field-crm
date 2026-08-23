@@ -2,9 +2,11 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 import { redirect } from 'next/navigation';
+import { APP_COMPANY, APP_NAME, buildPageMetadata } from '../../lib/appBrand';
 import { getCurrentUser } from '../../lib/auth';
-import { getTenantConfig } from '../../lib/tenantConfig';
 import { getSignedInHomePath } from '../../lib/userAccess';
+
+export const metadata = buildPageMetadata('Sign in');
 
 const statusMessages: Record<string, string> = {
   'invalid-credentials': 'Email or password is incorrect.',
@@ -18,7 +20,6 @@ export default async function LoginPage({
 }: {
   searchParams?: Promise<{ status?: string }>;
 }) {
-  const tenantConfig = getTenantConfig();
   const [params, user] = await Promise.all([(await searchParams) ?? {}, getCurrentUser()]);
 
   if (user) {
@@ -27,8 +28,14 @@ export default async function LoginPage({
 
   return (
     <div className="login-panel">
-      <h1>{tenantConfig.entityName}</h1>
-      <p className="muted">Sign in with your {tenantConfig.appName} account.</p>
+      <div className="login-brand">
+        <span className="login-brand-mark" aria-hidden="true">N.</span>
+        <div>
+          <h1>{APP_NAME}</h1>
+          <p>Sales intelligence for {APP_COMPANY}</p>
+        </div>
+      </div>
+      <p className="muted">Sign in to your {APP_NAME} account.</p>
       {params.status ? <p className="pill">{statusMessages[params.status] ?? params.status}</p> : null}
       <form action="/api/auth/login" method="post">
         <label>

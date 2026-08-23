@@ -4,6 +4,7 @@ export const runtime = 'nodejs';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { MenuPlacementStatus, MenuPlacementType, Prisma, UserRole } from '@prisma/client';
+import { buildPageMetadata } from '../../../lib/appBrand';
 import { getUserDisplayName, requireUser } from '../../../lib/auth';
 import { formatEasternDate } from '../../../lib/dateTime';
 import { getWholesaleRecentPurchases } from '../../../lib/ohlqSalesData';
@@ -41,6 +42,12 @@ const menuPlacementStatusMessages: Record<string, string> = {
   'photo-too-large': 'Each proof upload must be 5 MB or smaller.',
   'storage-not-configured': 'Photo object storage is not configured yet.',
 };
+
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const account = await prisma.wholesaleAccount.findUnique({ where: { id }, select: { name: true } });
+  return buildPageMetadata(account?.name ?? 'Wholesale Account');
+}
 
 export default async function WholesaleActivityPage({
   params,

@@ -1,9 +1,12 @@
 export const dynamic = 'force-dynamic';
 
 import { OpportunityStatus, OpportunityType } from '@prisma/client';
+import { buildPageMetadata } from '../../../lib/appBrand';
 import { requireAdmin } from '../../../lib/auth';
 import { analyzeActivityToPurchases } from '../../../lib/opportunityIntelligence';
 import { prisma } from '../../../lib/prisma';
+
+export const metadata = buildPageMetadata('Opportunity Performance');
 
 export default async function OpportunityPerformancePage() {
   await requireAdmin();

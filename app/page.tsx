@@ -7,11 +7,14 @@ import {
   WorklistStatus,
 } from '@prisma/client';
 import Link from 'next/link';
+import { buildPageMetadata } from '../lib/appBrand';
 import { getUserDisplayName, requireUser } from '../lib/auth';
 import { EASTERN_TIME_ZONE } from '../lib/dateTime';
 import { prisma } from '../lib/prisma';
 import { DashboardOpportunitySummary } from './components/DashboardOpportunitySummary';
 import { DashboardAgencyIntelligence } from './components/DashboardAgencyIntelligence';
+
+export const metadata = buildPageMetadata('Dashboard');
 
 const dashboardTimeZone = EASTERN_TIME_ZONE;
 const inactiveWorklistStatuses = [WorklistStatus.COMPLETED, WorklistStatus.CANCELLED];

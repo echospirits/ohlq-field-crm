@@ -166,8 +166,10 @@ test('user and admin digest renderers produce distinct email shapes', () => {
   const userEmail = renderUserWeeklyDigestEmail(userDigest, 'https://crm.example.com');
   const adminEmail = renderAdminWeeklyDigestEmail(adminDigest, 'https://crm.example.com');
 
-  assert.match(userEmail.subject, /^Your Echo CRM weekly summary:/);
-  assert.match(adminEmail.subject, /^Echo CRM team weekly summary:/);
+  assert.match(userEmail.subject, /^Your Neat weekly summary:/);
+  assert.match(adminEmail.subject, /^Neat team weekly summary:/);
+  assert.match(userEmail.html, /View My Week in Neat/);
+  assert.match(adminEmail.html, /Neat · Echo Spirits/);
   assert.match(userEmail.html, /Visit activity/);
   assert.match(adminEmail.html, /Per-user scoreboard/);
 });

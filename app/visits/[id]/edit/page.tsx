@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 import { notFound } from 'next/navigation';
+import { buildPageMetadata } from '../../../../lib/appBrand';
 import { getUserDisplayName, requireUser } from '../../../../lib/auth';
 import { prisma } from '../../../../lib/prisma';
 import { formatTimeMinutesInput } from '../../../../lib/dateTime';
@@ -16,6 +17,8 @@ import { normalizeFollowUpMode } from '../../../../lib/visitWorkflow';
 import { PageHeader } from '../../../components/PageChrome';
 import { LogVisitForm } from '../../LogVisitForm';
 import { updateVisit } from '../../actions';
+
+export const metadata = buildPageMetadata('Edit Visit');
 
 export default async function EditVisitPage({ params }: { params: Promise<{ id: string }> }) {
   const [{ id }, user] = await Promise.all([params, requireUser()]);

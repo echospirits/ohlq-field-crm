@@ -2,12 +2,14 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 import Link from 'next/link';
+import { APP_NAME, buildPageMetadata } from '../../lib/appBrand';
 import { getUserDisplayName } from '../../lib/auth';
 import { formatEasternDateTime } from '../../lib/dateTime';
 import { prisma } from '../../lib/prisma';
-import { getTenantConfig } from '../../lib/tenantConfig';
 import { hashUserInvitationToken } from '../../lib/userInvitations';
 import { acceptUserInvitation } from './actions';
+
+export const metadata = buildPageMetadata('Accept Invitation');
 
 const statusMessages: Record<string, string> = {
   invalid: 'This invitation link is invalid, expired, or has already been used.',
@@ -45,7 +47,6 @@ export default async function AcceptInvitePage({
         },
       })
     : null;
-  const tenantConfig = getTenantConfig();
 
   if (!invitation) {
     return (
@@ -63,7 +64,7 @@ export default async function AcceptInvitePage({
     <div className="login-panel">
       <h1>Create your password</h1>
       <p className="muted">
-        Finish setting up the {tenantConfig.appName} account for {getUserDisplayName(invitation.user)}.
+        Finish setting up the {APP_NAME} account for {getUserDisplayName(invitation.user)}.
       </p>
       {params.status ? <p className="pill">{statusMessages[params.status] ?? params.status}</p> : null}
       <form action={acceptUserInvitation}>

@@ -1,14 +1,33 @@
+import type { Metadata } from 'next';
 import { getCurrentUser, getUserDisplayName } from '../lib/auth';
-import { getTenantConfig } from '../lib/tenantConfig';
+import { APP_COMPANY, APP_DESCRIPTION, APP_NAME } from '../lib/appBrand';
 import { isTasterRole } from '../lib/userAccess';
 import Link from 'next/link';
 import { AppBreadcrumbs, AppSidebarNavigation, MobileTabbar } from './components/AppNavigation';
 import { GlobalSearchForm } from './components/GlobalSearchForm';
 import './styles.css';
 
+export const metadata: Metadata = {
+  applicationName: APP_NAME,
+  title: {
+    default: APP_NAME,
+    template: `%s | ${APP_NAME}`,
+  },
+  description: APP_DESCRIPTION,
+  appleWebApp: {
+    capable: true,
+    title: APP_NAME,
+  },
+  openGraph: {
+    title: APP_NAME,
+    description: APP_DESCRIPTION,
+    siteName: APP_NAME,
+    type: 'website',
+  },
+};
+
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const user = await getCurrentUser();
-  const tenantConfig = getTenantConfig();
   const isTaster = user ? isTasterRole(user.role) : false;
 
   return (
@@ -17,7 +36,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         {user ? (
           <>
             <aside>
-              <h2>{tenantConfig.entityName}</h2>
+              <div className="app-brand" aria-label={`${APP_NAME} by ${APP_COMPANY}`}>
+                <strong>{APP_NAME}</strong>
+                <span>{APP_COMPANY}</span>
+              </div>
               {!isTaster ? <GlobalSearchForm compact /> : null}
               <AppSidebarNavigation isAdmin={user.role === 'ADMIN'} isTaster={isTaster} />
               <div className="user-card">

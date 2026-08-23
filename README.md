@@ -1,6 +1,6 @@
-# Echo Field CRM MVP
+# Neat
 
-Internal web-based CRM for liquor agency and bar/restaurant field work.
+Sales intelligence and field CRM for Echo Spirits, covering liquor agency and bar/restaurant field work.
 
 ## MVP included
 - Account pages for liquor agencies and future bars/restaurants
@@ -33,8 +33,8 @@ npm run dev
 The app defaults to the current Echo Spirits setup. A licensed tenant deployment can override these values with environment variables:
 - `TENANT_ID`: stable tenant slug, for example `echo-spirits`.
 - `TENANT_ENTITY_NAME`: entity name shown in the app shell and login page.
-- `TENANT_APP_NAME`: app name shown in login copy.
-- `TENANT_DIGEST_NAME`: name used in weekly digest subjects and headings.
+- `TENANT_APP_NAME`: legacy tenant app-name override retained for compatibility; Neat is the shared product identity.
+- `TENANT_DIGEST_NAME`: legacy digest-name override retained for compatibility; Neat is used by current internal digests.
 - `TENANT_PRODUCT_LABEL`: short product label, for example `Echo`.
 - `TENANT_PRODUCT_PLURAL_LABEL`: plural product label, for example `Echo items`.
 - `TENANT_PRODUCT_FILTER_MODE`: `vendor-exclusions` or `item-list`.
@@ -46,8 +46,8 @@ Esther Rum tenant values:
 ```env
 TENANT_ID="esther-rum"
 TENANT_ENTITY_NAME="Esther Rum"
-TENANT_APP_NAME="Esther Rum CRM"
-TENANT_DIGEST_NAME="Esther Rum CRM"
+TENANT_APP_NAME="Neat"
+TENANT_DIGEST_NAME="Neat"
 TENANT_PRODUCT_LABEL="Esther Rum"
 TENANT_PRODUCT_PLURAL_LABEL="Esther Rum items"
 TENANT_PRODUCT_FILTER_MODE="item-list"
@@ -118,7 +118,7 @@ curl -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/cron/week
 
 Required email env vars:
 - `RESEND_API_KEY`: Resend API key.
-- `EMAIL_FROM`: verified sender, for example `Echo Field CRM <crm@echospirits.com>`.
+- `EMAIL_FROM`: verified sender, for example `Neat <crm@echospirits.com>`.
 - `APP_BASE_URL`: production app URL used for absolute links in emails.
 - `CRON_SECRET`: shared secret for Vercel cron authorization.
 

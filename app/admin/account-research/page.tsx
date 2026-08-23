@@ -3,12 +3,15 @@ export const runtime = 'nodejs';
 export const maxDuration = 300;
 
 import Link from 'next/link';
+import { buildPageMetadata } from '../../../lib/appBrand';
 import { requireAdmin } from '../../../lib/auth';
 import { getAccountResearchQueue, PURSUED_RESEARCH_DAYS, STANDARD_RESEARCH_DAYS } from '../../../lib/accountResearch';
 import { formatEasternDateTime } from '../../../lib/dateTime';
 import { prisma } from '../../../lib/prisma';
 import { PageHeader, SectionHeading } from '../../components/PageChrome';
 import { uploadAccountResearchCsv } from './actions';
+
+export const metadata = buildPageMetadata('Account Research');
 
 const statusMessage = (params: { status?: string; rows?: string; imported?: string; errors?: string }) => {
   if (params.status === 'dry-run') return `Dry run passed for ${params.rows ?? '0'} rows. Re-upload the same file and choose Import research.`;

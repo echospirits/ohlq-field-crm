@@ -157,7 +157,7 @@ export async function OpportunityAccountPanel({ agencyId, wholesaleAccountId, cu
   ]);
   const timeline = [
     ...sales.map((event) => ({ at: event.reportDate, kind: 'purchase', title: `${event.itemCode} - ${event.itemName}`, detail: `${event.bottles} bottle${event.bottles === 1 ? '' : 's'} purchased` })),
-    ...visits.map((visit) => ({ at: visit.visitAt, kind: 'visit', title: `${visit.createdBy ?? 'Team member'} visited`, detail: visit.summary ?? 'CRM visit logged' })),
+    ...visits.map((visit) => ({ at: visit.visitAt, kind: 'visit', title: `${visit.createdBy ?? 'Team member'} visited`, detail: visit.summary ?? 'Visit logged' })),
     ...opportunities.map((item) => ({ at: item.detectedAt, kind: 'opportunity', title: `${item.title} detected`, detail: item.recommendedAction })),
   ].sort((a, b) => b.at.getTime() - a.at.getTime()).slice(0, 40);
   const echo90 = sales.filter((event) => event.isTenantProduct && event.reportDate >= new Date(Date.now() - 90 * 86_400_000)).reduce((sum, event) => sum + event.bottles, 0);
@@ -184,6 +184,6 @@ export async function OpportunityAccountPanel({ agencyId, wholesaleAccountId, cu
       />)}
       {opportunities.length === 0 ? <p className="muted activity-empty">No active Opportunities for this account.</p> : null}
     </section>
-    <section className="dashboard-section unified-timeline"><div className="section-heading"><h2>CRM + sales timeline</h2><span className="pill">{timeline.length}</span></div>{timeline.map((event, index) => <article className={`timeline-event timeline-${event.kind}`} key={`${event.kind}-${event.at.toISOString()}-${index}`}><time>{formatEasternDate(event.at)}</time><div><strong>{event.title}</strong><p>{event.detail}</p></div></article>)}</section>
+    <section className="dashboard-section unified-timeline"><div className="section-heading"><h2>Activity + sales timeline</h2><span className="pill">{timeline.length}</span></div>{timeline.map((event, index) => <article className={`timeline-event timeline-${event.kind}`} key={`${event.kind}-${event.at.toISOString()}-${index}`}><time>{formatEasternDate(event.at)}</time><div><strong>{event.title}</strong><p>{event.detail}</p></div></article>)}</section>
   </>;
 }

@@ -4,11 +4,14 @@ export const runtime = 'nodejs';
 import { UserRole } from '@prisma/client';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
+import { buildPageMetadata } from '../../lib/appBrand';
 import { getUserDisplayName, requireAdminSession } from '../../lib/auth';
 import { hashPassword } from '../../lib/password';
 import { prisma } from '../../lib/prisma';
 import { createUserInvitationToken, sendUserInvitationEmail } from '../../lib/userInvitations';
 import { PageHeader, SectionHeading } from '../components/PageChrome';
+
+export const metadata = buildPageMetadata('Users');
 
 const toOptional = (value: FormDataEntryValue | null | undefined) => {
   const trimmed = String(value ?? '').trim();

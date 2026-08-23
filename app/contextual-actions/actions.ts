@@ -51,7 +51,7 @@ export async function createContextualFollowUp(formData: FormData): Promise<Cont
 
   const requestedAssigneeId = optional(formData.get('assignedToUserId')) ?? user.id;
   const assignee = await prisma.user.findFirst({ where: { id: requestedAssigneeId, isActive: true, role: { not: UserRole.TASTER } } });
-  if (!assignee) return { ok: false, message: 'Choose an active CRM user.' };
+  if (!assignee) return { ok: false, message: 'Choose an active team member.' };
   const dueDate = dateOnly(formData.get('dueDate'));
   const dueTimeMinutes = dueDate ? parseTimeInputToMinutes(formData.get('dueTime')) : null;
   const note = optional(formData.get('note'));

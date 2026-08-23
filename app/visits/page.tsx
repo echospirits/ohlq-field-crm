@@ -2,11 +2,14 @@
 export const runtime = 'nodejs';
 
 import Link from 'next/link';
+import { buildPageMetadata } from '../../lib/appBrand';
 import { requireUser } from '../../lib/auth';
 import { prisma } from '../../lib/prisma';
 import { LiveFilterForm } from '../components/LiveFilterForm';
 import { EmptyState, PageHeader, SectionHeading } from '../components/PageChrome';
 import { VisitActivityTable } from './VisitActivityTable';
+
+export const metadata = buildPageMetadata('Visits');
 
 export default async function VisitsPage({
   searchParams,

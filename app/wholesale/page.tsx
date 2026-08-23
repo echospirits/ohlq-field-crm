@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { AccountType, OpportunityStatus, Prisma } from '@prisma/client';
+import { buildPageMetadata } from '../../lib/appBrand';
 import { requireUser } from '../../lib/auth';
 import { formatEasternDate } from '../../lib/dateTime';
 import { getGeocodeResetForAddressChange } from '../../lib/location/geocode';
@@ -24,6 +25,8 @@ import { LiveFilterForm } from '../components/LiveFilterForm';
 import { AccountViewNavigation } from '../components/AccountViewNavigation';
 import { NearbyAccountsSection } from '../components/NearbyAccountsSection';
 import { activateOfficialWholesaleAccount } from './actions';
+
+export const metadata = buildPageMetadata('Wholesale Accounts');
 
 type SortDirection = 'asc' | 'desc';
 

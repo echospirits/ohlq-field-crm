@@ -8,10 +8,10 @@ import {
   WorklistStatus,
 } from '@prisma/client';
 import { getUserDisplayName } from './auth';
+import { APP_COMPANY, APP_NAME } from './appBrand';
 import { EASTERN_TIME_ZONE } from './dateTime';
 import { getEmailAppBaseUrl, sendEmail, type SendEmailFn } from './email/sendEmail';
 import { prisma } from './prisma';
-import { getTenantConfig } from './tenantConfig';
 import { formatWholesaleLicenseeIds } from './wholesaleAccounts';
 
 export const DEFAULT_DIGEST_TIME_ZONE = EASTERN_TIME_ZONE;
@@ -758,7 +758,7 @@ const renderWorkItemList = (
         })
         .join('')}
     </ul>
-    ${items.length > capped.length ? `<p style="font-size:12px;color:#5f6b7a;">${items.length - capped.length} more item${items.length - capped.length === 1 ? '' : 's'} in CRM.</p>` : ''}
+    ${items.length > capped.length ? `<p style="font-size:12px;color:#5f6b7a;">${items.length - capped.length} more item${items.length - capped.length === 1 ? '' : 's'} in ${APP_NAME}.</p>` : ''}
   `;
 };
 
@@ -803,7 +803,7 @@ const renderVisitList = (visits: DigestVisit[], window: WeeklyDigestWindow, appB
         `,
       )
       .join('')}
-    ${visits.length > capped.length ? `<p style="font-size:12px;color:#5f6b7a;">${visits.length - capped.length} more visit${visits.length - capped.length === 1 ? '' : 's'} in CRM.</p>` : ''}
+    ${visits.length > capped.length ? `<p style="font-size:12px;color:#5f6b7a;">${visits.length - capped.length} more visit${visits.length - capped.length === 1 ? '' : 's'} in ${APP_NAME}.</p>` : ''}
   `;
 };
 
@@ -827,7 +827,7 @@ const renderCompletedWork = (items: DigestWorklistItem[], window: WeeklyDigestWi
         )
         .join('')}
     </ul>
-    ${items.length > capped.length ? `<p style="font-size:12px;color:#5f6b7a;">${items.length - capped.length} more completed item${items.length - capped.length === 1 ? '' : 's'} in CRM.</p>` : ''}
+    ${items.length > capped.length ? `<p style="font-size:12px;color:#5f6b7a;">${items.length - capped.length} more completed item${items.length - capped.length === 1 ? '' : 's'} in ${APP_NAME}.</p>` : ''}
   `;
 };
 
@@ -857,13 +857,12 @@ const baseEmail = (preheader: string, body: string) => `
 </html>`;
 
 export function renderUserWeeklyDigestEmail(digest: UserWeeklyDigest, appBaseUrl = getEmailAppBaseUrl({ allowLocalFallback: true })) {
-  const tenantConfig = getTenantConfig();
   const rangeLabel = formatRangeLabel(digest.window);
-  const subject = `Your ${tenantConfig.digestName} weekly summary: ${rangeLabel}`;
+  const subject = `Your ${APP_NAME} weekly summary: ${rangeLabel}`;
   const html = baseEmail(
     digest.focusSentence,
     `
-      <h1 style="font-size:24px;margin:0;color:#14213d;">Your ${escapeHtml(tenantConfig.digestName)} weekly summary</h1>
+      <h1 style="font-size:24px;margin:0;color:#14213d;">Your ${APP_NAME} weekly summary</h1>
       <p style="margin:6px 0 0;color:#5f6b7a;">${escapeHtml(rangeLabel)}</p>
       <p style="font-size:16px;margin:18px 0;color:#1f2937;">${escapeHtml(digest.focusSentence)}</p>
       <table role="presentation" cellspacing="8" cellpadding="0" style="width:100%;border-collapse:separate;border-spacing:8px;margin:0 -8px 8px;">
@@ -885,7 +884,8 @@ export function renderUserWeeklyDigestEmail(digest: UserWeeklyDigest, appBaseUrl
       ${digest.workBuckets.dueThisWeekend.length ? renderSection('Due this weekend', renderWorkItemList(digest.workBuckets.dueThisWeekend, digest.window, appBaseUrl)) : ''}
       ${renderSection('Due next week', digest.workBuckets.dueNextWeek.length ? renderWorkItemList(digest.workBuckets.dueNextWeek, digest.window, appBaseUrl) : emptyText('No additional due items in the next 7 days.'))}
       ${renderSection('No due date', digest.noDueDateWork.length ? renderWorkItemList(digest.noDueDateWork, digest.window, appBaseUrl, { max: 8 }) : emptyText('No assigned no-date work.'))}
-      <p style="margin-top:24px;"><a href="${escapeHtml(absoluteUrl('/my-week', appBaseUrl))}" style="display:inline-block;background:#0f766e;color:#fff;text-decoration:none;padding:10px 14px;border-radius:6px;">View My Week in CRM</a></p>
+      <p style="margin-top:24px;"><a href="${escapeHtml(absoluteUrl('/my-week', appBaseUrl))}" style="display:inline-block;background:#0f766e;color:#fff;text-decoration:none;padding:10px 14px;border-radius:6px;">View My Week in ${APP_NAME}</a></p>
+      <p style="margin-top:20px;font-size:12px;color:#7c8798;">${APP_NAME} · ${APP_COMPANY}</p>
     `,
   );
   const text = [
@@ -949,15 +949,14 @@ const renderAdminUserDetails = (digest: AdminWeeklyDigest, appBaseUrl: string) =
     .join('');
 
 export function renderAdminWeeklyDigestEmail(digest: AdminWeeklyDigest, appBaseUrl = getEmailAppBaseUrl({ allowLocalFallback: true })) {
-  const tenantConfig = getTenantConfig();
   const rangeLabel = formatRangeLabel(digest.window);
-  const subject = `${tenantConfig.digestName} team weekly summary: ${rangeLabel}`;
+  const subject = `${APP_NAME} team weekly summary: ${rangeLabel}`;
   const allOverdue = digest.users.flatMap((userDigest) => userDigest.workBuckets.overdue);
   const allUpcoming = digest.users.flatMap((userDigest) => userDigest.upcomingWork);
   const html = baseEmail(
     `Team summary: ${digest.totals.visitsLogged} visits, ${digest.totals.overdue} overdue items.`,
     `
-      <h1 style="font-size:24px;margin:0;color:#14213d;">${escapeHtml(tenantConfig.digestName)} team weekly summary</h1>
+      <h1 style="font-size:24px;margin:0;color:#14213d;">${APP_NAME} team weekly summary</h1>
       <p style="margin:6px 0 0;color:#5f6b7a;">${escapeHtml(rangeLabel)}</p>
       <table role="presentation" cellspacing="8" cellpadding="0" style="width:100%;border-collapse:separate;border-spacing:8px;margin:16px -8px 8px;">
         <tr>
@@ -977,7 +976,8 @@ export function renderAdminWeeklyDigestEmail(digest: AdminWeeklyDigest, appBaseU
       ${renderSection('Unassigned work', digest.unassigned.overdue.length || digest.unassigned.upcoming.length || digest.unassigned.noDueDate.length ? `${renderWorkItemList([...digest.unassigned.overdue, ...digest.unassigned.upcoming, ...digest.unassigned.noDueDate], digest.window, appBaseUrl, { max: 20, emphasizeOverdue: true })}` : emptyText('No unassigned due or no-date work.'))}
       ${renderSection('No-activity users', digest.noActivityUsers.length ? `<p style="margin:8px 0;color:#5f6b7a;">${escapeHtml(digest.noActivityUsers.map((user) => getUserDisplayName(user)).join(', '))}</p>` : emptyText('Every active user logged visits or completed work this week.'))}
       ${renderSection('Per-user details', renderAdminUserDetails(digest, appBaseUrl))}
-      <p style="margin-top:24px;"><a href="${escapeHtml(absoluteUrl('/alerts', appBaseUrl))}" style="display:inline-block;background:#0f766e;color:#fff;text-decoration:none;padding:10px 14px;border-radius:6px;">View Worklist in CRM</a></p>
+      <p style="margin-top:24px;"><a href="${escapeHtml(absoluteUrl('/alerts', appBaseUrl))}" style="display:inline-block;background:#0f766e;color:#fff;text-decoration:none;padding:10px 14px;border-radius:6px;">View Worklist in ${APP_NAME}</a></p>
+      <p style="margin-top:20px;font-size:12px;color:#7c8798;">${APP_NAME} · ${APP_COMPANY}</p>
     `,
   );
   const text = [

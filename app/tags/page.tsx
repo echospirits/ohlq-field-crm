@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 import Link from 'next/link';
+import { buildPageMetadata } from '../../lib/appBrand';
 import { getUserDisplayName, requireUser } from '../../lib/auth';
 import { formatEasternDate } from '../../lib/dateTime';
 import { prisma } from '../../lib/prisma';
@@ -9,6 +10,8 @@ import { createTag, deleteTag } from './actions';
 import { TagBadges } from './TagBadges';
 import { AccountViewNavigation } from '../components/AccountViewNavigation';
 import { EmptyState, PageHeader, SectionHeading } from '../components/PageChrome';
+
+export const metadata = buildPageMetadata('Tags');
 
 const statusMessages: Record<string, string> = {
   saved: 'Tag saved.',

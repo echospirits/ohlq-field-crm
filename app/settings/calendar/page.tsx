@@ -4,6 +4,7 @@ export const runtime = 'nodejs';
 import { CalendarSyncStatus } from '@prisma/client';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
+import { buildPageMetadata } from '../../../lib/appBrand';
 import { requireUser } from '../../../lib/auth';
 import { getCalendarProvider } from '../../../lib/calendar';
 import { GOOGLE_PROVIDER, googleCalendarProvider } from '../../../lib/calendar/google';
@@ -11,6 +12,8 @@ import { syncOutstandingWorklistItemsForUser } from '../../../lib/calendar/workl
 import { formatEasternDateTime } from '../../../lib/dateTime';
 import { prisma } from '../../../lib/prisma';
 import { PageHeader } from '../../components/PageChrome';
+
+export const metadata = buildPageMetadata('Calendar Settings');
 
 const messages: Record<string, string> = {
   connected: 'Google Calendar connected.',
@@ -112,10 +115,10 @@ export default async function CalendarSettingsPage({ searchParams }: { searchPar
   }
   return (
     <>
-      <PageHeader eyebrow="Account" title="Calendar integration" description="Put dated CRM follow-ups on your calendar and keep schedule changes in sync." />
+      <PageHeader eyebrow="Account" title="Calendar integration" description="Put dated Neat follow-ups on your calendar and keep schedule changes in sync." />
       {params.status ? <p className="toast-notice page-status">{messages[params.status] ?? params.status}</p> : null}
       <div className="workflow-shell"><section className="card admin-panel calendar-settings-card">
-        <div className="section-heading"><div><h2>Google Calendar</h2><p className="muted">Each user connects their own account. CRM tasks continue to work when no calendar is connected.</p></div><span className="pill">{connection ? (connection.requiresReconnect ? 'Reconnect required' : 'Connected') : 'Not connected'}</span></div>
+        <div className="section-heading"><div><h2>Google Calendar</h2><p className="muted">Each user connects their own account. Neat follow-ups continue to work when no calendar is connected.</p></div><span className="pill">{connection ? (connection.requiresReconnect ? 'Reconnect required' : 'Connected') : 'Not connected'}</span></div>
         {!connection ? <a className="button-link" href="/api/calendar/google/connect">Connect Google Calendar</a> : (
           <>
             <dl className="integration-summary">
@@ -127,7 +130,7 @@ export default async function CalendarSettingsPage({ searchParams }: { searchPar
             {connection.requiresReconnect ? <a className="button-link" href="/api/calendar/google/connect">Reconnect Google Calendar</a> : (
               <form action={updateCalendarSettings}>
                 <label>Calendar<select name="calendarId" defaultValue={connection.selectedCalendarId}>{calendars.map((calendar) => <option key={calendar.id} value={calendar.id}>{calendar.name}</option>)}</select></label>
-                <label className="checkbox-row"><input name="syncEnabled" type="checkbox" defaultChecked={connection.syncEnabled} /> Sync CRM follow-ups</label>
+                <label className="checkbox-row"><input name="syncEnabled" type="checkbox" defaultChecked={connection.syncEnabled} /> Sync Neat follow-ups</label>
                 <button type="submit">Save calendar settings</button>
               </form>
             )}

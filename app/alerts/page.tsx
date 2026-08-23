@@ -5,6 +5,7 @@ import { OpportunityEventType, OpportunityStatus, Prisma, WorklistCategory, Work
 import { revalidatePath } from 'next/cache';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import { buildPageMetadata } from '../../lib/appBrand';
 import { getUserDisplayName, requireUser } from '../../lib/auth';
 import { formatDateOnlyInputValue, formatTimeMinutesInput, formatWorklistDue, parseTimeInputToMinutes } from '../../lib/dateTime';
 import { syncWorklistItemCalendar } from '../../lib/calendar/worklistSync';
@@ -23,6 +24,8 @@ import { WorkViewNavigation } from '../components/WorkViewNavigation';
 import { createVisit } from '../visits/actions';
 import { WorklistActions } from './WorklistActions';
 import { WorklistDetail } from './WorklistDetail';
+
+export const metadata = buildPageMetadata('Worklist');
 
 const statusLabels: Record<WorklistStatus, string> = {
   [WorklistStatus.OPEN]: 'Open',
@@ -57,7 +60,7 @@ const noticeMessages: Record<string, string> = {
   'storage-not-configured': 'Photo object storage is not configured yet.',
   'photo-upload-failed': 'The visit was saved, but one or more photos could not be uploaded.',
   'photo-verification-failed': 'The photo could not be verified, so the visit and worklist update were not saved.',
-  'invalid-assignee': 'Choose an active CRM user for the follow-up.',
+  'invalid-assignee': 'Choose an active team member for the follow-up.',
 };
 
 const toOptional = (value: FormDataEntryValue | null | undefined) => {

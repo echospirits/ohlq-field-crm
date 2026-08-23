@@ -4,6 +4,7 @@ export const runtime = 'nodejs';
 import { Prisma, WorklistCategory, WorklistSource, WorklistStatus } from '@prisma/client';
 import { revalidatePath } from 'next/cache';
 import Link from 'next/link';
+import { buildPageMetadata } from '../../lib/appBrand';
 import { getUserDisplayName, requireUser } from '../../lib/auth';
 import { EASTERN_TIME_ZONE, formatDateOnlyInputValue, formatTimeMinutesInput, formatWorklistDue, parseTimeInputToMinutes } from '../../lib/dateTime';
 import { syncWorklistItemCalendar } from '../../lib/calendar/worklistSync';
@@ -16,6 +17,8 @@ import { createVisit } from '../visits/actions';
 import { WorklistActions } from '../alerts/WorklistActions';
 import { WorkViewNavigation } from '../components/WorkViewNavigation';
 import { WorklistDetail } from '../alerts/WorklistDetail';
+
+export const metadata = buildPageMetadata('My Week');
 
 const dashboardTimeZone = EASTERN_TIME_ZONE;
 const inactiveWorklistStatuses = [WorklistStatus.COMPLETED, WorklistStatus.CANCELLED];

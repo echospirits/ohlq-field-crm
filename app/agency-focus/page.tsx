@@ -3,11 +3,14 @@ export const runtime = 'nodejs';
 
 import { AgencyProductOpportunityState, OpportunityStatus } from '@prisma/client';
 import Link from 'next/link';
+import { buildPageMetadata } from '../../lib/appBrand';
 import { requireUser } from '../../lib/auth';
 import { prisma } from '../../lib/prisma';
 import { updateAgencyOpportunity } from './actions';
 import { getUserDisplayName } from '../../lib/auth';
 import { ContextualActions } from '../components/ContextualActions';
+
+export const metadata = buildPageMetadata('Agency Focus');
 
 const stateLabels: Record<AgencyProductOpportunityState, string> = {
   ACTIVATION_OPPORTUNITY: 'Tasting',

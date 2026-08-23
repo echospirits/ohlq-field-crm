@@ -19,8 +19,8 @@ export type TenantConfig = {
 
 export const DEFAULT_TENANT_ID = 'echo-spirits';
 export const DEFAULT_TENANT_ENTITY_NAME = 'Echo Spirits Distilling Co.';
-export const DEFAULT_TENANT_APP_NAME = 'Echo Field CRM';
-export const DEFAULT_TENANT_DIGEST_NAME = 'Echo CRM';
+export const DEFAULT_TENANT_APP_NAME = 'Neat';
+export const DEFAULT_TENANT_DIGEST_NAME = 'Neat';
 export const DEFAULT_TENANT_PRODUCT_LABEL = 'Echo';
 export const DEFAULT_TENANT_PRODUCT_PLURAL_LABEL = 'Echo items';
 export const DEFAULT_TENANT_OHLQ_VENDOR_IDS = ['Z90399001'] as const;

@@ -3,10 +3,13 @@ export const runtime = 'nodejs';
 
 import { OpportunityStatus, WorklistStatus } from '@prisma/client';
 import Link from 'next/link';
+import { buildPageMetadata } from '../../lib/appBrand';
 import { requireUser } from '../../lib/auth';
 import { formatWorklistDue } from '../../lib/dateTime';
 import { prisma } from '../../lib/prisma';
 import { GlobalSearchForm } from '../components/GlobalSearchForm';
+
+export const metadata = buildPageMetadata('Search');
 
 const resultLimit = 12;
 const inactiveWorkStatuses = [WorklistStatus.COMPLETED, WorklistStatus.CANCELLED];
@@ -99,7 +102,7 @@ export default async function SearchPage({ searchParams }: { searchParams?: Prom
 
       {!canSearch ? (
         <section className="card search-empty-state">
-          <h2>Search across the CRM</h2>
+          <h2>Search across Neat</h2>
           <p className="muted">Enter at least two characters. Names, IDs, addresses, cities, contacts, and task details are searchable.</p>
         </section>
       ) : totalResults === 0 ? (

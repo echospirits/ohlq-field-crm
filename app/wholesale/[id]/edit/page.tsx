@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { AccountType } from '@prisma/client';
+import { buildPageMetadata } from '../../../../lib/appBrand';
 import { requireUser } from '../../../../lib/auth';
 import { prisma } from '../../../../lib/prisma';
 import { getGeocodeResetForAddressChange } from '../../../../lib/location/geocode';
@@ -26,6 +27,8 @@ import {
   type WholesaleAccountEditableValues,
   wholesaleLicenseeIdListsMatch,
 } from '../../../../lib/wholesaleAccounts';
+
+export const metadata = buildPageMetadata('Edit Account');
 
 const toOptional = (value: FormDataEntryValue | null | undefined) => {
   const trimmed = String(value ?? '').trim();

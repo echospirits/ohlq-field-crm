@@ -3,11 +3,14 @@ export const runtime = 'nodejs';
 
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
+import { buildPageMetadata } from '../../lib/appBrand';
 import { getUserDisplayName, requireUserSession } from '../../lib/auth';
 import { hashPassword, verifyPassword } from '../../lib/password';
 import { prisma } from '../../lib/prisma';
 import { PageHeader } from '../components/PageChrome';
 import Link from 'next/link';
+
+export const metadata = buildPageMetadata('Profile');
 
 const toOptional = (value: FormDataEntryValue | null | undefined) => {
   const trimmed = String(value ?? '').trim();

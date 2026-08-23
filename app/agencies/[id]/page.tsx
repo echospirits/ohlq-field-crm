@@ -3,6 +3,7 @@ export const runtime = 'nodejs';
 
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { buildPageMetadata } from '../../../lib/appBrand';
 import { getUserDisplayName, requireUser } from '../../../lib/auth';
 import { formatEasternDate } from '../../../lib/dateTime';
 import { getAgencyRecentItemSales } from '../../../lib/ohlqSalesData';
@@ -27,6 +28,12 @@ const statusMessages: Record<string, string> = {
   'visit-logged-photo-upload-failed': 'Visit logged, but one or more photos could not be uploaded.',
   'visit-logged-worklist-completed': 'Visit logged and worklist item completed.',
 };
+
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const agency = await prisma.agency.findUnique({ where: { id }, select: { name: true } });
+  return buildPageMetadata(agency?.name ?? 'Agency');
+}
 
 export default async function AgencyActivityPage({
   params,

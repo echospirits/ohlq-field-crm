@@ -3,9 +3,12 @@ export const runtime = 'nodejs';
 
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import { buildPageMetadata } from '../../lib/appBrand';
 import { requireUser } from '../../lib/auth';
 import { isTasterRole } from '../../lib/userAccess';
 import { AccountViewNavigation } from '../components/AccountViewNavigation';
+
+export const metadata = buildPageMetadata('Accounts');
 
 const accountAreas = [
   {

@@ -3,11 +3,14 @@ export const runtime = 'nodejs';
 
 import { OpportunityEventType, OpportunityStatus, OpportunityType, UserRole } from '@prisma/client';
 import Link from 'next/link';
+import { buildPageMetadata } from '../../lib/appBrand';
 import { getUserDisplayName, requireUser } from '../../lib/auth';
 import { formatEasternDate } from '../../lib/dateTime';
 import { prisma } from '../../lib/prisma';
 import { updateOpportunity } from './actions';
 import { ContextualActions } from '../components/ContextualActions';
+
+export const metadata = buildPageMetadata('Opportunities');
 
 const labels: Record<OpportunityType, string> = { LAPSED_BUYER: 'Reactivation', FIRST_ORDER_FOLLOW_UP: 'First Reorder', CATEGORY_CONQUEST: 'Category Opportunity', CROSS_SELL: 'Cross-Sell', NO_RECENT_TOUCH: 'Needs Attention' };
 

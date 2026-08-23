@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'crypto';
+import { APP_COMPANY, APP_NAME } from './appBrand';
 import { getEmailAppBaseUrl, sendEmail, type SendEmailFn } from './email/sendEmail';
-import { getTenantConfig } from './tenantConfig';
 
 export const USER_INVITATION_HOURS = 72;
 
@@ -38,21 +38,18 @@ export function renderUserInvitationEmail({
   isReminder?: boolean;
   recipientName: string;
 }) {
-  const { appName, entityName } = getTenantConfig();
   const safeName = escapeHtml(recipientName);
   const safeUrl = escapeHtml(inviteUrl);
-  const safeAppName = escapeHtml(appName);
-  const safeEntityName = escapeHtml(entityName);
   const subject = isReminder
-    ? `Reminder: finish setting up your ${appName} account`
-    : `You're invited to ${entityName}`;
+    ? `Reminder: finish setting up your ${APP_NAME} account`
+    : `You're invited to ${APP_NAME}`;
   const text = [
     `Hello ${recipientName},`,
     '',
     isReminder
-      ? `This is a reminder to finish setting up your ${appName} account.`
-      : `You've been invited to ${entityName}.`,
-    `Create your ${appName} password using this link:`,
+      ? `This is a reminder to finish setting up your ${APP_NAME} account.`
+      : `You've been invited to ${APP_NAME} by ${APP_COMPANY}.`,
+    `Create your ${APP_NAME} password using this link:`,
     inviteUrl,
     '',
     `This link expires in ${USER_INVITATION_HOURS} hours and can only be used once.`,
@@ -65,11 +62,11 @@ export function renderUserInvitationEmail({
         <div style="max-width:560px;margin:0 auto;padding:32px 20px;">
           <div style="background:#ffffff;border:1px solid #e1e6ed;border-radius:12px;padding:28px;">
             <h1 style="margin:0 0 16px;font-size:24px;">
-              ${isReminder ? `Finish setting up your ${safeAppName} account` : `You're invited to ${safeEntityName}`}
+              ${isReminder ? `Finish setting up your ${APP_NAME} account` : `You're invited to ${APP_NAME}`}
             </h1>
             <p style="margin:0 0 12px;">Hello ${safeName},</p>
             <p style="margin:0 0 22px;line-height:1.5;">
-              Create your ${safeAppName} password to finish setting up your account.
+              Create your ${APP_NAME} password to finish setting up your account.
             </p>
             <p style="margin:0 0 24px;">
               <a href="${safeUrl}" style="display:inline-block;padding:12px 18px;background:#2458ff;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:700;">
@@ -80,6 +77,7 @@ export function renderUserInvitationEmail({
               This link expires in ${USER_INVITATION_HOURS} hours and can only be used once.
               If you were not expecting this invitation, you can ignore this email.
             </p>
+            <p style="margin:20px 0 0;color:#7c8798;font-size:12px;">${APP_NAME} · ${APP_COMPANY}</p>
           </div>
         </div>
       </body>
