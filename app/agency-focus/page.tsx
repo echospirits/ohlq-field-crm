@@ -6,6 +6,8 @@ import Link from 'next/link';
 import { requireUser } from '../../lib/auth';
 import { prisma } from '../../lib/prisma';
 import { updateAgencyOpportunity } from './actions';
+import { getUserDisplayName } from '../../lib/auth';
+import { ContextualActions } from '../components/ContextualActions';
 
 const stateLabels: Record<AgencyProductOpportunityState, string> = {
   ACTIVATION_OPPORTUNITY: 'Tasting',
@@ -36,12 +38,12 @@ export default async function AgencyFocusPage({
 }: {
   searchParams?: Promise<{ agencyId?: string; state?: string }>;
 }) {
-  await requireUser();
+  const currentUser = await requireUser();
   const query = (await searchParams) ?? {};
   const state = Object.values(AgencyProductOpportunityState).includes(query.state as AgencyProductOpportunityState)
     ? query.state as AgencyProductOpportunityState
     : undefined;
-  const opportunities = await prisma.agencyProductIntelligence.findMany({
+  const [opportunities, users] = await Promise.all([prisma.agencyProductIntelligence.findMany({
     where: {
       status: { in: [OpportunityStatus.OPEN, OpportunityStatus.ACTIONED] },
       opportunityState: state ?? { in: actionableStates },
@@ -56,7 +58,8 @@ export default async function AgencyFocusPage({
     },
     orderBy: [{ priorityScore: 'desc' }, { lastDetectedAt: 'desc' }],
     take: 250,
-  });
+  }), prisma.user.findMany({ where: { isActive: true, role: { not: 'TASTER' } }, orderBy: [{ name: 'asc' }, { email: 'asc' }] })]);
+  const actionUsers = users.map((user) => ({ id: user.id, name: getUserDisplayName(user) }));
 
   return <>
     <header className="page-heading page-header">
@@ -84,8 +87,13 @@ export default async function AgencyFocusPage({
         <p className="agency-product-action"><strong>Recommended:</strong> {item.recommendedAction.toLowerCase().replaceAll('_', ' ')}</p>
         <div className="agency-focus-actions">
           <Link className="btn secondary compact-btn" href={`/agencies/${item.agency.id}`}>Open Agency</Link>
-          <Link className="btn secondary compact-btn" href={`/visits/new?type=agency&agencyId=${item.agency.id}`}>Log visit</Link>
-          <form action={updateAgencyOpportunity}><input name="id" type="hidden" value={item.id}/><button className="compact-btn" name="action" value="worklist" disabled={item.worklistItems.length > 0}>{item.worklistItems.length ? 'On worklist' : 'Add to worklist'}</button><button className="secondary compact-btn" name="action" value="snooze">Snooze 14d</button></form>
+          <ContextualActions
+            context={{ accountName: item.agency.name, agencyId: item.agency.id, agencyProductIntelligenceId: item.id, productItemCode: item.itemCode, productName: item.itemName, reason: stringList(item.reasons).join(' '), returnTo: '/agency-focus', sourceLabel: `${stateLabels[item.opportunityState]} - ${item.itemName}`, sourceType: item.opportunityState }}
+            currentUserId={currentUser.id}
+            hasExistingFollowUp={item.worklistItems.length > 0}
+            users={actionUsers}
+          />
+          <form action={updateAgencyOpportunity}><input name="id" type="hidden" value={item.id}/><button className="secondary compact-btn" name="action" value="snooze">Snooze 14d</button></form>
         </div>
         <details className="agency-focus-dismiss"><summary>Dismiss</summary><form action={updateAgencyOpportunity}><input name="id" type="hidden" value={item.id}/><select aria-label="Dismissal reason" name="reason" defaultValue="Not a fit"><option>Not a fit</option><option>Already handled</option><option>Wrong timing</option><option>Bad or missing data</option><option>Other</option></select><button className="danger compact-btn" name="action" value="dismiss">Dismiss</button></form></details>
       </article>)}

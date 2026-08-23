@@ -7,6 +7,7 @@ import {
 import Link from 'next/link';
 import { formatEasternDate } from '../../lib/dateTime';
 import { prisma } from '../../lib/prisma';
+import { ContextualActions } from '../components/ContextualActions';
 
 const titleCase = (value: string) => value.toLowerCase().replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 const actionLabels: Record<AgencyRecommendedAction, string> = {
@@ -36,11 +37,12 @@ function IntelligenceBand({ label, value }: { label: string; value: string }) {
   return <div><dt>{label}</dt><dd><span className={`priority priority-${value.toLowerCase()}`}>{titleCase(value)}</span></dd></div>;
 }
 
-export async function AgencyIntelligencePanel({ agencyId }: { agencyId: string }) {
+export async function AgencyIntelligencePanel({ agencyId, agencyName, currentUserId, users }: { agencyId: string; agencyName: string; currentUserId: string; users: Array<{ id: string; name: string }> }) {
   const [summary, products] = await Promise.all([
     prisma.agencyIntelligenceSummary.findUnique({ where: { agencyId } }),
     prisma.agencyProductIntelligence.findMany({
       where: { agencyId },
+      include: { worklistItems: { where: { status: { in: ['OPEN', 'IN_PROGRESS'] } }, select: { id: true } } },
       orderBy: [{ priorityScore: 'desc' }, { itemName: 'asc' }],
     }),
   ]);
@@ -99,6 +101,12 @@ export async function AgencyIntelligencePanel({ agencyId }: { agencyId: string }
             </dl>
             <p className="agency-product-action"><strong>Next:</strong> {actionLabels[product.recommendedAction]}</p>
             <ul className="agency-product-reasons">{stringList(product.reasons).map((reason) => <li key={reason}>{reason}</li>)}</ul>
+            <ContextualActions
+              context={{ accountName: agencyName, agencyId, agencyProductIntelligenceId: product.id, productItemCode: product.itemCode, productName: product.itemName, reason: stringList(product.reasons).join(' '), returnTo: `/agencies/${agencyId}`, sourceLabel: `${titleCase(product.opportunityState)} - ${product.itemName}`, sourceType: product.opportunityState }}
+              currentUserId={currentUserId}
+              hasExistingFollowUp={product.worklistItems.length > 0}
+              users={users}
+            />
           </div>
         </details>)}
         {activeProducts.length === 0 ? <p className="card muted activity-empty">No active product issues require attention.</p> : null}

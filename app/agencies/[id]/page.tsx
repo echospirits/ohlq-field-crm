@@ -3,7 +3,7 @@ export const runtime = 'nodejs';
 
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { requireUser } from '../../../lib/auth';
+import { getUserDisplayName, requireUser } from '../../../lib/auth';
 import { formatEasternDate } from '../../../lib/dateTime';
 import { getAgencyRecentItemSales } from '../../../lib/ohlqSalesData';
 import { prisma } from '../../../lib/prisma';
@@ -14,6 +14,7 @@ import { TagBadges } from '../../tags/TagBadges';
 import { VisitActivityTable } from '../../visits/VisitActivityTable';
 import { AccountWorkspaceNavigation } from '../../components/AccountWorkspaceNavigation';
 import { OpportunityAccountPanel } from '../../wholesale/OpportunityAccountPanel';
+import { ContextualActions } from '../../components/ContextualActions';
 
 const formatVisitDate = (date: Date | null | undefined) => formatEasternDate(date) || 'No visits yet';
 const tagStatusMessages: Record<string, string> = {
@@ -34,7 +35,7 @@ export default async function AgencyActivityPage({
   params: Promise<{ id: string }>;
   searchParams?: Promise<{ status?: string; tagStatus?: string }>;
 }) {
-  await requireUser();
+  const currentUser = await requireUser();
   const { id } = await params;
   const query = (await searchParams) ?? {};
 
@@ -55,7 +56,7 @@ export default async function AgencyActivityPage({
     notFound();
   }
 
-  const [visits, tags, salesWindows] = await Promise.all([
+  const [visits, tags, salesWindows, users] = await Promise.all([
     prisma.loggedVisit.findMany({
       where: {
         agencyId: id,
@@ -74,7 +75,9 @@ export default async function AgencyActivityPage({
     }),
     prisma.tag.findMany({ orderBy: [{ name: 'asc' }] }),
     getAgencyRecentItemSales({ agencyId: agency.agencyId }),
+    prisma.user.findMany({ where: { isActive: true, role: { not: 'TASTER' } }, orderBy: [{ name: 'asc' }, { email: 'asc' }] }),
   ]);
+  const actionUsers = users.map((user) => ({ id: user.id, name: getUserDisplayName(user) }));
 
   const contacts = await prisma.locationContact.findMany({
     where: { id: { in: visits.map((visit) => visit.contactId).filter(Boolean) as string[] } },
@@ -91,7 +94,13 @@ export default async function AgencyActivityPage({
           <TagBadges tags={agency.tags.map((assignment) => assignment.tag)} />
         </div>
         <div className="page-heading-actions">
-          <Link className="btn compact-btn" href={`/visits/new?type=agency&agencyId=${agency.id}`}>Log visit</Link>
+          <ContextualActions
+            address={[agency.address, agency.city, agency.state, agency.zip].filter(Boolean).join(', ')}
+            context={{ accountName: agency.name, agencyId: agency.id, returnTo: `/agencies/${agency.id}`, sourceLabel: agency.name, sourceType: 'AGENCY_DETAIL' }}
+            currentUserId={currentUser.id}
+            phone={agency.primaryContactPhone ?? agency.phone}
+            users={actionUsers}
+          />
           <Link className="btn compact-btn secondary" href={`/visits/new?type=agency&agencyId=${agency.id}&voice=1`}>Voice note</Link>
         </div>
       </header>
@@ -144,11 +153,11 @@ export default async function AgencyActivityPage({
       </div>
 
       <div className="account-workspace-section">
-        <AgencyIntelligencePanel agencyId={agency.id} />
+        <AgencyIntelligencePanel agencyId={agency.id} agencyName={agency.name} currentUserId={currentUser.id} users={actionUsers} />
       </div>
 
       <div className="account-workspace-section">
-        <OpportunityAccountPanel agencyId={agency.agencyId} />
+        <OpportunityAccountPanel agencyId={agency.agencyId} currentUserId={currentUser.id} returnTo={`/agencies/${agency.id}`} users={actionUsers} />
       </div>
 
       <div className="account-workspace-section" id="sales">

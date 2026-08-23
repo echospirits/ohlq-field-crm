@@ -4,7 +4,7 @@ export const runtime = 'nodejs';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { MenuPlacementStatus, MenuPlacementType, Prisma, UserRole } from '@prisma/client';
-import { requireUser } from '../../../lib/auth';
+import { getUserDisplayName, requireUser } from '../../../lib/auth';
 import { formatEasternDate } from '../../../lib/dateTime';
 import { getWholesaleRecentPurchases } from '../../../lib/ohlqSalesData';
 import { prisma } from '../../../lib/prisma';
@@ -16,6 +16,7 @@ import { VisitActivityTable } from '../../visits/VisitActivityTable';
 import { WholesaleRecentPurchasesCard } from '../WholesaleRecentPurchasesCard';
 import { AccountWorkspaceNavigation } from '../../components/AccountWorkspaceNavigation';
 import { OpportunityAccountPanel } from '../OpportunityAccountPanel';
+import { ContextualActions } from '../../components/ContextualActions';
 
 const formatVisitDate = (date: Date | null | undefined) => formatEasternDate(date) || 'No visits yet';
 const tagStatusMessages: Record<string, string> = {
@@ -187,6 +188,7 @@ export default async function WholesaleActivityPage({
   });
   const contactMap = Object.fromEntries(contacts.map((contact) => [contact.id, contact.name]));
   const latestVisitAt = visits[0]?.visitAt;
+  const actionUsers = users.filter((activeUser) => activeUser.isActive && activeUser.role !== UserRole.TASTER).map((activeUser) => ({ id: activeUser.id, name: getUserDisplayName(activeUser) }));
 
   return (
     <>
@@ -197,7 +199,13 @@ export default async function WholesaleActivityPage({
           <TagBadges tags={account.tags.map((assignment) => assignment.tag)} />
         </div>
         <div className="page-heading-actions">
-          <Link className="btn compact-btn" href={`/visits/new?type=wholesale&wholesaleAccountId=${account.id}`}>Log visit</Link>
+          <ContextualActions
+            address={[account.address, account.city, account.state, account.zip].filter(Boolean).join(', ')}
+            context={{ accountName: account.name, returnTo: `/wholesale/${account.id}`, sourceLabel: account.name, sourceType: 'WHOLESALE_DETAIL', wholesaleAccountId: account.id }}
+            currentUserId={user.id}
+            phone={account.phone}
+            users={actionUsers}
+          />
           <Link className="btn compact-btn secondary" href={`/visits/new?type=wholesale&wholesaleAccountId=${account.id}&voice=1`}>Voice note</Link>
           <Link className="btn compact-btn secondary" href={`/wholesale/${account.id}/edit`}>Edit</Link>
           {user.role === UserRole.ADMIN && !account.officialAccountId ? (
@@ -281,7 +289,7 @@ export default async function WholesaleActivityPage({
       </div>
 
       <div className="account-workspace-section" id="intelligence">
-        <OpportunityAccountPanel wholesaleAccountId={account.id} />
+        <OpportunityAccountPanel wholesaleAccountId={account.id} currentUserId={user.id} returnTo={`/wholesale/${account.id}`} users={actionUsers} />
       </div>
 
       <section className="dashboard-section account-workspace-section" id="activity">

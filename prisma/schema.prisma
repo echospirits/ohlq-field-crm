@@ -84,6 +84,8 @@ enum OpportunityEventType {
   CONVERTED
   RESOLVED
   EXPIRED
+  TASK_COMPLETED
+  TASK_REASSIGNED
 }
 
 enum OpportunityRankingMode {
@@ -814,16 +816,16 @@ model RecipeSuggestion {
 }
 
 model Agency {
-  id                       String        @id @default(cuid())
-  agencyId                 String        @unique
+  id                       String                        @id @default(cuid())
+  agencyId                 String                        @unique
   name                     String
   address                  String?
   city                     String?
   county                   String?
-  state                    String?       @default("OH")
+  state                    String?                       @default("OH")
   zip                      String?
   phone                    String?
-  d8Permit                 Boolean       @default(false)
+  d8Permit                 Boolean                       @default(false)
   warehouse                String?
   orderDay                 String?
   orderWeek                String?
@@ -834,12 +836,12 @@ model Agency {
   latitude                 Float?
   longitude                Float?
   geocodedAt               DateTime?
-  geocodeStatus            GeocodeStatus @default(PENDING)
+  geocodeStatus            GeocodeStatus                 @default(PENDING)
   normalizedGeocodeAddress String?
   geocodeError             String?
-  createdAt                DateTime      @default(now())
-  updatedAt                DateTime      @updatedAt
-  tags                     LocationTag[] @relation("AgencyLocationTags")
+  createdAt                DateTime                      @default(now())
+  updatedAt                DateTime                      @updatedAt
+  tags                     LocationTag[]                 @relation("AgencyLocationTags")
   inventorySnapshots       OhlqAgencyInventorySnapshot[] @relation("AgencyInventorySnapshots")
   currentInventory         OhlqAgencyInventoryCurrent[]  @relation("AgencyInventoryCurrent")
   productIntelligence      AgencyProductIntelligence[]
@@ -1092,8 +1094,8 @@ model TargetPublicResearch {
   openStatus            String?
   ownershipVerification String?
   buyerStructure        String?
-  websiteUrl             String?
-  cocktailMenuUrl        String?
+  websiteUrl            String?
+  cocktailMenuUrl       String?
   localBrandsOnMenu     Json               @default("[]")
   googleRating          Decimal?
   googleReviewCount     Int?
@@ -1105,12 +1107,12 @@ model TargetPublicResearch {
   sourceUrls            Json               @default("[]")
   completedAt           DateTime?
   researcher            String?
-  lastAttemptedAt         DateTime?
-  lastRefreshedAt         DateTime?
-  refreshStatus           String?
-  refreshError            String?
-  researchModel           String?
-  researchResponseId      String?
+  lastAttemptedAt       DateTime?
+  lastRefreshedAt       DateTime?
+  refreshStatus         String?
+  refreshError          String?
+  researchModel         String?
+  researchResponseId    String?
   createdAt             DateTime           @default(now())
   updatedAt             DateTime           @updatedAt
   wholesaleAccount      WholesaleAccount   @relation(fields: [wholesaleAccountId], references: [id], onDelete: Cascade)
@@ -1257,34 +1259,44 @@ model LocationContact {
 }
 
 model LoggedVisit {
-  id                       String         @id @default(cuid())
-  visitAt                  DateTime       @default(now())
-  locationType             String
-  agencyId                 String?
-  wholesaleAccountId       String?
-  contactId                String?
-  summary                  String?
-  outcomes                 String?
-  outcomeCodes             String[]       @default([])
-  nextStep                 String?
-  followUpMode             String?
-  followUpDate             DateTime?
-  followUpTimeMinutes      Int?
-  followUpAssignedToUserId String?
-  createdBy                String?
-  createdByUserId          String?
-  submissionKey            String?        @unique
-  createdAt                DateTime       @default(now())
-  updatedAt                DateTime       @default(now()) @updatedAt
-  createdByUser            User?          @relation("LoggedVisitCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
-  followUpAssignedToUser   User?          @relation("LoggedVisitFollowUpAssignedTo", fields: [followUpAssignedToUserId], references: [id], onDelete: SetNull)
-  photos                   VisitPhoto[]
-  worklistItems            WorklistItem[]
+  id                          String                     @id @default(cuid())
+  visitAt                     DateTime                   @default(now())
+  locationType                String
+  agencyId                    String?
+  wholesaleAccountId          String?
+  salesOpportunityId          String?
+  agencyProductIntelligenceId String?
+  originatingWorklistItemId   String?
+  actionReturnTo              String?
+  contactId                   String?
+  summary                     String?
+  outcomes                    String?
+  outcomeCodes                String[]                   @default([])
+  nextStep                    String?
+  followUpMode                String?
+  followUpDate                DateTime?
+  followUpTimeMinutes         Int?
+  followUpAssignedToUserId    String?
+  createdBy                   String?
+  createdByUserId             String?
+  submissionKey               String?                    @unique
+  createdAt                   DateTime                   @default(now())
+  updatedAt                   DateTime                   @default(now()) @updatedAt
+  createdByUser               User?                      @relation("LoggedVisitCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  followUpAssignedToUser      User?                      @relation("LoggedVisitFollowUpAssignedTo", fields: [followUpAssignedToUserId], references: [id], onDelete: SetNull)
+  photos                      VisitPhoto[]
+  worklistItems               WorklistItem[]
+  salesOpportunity            SalesOpportunity?          @relation(fields: [salesOpportunityId], references: [id], onDelete: SetNull)
+  agencyProductIntelligence   AgencyProductIntelligence? @relation(fields: [agencyProductIntelligenceId], references: [id], onDelete: SetNull)
+  originatingWorklistItem     WorklistItem?              @relation("OriginatingWorklistItem", fields: [originatingWorklistItemId], references: [id], onDelete: SetNull)
 
   @@index([createdByUserId])
   @@index([followUpAssignedToUserId])
   @@index([locationType, agencyId, visitAt])
   @@index([locationType, wholesaleAccountId, visitAt])
+  @@index([salesOpportunityId])
+  @@index([agencyProductIntelligenceId])
+  @@index([originatingWorklistItemId])
 }
 
 model VisitPhoto {
@@ -1306,37 +1318,39 @@ model VisitPhoto {
 }
 
 model WorklistItem {
-  id                 String                  @id @default(cuid())
-  title              String
-  detail             String?
-  status             WorklistStatus          @default(OPEN)
-  source             WorklistSource          @default(MANUAL)
-  category           WorklistCategory        @default(GENERAL)
-  agencyId           String?
-  wholesaleAccountId String?
-  loggedVisitId      String?
-  salesOpportunityId String?
+  id                          String                     @id @default(cuid())
+  title                       String
+  detail                      String?
+  status                      WorklistStatus             @default(OPEN)
+  source                      WorklistSource             @default(MANUAL)
+  category                    WorklistCategory           @default(GENERAL)
+  agencyId                    String?
+  wholesaleAccountId          String?
+  loggedVisitId               String?
+  salesOpportunityId          String?
   agencyProductIntelligenceId String?
-  dueDate            DateTime?
-  dueTimeMinutes     Int?
-  assignedTo         String?
-  createdBy          String?
-  createdByUserId    String?
-  assignedToUserId   String?
-  completedByUserId  String?
-  cancelledByUserId  String?
-  completedAt        DateTime?
-  cancelledAt        DateTime?
-  createdAt          DateTime                @default(now())
-  updatedAt          DateTime                @updatedAt
-  assignedToUser     User?                   @relation("WorklistItemAssignedTo", fields: [assignedToUserId], references: [id], onDelete: SetNull)
-  cancelledByUser    User?                   @relation("WorklistItemCancelledBy", fields: [cancelledByUserId], references: [id], onDelete: SetNull)
-  completedByUser    User?                   @relation("WorklistItemCompletedBy", fields: [completedByUserId], references: [id], onDelete: SetNull)
-  createdByUser      User?                   @relation("WorklistItemCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
-  loggedVisit        LoggedVisit?            @relation(fields: [loggedVisitId], references: [id], onDelete: SetNull)
-  calendarEvents     WorklistCalendarEvent[]
-  salesOpportunity   SalesOpportunity?       @relation(fields: [salesOpportunityId], references: [id], onDelete: SetNull)
-  agencyProductIntelligence AgencyProductIntelligence? @relation(fields: [agencyProductIntelligenceId], references: [id], onDelete: SetNull)
+  submissionKey               String?                    @unique
+  dueDate                     DateTime?
+  dueTimeMinutes              Int?
+  assignedTo                  String?
+  createdBy                   String?
+  createdByUserId             String?
+  assignedToUserId            String?
+  completedByUserId           String?
+  cancelledByUserId           String?
+  completedAt                 DateTime?
+  cancelledAt                 DateTime?
+  createdAt                   DateTime                   @default(now())
+  updatedAt                   DateTime                   @updatedAt
+  assignedToUser              User?                      @relation("WorklistItemAssignedTo", fields: [assignedToUserId], references: [id], onDelete: SetNull)
+  cancelledByUser             User?                      @relation("WorklistItemCancelledBy", fields: [cancelledByUserId], references: [id], onDelete: SetNull)
+  completedByUser             User?                      @relation("WorklistItemCompletedBy", fields: [completedByUserId], references: [id], onDelete: SetNull)
+  createdByUser               User?                      @relation("WorklistItemCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  loggedVisit                 LoggedVisit?               @relation(fields: [loggedVisitId], references: [id], onDelete: SetNull)
+  calendarEvents              WorklistCalendarEvent[]
+  salesOpportunity            SalesOpportunity?          @relation(fields: [salesOpportunityId], references: [id], onDelete: SetNull)
+  agencyProductIntelligence   AgencyProductIntelligence? @relation(fields: [agencyProductIntelligenceId], references: [id], onDelete: SetNull)
+  originatedVisits            LoggedVisit[]              @relation("OriginatingWorklistItem")
 
   @@index([status])
   @@index([category])
@@ -1401,6 +1415,7 @@ model AgencyProductIntelligence {
   updatedAt                DateTime                      @updatedAt
   agency                   Agency                        @relation(fields: [agencyId], references: [id], onDelete: Cascade)
   worklistItems            WorklistItem[]
+  loggedVisits             LoggedVisit[]
 
   @@unique([agencyId, itemCode])
   @@index([agencyId, priorityScore])
@@ -1567,6 +1582,7 @@ model SalesOpportunity {
   events               OpportunityEvent[]
   scores               OpportunityScore[]
   worklistItems        WorklistItem[]
+  loggedVisits         LoggedVisit[]
 
   @@index([wholesaleAccountId, type, cycleKey])
   @@index([wholesaleAccountId, status])

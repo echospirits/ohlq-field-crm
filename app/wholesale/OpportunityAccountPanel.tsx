@@ -3,6 +3,8 @@ import Link from 'next/link';
 import { formatEasternDate } from '../../lib/dateTime';
 import { getOhlqWindowStartDate, summarizeLinkedWholesaleAccountSales } from '../../lib/ohlqSalesData';
 import { prisma } from '../../lib/prisma';
+import { ContextualActions } from '../components/ContextualActions';
+import type { ReactNode } from 'react';
 
 const activeStatuses = [OpportunityStatus.OPEN, OpportunityStatus.ACTIONED, OpportunityStatus.SNOOZED];
 
@@ -22,6 +24,7 @@ function OpportunityRow({
   priorityBand,
   recommendedAction,
   title,
+  actions,
 }: {
   accountHref?: string;
   accountName?: string;
@@ -29,6 +32,7 @@ function OpportunityRow({
   priorityBand: string;
   recommendedAction: string;
   title: string;
+  actions?: ReactNode;
 }) {
   return <article className="account-opportunity-row">
     <span className={`priority priority-${priorityBand.toLowerCase()}`}>{priorityBand}</span>
@@ -44,10 +48,11 @@ function OpportunityRow({
         <span className="account-opportunity-next"><strong>Next</strong> {recommendedAction}</span>
       </div>
     </div>
+    {actions}
   </article>;
 }
 
-export async function OpportunityAccountPanel({ agencyId, wholesaleAccountId }: { agencyId?: string; wholesaleAccountId?: string }) {
+export async function OpportunityAccountPanel({ agencyId, wholesaleAccountId, currentUserId, users, returnTo }: { agencyId?: string; wholesaleAccountId?: string; currentUserId: string; users: Array<{ id: string; name: string }>; returnTo?: string }) {
   const isAgencyRollup = Boolean(agencyId && !wholesaleAccountId);
   const opportunityWhere: Prisma.SalesOpportunityWhereInput = wholesaleAccountId
     ? { wholesaleAccountId, status: { in: activeStatuses } }
@@ -126,6 +131,11 @@ export async function OpportunityAccountPanel({ agencyId, wholesaleAccountId }: 
           priorityBand={opportunity?.priorityBand ?? (sales.echoBottles > 0 ? 'MEDIUM' : 'LOW')}
           recommendedAction={opportunity?.recommendedAction ?? (sales.echoBottles > 0 ? 'Maintain relationship' : 'Review account')}
           title={opportunity?.title ?? (sales.allBottles > 0 ? 'Recent wholesale activity' : 'No recent wholesale purchases')}
+          actions={<ContextualActions
+            context={{ accountName: account.name, opportunityId: opportunity?.id, reason: opportunity ? firstExplanation(opportunity.explanation) : salesExplanation, returnTo, sourceLabel: opportunity?.title ?? 'wholesale account activity', sourceType: opportunity?.type ?? 'AGENCY_WHOLESALE_ROLLUP', wholesaleAccountId: account.id }}
+            currentUserId={currentUserId}
+            users={users}
+          />}
         />;
       })}
       {linkedAccounts.length === 0 ? <p className="muted activity-empty">No wholesale accounts are linked to this agency.</p> : null}
@@ -143,7 +153,7 @@ export async function OpportunityAccountPanel({ agencyId, wholesaleAccountId }: 
     }),
     prisma.accountSalesEvent.findMany({ where: { wholesaleAccountId }, orderBy: { reportDate: 'desc' }, take: 30 }),
     prisma.loggedVisit.findMany({ where: { wholesaleAccountId, locationType: 'wholesale' }, orderBy: { visitAt: 'desc' }, take: 20, select: { id: true, visitAt: true, summary: true, createdBy: true } }),
-    prisma.worklistItem.findMany({ where: { wholesaleAccountId, status: { in: ['OPEN', 'IN_PROGRESS'] } }, orderBy: { dueDate: 'asc' }, take: 10, select: { id: true, title: true, dueDate: true } }),
+    prisma.worklistItem.findMany({ where: { wholesaleAccountId, status: { in: ['OPEN', 'IN_PROGRESS'] } }, orderBy: { dueDate: 'asc' }, take: 10, select: { id: true, title: true, dueDate: true, salesOpportunityId: true } }),
   ]);
   const timeline = [
     ...sales.map((event) => ({ at: event.reportDate, kind: 'purchase', title: `${event.itemCode} - ${event.itemName}`, detail: `${event.bottles} bottle${event.bottles === 1 ? '' : 's'} purchased` })),
@@ -165,6 +175,12 @@ export async function OpportunityAccountPanel({ agencyId, wholesaleAccountId }: 
         priorityBand={item.priorityBand}
         recommendedAction={item.recommendedAction}
         title={item.title}
+        actions={<ContextualActions
+          context={{ accountName: item.wholesaleAccount.name, opportunityId: item.id, reason: firstExplanation(item.explanation), returnTo: `/wholesale/${wholesaleAccountId}`, sourceLabel: item.title, sourceType: item.type, wholesaleAccountId }}
+          currentUserId={currentUserId}
+          hasExistingFollowUp={worklist.some((task) => task.salesOpportunityId === item.id)}
+          users={users}
+        />}
       />)}
       {opportunities.length === 0 ? <p className="muted activity-empty">No active Opportunities for this account.</p> : null}
     </section>

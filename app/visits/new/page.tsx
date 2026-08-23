@@ -29,6 +29,7 @@ const statusMessages: Record<string, string> = {
   'comments-required': 'Enter comments before logging the visit.',
   'photo-required': 'Add one picture before logging the visit.',
   'invalid-assignee': 'Choose an active CRM user for the follow-up.',
+  'invalid-context': 'The originating task or opportunity no longer matches this account. Start the action again from its source.',
   'visit-logged': 'Agency visit logged.',
 };
 
@@ -41,6 +42,15 @@ export default async function NewVisitPage({
     agencyId?: string;
     wholesaleAccountId?: string;
     voice?: string;
+    opportunityId?: string;
+    agencyProductIntelligenceId?: string;
+    worklistItemId?: string;
+    productItemCode?: string;
+    productName?: string;
+    sourceType?: string;
+    sourceLabel?: string;
+    reason?: string;
+    returnTo?: string;
   }>;
 }) {
   const [params, user] = await Promise.all([(await searchParams) ?? {}, requireUser({ allowTaster: true })]);
@@ -147,10 +157,19 @@ export default async function NewVisitPage({
             locationLocked: Boolean(params.agencyId || params.wholesaleAccountId),
             startVoiceNote: params.voice === '1',
             wholesaleAccountId: params.wholesaleAccountId ?? null,
+            opportunityId: params.opportunityId ?? null,
+            agencyProductIntelligenceId: params.agencyProductIntelligenceId ?? null,
+            productItemCode: params.productItemCode ?? null,
+            productName: params.productName ?? null,
+            sourceType: params.sourceType ?? null,
+            sourceLabel: params.sourceLabel ?? null,
+            reason: params.reason ?? null,
+            returnTo: params.returnTo?.startsWith('/') && !params.returnTo.startsWith('//') ? params.returnTo : null,
           }}
           tags={tags}
           users={activeUsers.map((activeUser) => ({ id: activeUser.id, name: getUserDisplayName(activeUser) }))}
           wholesaleAccounts={wholesaleAccounts}
+          worklistItemId={params.worklistItemId}
         />
       </div></div>
     </>

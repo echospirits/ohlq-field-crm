@@ -236,6 +236,7 @@ export default async function MyWeekPage() {
             wholesaleAccountId: true,
           },
         },
+        agencyProductIntelligence: { select: { itemCode: true, itemName: true } },
       },
       orderBy: [{ dueDate: 'asc' }, { createdAt: 'desc' }],
     }),
@@ -381,6 +382,10 @@ export default async function MyWeekPage() {
                               category: item.category,
                               agencyId: item.agencyId,
                               wholesaleAccountId: item.wholesaleAccountId,
+                              salesOpportunityId: item.salesOpportunityId,
+                              agencyProductIntelligenceId: item.agencyProductIntelligenceId,
+                              productItemCode: item.agencyProductIntelligence?.itemCode ?? null,
+                              productName: item.agencyProductIntelligence?.itemName ?? null,
                               location: location
                                 ? { id: location.id, name: location.name, type: location.type }
                                 : null,

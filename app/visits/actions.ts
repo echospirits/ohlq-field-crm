@@ -1,6 +1,6 @@
 'use server';
 
-import { AccountType, PhotoType, UserRole, WorklistCategory, WorklistSource, WorklistStatus } from '@prisma/client';
+import { AccountType, OpportunityEventType, PhotoType, UserRole, WorklistCategory, WorklistSource, WorklistStatus } from '@prisma/client';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { getUserDisplayName, requireUser } from '../../lib/auth';
@@ -182,6 +182,8 @@ export async function createVisit(formData: FormData) {
   const actorName = getUserDisplayName(user);
   const formOrigin = isTaster ? 'visits' : getFormOrigin(formData);
   const worklistItemId = isTaster ? null : toOptional(formData.get('worklistItemId'));
+  const salesOpportunityId = isTaster ? null : toOptional(formData.get('opportunityId'));
+  const agencyProductIntelligenceId = isTaster ? null : toOptional(formData.get('agencyProductIntelligenceId'));
   const requestedWorklistCompletionIds = isTaster
     ? []
     : getRequestedWorklistCompletionIds(formData.entries());
@@ -262,6 +264,24 @@ export async function createVisit(formData: FormData) {
 
   if (locationType === 'wholesale' && !selectedWholesaleAccountId && !newWholesaleName && !newWholesaleLicenseeId) {
     redirectVisitWithStatus(formOrigin, 'invalid-wholesale', locationType);
+  }
+
+  const [salesOpportunity, agencyProductIntelligence, originatingWorklistItem] = await Promise.all([
+    salesOpportunityId
+      ? prisma.salesOpportunity.findFirst({ where: { id: salesOpportunityId, wholesaleAccountId: selectedWholesaleAccountId ?? '__none__' }, select: { id: true, wholesaleAccountId: true } })
+      : null,
+    agencyProductIntelligenceId
+      ? prisma.agencyProductIntelligence.findFirst({ where: { id: agencyProductIntelligenceId, agencyId: agencyId ?? '__none__' }, select: { id: true, agencyId: true, inventoryState: true, itemCode: true, opportunityState: true } })
+      : null,
+    worklistItemId
+      ? prisma.worklistItem.findFirst({ where: { id: worklistItemId, status: { in: [WorklistStatus.OPEN, WorklistStatus.IN_PROGRESS] } }, select: { id: true, agencyId: true, wholesaleAccountId: true } })
+      : null,
+  ]);
+  if ((salesOpportunityId && !salesOpportunity) || (agencyProductIntelligenceId && !agencyProductIntelligence) || (worklistItemId && !originatingWorklistItem)) {
+    redirectVisitWithStatus(formOrigin, 'invalid-context', locationType);
+  }
+  if (originatingWorklistItem && ((originatingWorklistItem.agencyId && originatingWorklistItem.agencyId !== agencyId) || (originatingWorklistItem.wholesaleAccountId && originatingWorklistItem.wholesaleAccountId !== selectedWholesaleAccountId))) {
+    redirectVisitWithStatus(formOrigin, 'invalid-context', locationType);
   }
 
   try {
@@ -451,6 +471,10 @@ export async function createVisit(formData: FormData) {
         locationType,
         agencyId: locationType === 'agency' ? agencyId : null,
         wholesaleAccountId: locationType === 'wholesale' ? wholesaleAccountId : null,
+        salesOpportunityId: salesOpportunity?.id ?? null,
+        agencyProductIntelligenceId: agencyProductIntelligence?.id ?? null,
+        originatingWorklistItemId: originatingWorklistItem?.id ?? null,
+        actionReturnTo: (() => { const value = toOptional(formData.get('returnTo')); return value?.startsWith('/') && !value.startsWith('//') ? value : null; })(),
         contactId,
         summary,
         outcomes,
@@ -532,11 +556,6 @@ export async function createVisit(formData: FormData) {
       await tx.worklistItem.update({
         where: { id: worklistItemId },
         data: {
-          status: WorklistStatus.COMPLETED,
-          completedAt: new Date(),
-          completedByUserId: user.id,
-          cancelledAt: null,
-          cancelledByUserId: null,
           loggedVisitId: loggedVisit.id,
         },
       });
@@ -546,8 +565,8 @@ export async function createVisit(formData: FormData) {
       await tx.worklistItem.updateMany({
         where: {
           id: { in: requestedWorklistCompletionIds },
-          assignedToUserId: user.id,
           status: { in: [WorklistStatus.OPEN, WorklistStatus.IN_PROGRESS] },
+          OR: [{ assignedToUserId: user.id }, ...(worklistItemId ? [{ id: worklistItemId }] : [])],
           ...(locationType === 'agency'
             ? { agencyId, wholesaleAccountId: null }
             : { agencyId: null, wholesaleAccountId }),
@@ -560,6 +579,17 @@ export async function createVisit(formData: FormData) {
           cancelledByUserId: null,
           loggedVisitId: loggedVisit.id,
         },
+      });
+    }
+
+    if (salesOpportunity) {
+      await tx.opportunityEvent.create({
+        data: { opportunityId: salesOpportunity.id, eventType: OpportunityEventType.VISIT_LOGGED, eventKey: `VISIT_LOGGED:${loggedVisit.id}`, wholesaleAccountId: salesOpportunity.wholesaleAccountId, userId: user.id, loggedVisitId: loggedVisit.id, metadata: { sourceType: toOptional(formData.get('sourceType')), productItemCode: toOptional(formData.get('productItemCode')), productName: toOptional(formData.get('productName')) }, occurredAt: new Date() },
+      });
+    }
+    if (agencyProductIntelligence) {
+      await tx.agencyIntelligenceEvent.create({
+        data: { agencyId: agencyProductIntelligence.agencyId, agencyProductIntelligenceId: agencyProductIntelligence.id, eventKey: `${agencyProductIntelligence.id}:VISIT_LOGGED:${loggedVisit.id}`, eventType: 'VISIT_LOGGED', inventoryState: agencyProductIntelligence.inventoryState, itemCode: agencyProductIntelligence.itemCode, opportunityState: agencyProductIntelligence.opportunityState, occurredAt: new Date(), snapshot: { actorUserId: user.id, loggedVisitId: loggedVisit.id } },
       });
     }
 

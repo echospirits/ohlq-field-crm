@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-import { OpportunityStatus, Prisma, WorklistCategory, WorklistSource, WorklistStatus } from '@prisma/client';
+import { OpportunityEventType, OpportunityStatus, Prisma, WorklistCategory, WorklistSource, WorklistStatus } from '@prisma/client';
 import { revalidatePath } from 'next/cache';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
@@ -47,7 +47,8 @@ const categoryLabels: Record<WorklistCategory, string> = {
 };
 
 const noticeMessages: Record<string, string> = {
-  'visit-logged': 'Visit logged and worklist item completed.',
+  'visit-logged': 'Visit logged.',
+  'invalid-context': 'The originating task or opportunity no longer matches the selected account.',
   'invalid-agency': 'Select an agency before logging an agency visit.',
   'invalid-wholesale': 'Select an existing wholesale account or create one before logging a wholesale visit.',
   'invalid-contact': 'Select a contact tied to the selected account.',
@@ -171,7 +172,7 @@ async function updateWorklistStatus(formData: FormData) {
 
 async function updateWorklistItem(formData: FormData) {
   'use server';
-  await requireUser();
+  const currentUser = await requireUser();
   const id = toOptional(formData.get('id'));
   const title = toOptional(formData.get('title'));
   const assignedToUserId = toOptional(formData.get('assignedToUserId'));
@@ -181,6 +182,8 @@ async function updateWorklistItem(formData: FormData) {
     ? await prisma.user.findFirst({ where: { id: assignedToUserId, isActive: true, role: { not: 'TASTER' } } })
     : null;
   if (assignedToUserId && !assignedUser) return;
+  const previous = await prisma.worklistItem.findUnique({ where: { id }, select: { assignedToUserId: true, salesOpportunityId: true, wholesaleAccountId: true } });
+  if (!previous) return;
   await prisma.worklistItem.update({
     where: { id },
     data: {
@@ -192,6 +195,9 @@ async function updateWorklistItem(formData: FormData) {
       assignedTo: assignedUser ? getUserDisplayName(assignedUser) : null,
     },
   });
+  if (previous.salesOpportunityId && previous.wholesaleAccountId && previous.assignedToUserId !== (assignedUser?.id ?? null)) {
+    await prisma.opportunityEvent.create({ data: { opportunityId: previous.salesOpportunityId, eventType: OpportunityEventType.TASK_REASSIGNED, eventKey: `TASK_REASSIGNED:${id}:${assignedUser?.id ?? 'unassigned'}:${Date.now()}`, wholesaleAccountId: previous.wholesaleAccountId, userId: currentUser.id, worklistItemId: id, metadata: { assignedToUserId: assignedUser?.id ?? null }, occurredAt: new Date() } });
+  }
   await syncWorklistItemCalendar(id);
   revalidatePath('/alerts');
   revalidatePath('/my-week');
@@ -265,6 +271,7 @@ export default async function Alerts({
             wholesaleAccountId: true,
           },
         },
+        agencyProductIntelligence: { select: { itemCode: true, itemName: true } },
       },
       orderBy: [{ dueDate: 'asc' }, { createdAt: 'desc' }],
     }),
@@ -482,6 +489,10 @@ export default async function Alerts({
                             category: item.category,
                             agencyId: item.agencyId,
                             wholesaleAccountId: item.wholesaleAccountId,
+                            salesOpportunityId: item.salesOpportunityId,
+                            agencyProductIntelligenceId: item.agencyProductIntelligenceId,
+                            productItemCode: item.agencyProductIntelligence?.itemCode ?? null,
+                            productName: item.agencyProductIntelligence?.itemName ?? null,
                             location: location
                               ? { id: location.id, name: location.name, type: location.type }
                               : null,

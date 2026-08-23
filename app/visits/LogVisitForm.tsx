@@ -81,6 +81,14 @@ type VisitFormInitialValues = {
   followUpTime?: string | null;
   followUpAssignedToUserId?: string | null;
   startVoiceNote?: boolean;
+  opportunityId?: string | null;
+  agencyProductIntelligenceId?: string | null;
+  productItemCode?: string | null;
+  productName?: string | null;
+  sourceType?: string | null;
+  sourceLabel?: string | null;
+  reason?: string | null;
+  returnTo?: string | null;
 };
 
 type LogVisitFormProps = {
@@ -374,7 +382,22 @@ export function LogVisitForm({
       <input name="outcomes" readOnly type="hidden" value={legacyOutcomes} />
       <input name="submissionKey" readOnly type="hidden" value={submissionKey} />
       {worklistItemId ? <input name="worklistItemId" readOnly type="hidden" value={worklistItemId} /> : null}
+      {initialValues?.opportunityId ? <input name="opportunityId" readOnly type="hidden" value={initialValues.opportunityId} /> : null}
+      {initialValues?.agencyProductIntelligenceId ? <input name="agencyProductIntelligenceId" readOnly type="hidden" value={initialValues.agencyProductIntelligenceId} /> : null}
+      {initialValues?.productItemCode ? <input name="productItemCode" readOnly type="hidden" value={initialValues.productItemCode} /> : null}
+      {initialValues?.productName ? <input name="productName" readOnly type="hidden" value={initialValues.productName} /> : null}
+      {initialValues?.sourceType ? <input name="sourceType" readOnly type="hidden" value={initialValues.sourceType} /> : null}
+      {initialValues?.sourceLabel ? <input name="sourceLabel" readOnly type="hidden" value={initialValues.sourceLabel} /> : null}
+      {initialValues?.reason ? <input name="contextReason" readOnly type="hidden" value={initialValues.reason} /> : null}
+      {initialValues?.returnTo ? <input name="returnTo" readOnly type="hidden" value={initialValues.returnTo} /> : null}
       {photoUploadError ? <p className="toast-notice page-status" role="alert">{photoUploadError}</p> : null}
+
+      {initialValues?.sourceLabel || initialValues?.productName ? <div className="action-context-summary visit-action-context">
+        <span className="page-eyebrow">Started from context</span>
+        <strong>{initialValues.sourceLabel ?? initialValues.productName}</strong>
+        {initialValues.productItemCode && initialValues.productName ? <span>{initialValues.productItemCode} - {initialValues.productName}</span> : null}
+        {initialValues.reason ? <small>{initialValues.reason}</small> : null}
+      </div> : null}
 
       <fieldset className="visit-step visit-account-step">
         <legend>Account</legend>
