@@ -2,11 +2,10 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 import { WeeklyDigestStatus } from '@prisma/client';
-import { buildPageMetadata } from '../../../lib/appBrand';
+import { APP_NAME, buildPageMetadata } from '../../../lib/appBrand';
 import { getUserDisplayName, requireAdminSession } from '../../../lib/auth';
 import { formatEasternDateTime } from '../../../lib/dateTime';
 import { prisma } from '../../../lib/prisma';
-import { getTenantConfig } from '../../../lib/tenantConfig';
 import {
   getAdminWeeklyDigest,
   getUserWeeklyDigest,
@@ -44,7 +43,6 @@ export default async function WeeklyDigestAdminPage({
   }>;
 }) {
   const session = await requireAdminSession();
-  const tenantConfig = getTenantConfig();
   const params = (await searchParams) ?? {};
   const previewMode = getPreviewMode(params.digestType);
   const window = getWeeklyDigestWindow();
@@ -77,7 +75,7 @@ export default async function WeeklyDigestAdminPage({
   return (
     <>
       <PageHeader
-        description={<>Preview and send controls for the Friday 8:00 AM Eastern {tenantConfig.digestName} weekly email.</>}
+        description={<>Preview and send controls for the Friday 8:00 AM Eastern {APP_NAME} weekly email.</>}
         eyebrow="Administration"
         title="Weekly Digest"
       />
