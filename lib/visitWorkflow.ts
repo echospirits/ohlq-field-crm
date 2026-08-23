@@ -1,5 +1,12 @@
 export type VisitLocationType = 'agency' | 'wholesale';
-export type VisitFollowUpMode = 'none' | 'later' | 'task';
+export type VisitFollowUpMode = 'none' | 'task';
+
+export type VisitWorklistCandidate = {
+  agencyId: string | null;
+  id: string;
+  title: string;
+  wholesaleAccountId: string | null;
+};
 
 export type VisitOutcomeOption = {
   code: string;
@@ -48,9 +55,33 @@ export const getOutcomeLabels = (visitType: VisitLocationType, codes: string[]) 
 };
 
 export const normalizeFollowUpMode = (value: string | null | undefined): VisitFollowUpMode =>
-  value === 'later' || value === 'task' ? value : 'none';
+  value === 'later' || value === 'task' ? 'task' : 'none';
 
 export const shouldCreateVisitTask = (mode: VisitFollowUpMode) => mode === 'task';
+
+export const getMatchingVisitWorklistItems = ({
+  agencyId,
+  items,
+  locationType,
+  wholesaleAccountId,
+}: {
+  agencyId: string | null | undefined;
+  items: VisitWorklistCandidate[];
+  locationType: VisitLocationType;
+  wholesaleAccountId: string | null | undefined;
+}) => items.filter((item) =>
+  locationType === 'agency'
+    ? Boolean(agencyId) && item.agencyId === agencyId
+    : Boolean(wholesaleAccountId) && item.wholesaleAccountId === wholesaleAccountId,
+);
+
+const worklistCompletionPrefix = 'worklistCompletion:';
+
+export const getRequestedWorklistCompletionIds = (entries: Iterable<[string, FormDataEntryValue]>) =>
+  Array.from(new Set(Array.from(entries)
+    .filter(([key, value]) => key.startsWith(worklistCompletionPrefix) && value === 'complete')
+    .map(([key]) => key.slice(worklistCompletionPrefix.length).trim())
+    .filter(Boolean)));
 
 export const getVisitTaskEditPlan = (
   mode: VisitFollowUpMode,

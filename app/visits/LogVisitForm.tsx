@@ -5,7 +5,12 @@ import { addEasternCalendarDays, EASTERN_TIME_ZONE } from '../../lib/dateTime';
 import { formatDistanceMiles } from '../../lib/location/distance';
 import type { NearbyAccount } from '../../lib/location/nearbyAccounts';
 import type { VisitLocationType } from '../../lib/visitPickerOptions';
-import { getVisitOutcomes, type VisitFollowUpMode } from '../../lib/visitWorkflow';
+import {
+  getMatchingVisitWorklistItems,
+  getVisitOutcomes,
+  type VisitFollowUpMode,
+  type VisitWorklistCandidate,
+} from '../../lib/visitWorkflow';
 import { DatePickerField } from '../components/DatePickerField';
 import { useCurrentLocation } from '../components/useCurrentLocation';
 import { VoiceVisitNotePanel } from './VoiceVisitNotePanel';
@@ -85,6 +90,7 @@ type LogVisitFormProps = {
   contacts: VisitFormContactOption[];
   tags?: VisitFormTagOption[];
   actorName: string;
+  assignedWorklistItems?: VisitWorklistCandidate[];
   currentUserId?: string;
   users?: VisitFormUserOption[];
   formOrigin?: 'visits' | 'worklist';
@@ -123,6 +129,7 @@ export function LogVisitForm({
   contacts,
   tags = [],
   actorName,
+  assignedWorklistItems = [],
   currentUserId,
   users = [],
   formOrigin = 'visits',
@@ -327,6 +334,14 @@ export function LogVisitForm({
     : null;
   const hasLocation = locationType === 'agency' ? Boolean(agencyId) : Boolean(wholesaleAccountId);
   const canSave = hasLocation || (locationType === 'wholesale' && Boolean(newWholesaleName.trim()));
+  const matchingWorklistItems = mode === 'create' && formOrigin === 'visits' && !isChangingLocation
+    ? getMatchingVisitWorklistItems({
+        agencyId,
+        items: assignedWorklistItems,
+        locationType,
+        wholesaleAccountId,
+      })
+    : [];
 
   const handleLocationTypeChange = (nextType: VisitLocationType) => {
     setLocationType(nextType);
@@ -417,7 +432,7 @@ export function LogVisitForm({
                   <div className="quick-picker-section-label">Nearby</div>
                   <div className="quick-picker-list nearby-picker-list">
                     {nearbyLocations.map((location) => (
-                      <button className="quick-picker" key={`nearby-${location.id}`} type="button" onClick={() => selectLocation(location)}>
+                      <button className="quick-picker account-picker-option" key={`nearby-${location.id}`} type="button" onClick={() => selectLocation(location)}>
                         <strong>{location.name}</strong>
                         <span>{'licenseeId' in location ? getWholesaleMeta(location) : getAgencyMeta(location)}</span>
                         <span className="quick-picker-last">
@@ -433,7 +448,7 @@ export function LogVisitForm({
               <div className="quick-picker-list">
                 {visibleLocations.map((location) => (
                   <button
-                    className={location.id === selectedLocation?.id ? 'quick-picker is-selected' : 'quick-picker'}
+                    className={location.id === selectedLocation?.id ? 'quick-picker account-picker-option is-selected' : 'quick-picker account-picker-option'}
                     key={location.id}
                     type="button"
                     onClick={() => selectLocation(location)}
@@ -448,6 +463,30 @@ export function LogVisitForm({
           </>
         )}
       </fieldset>
+
+      {matchingWorklistItems.length > 0 ? (
+        <fieldset className="visit-step visit-worklist-prompt">
+          <legend>Complete existing follow-up?</legend>
+          <p className="field-note">This account already has follow-up assigned to you. Choose what should happen when this visit is saved.</p>
+          <div className="worklist-completion-list">
+            {matchingWorklistItems.map((item) => (
+              <div className="worklist-completion-item" key={item.id}>
+                <strong>{item.title}</strong>
+                <div className="worklist-completion-choice-grid">
+                  <label className="follow-up-choice">
+                    <input name={`worklistCompletion:${item.id}`} required type="radio" value="complete" />
+                    <span>Yes, complete</span>
+                  </label>
+                  <label className="follow-up-choice">
+                    <input name={`worklistCompletion:${item.id}`} required type="radio" value="leave-open" />
+                    <span>No, leave open</span>
+                  </label>
+                </div>
+              </div>
+            ))}
+          </div>
+        </fieldset>
+      ) : null}
 
       <fieldset className="visit-step visit-outcome-step">
         <legend>What happened?</legend>
@@ -467,7 +506,7 @@ export function LogVisitForm({
                     return [...current, outcome.code];
                   });
                   if (outcome.code === 'follow-up-needed' && event.target.checked && followUpMode === 'none') {
-                    handleFollowUpModeChange('later');
+                    handleFollowUpModeChange('task');
                   }
                   if (outcome.code === 'no-action-needed' && event.target.checked) handleFollowUpModeChange('none');
                 }}
@@ -492,8 +531,7 @@ export function LogVisitForm({
         <div className="follow-up-choice-grid">
           {([
             ['none', 'No follow-up'],
-            ['later', 'Save next step'],
-            ['task', 'Create worklist item'],
+            ['task', 'Save next step'],
           ] as const).map(([mode, label]) => (
             <label className="follow-up-choice" key={mode}>
               <input checked={followUpMode === mode} name="followUpMode" type="radio" value={mode} onChange={() => handleFollowUpModeChange(mode)} />
@@ -513,7 +551,7 @@ export function LogVisitForm({
             />
             <DatePickerField
               name="followUpDate"
-              pickerLabel={followUpMode === 'task' ? 'Task due date' : 'Follow-up date'}
+              pickerLabel="Due date"
               value={followUpDate}
               onChange={(event) => setFollowUpDate(event.target.value)}
             />
@@ -525,21 +563,19 @@ export function LogVisitForm({
               value={followUpTime}
               onChange={(event) => setFollowUpTime(event.target.value)}
             />
-            {followUpMode === 'task' ? (
-              <label htmlFor="follow-up-assignee">
-                Responsible person
-                <select
-                  id="follow-up-assignee"
-                  name="followUpAssignedToUserId"
-                  required
-                  value={followUpAssignedToUserId}
-                  onChange={(event) => setFollowUpAssignedToUserId(event.target.value)}
-                >
-                  {users.map((user) => <option key={user.id} value={user.id}>{user.name}</option>)}
-                </select>
-                {users.length === 0 ? <span className="task-preview">Assigned to {actorName}</span> : null}
-              </label>
-            ) : null}
+            <label htmlFor="follow-up-assignee">
+              Responsible person
+              <select
+                id="follow-up-assignee"
+                name="followUpAssignedToUserId"
+                required
+                value={followUpAssignedToUserId}
+                onChange={(event) => setFollowUpAssignedToUserId(event.target.value)}
+              >
+                {users.map((user) => <option key={user.id} value={user.id}>{user.name}</option>)}
+              </select>
+              {users.length === 0 ? <span className="task-preview">Assigned to {actorName}</span> : null}
+            </label>
           </div>
         ) : null}
       </fieldset>
@@ -559,7 +595,7 @@ export function LogVisitForm({
               outcomes={legacyOutcomes}
               setNextStep={(value) => {
                 setFollowUpText(value);
-                if (value && followUpMode === 'none') handleFollowUpModeChange('later');
+                if (value && followUpMode === 'none') handleFollowUpModeChange('task');
               }}
               setOutcomes={setLegacyOutcomes}
               setSummary={setSummary}

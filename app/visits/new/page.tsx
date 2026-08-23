@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-import { UserRole } from '@prisma/client';
+import { UserRole, WorklistStatus } from '@prisma/client';
 import { getUserDisplayName, requireUser } from '../../../lib/auth';
 import { prisma } from '../../../lib/prisma';
 import { PageHeader } from '../../components/PageChrome';
@@ -64,7 +64,7 @@ export default async function NewVisitPage({
     );
   }
 
-  const [agencyOptions, wholesaleAccountOptions, contacts, tags, activeUsers] = await Promise.all([
+  const [agencyOptions, wholesaleAccountOptions, contacts, tags, activeUsers, assignedWorklistItems] = await Promise.all([
     getAgenciesForVisitPicker(),
     getWholesaleAccountsForVisitPicker(),
     prisma.locationContact.findMany({
@@ -92,6 +92,15 @@ export default async function NewVisitPage({
       where: { isActive: true, role: { not: UserRole.TASTER } },
       orderBy: [{ name: 'asc' }, { email: 'asc' }],
       select: { id: true, email: true, firstName: true, lastName: true, name: true },
+    }),
+    prisma.worklistItem.findMany({
+      where: {
+        assignedToUserId: user.id,
+        status: { in: [WorklistStatus.OPEN, WorklistStatus.IN_PROGRESS] },
+        OR: [{ agencyId: { not: null } }, { wholesaleAccountId: { not: null } }],
+      },
+      orderBy: [{ dueDate: 'asc' }, { createdAt: 'asc' }],
+      select: { agencyId: true, id: true, title: true, wholesaleAccountId: true },
     }),
   ]);
   const initialLocationType = getInitialVisitLocationType(params);
@@ -130,6 +139,7 @@ export default async function NewVisitPage({
           actorName={getUserDisplayName(user)}
           currentUserId={user.id}
           agencies={agencies}
+          assignedWorklistItems={assignedWorklistItems}
           contacts={contacts}
           initialValues={{
             locationType: initialLocationType,

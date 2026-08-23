@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
   agencyVisitOutcomes,
+  getMatchingVisitWorklistItems,
   getOutcomeLabels,
+  getRequestedWorklistCompletionIds,
   getVisitTaskEditPlan,
   getVisitOutcomeDisplay,
   getVisitOutcomes,
@@ -38,9 +40,9 @@ describe('visit outcome configuration', () => {
 });
 
 describe('visit follow-up behavior', () => {
-  it('creates a worklist item only when explicitly selected', () => {
+  it('uses Save next step as the single worklist-creation mode', () => {
     assert.equal(shouldCreateVisitTask(normalizeFollowUpMode('task')), true);
-    assert.equal(shouldCreateVisitTask(normalizeFollowUpMode('later')), false);
+    assert.equal(shouldCreateVisitTask(normalizeFollowUpMode('later')), true);
     assert.equal(shouldCreateVisitTask(normalizeFollowUpMode('unexpected')), false);
   });
 
@@ -48,6 +50,37 @@ describe('visit follow-up behavior', () => {
     assert.equal(getVisitTaskEditPlan('task', 'OPEN'), 'update');
     assert.equal(getVisitTaskEditPlan('task', null), 'create');
     assert.equal(getVisitTaskEditPlan('none', 'OPEN'), 'cancel');
-    assert.equal(getVisitTaskEditPlan('later', 'COMPLETED'), 'none');
+    assert.equal(getVisitTaskEditPlan(normalizeFollowUpMode('later'), 'COMPLETED'), 'update');
+  });
+
+  it('finds only worklist items for the selected visit account', () => {
+    const items = [
+      { agencyId: null, id: 'wholesale-match', title: 'Follow up', wholesaleAccountId: 'wholesale-1' },
+      { agencyId: null, id: 'wholesale-other', title: 'Other account', wholesaleAccountId: 'wholesale-2' },
+      { agencyId: 'agency-1', id: 'agency-match', title: 'Check display', wholesaleAccountId: null },
+    ];
+
+    assert.deepEqual(
+      getMatchingVisitWorklistItems({ agencyId: null, items, locationType: 'wholesale', wholesaleAccountId: 'wholesale-1' })
+        .map((item) => item.id),
+      ['wholesale-match'],
+    );
+    assert.deepEqual(
+      getMatchingVisitWorklistItems({ agencyId: 'agency-1', items, locationType: 'agency', wholesaleAccountId: null })
+        .map((item) => item.id),
+      ['agency-match'],
+    );
+  });
+
+  it('accepts only explicit complete decisions from the form', () => {
+    assert.deepEqual(
+      getRequestedWorklistCompletionIds([
+        ['worklistCompletion:item-1', 'complete'],
+        ['worklistCompletion:item-2', 'leave-open'],
+        ['worklistCompletion:item-1', 'complete'],
+        ['unrelated', 'complete'],
+      ]),
+      ['item-1'],
+    );
   });
 });

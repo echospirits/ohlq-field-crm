@@ -18,6 +18,7 @@ import { evaluateOpportunityIntelligence } from '../../lib/opportunityEngine';
 import { getSelectedVoiceFollowUps } from '../../lib/voiceVisitNoteShared';
 import {
   getOutcomeLabels,
+  getRequestedWorklistCompletionIds,
   getVisitTaskEditPlan,
   normalizeFollowUpMode,
   sanitizeOutcomeCodes,
@@ -181,6 +182,9 @@ export async function createVisit(formData: FormData) {
   const actorName = getUserDisplayName(user);
   const formOrigin = isTaster ? 'visits' : getFormOrigin(formData);
   const worklistItemId = isTaster ? null : toOptional(formData.get('worklistItemId'));
+  const requestedWorklistCompletionIds = isTaster
+    ? []
+    : getRequestedWorklistCompletionIds(formData.entries());
   const submissionKey = isTaster ? null : toOptional(formData.get('submissionKey'));
   const locationType = isTaster
     ? 'agency'
@@ -538,6 +542,27 @@ export async function createVisit(formData: FormData) {
       });
     }
 
+    if (requestedWorklistCompletionIds.length > 0) {
+      await tx.worklistItem.updateMany({
+        where: {
+          id: { in: requestedWorklistCompletionIds },
+          assignedToUserId: user.id,
+          status: { in: [WorklistStatus.OPEN, WorklistStatus.IN_PROGRESS] },
+          ...(locationType === 'agency'
+            ? { agencyId, wholesaleAccountId: null }
+            : { agencyId: null, wholesaleAccountId }),
+        },
+        data: {
+          status: WorklistStatus.COMPLETED,
+          completedAt: new Date(),
+          completedByUserId: user.id,
+          cancelledAt: null,
+          cancelledByUserId: null,
+          loggedVisitId: loggedVisit.id,
+        },
+      });
+    }
+
     return loggedVisit;
   });
 
@@ -629,7 +654,20 @@ export async function createVisit(formData: FormData) {
   }
 
   const calendarItems = await prisma.worklistItem.findMany({
-    where: { OR: [{ loggedVisitId: visit.id }, ...(worklistItemId ? [{ id: worklistItemId }] : [])] },
+    where: {
+      OR: [
+        { loggedVisitId: visit.id },
+        ...(worklistItemId ? [{ id: worklistItemId }] : []),
+        ...(requestedWorklistCompletionIds.length > 0
+          ? [{
+              id: { in: requestedWorklistCompletionIds },
+              assignedToUserId: user.id,
+              completedByUserId: user.id,
+              loggedVisitId: visit.id,
+            }]
+          : []),
+      ],
+    },
     select: { id: true },
   });
   for (const item of calendarItems) await syncWorklistItemCalendar(item.id);
