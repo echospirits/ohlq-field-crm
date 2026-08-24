@@ -8,7 +8,7 @@ The CRM remains the source of truth for task identity, account, assignment, note
 - `WorklistCalendarEvent` links a Worklist item to its provider event and records the Google event ID, calendar, etag, provider update time, schedule hash, last sync, and error/status.
 - `lib/calendar/provider.ts` defines the provider contract. Google implements it in `lib/calendar/google.ts`; Microsoft or Apple can implement the same interface without changing Worklist UI/actions.
 - CRM writes call `syncWorklistItemCalendar` after the database write. Provider errors are caught and recorded, so task creation, edits, reassignment, completion, and cancellation still succeed.
-- `/api/cron/calendar-sync` uses Google incremental sync tokens. It queries only events carrying the private `echoCrmManaged=true` marker, ignores unlinked events, and updates only date/time in the CRM.
+- `/api/cron/calendar-sync` uses Google incremental sync tokens. Google forbids combining a sync token with an extended-property filter, so Neat reads the change feed but applies and stores changes only when the Google event ID already exists in `WorklistCalendarEvent`. Unlinked personal events are ignored and never imported. Only date/time may be updated in Neat.
 
 Date-only tasks remain `dueDate` plus a null `dueTimeMinutes` and become all-day events. A timed task stores minutes after midnight in `dueTimeMinutes`; Google receives a 30-minute event in `America/New_York`. This avoids mixing a wall-clock choice with UTC/DST conversion in the database.
 
@@ -55,7 +55,8 @@ npm run db:migrate
 - Reassignment: the old event is removed, then a new event is created for the new assignee. If the new user is not connected, the task remains valid and is marked Calendar disabled/not connected.
 - Complete/cancel: the linked event is removed, whether future or past.
 - Calendar reschedule: the polling job updates `dueDate` and `dueTimeMinutes` only. Google title/description edits do not overwrite CRM content.
-- Manual event deletion: the link becomes `REMOVED` and is not automatically recreated. The user may choose **Resync outstanding tasks** in Calendar settings.
+- Manual pull: **Check Google for changes** in Calendar settings runs the same safe Google-to-Neat check immediately instead of waiting for the daily poll.
+- Manual event deletion: the link becomes `REMOVED` and is not automatically recreated. The user may choose **Push Neat tasks to Google** in Calendar settings.
 - Disconnect: linked events are removed on a best-effort basis, tokens are deleted, and CRM tasks remain unchanged.
 - Failure/revocation: failures are stored on the link/connection. Revoked credentials disable syncing and show a reconnect state. CRM mutations are not rolled back.
 

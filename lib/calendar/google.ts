@@ -151,11 +151,19 @@ export const googleCalendarProvider: CalendarProvider = {
     return parseGoogleEvent((await response.json()) as GoogleEvent);
   },
   async listChanges(connection, syncToken, pageToken) {
-    const query = new URLSearchParams({ showDeleted: 'true', singleEvents: 'true' });
-    query.append('privateExtendedProperty', 'echoCrmManaged=true');
-    if (syncToken) query.set('syncToken', syncToken);
-    if (pageToken) query.set('pageToken', pageToken);
-    const response = await googleFetch(connection, `/calendars/${encodeURIComponent(connection.selectedCalendarId)}/events?${query}`);
+    const query = buildGoogleCalendarChangesQuery(syncToken, pageToken);
+    let response: Response;
+    try {
+      response = await googleFetch(connection, `/calendars/${encodeURIComponent(connection.selectedCalendarId)}/events?${query}`);
+    } catch (error) {
+      // Tokens created by the former filtered change feed are rejected when the
+      // incompatible filter is removed. Treat that one-time 400 as an expired
+      // token so the caller performs a clean full synchronization.
+      if (syncToken && error instanceof CalendarProviderError && error.code === 'google_400') {
+        throw new CalendarProviderError('Google sync token expired.', 'sync_token_expired');
+      }
+      throw error;
+    }
     if (response.status === 410) throw new CalendarProviderError('Google sync token expired.', 'sync_token_expired');
     const body = (await response.json()) as { items?: GoogleEvent[]; nextPageToken?: string; nextSyncToken?: string };
     return {
@@ -171,6 +179,13 @@ export const googleCalendarProvider: CalendarProvider = {
       id: item.id!, name: item.summary ?? item.id!, primary: Boolean(item.primary), accessRole: item.accessRole ?? 'writer',
     })) satisfies CalendarListEntry[];
   },
+};
+
+export const buildGoogleCalendarChangesQuery = (syncToken?: string | null, pageToken?: string | null) => {
+  const query = new URLSearchParams({ showDeleted: 'true', singleEvents: 'true' });
+  if (syncToken) query.set('syncToken', syncToken);
+  if (pageToken) query.set('pageToken', pageToken);
+  return query;
 };
 
 const toResult = (event: GoogleEvent): CalendarEventResult => {

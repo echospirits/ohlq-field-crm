@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { WorklistCategory, WorklistSource, WorklistStatus } from '@prisma/client';
 import { decryptCalendarToken, encryptCalendarToken } from '../lib/calendar/crypto';
+import { buildGoogleCalendarChangesQuery } from '../lib/calendar/google';
 import {
   buildWorklistCalendarInput,
   getWorklistScheduleFromExternalEvent,
@@ -97,6 +98,16 @@ test('calendar tokens are encrypted and authenticated', () => {
   } finally {
     process.env.CALENDAR_TOKEN_ENCRYPTION_KEY = previous;
   }
+});
+
+test('Google incremental sync does not combine sync tokens with restricted event filters', () => {
+  const query = buildGoogleCalendarChangesQuery('next-sync-token', 'next-page-token');
+  assert.equal(query.get('syncToken'), 'next-sync-token');
+  assert.equal(query.get('pageToken'), 'next-page-token');
+  assert.equal(query.get('showDeleted'), 'true');
+  assert.equal(query.get('singleEvents'), 'true');
+  assert.equal(query.has('privateExtendedProperty'), false);
+  assert.equal(buildGoogleCalendarChangesQuery(null, null).has('privateExtendedProperty'), false);
 });
 
 test('calendar sync cron rejects unauthenticated requests', async () => {

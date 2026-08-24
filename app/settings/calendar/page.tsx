@@ -8,7 +8,7 @@ import { buildPageMetadata } from '../../../lib/appBrand';
 import { requireUser } from '../../../lib/auth';
 import { getCalendarProvider } from '../../../lib/calendar';
 import { GOOGLE_PROVIDER, googleCalendarProvider } from '../../../lib/calendar/google';
-import { syncOutstandingWorklistItemsForUser } from '../../../lib/calendar/worklistSync';
+import { syncGoogleCalendarConnection, syncOutstandingWorklistItemsForUser } from '../../../lib/calendar/worklistSync';
 import { formatEasternDateTime } from '../../../lib/dateTime';
 import { prisma } from '../../../lib/prisma';
 import { PageHeader } from '../../components/PageChrome';
@@ -19,7 +19,9 @@ const messages: Record<string, string> = {
   connected: 'Google Calendar connected.',
   disconnected: 'Google Calendar disconnected.',
   updated: 'Calendar settings updated.',
-  resynced: 'Outstanding tasks were queued for calendar sync.',
+  resynced: 'Outstanding Neat tasks were pushed to Google Calendar.',
+  checked: 'Google Calendar changes were checked and applied to Neat.',
+  'check-failed': 'Google Calendar could not be checked. Review the sync status below and try again.',
   'authorization-cancelled': 'Google authorization was cancelled.',
   'invalid-oauth-response': 'Google returned an invalid authorization response.',
   'invalid-state': 'The authorization request expired or was not valid. Try connecting again.',
@@ -80,6 +82,24 @@ async function resyncCalendar() {
   redirect('/settings/calendar?status=resynced');
 }
 
+async function checkCalendarChanges() {
+  'use server';
+  const user = await requireUser();
+  const connection = await prisma.calendarConnection.findUnique({
+    where: { userId_provider: { userId: user.id, provider: GOOGLE_PROVIDER } },
+  });
+  if (!connection) redirect('/settings/calendar');
+  let status = 'checked';
+  try {
+    await syncGoogleCalendarConnection(connection.id);
+  } catch (error) {
+    status = 'check-failed';
+    console.error('Manual Google Calendar check failed', { userId: user.id, error: error instanceof Error ? error.message : String(error) });
+  }
+  revalidatePath('/settings/calendar');
+  redirect(`/settings/calendar?status=${status}`);
+}
+
 async function disconnectCalendar() {
   'use server';
   const user = await requireUser();
@@ -135,7 +155,8 @@ export default async function CalendarSettingsPage({ searchParams }: { searchPar
               </form>
             )}
             <div className="action-row">
-              <form action={resyncCalendar}><button className="secondary" type="submit">Resync outstanding tasks</button></form>
+              <form action={checkCalendarChanges}><button className="secondary" type="submit">Check Google for changes</button></form>
+              <form action={resyncCalendar}><button className="secondary" type="submit">Push Neat tasks to Google</button></form>
               <form action={disconnectCalendar}><button className="secondary" type="submit">Disconnect</button></form>
             </div>
           </>
