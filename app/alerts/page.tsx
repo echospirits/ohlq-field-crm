@@ -12,6 +12,7 @@ import { syncWorklistItemCalendar } from '../../lib/calendar/worklistSync';
 import { evaluateOpportunityIntelligence } from '../../lib/opportunityEngine';
 import { splitReactivationPurchasedAgainDetail } from '../../lib/ohlqWholesaleReactivation';
 import { prisma } from '../../lib/prisma';
+import { requireOrganizationContext } from '../../lib/organizations';
 import { getAgenciesForVisitPicker, getWholesaleAccountsForVisitPicker } from '../../lib/visitPickerOptions';
 import {
   getWorklistCategoryForLocationSelection,
@@ -98,6 +99,7 @@ async function createWorklistItem(formData: FormData) {
   'use server';
 
   const currentUser = await requireUser();
+  const { organizationId } = await requireOrganizationContext(currentUser);
   const title = toOptional(formData.get('title'));
   const requestedCategory = toWorklistCategory(formData.get('category'));
   const agencyId = toOptional(formData.get('agencyId'));
@@ -115,12 +117,13 @@ async function createWorklistItem(formData: FormData) {
   }
 
   const assignedUser = assignedToUserId
-    ? await prisma.user.findFirst({ where: { id: assignedToUserId, isActive: true, role: { not: 'TASTER' } } })
+    ? await prisma.user.findFirst({ where: { id: assignedToUserId, organizationId, isActive: true, role: { notIn: ['TASTER', 'PLATFORM_ADMIN'] } } })
     : null;
   if (assignedToUserId && !assignedUser) redirect('/alerts?created=invalid-assignee');
 
   const item = await prisma.worklistItem.create({
     data: {
+      organizationId,
       title,
       detail: toOptional(formData.get('detail')),
       status: WorklistStatus.OPEN,
@@ -148,6 +151,7 @@ async function updateWorklistStatus(formData: FormData) {
   'use server';
 
   const currentUser = await requireUser();
+  const { organizationId } = await requireOrganizationContext(currentUser);
   const id = toOptional(formData.get('id'));
   const status = toWorklistStatus(formData.get('status'));
 
@@ -155,8 +159,10 @@ async function updateWorklistStatus(formData: FormData) {
     return;
   }
 
+  const owned = await prisma.worklistItem.findFirst({ where: { id, organizationId }, select: { id: true } });
+  if (!owned) return;
   const item = await prisma.worklistItem.update({
-    where: { id },
+    where: { id: owned.id },
     data: {
       status,
       completedAt: status === WorklistStatus.COMPLETED ? new Date() : null,
@@ -176,16 +182,17 @@ async function updateWorklistStatus(formData: FormData) {
 async function updateWorklistItem(formData: FormData) {
   'use server';
   const currentUser = await requireUser();
+  const { organizationId } = await requireOrganizationContext(currentUser);
   const id = toOptional(formData.get('id'));
   const title = toOptional(formData.get('title'));
   const assignedToUserId = toOptional(formData.get('assignedToUserId'));
   const dueDate = toDate(formData.get('dueDate'));
   if (!id || !title) return;
   const assignedUser = assignedToUserId
-    ? await prisma.user.findFirst({ where: { id: assignedToUserId, isActive: true, role: { not: 'TASTER' } } })
+    ? await prisma.user.findFirst({ where: { id: assignedToUserId, organizationId, isActive: true, role: { notIn: ['TASTER', 'PLATFORM_ADMIN'] } } })
     : null;
   if (assignedToUserId && !assignedUser) return;
-  const previous = await prisma.worklistItem.findUnique({ where: { id }, select: { assignedToUserId: true, salesOpportunityId: true, wholesaleAccountId: true } });
+  const previous = await prisma.worklistItem.findFirst({ where: { id, organizationId }, select: { assignedToUserId: true, salesOpportunityId: true, wholesaleAccountId: true } });
   if (!previous) return;
   await prisma.worklistItem.update({
     where: { id },
@@ -221,6 +228,7 @@ export default async function Alerts({
   }>;
 }) {
   const currentUser = await requireUser();
+  const { organizationId } = await requireOrganizationContext(currentUser);
 
   const params = (await searchParams) ?? {};
   const q = (params.q ?? '').trim();
@@ -228,7 +236,7 @@ export default async function Alerts({
   const categoryFilter = params.category ?? 'ALL';
   const sourceFilter = params.source ?? 'ALL';
   const pursuingView = params.view === 'pursuing';
-  const where: Prisma.WorklistItemWhereInput = {};
+  const where: Prisma.WorklistItemWhereInput = { organizationId };
 
   if (statusFilter === 'ACTIVE') {
     where.status = { notIn: [WorklistStatus.COMPLETED, WorklistStatus.CANCELLED] };
@@ -281,6 +289,7 @@ export default async function Alerts({
     getAgenciesForVisitPicker(),
     getWholesaleAccountsForVisitPicker(),
     prisma.locationContact.findMany({
+      where: { organizationId },
       orderBy: { name: 'asc' },
       take: 1000,
       select: {
@@ -293,8 +302,9 @@ export default async function Alerts({
         wholesaleAccountId: true,
       },
     }),
-    prisma.user.findMany({ where: { isActive: true, role: { not: 'TASTER' } }, orderBy: [{ name: 'asc' }, { email: 'asc' }] }),
+    prisma.user.findMany({ where: { organizationId, isActive: true, role: { notIn: ['TASTER', 'PLATFORM_ADMIN'] } }, orderBy: [{ name: 'asc' }, { email: 'asc' }] }),
     prisma.tag.findMany({
+      where: { organizationId },
       orderBy: { name: 'asc' },
       select: {
         id: true,

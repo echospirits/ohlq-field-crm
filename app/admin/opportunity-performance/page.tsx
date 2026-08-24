@@ -5,16 +5,18 @@ import { buildPageMetadata } from '../../../lib/appBrand';
 import { requireAdmin } from '../../../lib/auth';
 import { analyzeActivityToPurchases } from '../../../lib/opportunityIntelligence';
 import { prisma } from '../../../lib/prisma';
+import { requireFeatureForUser } from '../../../lib/organizations';
 
 export const metadata = buildPageMetadata('Opportunity Performance');
 
 export default async function OpportunityPerformancePage() {
-  await requireAdmin();
+  const user = await requireAdmin();
+  const { organizationId } = await requireFeatureForUser(user, 'WHOLESALE_OPPORTUNITIES');
   const [opportunities, visits, followUps, purchases] = await Promise.all([
-    prisma.salesOpportunity.findMany({ select: { type: true, status: true, detectedAt: true, convertedAt: true, actionedAt: true } }),
-    prisma.loggedVisit.findMany({ where: { locationType: 'wholesale', wholesaleAccountId: { not: null } }, select: { wholesaleAccountId: true, visitAt: true } }),
-    prisma.worklistItem.findMany({ where: { wholesaleAccountId: { not: null }, completedAt: { not: null } }, select: { wholesaleAccountId: true, completedAt: true } }),
-    prisma.accountSalesEvent.findMany({ where: { isTenantProduct: true }, select: { wholesaleAccountId: true, reportDate: true } }),
+    prisma.salesOpportunity.findMany({ where: { organizationId }, select: { type: true, status: true, detectedAt: true, convertedAt: true, actionedAt: true } }),
+    prisma.loggedVisit.findMany({ where: { organizationId, locationType: 'wholesale', wholesaleAccountId: { not: null } }, select: { wholesaleAccountId: true, visitAt: true } }),
+    prisma.worklistItem.findMany({ where: { organizationId, wholesaleAccountId: { not: null }, completedAt: { not: null } }, select: { wholesaleAccountId: true, completedAt: true } }),
+    prisma.accountSalesEvent.findMany({ where: { organizationId, isTenantProduct: true }, select: { wholesaleAccountId: true, reportDate: true } }),
   ]);
   const purchaseMap = new Map<string, Date[]>(); purchases.forEach((p) => purchaseMap.set(p.wholesaleAccountId, [...(purchaseMap.get(p.wholesaleAccountId) ?? []), p.reportDate]));
   const relationship = (activities: Array<{ wholesaleAccountId: string | null; at: Date | null }>) => activities.flatMap((a) => a.wholesaleAccountId && a.at ? [analyzeActivityToPurchases(a.at, purchaseMap.get(a.wholesaleAccountId) ?? [])] : []);

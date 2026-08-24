@@ -24,6 +24,7 @@ const maxEmailUpcomingWork = 15;
 
 type DigestUser = {
   id: string;
+  organizationId: string | null;
   email: string | null;
   firstName: string | null;
   lastName: string | null;
@@ -384,6 +385,7 @@ async function getVisitRecords(user: DigestUser, window: WeeklyDigestWindow) {
 
   return prisma.loggedVisit.findMany({
     where: {
+      organizationId: user.organizationId,
       visitAt: {
         gte: window.pastStart,
         lt: window.pastEnd,
@@ -409,6 +411,7 @@ async function getWorklistRecords(user: DigestUser, window: WeeklyDigestWindow) 
   const [completedWork, openWork] = await Promise.all([
     prisma.worklistItem.findMany({
       where: {
+        organizationId: user.organizationId,
         status: WorklistStatus.COMPLETED,
         completedAt: {
           gte: window.pastStart,
@@ -430,6 +433,7 @@ async function getWorklistRecords(user: DigestUser, window: WeeklyDigestWindow) 
     }),
     prisma.worklistItem.findMany({
       where: {
+        organizationId: user.organizationId,
         AND: [
           assignedWhere,
           { status: { notIn: inactiveWorklistStatuses } },
@@ -579,15 +583,17 @@ const workItemToDigestItem = (
   };
 };
 
-export async function getActiveDigestRecipients() {
+export async function getActiveDigestRecipients(organizationId?: string) {
   return prisma.user.findMany({
     where: {
       isActive: true,
-      role: { not: UserRole.TASTER },
+      organizationId,
+      role: { notIn: [UserRole.TASTER, UserRole.PLATFORM_ADMIN] },
     },
     orderBy: [{ role: 'asc' }, { lastName: 'asc' }, { firstName: 'asc' }, { email: 'asc' }],
     select: {
       id: true,
+      organizationId: true,
       email: true,
       firstName: true,
       lastName: true,
@@ -603,6 +609,7 @@ export async function getUserWeeklyDigest(userId: string, window: WeeklyDigestWi
     where: { id: userId },
     select: {
       id: true,
+      organizationId: true,
       email: true,
       firstName: true,
       lastName: true,
@@ -654,9 +661,10 @@ export async function getUserWeeklyDigest(userId: string, window: WeeklyDigestWi
   return digest;
 }
 
-const getUnassignedDigestItems = async (window: WeeklyDigestWindow) => {
+const getUnassignedDigestItems = async (window: WeeklyDigestWindow, organizationId: string) => {
   const items = await prisma.worklistItem.findMany({
     where: {
+      organizationId,
       status: { notIn: inactiveWorklistStatuses },
       assignedToUserId: null,
       OR: [{ assignedTo: null }, { assignedTo: '' }],
@@ -685,11 +693,11 @@ const getUnassignedDigestItems = async (window: WeeklyDigestWindow) => {
   };
 };
 
-export async function getAdminWeeklyDigest(window: WeeklyDigestWindow) {
-  const users = await getActiveDigestRecipients();
+export async function getAdminWeeklyDigest(window: WeeklyDigestWindow, organizationId: string) {
+  const users = await getActiveDigestRecipients(organizationId);
   const [userDigests, unassigned] = await Promise.all([
     Promise.all(users.map((user) => getUserWeeklyDigest(user.id, window))),
-    getUnassignedDigestItems(window),
+    getUnassignedDigestItems(window, organizationId),
   ]);
   const totals = {
     activeUsers: users.length,
@@ -1017,6 +1025,7 @@ async function sendRenderedDigestWithLog({
   window,
   rendered,
   emailSender = sendEmail,
+  organizationId,
 }: {
   digestType: WeeklyDigestType;
   recipientUserId: string | null;
@@ -1024,6 +1033,7 @@ async function sendRenderedDigestWithLog({
   window: WeeklyDigestWindow;
   rendered: RenderedDigestEmail;
   emailSender?: SendEmailFn;
+  organizationId: string | null;
 }): Promise<DigestSendResult> {
   const existing = await prisma.weeklyDigestLog.findUnique({
     where: uniqueDigestWhere(digestType, recipientEmail, window),
@@ -1033,6 +1043,7 @@ async function sendRenderedDigestWithLog({
     await prisma.weeklyDigestLog.update({
       where: { id: existing!.id },
       data: {
+        organizationId,
         lastSkippedAt: new Date(),
         lastSkipReason: 'Duplicate digest trigger skipped because this period was already sent.',
       },
@@ -1085,6 +1096,7 @@ async function sendRenderedDigestWithLog({
     await prisma.weeklyDigestLog.update({
       where: { id: log.id },
       data: {
+        organizationId,
         status: WeeklyDigestStatus.SENT,
         providerMessageId: sent.providerMessageId,
         errorMessage: null,
@@ -1144,6 +1156,7 @@ export async function sendWeeklyDigestForUser(
   return sendRenderedDigestWithLog({
     digestType: WeeklyDigestType.USER_WEEKLY,
     recipientUserId: digest.user.id,
+    organizationId: digest.user.organizationId,
     recipientEmail,
     window,
     rendered: renderUserWeeklyDigestEmail(digest, options?.appBaseUrl),
@@ -1162,8 +1175,8 @@ export async function sendAdminWeeklyDigestToUser(
 ) {
   const window = options?.window ?? getWeeklyDigestWindow();
   const [adminUser, digest] = await Promise.all([
-    prisma.user.findUnique({ where: { id: adminUserId }, select: { id: true, email: true, role: true } }),
-    getAdminWeeklyDigest(window),
+    prisma.user.findUnique({ where: { id: adminUserId }, select: { id: true, email: true, role: true, organizationId: true } }),
+    prisma.user.findUnique({ where: { id: adminUserId }, select: { organizationId: true } }).then((user) => user?.organizationId ? getAdminWeeklyDigest(window, user.organizationId) : Promise.reject(new Error('Admin organization not found'))),
   ]);
 
   if (!adminUser || adminUser.role !== UserRole.ADMIN) {
@@ -1184,6 +1197,7 @@ export async function sendAdminWeeklyDigestToUser(
   return sendRenderedDigestWithLog({
     digestType: WeeklyDigestType.ADMIN_WEEKLY,
     recipientUserId: adminUser.id,
+    organizationId: adminUser.organizationId,
     recipientEmail,
     window,
     rendered: renderAdminWeeklyDigestEmail(digest, options?.appBaseUrl),
@@ -1217,7 +1231,12 @@ export async function sendWeeklyDigestForAllUsers(
   },
 ): Promise<DigestRunResult> {
   const window = options?.window ?? getWeeklyDigestWindow();
-  const recipients = await getActiveDigestRecipients();
+  const entitledOrganizations = await prisma.organizationFeature.findMany({ where: { featureKey: 'WEEKLY_DIGEST', enabled: true, organization: { active: true, accountStatus: { notIn: ['SUSPENDED', 'CANCELLED'] } } }, select: { organizationId: true } });
+  const recipients = await prisma.user.findMany({
+    where: { organizationId: { in: entitledOrganizations.map((item) => item.organizationId) }, isActive: true, role: { notIn: [UserRole.TASTER, UserRole.PLATFORM_ADMIN] } },
+    orderBy: [{ organizationId: 'asc' }, { role: 'asc' }, { lastName: 'asc' }, { firstName: 'asc' }, { email: 'asc' }],
+    select: { id: true, organizationId: true, email: true, firstName: true, lastName: true, name: true, role: true, isActive: true },
+  });
   const usersWithEmail = recipients.filter((user) => user.email);
   const results: DigestSendResult[] = [];
 

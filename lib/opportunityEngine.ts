@@ -5,6 +5,7 @@ import { getOhlqLicenseeMatchKeys } from './ohlqWholesaleMatching';
 import { isConfiguredTenantItem } from './ohlqSalesData';
 import { normalizeOpportunityCategory, OPPORTUNITY_RANKING_VERSION, OPPORTUNITY_RULES_VERSION, OPPORTUNITY_SIGNAL_VERSION, opportunityRules } from './opportunityConfig';
 import { detectOpportunityHypotheses, RuleBasedOpportunityRanker, selectPrimaryOpportunity, type AccountOpportunitySignals } from './opportunityIntelligence';
+import { ECHO_ORGANIZATION_ID, hasFeature } from './organizations';
 
 const DAY = 86400000;
 const dateOnly = (date: Date) => date.toISOString().slice(0, 10);
@@ -18,7 +19,7 @@ const jsonNumber = (value: unknown, key: string) => {
 const stringList = (value: unknown) => Array.isArray(value) ? value.map(String).filter(Boolean) : [];
 const activeOpportunityStatuses = [OpportunityStatus.OPEN, OpportunityStatus.ACTIONED, OpportunityStatus.SNOOZED];
 
-export async function captureWholesaleSalesEvents({ db = prisma, reportDate }: { db?: PrismaClient; reportDate: Date }) {
+export async function captureWholesaleSalesEvents({ db = prisma, reportDate, organizationId = ECHO_ORGANIZATION_ID }: { db?: PrismaClient; reportDate: Date; organizationId?: string }) {
   const previous = await db.ohlqAnnualSalesByWholesaleRow.findFirst({
     where: { reportDate: { lt: reportDate } }, orderBy: { reportDate: 'desc' }, select: { reportDate: true },
   });
@@ -48,9 +49,9 @@ export async function captureWholesaleSalesEvents({ db = prisma, reportDate }: {
     skipDuplicates: true,
     data: positive.map(({ row, accountId, bottles }) => {
       const master = masterByCode.get(row.brand);
-      const rawKey = `${accountId}|${dateOnly(reportDate)}|${row.agencyId}|${row.vendor}|${row.brand}`;
+      const rawKey = `${organizationId}|${accountId}|${dateOnly(reportDate)}|${row.agencyId}|${row.vendor}|${row.brand}`;
       return {
-        wholesaleAccountId: accountId, reportDate, agencyId: row.agencyId, vendor: row.vendor,
+        organizationId, wholesaleAccountId: accountId, reportDate, agencyId: row.agencyId, vendor: row.vendor,
         itemCode: row.brand, itemName: master?.name ?? 'Name pending', category: normalizeOpportunityCategory(master?.category, master?.name),
         bottles, annualBottlesAfter: row.wholesaleBottlesSold, isTenantProduct: isConfiguredTenantItem(row.vendor, row.brand), sourceKey: hash(rawKey),
       };
@@ -61,7 +62,7 @@ export async function captureWholesaleSalesEvents({ db = prisma, reportDate }: {
 
 const eventKey = (type: OpportunityEventType, suffix: string) => `${type}:${suffix}`;
 
-export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = new Date(), accountIds }: { db?: PrismaClient; asOfDate?: Date; accountIds?: string[] } = {}) {
+export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = new Date(), accountIds, organizationId = ECHO_ORGANIZATION_ID }: { db?: PrismaClient; asOfDate?: Date; accountIds?: string[]; organizationId?: string } = {}) {
   const start90 = new Date(asOfDate.getTime() - 89 * DAY);
   const [accounts, events, visits, worklist] = await Promise.all([
     db.wholesaleAccount.findMany({
@@ -78,9 +79,9 @@ export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = 
         opportunitySignal: true,
       },
     }),
-    db.accountSalesEvent.findMany({ where: { reportDate: { gte: start90, lte: asOfDate } }, orderBy: { reportDate: 'asc' } }),
-    db.loggedVisit.findMany({ where: { locationType: 'wholesale', wholesaleAccountId: { not: null }, visitAt: { lte: asOfDate } }, select: { id: true, wholesaleAccountId: true, visitAt: true } }),
-    db.worklistItem.findMany({ where: { wholesaleAccountId: { not: null }, status: { in: [WorklistStatus.OPEN, WorklistStatus.IN_PROGRESS] } }, select: { wholesaleAccountId: true } }),
+    db.accountSalesEvent.findMany({ where: { organizationId, reportDate: { gte: start90, lte: asOfDate } }, orderBy: { reportDate: 'asc' } }),
+    db.loggedVisit.findMany({ where: { organizationId, locationType: 'wholesale', wholesaleAccountId: { not: null }, visitAt: { lte: asOfDate } }, select: { id: true, wholesaleAccountId: true, visitAt: true } }),
+    db.worklistItem.findMany({ where: { organizationId, wholesaleAccountId: { not: null }, status: { in: [WorklistStatus.OPEN, WorklistStatus.IN_PROGRESS] } }, select: { wholesaleAccountId: true } }),
   ]);
   const eventsByAccount = new Map<string, typeof events>();
   events.forEach((event) => eventsByAccount.set(event.wholesaleAccountId, [...(eventsByAccount.get(event.wholesaleAccountId) ?? []), event]));
@@ -93,7 +94,7 @@ export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = 
 
   let model = await db.opportunityModelVersion.findFirst({ where: { name: 'RuleBasedOpportunityRanker', version: OPPORTUNITY_RANKING_VERSION, mode: OpportunityRankingMode.ACTIVE } });
   model ??= await db.opportunityModelVersion.create({ data: { name: 'RuleBasedOpportunityRanker', version: OPPORTUNITY_RANKING_VERSION, mode: OpportunityRankingMode.ACTIVE, configuration: opportunityRules, activatedAt: asOfDate } });
-  await db.salesOpportunity.updateMany({ where: { status: OpportunityStatus.SNOOZED, snoozedUntil: { lte: asOfDate } }, data: { status: OpportunityStatus.OPEN, snoozedUntil: null } });
+  await db.salesOpportunity.updateMany({ where: { organizationId, status: OpportunityStatus.SNOOZED, snoozedUntil: { lte: asOfDate } }, data: { status: OpportunityStatus.OPEN, snoozedUntil: null } });
 
   for (const account of accounts) {
     const accountEvents = eventsByAccount.get(account.id) ?? [];
@@ -134,13 +135,13 @@ export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = 
       yelpRating: numberValue(research?.yelpRating), yelpReviewCount: research?.yelpReviewCount ?? null,
       localBrandsOnMenu: stringList(research?.localBrandsOnMenu), publicResearchSourceUrls: stringList(research?.sourceUrls),
     };
-    await db.opportunityAccountSignal.upsert({ where: { wholesaleAccountId: account.id }, create: { wholesaleAccountId: account.id, asOfDate, signalVersion: OPPORTUNITY_SIGNAL_VERSION, features: signal, firstEchoPurchaseAt: firstObserved, lastEchoPurchaseAt: lastEcho, historyComplete: false }, update: { asOfDate, signalVersion: OPPORTUNITY_SIGNAL_VERSION, features: signal, firstEchoPurchaseAt: firstObserved, lastEchoPurchaseAt: lastEcho } });
+    await db.opportunityAccountSignal.upsert({ where: { wholesaleAccountId: account.id }, create: { organizationId, wholesaleAccountId: account.id, asOfDate, signalVersion: OPPORTUNITY_SIGNAL_VERSION, features: signal, firstEchoPurchaseAt: firstObserved, lastEchoPurchaseAt: lastEcho, historyComplete: false }, update: { organizationId, asOfDate, signalVersion: OPPORTUNITY_SIGNAL_VERSION, features: signal, firstEchoPurchaseAt: firstObserved, lastEchoPurchaseAt: lastEcho } });
 
     const primary = selectPrimaryOpportunity(detectOpportunityHypotheses(signal), signal, ranker);
     if (primary) {
       const { hypothesis, ranking } = primary;
       const active = await db.salesOpportunity.findMany({
-        where: { wholesaleAccountId: account.id, status: { in: activeOpportunityStatuses } },
+        where: { organizationId, wholesaleAccountId: account.id, status: { in: activeOpportunityStatuses } },
         orderBy: [{ actionedAt: 'asc' }, { productionScore: 'desc' }, { detectedAt: 'asc' }],
       });
       const statusOrder = new Map<OpportunityStatus, number>([[OpportunityStatus.ACTIONED, 0], [OpportunityStatus.SNOOZED, 1], [OpportunityStatus.OPEN, 2]]);
@@ -149,33 +150,33 @@ export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = 
       const duplicates = active.slice(1);
       if (opportunity && duplicates.length > 0) {
         for (const duplicate of duplicates) {
-          await db.worklistItem.updateMany({ where: { salesOpportunityId: duplicate.id }, data: { salesOpportunityId: opportunity.id } });
+          await db.worklistItem.updateMany({ where: { organizationId, salesOpportunityId: duplicate.id }, data: { salesOpportunityId: opportunity.id } });
           await db.salesOpportunity.update({ where: { id: duplicate.id }, data: { status: OpportunityStatus.RESOLVED, activeAccountKey: null, resolvedAt: asOfDate } });
-          await db.opportunityEvent.create({ data: { opportunityId: duplicate.id, eventType: OpportunityEventType.RESOLVED, eventKey: 'RESOLVED:DEDUPED_V2', wholesaleAccountId: account.id, metadata: { deduplicatedIntoOpportunityId: opportunity.id }, occurredAt: asOfDate } }).catch(() => undefined);
+          await db.opportunityEvent.create({ data: { organizationId, opportunityId: duplicate.id, eventType: OpportunityEventType.RESOLVED, eventKey: 'RESOLVED:DEDUPED_V2', wholesaleAccountId: account.id, metadata: { deduplicatedIntoOpportunityId: opportunity.id }, occurredAt: asOfDate } }).catch(() => undefined);
         }
-        const duplicateTasks = await db.worklistItem.findMany({ where: { salesOpportunityId: opportunity.id, status: { in: [WorklistStatus.OPEN, WorklistStatus.IN_PROGRESS] } }, orderBy: { createdAt: 'asc' }, select: { id: true } });
+        const duplicateTasks = await db.worklistItem.findMany({ where: { organizationId, salesOpportunityId: opportunity.id, status: { in: [WorklistStatus.OPEN, WorklistStatus.IN_PROGRESS] } }, orderBy: { createdAt: 'asc' }, select: { id: true } });
         if (duplicateTasks.length > 1) await db.worklistItem.updateMany({ where: { id: { in: duplicateTasks.slice(1).map((item) => item.id) } }, data: { status: WorklistStatus.CANCELLED, cancelledAt: asOfDate } });
       }
       if (opportunity) {
-        opportunity = await db.salesOpportunity.update({ where: { id: opportunity.id }, data: { activeAccountKey: account.id, type: hypothesis.type, cycleKey: hypothesis.cycleKey, targetCategory: hypothesis.targetCategory, title: hypothesis.title, recommendedAction: hypothesis.recommendedAction, explanation: ranking.factors, signalSnapshot: signal, rulesVersion: OPPORTUNITY_RULES_VERSION, scoringVersion: ranking.version, productionScore: ranking.score, priorityBand: ranking.priorityBand, lastDetectedAt: asOfDate } });
+        opportunity = await db.salesOpportunity.update({ where: { id: opportunity.id }, data: { activeAccountKey: `${organizationId}:${account.id}`, type: hypothesis.type, cycleKey: hypothesis.cycleKey, targetCategory: hypothesis.targetCategory, title: hypothesis.title, recommendedAction: hypothesis.recommendedAction, explanation: ranking.factors, signalSnapshot: signal, rulesVersion: OPPORTUNITY_RULES_VERSION, scoringVersion: ranking.version, productionScore: ranking.score, priorityBand: ranking.priorityBand, lastDetectedAt: asOfDate } });
       } else {
         const previouslyClosed = await db.salesOpportunity.findFirst({
-          where: { wholesaleAccountId: account.id, type: hypothesis.type, cycleKey: hypothesis.cycleKey },
+          where: { organizationId, wholesaleAccountId: account.id, type: hypothesis.type, cycleKey: hypothesis.cycleKey },
           select: { id: true },
         });
         if (previouslyClosed) continue;
-        opportunity = await db.salesOpportunity.create({ data: { wholesaleAccountId: account.id, activeAccountKey: account.id, type: hypothesis.type, cycleKey: hypothesis.cycleKey, targetCategory: hypothesis.targetCategory, title: hypothesis.title, recommendedAction: hypothesis.recommendedAction, explanation: ranking.factors, signalSnapshot: signal, rulesVersion: OPPORTUNITY_RULES_VERSION, scoringVersion: ranking.version, productionScore: ranking.score, priorityBand: ranking.priorityBand, assignedToUserId: signal.assignedUserId, detectedAt: asOfDate, lastDetectedAt: asOfDate } });
+        opportunity = await db.salesOpportunity.create({ data: { organizationId, wholesaleAccountId: account.id, activeAccountKey: `${organizationId}:${account.id}`, type: hypothesis.type, cycleKey: hypothesis.cycleKey, targetCategory: hypothesis.targetCategory, title: hypothesis.title, recommendedAction: hypothesis.recommendedAction, explanation: ranking.factors, signalSnapshot: signal, rulesVersion: OPPORTUNITY_RULES_VERSION, scoringVersion: ranking.version, productionScore: ranking.score, priorityBand: ranking.priorityBand, assignedToUserId: signal.assignedUserId, detectedAt: asOfDate, lastDetectedAt: asOfDate } });
         detected++;
-        await db.opportunityEvent.create({ data: { opportunityId: opportunity.id, eventType: OpportunityEventType.DETECTED, eventKey: eventKey(OpportunityEventType.DETECTED, hypothesis.cycleKey), wholesaleAccountId: account.id, metadata: { explanation: ranking.factors, rulesVersion: OPPORTUNITY_RULES_VERSION }, occurredAt: asOfDate } });
+        await db.opportunityEvent.create({ data: { organizationId, opportunityId: opportunity.id, eventType: OpportunityEventType.DETECTED, eventKey: eventKey(OpportunityEventType.DETECTED, hypothesis.cycleKey), wholesaleAccountId: account.id, metadata: { explanation: ranking.factors, rulesVersion: OPPORTUNITY_RULES_VERSION }, occurredAt: asOfDate } });
       }
       await db.opportunityScore.upsert({ where: { opportunityId_modelVersionId: { opportunityId: opportunity.id, modelVersionId: model.id } }, create: { opportunityId: opportunity.id, modelVersionId: model.id, mode: OpportunityRankingMode.ACTIVE, score: ranking.score, priorityBand: ranking.priorityBand, factors: ranking.factors }, update: { score: ranking.score, priorityBand: ranking.priorityBand, factors: ranking.factors, scoredAt: asOfDate } });
-      if (opportunityRules.autoCreateWorklist[hypothesis.type] && !await db.worklistItem.findFirst({ where: { salesOpportunityId: opportunity.id } })) {
-        const task = await db.worklistItem.create({ data: { title: hypothesis.recommendedAction, detail: ranking.factors.join('\n'), status: WorklistStatus.OPEN, source: WorklistSource.OPPORTUNITY_INTELLIGENCE, category: WorklistCategory.WHOLESALE, wholesaleAccountId: account.id, salesOpportunityId: opportunity.id, assignedToUserId: signal.assignedUserId, dueDate: new Date(asOfDate.getTime() + 7 * DAY), createdBy: 'Opportunity intelligence' } });
-        await db.opportunityEvent.create({ data: { opportunityId: opportunity.id, eventType: OpportunityEventType.WORKLIST_CREATED, eventKey: eventKey(OpportunityEventType.WORKLIST_CREATED, task.id), wholesaleAccountId: account.id, worklistItemId: task.id, occurredAt: asOfDate } }); worklistCreated++;
+      if (opportunityRules.autoCreateWorklist[hypothesis.type] && !await db.worklistItem.findFirst({ where: { organizationId, salesOpportunityId: opportunity.id } })) {
+        const task = await db.worklistItem.create({ data: { organizationId, title: hypothesis.recommendedAction, detail: ranking.factors.join('\n'), status: WorklistStatus.OPEN, source: WorklistSource.OPPORTUNITY_INTELLIGENCE, category: WorklistCategory.WHOLESALE, wholesaleAccountId: account.id, salesOpportunityId: opportunity.id, assignedToUserId: signal.assignedUserId, dueDate: new Date(asOfDate.getTime() + 7 * DAY), createdBy: 'Opportunity intelligence' } });
+        await db.opportunityEvent.create({ data: { organizationId, opportunityId: opportunity.id, eventType: OpportunityEventType.WORKLIST_CREATED, eventKey: eventKey(OpportunityEventType.WORKLIST_CREATED, task.id), wholesaleAccountId: account.id, worklistItemId: task.id, occurredAt: asOfDate } }); worklistCreated++;
       }
     }
 
-    const openOpportunities = await db.salesOpportunity.findMany({ where: { wholesaleAccountId: account.id, status: { in: [OpportunityStatus.OPEN, OpportunityStatus.ACTIONED] } } });
+    const openOpportunities = await db.salesOpportunity.findMany({ where: { organizationId, wholesaleAccountId: account.id, status: { in: [OpportunityStatus.OPEN, OpportunityStatus.ACTIONED] } } });
     for (const opportunity of openOpportunities) {
       const subsequent = accountEvents.filter((e) => e.reportDate > opportunity.detectedAt && e.isTenantProduct && (!opportunity.targetCategory || normalizeOpportunityCategory(e.category, e.itemName) === opportunity.targetCategory));
       const visit = accountVisits.find((v) => v.visitAt > opportunity.detectedAt);
@@ -185,11 +186,11 @@ export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = 
         const occurredAt = salesConversion ? salesConversion.reportDate : visit!.visitAt;
         const status = salesConversion ? OpportunityStatus.CONVERTED : OpportunityStatus.RESOLVED;
         await db.salesOpportunity.update({ where: { id: opportunity.id }, data: { status, activeAccountKey: null, convertedAt: salesConversion ? occurredAt : null, resolvedAt: occurredAt, conversionPurchaseAt: salesConversion ? occurredAt : null, conversionVisitId: visit?.id } });
-        await db.opportunityEvent.create({ data: { opportunityId: opportunity.id, eventType: salesConversion ? OpportunityEventType.CONVERTED : OpportunityEventType.RESOLVED, eventKey: eventKey(salesConversion ? OpportunityEventType.CONVERTED : OpportunityEventType.RESOLVED, dateOnly(occurredAt)), wholesaleAccountId: account.id, loggedVisitId: visit?.id, purchaseReportDate: salesConversion ? occurredAt : null, occurredAt } }).catch(() => undefined);
-        await db.worklistItem.updateMany({ where: { salesOpportunityId: opportunity.id, status: { in: [WorklistStatus.OPEN, WorklistStatus.IN_PROGRESS] } }, data: { status: WorklistStatus.COMPLETED, completedAt: occurredAt } }); converted++;
+        await db.opportunityEvent.create({ data: { organizationId, opportunityId: opportunity.id, eventType: salesConversion ? OpportunityEventType.CONVERTED : OpportunityEventType.RESOLVED, eventKey: eventKey(salesConversion ? OpportunityEventType.CONVERTED : OpportunityEventType.RESOLVED, dateOnly(occurredAt)), wholesaleAccountId: account.id, loggedVisitId: visit?.id, purchaseReportDate: salesConversion ? occurredAt : null, occurredAt } }).catch(() => undefined);
+        await db.worklistItem.updateMany({ where: { organizationId, salesOpportunityId: opportunity.id, status: { in: [WorklistStatus.OPEN, WorklistStatus.IN_PROGRESS] } }, data: { status: WorklistStatus.COMPLETED, completedAt: occurredAt } }); converted++;
       } else if (daysBetween(asOfDate, opportunity.detectedAt)! >= opportunityRules.expirationDays) {
         await db.salesOpportunity.update({ where: { id: opportunity.id }, data: { status: OpportunityStatus.EXPIRED, activeAccountKey: null, expiredAt: asOfDate, resolvedAt: asOfDate } });
-        await db.opportunityEvent.create({ data: { opportunityId: opportunity.id, eventType: OpportunityEventType.EXPIRED, eventKey: eventKey(OpportunityEventType.EXPIRED, dateOnly(asOfDate)), wholesaleAccountId: account.id, occurredAt: asOfDate } }).catch(() => undefined);
+        await db.opportunityEvent.create({ data: { organizationId, opportunityId: opportunity.id, eventType: OpportunityEventType.EXPIRED, eventKey: eventKey(OpportunityEventType.EXPIRED, dateOnly(asOfDate)), wholesaleAccountId: account.id, occurredAt: asOfDate } }).catch(() => undefined);
       }
     }
   }
@@ -197,7 +198,8 @@ export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = 
 }
 
 export async function runOpportunityIntelligenceAfterImport({ db = prisma, reportDate }: { db?: PrismaClient; reportDate: Date }) {
-  const salesEvents = await captureWholesaleSalesEvents({ db, reportDate });
-  const intelligence = await evaluateOpportunityIntelligence({ db, asOfDate: reportDate });
+  if (!(await hasFeature(ECHO_ORGANIZATION_ID, 'WHOLESALE_OPPORTUNITIES'))) return { salesEvents: { created: 0, skippedWithoutBaseline: false }, intelligence: { accountsEvaluated: 0, detected: 0, converted: 0, worklistCreated: 0, rulesVersion: OPPORTUNITY_RULES_VERSION, scoringVersion: OPPORTUNITY_RANKING_VERSION }, skipped: true, reason: 'WHOLESALE_OPPORTUNITIES disabled' };
+  const salesEvents = await captureWholesaleSalesEvents({ db, reportDate, organizationId: ECHO_ORGANIZATION_ID });
+  const intelligence = await evaluateOpportunityIntelligence({ db, asOfDate: reportDate, organizationId: ECHO_ORGANIZATION_ID });
   return { salesEvents, intelligence };
 }

@@ -14,8 +14,6 @@ type NavGroup = {
   label: string;
 };
 
-const workItems = getNavigationItems('work');
-const accountItems = getNavigationItems('accounts');
 const adminItems = getNavigationItems('admin');
 const mobileItems = getMobileNavigationItems();
 
@@ -63,8 +61,10 @@ function NavGroupLinks({ group, pathname }: { group: NavGroup; pathname: string 
   );
 }
 
-export function AppSidebarNavigation({ isAdmin, isTaster }: { isAdmin: boolean; isTaster: boolean }) {
+export function AppSidebarNavigation({ enabledFeatures, isAdmin, isPlatformAdmin, isTaster }: { enabledFeatures: string[]; isAdmin: boolean; isPlatformAdmin: boolean; isTaster: boolean }) {
   const pathname = usePathname();
+  const workItems = getNavigationItems('work', enabledFeatures);
+  const accountItems = getNavigationItems('accounts', enabledFeatures);
 
   if (isTaster) {
     return (
@@ -103,6 +103,7 @@ export function AppSidebarNavigation({ isAdmin, isTaster }: { isAdmin: boolean; 
           </div>
         </details>
       ) : null}
+      {isPlatformAdmin ? <Link className="app-nav-link" href="/platform">Platform administration</Link> : null}
     </nav>
   );
 }
@@ -161,9 +162,9 @@ export function AppBreadcrumbs({ isTaster }: { isTaster: boolean }) {
   );
 }
 
-export function MobileTabbar({ isAdmin, isTaster }: { isAdmin: boolean; isTaster: boolean }) {
+export function MobileTabbar({ enabledFeatures, isAdmin, isTaster }: { enabledFeatures: string[]; isAdmin: boolean; isTaster: boolean }) {
   const pathname = usePathname();
-  const moreItems = getMoreNavigationItems(isAdmin);
+  const moreItems = getMoreNavigationItems(isAdmin, enabledFeatures);
 
   if (isTaster) return null;
 

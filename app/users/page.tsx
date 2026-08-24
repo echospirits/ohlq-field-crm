@@ -9,6 +9,7 @@ import { getUserDisplayName, requireAdminSession } from '../../lib/auth';
 import { hashPassword } from '../../lib/password';
 import { prisma } from '../../lib/prisma';
 import { createUserInvitationToken, sendUserInvitationEmail } from '../../lib/userInvitations';
+import { requireOrganizationContext } from '../../lib/organizations';
 import { PageHeader, SectionHeading } from '../components/PageChrome';
 
 export const metadata = buildPageMetadata('Users');
@@ -27,22 +28,24 @@ const toRole = (value: FormDataEntryValue | null | undefined) => {
 };
 
 const roleLabels: Record<UserRole, string> = {
+  [UserRole.PLATFORM_ADMIN]: 'Platform Admin',
   [UserRole.ADMIN]: 'Admin',
   [UserRole.TASTER]: 'Taster',
   [UserRole.USER]: 'User',
 };
 
-const getActiveAdminCount = () =>
+const getActiveAdminCount = (organizationId: string) =>
   prisma.user.count({
     where: {
+      organizationId,
       isActive: true,
       role: UserRole.ADMIN,
     },
   });
 
-const canRemoveAdminAccess = async (userId: string) => {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
+const canRemoveAdminAccess = async (userId: string, organizationId: string) => {
+  const user = await prisma.user.findFirst({
+    where: { id: userId, organizationId },
     select: {
       isActive: true,
       role: true,
@@ -53,13 +56,14 @@ const canRemoveAdminAccess = async (userId: string) => {
     return true;
   }
 
-  return (await getActiveAdminCount()) > 1;
+  return (await getActiveAdminCount(organizationId)) > 1;
 };
 
 async function inviteUser(formData: FormData) {
   'use server';
 
   const adminSession = await requireAdminSession();
+  const { organizationId } = await requireOrganizationContext(adminSession.user);
 
   const email = String(formData.get('email') ?? '').trim().toLowerCase();
   const firstName = toOptional(formData.get('firstName'));
@@ -74,14 +78,16 @@ async function inviteUser(formData: FormData) {
   const name = [firstName, lastName].filter(Boolean).join(' ');
   const existingUser = await prisma.user.findUnique({
     where: { email },
-    select: { id: true },
+    select: { id: true, organizationId: true },
   });
+
+  if (existingUser && existingUser.organizationId !== organizationId) redirect('/users?status=email-in-use');
 
   if (existingUser?.id === adminSession.user.id && role !== UserRole.ADMIN) {
     redirect('/users?status=self-role');
   }
 
-  if (existingUser && role !== UserRole.ADMIN && !(await canRemoveAdminAccess(existingUser.id))) {
+  if (existingUser && role !== UserRole.ADMIN && !(await canRemoveAdminAccess(existingUser.id, organizationId))) {
     redirect('/users?status=last-admin');
   }
 
@@ -100,6 +106,7 @@ async function inviteUser(formData: FormData) {
         })
       : await tx.user.create({
           data: {
+            organizationId,
             email,
             firstName,
             lastName,
@@ -180,15 +187,16 @@ async function inviteUser(formData: FormData) {
 async function sendActivationReminder(formData: FormData) {
   'use server';
 
-  await requireAdminSession();
+  const adminSession = await requireAdminSession();
+  const { organizationId } = await requireOrganizationContext(adminSession.user);
   const userId = toOptional(formData.get('userId'));
 
   if (!userId) {
     redirect('/users?status=invalid-user');
   }
 
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
+  const user = await prisma.user.findFirst({
+    where: { id: userId, organizationId },
     select: {
       email: true,
       firstName: true,
@@ -268,6 +276,7 @@ async function updateUserRole(formData: FormData) {
   'use server';
 
   const adminSession = await requireAdminSession();
+  const { organizationId } = await requireOrganizationContext(adminSession.user);
   const userId = toOptional(formData.get('userId'));
   const role = toRole(formData.get('role'));
 
@@ -279,12 +288,12 @@ async function updateUserRole(formData: FormData) {
     redirect('/users?status=self-role');
   }
 
-  if (role !== UserRole.ADMIN && !(await canRemoveAdminAccess(userId))) {
+  if (role !== UserRole.ADMIN && !(await canRemoveAdminAccess(userId, organizationId))) {
     redirect('/users?status=last-admin');
   }
 
-  await prisma.user.update({
-    where: { id: userId },
+  await prisma.user.updateMany({
+    where: { id: userId, organizationId },
     data: { role },
   });
 
@@ -296,6 +305,7 @@ async function toggleUserStatus(formData: FormData) {
   'use server';
 
   const adminSession = await requireAdminSession();
+  const { organizationId } = await requireOrganizationContext(adminSession.user);
   const userId = toOptional(formData.get('userId'));
   const activate = String(formData.get('activate') ?? '') === 'true';
 
@@ -307,12 +317,12 @@ async function toggleUserStatus(formData: FormData) {
     redirect('/users?status=self-deactivate');
   }
 
-  if (!activate && !(await canRemoveAdminAccess(userId))) {
+  if (!activate && !(await canRemoveAdminAccess(userId, organizationId))) {
     redirect('/users?status=last-admin');
   }
 
-  await prisma.user.update({
-    where: { id: userId },
+  await prisma.user.updateMany({
+    where: { id: userId, organizationId },
     data: { isActive: activate },
   });
 
@@ -328,6 +338,7 @@ async function resetUserPassword(formData: FormData) {
   'use server';
 
   const adminSession = await requireAdminSession();
+  const { organizationId } = await requireOrganizationContext(adminSession.user);
   const userId = toOptional(formData.get('userId'));
   const password = String(formData.get('password') ?? '');
 
@@ -339,8 +350,8 @@ async function resetUserPassword(formData: FormData) {
     redirect('/users?status=password-too-short');
   }
 
-  await prisma.user.update({
-    where: { id: userId },
+  await prisma.user.updateMany({
+    where: { id: userId, organizationId },
     data: {
       passwordHash: hashPassword(password),
       isActive: true,
@@ -382,9 +393,11 @@ export default async function UsersPage({
 }: {
   searchParams?: Promise<{ status?: string }>;
 }) {
-  await requireAdminSession();
+  const adminSession = await requireAdminSession();
+  const { organizationId } = await requireOrganizationContext(adminSession.user);
   const params = (await searchParams) ?? {};
   const users = await prisma.user.findMany({
+    where: { organizationId, role: { not: UserRole.PLATFORM_ADMIN } },
     include: {
       invitations: {
         where: {

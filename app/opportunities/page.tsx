@@ -7,6 +7,7 @@ import { buildPageMetadata } from '../../lib/appBrand';
 import { getUserDisplayName, requireUser } from '../../lib/auth';
 import { formatEasternDate } from '../../lib/dateTime';
 import { prisma } from '../../lib/prisma';
+import { requireFeatureForUser } from '../../lib/organizations';
 import { updateOpportunity } from './actions';
 import { ContextualActions } from '../components/ContextualActions';
 
@@ -15,18 +16,20 @@ export const metadata = buildPageMetadata('Opportunities');
 const labels: Record<OpportunityType, string> = { LAPSED_BUYER: 'Reactivation', FIRST_ORDER_FOLLOW_UP: 'First Reorder', CATEGORY_CONQUEST: 'Category Opportunity', CROSS_SELL: 'Cross-Sell', NO_RECENT_TOUCH: 'Needs Attention' };
 
 export default async function OpportunityInbox({ searchParams }: { searchParams?: Promise<{ type?: string; priority?: string }> }) {
-  const currentUser = await requireUser(); const query = (await searchParams) ?? {};
+  const currentUser = await requireUser();
+  const { organizationId } = await requireFeatureForUser(currentUser, 'WHOLESALE_OPPORTUNITIES');
+  const query = (await searchParams) ?? {};
   const type = Object.values(OpportunityType).includes(query.type as OpportunityType) ? query.type as OpportunityType : undefined;
   const [opportunities, assignees] = await Promise.all([
     prisma.salesOpportunity.findMany({
-      where: { status: OpportunityStatus.OPEN, ...(type ? { type } : {}), ...(query.priority ? { priorityBand: query.priority.toUpperCase() } : {}) },
+      where: { organizationId, status: OpportunityStatus.OPEN, ...(type ? { type } : {}), ...(query.priority ? { priorityBand: query.priority.toUpperCase() } : {}) },
       include: { wholesaleAccount: { select: { name: true, city: true } }, worklistItems: { where: { status: { in: ['OPEN', 'IN_PROGRESS'] } }, select: { id: true } } },
       orderBy: [{ productionScore: 'desc' }, { detectedAt: 'desc' }], take: 250,
     }),
-    prisma.user.findMany({ where: { isActive: true, role: { not: 'TASTER' } }, orderBy: [{ name: 'asc' }, { email: 'asc' }] }),
+    prisma.user.findMany({ where: { organizationId, isActive: true, role: { notIn: ['TASTER', 'PLATFORM_ADMIN'] } }, orderBy: [{ name: 'asc' }, { email: 'asc' }] }),
   ]);
   const actionUsers = assignees.map((assignee) => ({ id: assignee.id, name: getUserDisplayName(assignee) }));
-  await prisma.opportunityEvent.createMany({ skipDuplicates: true, data: opportunities.map((item) => ({ opportunityId: item.id, eventType: OpportunityEventType.SHOWN, eventKey: 'SHOWN:INBOX', wholesaleAccountId: item.wholesaleAccountId, occurredAt: new Date() })) });
+  await prisma.opportunityEvent.createMany({ skipDuplicates: true, data: opportunities.map((item) => ({ organizationId, opportunityId: item.id, eventType: OpportunityEventType.SHOWN, eventKey: 'SHOWN:INBOX', wholesaleAccountId: item.wholesaleAccountId, occurredAt: new Date() })) });
   return <>
     <header className="page-heading page-header"><div><span className="page-eyebrow">Next best work</span><h1>Opportunity Inbox</h1><p className="muted">Prioritized recommendations with the evidence behind each one.</p></div><div className="page-actions"><Link className="btn secondary" href="/alerts?view=pursuing">View pursuing</Link>{currentUser.role === UserRole.ADMIN ? <Link className="btn secondary" href="/admin/opportunity-performance">Performance</Link> : null}</div></header>
     <nav className="opportunity-filters"><Link href="/opportunities">Best Opportunities</Link>{Object.values(OpportunityType).map((value) => <Link href={`/opportunities?type=${value}`} key={value}>{labels[value]}</Link>)}</nav>

@@ -32,10 +32,12 @@ export const getUserInvitationUrl = (token: string, appBaseUrl = getEmailAppBase
 export function renderUserInvitationEmail({
   inviteUrl,
   isReminder = false,
+  organizationName = APP_COMPANY,
   recipientName,
 }: {
   inviteUrl: string;
   isReminder?: boolean;
+  organizationName?: string;
   recipientName: string;
 }) {
   const safeName = escapeHtml(recipientName);
@@ -48,7 +50,7 @@ export function renderUserInvitationEmail({
     '',
     isReminder
       ? `This is a reminder to finish setting up your ${APP_NAME} account.`
-      : `You've been invited to ${APP_NAME} by ${APP_COMPANY}.`,
+      : `You've been invited to ${APP_NAME} by ${organizationName}.`,
     `Create your ${APP_NAME} password using this link:`,
     inviteUrl,
     '',
@@ -77,7 +79,7 @@ export function renderUserInvitationEmail({
               This link expires in ${USER_INVITATION_HOURS} hours and can only be used once.
               If you were not expecting this invitation, you can ignore this email.
             </p>
-            <p style="margin:20px 0 0;color:#7c8798;font-size:12px;">${APP_NAME} · ${APP_COMPANY}</p>
+            <p style="margin:20px 0 0;color:#7c8798;font-size:12px;">${APP_NAME} · ${escapeHtml(organizationName)}</p>
           </div>
         </div>
       </body>
@@ -92,6 +94,7 @@ export async function sendUserInvitationEmail({
   emailSender = sendEmail,
   invitationId,
   isReminder = false,
+  organizationName,
   recipientEmail,
   recipientName,
   token,
@@ -100,12 +103,13 @@ export async function sendUserInvitationEmail({
   emailSender?: SendEmailFn;
   invitationId: string;
   isReminder?: boolean;
+  organizationName?: string;
   recipientEmail: string;
   recipientName: string;
   token: string;
 }) {
   const inviteUrl = getUserInvitationUrl(token, appBaseUrl);
-  const rendered = renderUserInvitationEmail({ inviteUrl, isReminder, recipientName });
+  const rendered = renderUserInvitationEmail({ inviteUrl, isReminder, organizationName, recipientName });
 
   return emailSender({
     to: recipientEmail,

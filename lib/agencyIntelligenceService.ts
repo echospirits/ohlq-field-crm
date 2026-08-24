@@ -18,6 +18,7 @@ import {
   type WholesaleInfluenceAnalysis,
 } from './agencyIntelligence';
 import { agencyIntelligenceConfig } from './agencyIntelligenceConfig';
+import { ECHO_ORGANIZATION_ID } from './organizations';
 import { getTenantAgencyInventoryWhere } from './ohlqAgencyInventory';
 import { getTenantSalesWhere, getTenantWholesaleSalesWhere } from './ohlqSalesData';
 import { getOhlqLicenseeMatchKeys, normalizeOhlqId } from './ohlqWholesaleMatching';
@@ -465,6 +466,7 @@ export async function refreshAgencyIntelligence({
       const persisted = await db.agencyProductIntelligence.upsert({
         where: { agencyId_itemCode: { agencyId: agency.id, itemCode: product.signals.itemCode } },
         create: {
+          organizationId: ECHO_ORGANIZATION_ID,
           agencyId: agency.id,
           itemCode: product.signals.itemCode,
           itemName: product.signals.itemName,
@@ -562,6 +564,7 @@ export async function refreshAgencyIntelligence({
         const result = await db.agencyIntelligenceEvent.createMany({
           skipDuplicates: true,
           data: [{
+            organizationId: ECHO_ORGANIZATION_ID,
             agencyId: agency.id,
             agencyProductIntelligenceId: persisted.id,
             itemCode: product.signals.itemCode,
@@ -590,6 +593,7 @@ export async function refreshAgencyIntelligence({
     await db.agencyIntelligenceSummary.upsert({
       where: { agencyId: agency.id },
       create: {
+        organizationId: ECHO_ORGANIZATION_ID,
         agencyId: agency.id,
         asOfDate: inventoryReportDate,
         retailBand,

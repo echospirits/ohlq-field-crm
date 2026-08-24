@@ -4,6 +4,7 @@ export const runtime = 'nodejs';
 import { WeeklyDigestStatus } from '@prisma/client';
 import { APP_NAME, buildPageMetadata } from '../../../lib/appBrand';
 import { getUserDisplayName, requireAdminSession } from '../../../lib/auth';
+import { requireOrganizationContext } from '../../../lib/organizations';
 import { formatEasternDateTime } from '../../../lib/dateTime';
 import { prisma } from '../../../lib/prisma';
 import {
@@ -43,12 +44,13 @@ export default async function WeeklyDigestAdminPage({
   }>;
 }) {
   const session = await requireAdminSession();
+  const { organizationId } = await requireOrganizationContext(session.user);
   const params = (await searchParams) ?? {};
   const previewMode = getPreviewMode(params.digestType);
   const window = getWeeklyDigestWindow();
   const [activeUsers, recentLogs] = await Promise.all([
     prisma.user.findMany({
-      where: { isActive: true },
+      where: { organizationId, isActive: true, role: { not: 'PLATFORM_ADMIN' } },
       orderBy: [{ role: 'asc' }, { lastName: 'asc' }, { firstName: 'asc' }, { email: 'asc' }],
       select: {
         id: true,
@@ -60,6 +62,7 @@ export default async function WeeklyDigestAdminPage({
       },
     }),
     prisma.weeklyDigestLog.findMany({
+      where: { organizationId },
       orderBy: [{ createdAt: 'desc' }],
       take: 20,
       include: { recipientUser: true },
@@ -69,7 +72,7 @@ export default async function WeeklyDigestAdminPage({
     activeUsers.some((user) => user.id === params.userId) && params.userId ? params.userId : session.user.id;
   const rendered =
     previewMode === 'admin'
-      ? renderAdminWeeklyDigestEmail(await getAdminWeeklyDigest(window))
+      ? renderAdminWeeklyDigestEmail(await getAdminWeeklyDigest(window, organizationId))
       : renderUserWeeklyDigestEmail(await getUserWeeklyDigest(selectedUserId, window));
 
   return (

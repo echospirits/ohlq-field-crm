@@ -11,6 +11,7 @@ import {
   verifyClientUploadedVisitPhoto,
 } from '../../lib/blob';
 import { prisma } from '../../lib/prisma';
+import { hasFeature, requireOrganizationContext } from '../../lib/organizations';
 import { getGeocodeResetForAddressChange } from '../../lib/location/geocode';
 import { parseTimeInputToMinutes } from '../../lib/dateTime';
 import { syncWorklistItemCalendar } from '../../lib/calendar/worklistSync';
@@ -178,6 +179,7 @@ function collectPhotos(formData: FormData, formOrigin: FormOrigin, locationType:
 
 export async function createVisit(formData: FormData) {
   const user = await requireUser({ allowTaster: true });
+  const { organizationId } = await requireOrganizationContext(user);
   const isTaster = user.role === UserRole.TASTER;
   const actorName = getUserDisplayName(user);
   const formOrigin = isTaster ? 'visits' : getFormOrigin(formData);
@@ -218,7 +220,7 @@ export async function createVisit(formData: FormData) {
     ? toOptional(formData.get('followUpAssignedToUserId')) ?? user.id
     : null;
   const followUpAssignee = requestedFollowUpAssigneeId
-    ? await prisma.user.findFirst({ where: { id: requestedFollowUpAssigneeId, isActive: true, role: { not: UserRole.TASTER } } })
+    ? await prisma.user.findFirst({ where: { id: requestedFollowUpAssigneeId, organizationId, isActive: true, role: { notIn: [UserRole.TASTER, UserRole.PLATFORM_ADMIN] } } })
     : null;
   if (requestedFollowUpAssigneeId && !followUpAssignee) redirectVisitWithStatus(formOrigin, 'invalid-assignee', locationType);
   const followUpAssigneeName = followUpAssignee ? getUserDisplayName(followUpAssignee) : actorName;
@@ -268,13 +270,13 @@ export async function createVisit(formData: FormData) {
 
   const [salesOpportunity, agencyProductIntelligence, originatingWorklistItem] = await Promise.all([
     salesOpportunityId
-      ? prisma.salesOpportunity.findFirst({ where: { id: salesOpportunityId, wholesaleAccountId: selectedWholesaleAccountId ?? '__none__' }, select: { id: true, wholesaleAccountId: true } })
+      ? prisma.salesOpportunity.findFirst({ where: { id: salesOpportunityId, organizationId, wholesaleAccountId: selectedWholesaleAccountId ?? '__none__' }, select: { id: true, wholesaleAccountId: true } })
       : null,
     agencyProductIntelligenceId
-      ? prisma.agencyProductIntelligence.findFirst({ where: { id: agencyProductIntelligenceId, agencyId: agencyId ?? '__none__' }, select: { id: true, agencyId: true, inventoryState: true, itemCode: true, opportunityState: true } })
+      ? prisma.agencyProductIntelligence.findFirst({ where: { id: agencyProductIntelligenceId, organizationId, agencyId: agencyId ?? '__none__' }, select: { id: true, agencyId: true, inventoryState: true, itemCode: true, opportunityState: true } })
       : null,
     worklistItemId
-      ? prisma.worklistItem.findFirst({ where: { id: worklistItemId, status: { in: [WorklistStatus.OPEN, WorklistStatus.IN_PROGRESS] } }, select: { id: true, agencyId: true, wholesaleAccountId: true } })
+      ? prisma.worklistItem.findFirst({ where: { id: worklistItemId, organizationId, status: { in: [WorklistStatus.OPEN, WorklistStatus.IN_PROGRESS] } }, select: { id: true, agencyId: true, wholesaleAccountId: true } })
       : null,
   ]);
   if ((salesOpportunityId && !salesOpportunity) || (agencyProductIntelligenceId && !agencyProductIntelligence) || (worklistItemId && !originatingWorklistItem)) {
@@ -456,6 +458,7 @@ export async function createVisit(formData: FormData) {
     if (newContactName) {
       const createdContact = await tx.locationContact.create({
         data: {
+          organizationId,
           name: newContactName,
           phone: newContactPhone,
           agencyId: locationType === 'agency' ? agencyId : null,
@@ -468,6 +471,7 @@ export async function createVisit(formData: FormData) {
 
     const loggedVisit = await tx.loggedVisit.create({
       data: {
+        organizationId,
         locationType,
         agencyId: locationType === 'agency' ? agencyId : null,
         wholesaleAccountId: locationType === 'wholesale' ? wholesaleAccountId : null,
@@ -507,6 +511,7 @@ export async function createVisit(formData: FormData) {
     if (shouldCreateVisitTask(requestedFollowUpMode)) {
       await tx.worklistItem.create({
         data: {
+          organizationId,
           title: nextStep ? `Follow up: ${nextStep.slice(0, 120)}` : 'Follow up on visit',
           detail: visitTaskDetail,
           status: WorklistStatus.OPEN,
@@ -527,6 +532,7 @@ export async function createVisit(formData: FormData) {
     for (const voiceFollowUp of selectedVoiceFollowUps) {
       await tx.worklistItem.create({
         data: {
+          organizationId,
           title: voiceFollowUp.title,
           detail:
             [
@@ -604,6 +610,7 @@ export async function createVisit(formData: FormData) {
       uploadedPhoto = photo.file ? await uploadVisitPhoto(photo.file, visit.id, user.id, 0) : null;
       await prisma.visitPhoto.create({
         data: {
+          organizationId,
           loggedVisitId: visit.id,
           type: PhotoType.OTHER,
           url: uploadedPhoto?.url ?? photo.url!,
@@ -659,6 +666,7 @@ export async function createVisit(formData: FormData) {
           }
 
           return {
+            organizationId,
             loggedVisitId: visit.id,
             type: photo.type,
             url: photo.url ?? '',
@@ -702,7 +710,7 @@ export async function createVisit(formData: FormData) {
   });
   for (const item of calendarItems) await syncWorklistItemCalendar(item.id);
   if (visit.wholesaleAccountId) {
-    await evaluateOpportunityIntelligence({ accountIds: [visit.wholesaleAccountId] });
+    if (await hasFeature(organizationId, 'WHOLESALE_OPPORTUNITIES')) await evaluateOpportunityIntelligence({ accountIds: [visit.wholesaleAccountId], organizationId });
   }
 
   revalidatePath('/visits');
@@ -724,9 +732,10 @@ export async function createVisit(formData: FormData) {
 
 export async function updateVisit(visitId: string, formData: FormData) {
   const user = await requireUser();
+  const { organizationId } = await requireOrganizationContext(user);
   const actorName = getUserDisplayName(user);
-  const existingVisit = await prisma.loggedVisit.findUnique({
-    where: { id: visitId },
+  const existingVisit = await prisma.loggedVisit.findFirst({
+    where: { id: visitId, organizationId },
     include: {
       worklistItems: {
         where: { source: WorklistSource.VISIT_FOLLOW_UP },
@@ -773,7 +782,7 @@ export async function updateVisit(visitId: string, formData: FormData) {
     ? toOptional(formData.get('followUpAssignedToUserId')) ?? user.id
     : null;
   const followUpAssignee = requestedFollowUpAssigneeId
-    ? await prisma.user.findFirst({ where: { id: requestedFollowUpAssigneeId, isActive: true, role: { not: UserRole.TASTER } } })
+    ? await prisma.user.findFirst({ where: { id: requestedFollowUpAssigneeId, organizationId, isActive: true, role: { notIn: [UserRole.TASTER, UserRole.PLATFORM_ADMIN] } } })
     : null;
   if (requestedFollowUpAssigneeId && !followUpAssignee) redirect('/visits?status=invalid-assignee');
   const followUpAssigneeName = followUpAssignee ? getUserDisplayName(followUpAssignee) : actorName;
@@ -812,6 +821,7 @@ export async function updateVisit(visitId: string, formData: FormData) {
       else {
         await tx.worklistItem.create({
           data: {
+            organizationId,
             ...taskData,
             source: WorklistSource.VISIT_FOLLOW_UP,
             loggedVisitId: visitId,
@@ -835,7 +845,7 @@ export async function updateVisit(visitId: string, formData: FormData) {
   });
   if (calendarTask) await syncWorklistItemCalendar(calendarTask.id);
   if (existingVisit.wholesaleAccountId) {
-    await evaluateOpportunityIntelligence({ accountIds: [existingVisit.wholesaleAccountId] });
+    if (await hasFeature(organizationId, 'WHOLESALE_OPPORTUNITIES')) await evaluateOpportunityIntelligence({ accountIds: [existingVisit.wholesaleAccountId], organizationId });
   }
 
   revalidatePath('/visits');

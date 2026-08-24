@@ -25,6 +25,7 @@
     "import:target-account-model": "tsx scripts/import-target-account-model.ts",
     "backfill:account-geocodes": "tsx scripts/backfill-account-geocodes.ts",
     "seed:admin": "tsx scripts/seed-admin.ts",
+    "bootstrap:multitenancy": "tsx scripts/bootstrap-multitenancy.ts",
     "vercel:link": "vercel link",
     "vercel:preview": "vercel --yes",
     "vercel:prod": "vercel --prod --yes"

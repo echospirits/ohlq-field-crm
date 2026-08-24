@@ -5,6 +5,7 @@ import { notFound } from 'next/navigation';
 import { buildPageMetadata } from '../../../../lib/appBrand';
 import { getUserDisplayName, requireUser } from '../../../../lib/auth';
 import { prisma } from '../../../../lib/prisma';
+import { requireOrganizationContext } from '../../../../lib/organizations';
 import { formatTimeMinutesInput } from '../../../../lib/dateTime';
 import {
   getAgenciesForVisitPicker,
@@ -22,19 +23,21 @@ export const metadata = buildPageMetadata('Edit Visit');
 
 export default async function EditVisitPage({ params }: { params: Promise<{ id: string }> }) {
   const [{ id }, user] = await Promise.all([params, requireUser()]);
-  const visit = await prisma.loggedVisit.findUnique({ where: { id } });
+  const { organizationId } = await requireOrganizationContext(user);
+  const visit = await prisma.loggedVisit.findFirst({ where: { id, organizationId } });
   if (!visit) notFound();
 
   const [agencyOptions, wholesaleOptions, contacts, activeUsers] = await Promise.all([
     getAgenciesForVisitPicker(),
     getWholesaleAccountsForVisitPicker(),
     prisma.locationContact.findMany({
+      where: { organizationId },
       orderBy: { name: 'asc' },
       take: 1000,
       select: { id: true, name: true, role: true, phone: true, email: true, agencyId: true, wholesaleAccountId: true },
     }),
     prisma.user.findMany({
-      where: { isActive: true, role: { not: 'TASTER' } },
+      where: { organizationId, isActive: true, role: { notIn: ['TASTER', 'PLATFORM_ADMIN'] } },
       orderBy: [{ name: 'asc' }, { email: 'asc' }],
       select: { id: true, email: true, firstName: true, lastName: true, name: true },
     }),

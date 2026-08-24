@@ -11,6 +11,7 @@ import { getSignedInHomePath } from '../../../lib/userAccess';
 import { getVisitContinueTarget, type VisitFormOrigin } from '../../../lib/visitConfirmation';
 import { resolveVisitOrigin } from './actions';
 import { getVisitOriginResolution } from '../../../lib/visitOriginResolution';
+import { requireOrganizationContext } from '../../../lib/organizations';
 
 export const metadata = buildPageMetadata('Visit Confirmed');
 
@@ -25,6 +26,7 @@ export default async function VisitConfirmedPage({
   }>;
 }) {
   const [params, user] = await Promise.all([(await searchParams) ?? {}, requireUser({ allowTaster: true })]);
+  const { organizationId } = await requireOrganizationContext(user);
   const visitId = String(params.visitId ?? '').trim();
 
   if (!visitId) {
@@ -34,6 +36,7 @@ export default async function VisitConfirmedPage({
   const visit = await prisma.loggedVisit.findFirst({
     where: {
       id: visitId,
+      organizationId,
       createdByUserId: user.id,
     },
     select: {

@@ -2,6 +2,7 @@
 
 import { redirect } from 'next/navigation';
 import { requireAdminSession } from '../../../lib/auth';
+import { requireOrganizationContext } from '../../../lib/organizations';
 import {
   getAdminWeeklyDigest,
   getUserWeeklyDigest,
@@ -29,6 +30,7 @@ const redirectWithStatus = (status: string, params?: Record<string, string | num
 
 export async function sendWeeklyDigestTestAction(formData: FormData) {
   const session = await requireAdminSession();
+  const { organizationId } = await requireOrganizationContext(session.user);
   const digestType = String(formData.get('digestType') ?? 'user') === 'admin' ? 'admin' : 'user';
   const selectedUserId = toOptional(formData.get('userId')) ?? session.user.id;
   const recipientEmail = session.user.email;
@@ -41,7 +43,7 @@ export async function sendWeeklyDigestTestAction(formData: FormData) {
     const window = getWeeklyDigestWindow();
     const rendered =
       digestType === 'admin'
-        ? renderAdminWeeklyDigestEmail(await getAdminWeeklyDigest(window))
+        ? renderAdminWeeklyDigestEmail(await getAdminWeeklyDigest(window, organizationId))
         : renderUserWeeklyDigestEmail(await getUserWeeklyDigest(selectedUserId, window));
 
     await sendTestWeeklyDigestEmail({

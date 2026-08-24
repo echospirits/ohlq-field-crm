@@ -5,6 +5,8 @@ import { getOhlqWindowStartDate, summarizeLinkedWholesaleAccountSales } from '..
 import { prisma } from '../../lib/prisma';
 import { ContextualActions } from '../components/ContextualActions';
 import type { ReactNode } from 'react';
+import { getCurrentUser } from '../../lib/auth';
+import { getOrganizationContext, hasFeature } from '../../lib/organizations';
 
 const activeStatuses = [OpportunityStatus.OPEN, OpportunityStatus.ACTIONED, OpportunityStatus.SNOOZED];
 
@@ -53,10 +55,14 @@ function OpportunityRow({
 }
 
 export async function OpportunityAccountPanel({ agencyId, wholesaleAccountId, currentUserId, users, returnTo }: { agencyId?: string; wholesaleAccountId?: string; currentUserId: string; users: Array<{ id: string; name: string }>; returnTo?: string }) {
+  const user = await getCurrentUser();
+  const context = user ? await getOrganizationContext(user) : null;
+  if (!context || !(await hasFeature(context.organizationId, 'WHOLESALE_OPPORTUNITIES'))) return null;
+  const organizationId = context.organizationId;
   const isAgencyRollup = Boolean(agencyId && !wholesaleAccountId);
   const opportunityWhere: Prisma.SalesOpportunityWhereInput = wholesaleAccountId
-    ? { wholesaleAccountId, status: { in: activeStatuses } }
-    : { status: { in: activeStatuses }, wholesaleAccount: { agencyId: { equals: agencyId, mode: 'insensitive' } } };
+    ? { organizationId, wholesaleAccountId, status: { in: activeStatuses } }
+    : { organizationId, status: { in: activeStatuses }, wholesaleAccount: { agencyId: { equals: agencyId, mode: 'insensitive' } } };
   if (isAgencyRollup) {
     const [linkedAccounts, latestWholesaleReport] = await Promise.all([
       prisma.wholesaleAccount.findMany({
@@ -79,6 +85,7 @@ export async function OpportunityAccountPanel({ agencyId, wholesaleAccountId, cu
       }),
       prisma.worklistItem.count({
         where: {
+          organizationId,
           status: { in: ['OPEN', 'IN_PROGRESS'] },
           salesOpportunity: {
             is: {
@@ -151,9 +158,9 @@ export async function OpportunityAccountPanel({ agencyId, wholesaleAccountId, cu
       orderBy: [{ productionScore: 'desc' }, { lastDetectedAt: 'desc' }],
       take: 5,
     }),
-    prisma.accountSalesEvent.findMany({ where: { wholesaleAccountId }, orderBy: { reportDate: 'desc' }, take: 30 }),
-    prisma.loggedVisit.findMany({ where: { wholesaleAccountId, locationType: 'wholesale' }, orderBy: { visitAt: 'desc' }, take: 20, select: { id: true, visitAt: true, summary: true, createdBy: true } }),
-    prisma.worklistItem.findMany({ where: { wholesaleAccountId, status: { in: ['OPEN', 'IN_PROGRESS'] } }, orderBy: { dueDate: 'asc' }, take: 10, select: { id: true, title: true, dueDate: true, salesOpportunityId: true } }),
+    prisma.accountSalesEvent.findMany({ where: { organizationId, wholesaleAccountId }, orderBy: { reportDate: 'desc' }, take: 30 }),
+    prisma.loggedVisit.findMany({ where: { organizationId, wholesaleAccountId, locationType: 'wholesale' }, orderBy: { visitAt: 'desc' }, take: 20, select: { id: true, visitAt: true, summary: true, createdBy: true } }),
+    prisma.worklistItem.findMany({ where: { organizationId, wholesaleAccountId, status: { in: ['OPEN', 'IN_PROGRESS'] } }, orderBy: { dueDate: 'asc' }, take: 10, select: { id: true, title: true, dueDate: true, salesOpportunityId: true } }),
   ]);
   const timeline = [
     ...sales.map((event) => ({ at: event.reportDate, kind: 'purchase', title: `${event.itemCode} - ${event.itemName}`, detail: `${event.bottles} bottle${event.bottles === 1 ? '' : 's'} purchased` })),

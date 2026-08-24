@@ -87,17 +87,42 @@ export async function requireUserSession({ allowTaster = false }: UserAccessOpti
 export async function requireUser(options?: UserAccessOptions) {
   const { user } = await requireUserSession(options);
 
+  if (user.role === UserRole.PLATFORM_ADMIN) {
+    const { requireOrganizationContext } = await import('./organizations');
+    await requireOrganizationContext(user);
+  }
+
   return user;
 }
 
 export async function requireAdminSession() {
   const session = await requireUserSession();
 
-  if (session.user.role !== UserRole.ADMIN) {
+  if (session.user.role !== UserRole.ADMIN && session.user.role !== UserRole.PLATFORM_ADMIN) {
+    redirect('/');
+  }
+
+  if (session.user.role === UserRole.PLATFORM_ADMIN) {
+    const { requireOrganizationContext } = await import('./organizations');
+    await requireOrganizationContext(session.user);
+  }
+
+  return session;
+}
+
+export async function requirePlatformAdminSession() {
+  const session = await requireUserSession();
+
+  if (session.user.role !== UserRole.PLATFORM_ADMIN) {
     redirect('/');
   }
 
   return session;
+}
+
+export async function requirePlatformAdmin() {
+  const { user } = await requirePlatformAdminSession();
+  return user;
 }
 
 export async function requireAdmin() {

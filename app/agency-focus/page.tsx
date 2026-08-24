@@ -9,6 +9,7 @@ import { prisma } from '../../lib/prisma';
 import { updateAgencyOpportunity } from './actions';
 import { getUserDisplayName } from '../../lib/auth';
 import { ContextualActions } from '../components/ContextualActions';
+import { requireFeatureForUser } from '../../lib/organizations';
 
 export const metadata = buildPageMetadata('Agency Focus');
 
@@ -42,12 +43,14 @@ export default async function AgencyFocusPage({
   searchParams?: Promise<{ agencyId?: string; state?: string }>;
 }) {
   const currentUser = await requireUser();
+  const { organizationId } = await requireFeatureForUser(currentUser, 'AGENCY_INTELLIGENCE');
   const query = (await searchParams) ?? {};
   const state = Object.values(AgencyProductOpportunityState).includes(query.state as AgencyProductOpportunityState)
     ? query.state as AgencyProductOpportunityState
     : undefined;
   const [opportunities, users] = await Promise.all([prisma.agencyProductIntelligence.findMany({
     where: {
+      organizationId,
       status: { in: [OpportunityStatus.OPEN, OpportunityStatus.ACTIONED] },
       opportunityState: state ?? { in: actionableStates },
       ...(query.agencyId ? { agencyId: query.agencyId } : {}),
@@ -61,7 +64,7 @@ export default async function AgencyFocusPage({
     },
     orderBy: [{ priorityScore: 'desc' }, { lastDetectedAt: 'desc' }],
     take: 250,
-  }), prisma.user.findMany({ where: { isActive: true, role: { not: 'TASTER' } }, orderBy: [{ name: 'asc' }, { email: 'asc' }] })]);
+  }), prisma.user.findMany({ where: { organizationId, isActive: true, role: { notIn: ['TASTER', 'PLATFORM_ADMIN'] } }, orderBy: [{ name: 'asc' }, { email: 'asc' }] })]);
   const actionUsers = users.map((user) => ({ id: user.id, name: getUserDisplayName(user) }));
 
   return <>
