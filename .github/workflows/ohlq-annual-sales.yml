@@ -33,18 +33,31 @@ on:
         description: "Update wholesale account Echo purchase state/worklist without replacing raw sales rows."
         required: false
         type: boolean
+      deploymentEnvironment:
+        default: production
+        description: "GitHub Environment whose isolated database and OHLQ secrets will be used."
+        required: true
+        type: choice
+        options:
+          - production
+          - test
 
 concurrency:
-  group: ohlq-annual-sales-sync
+  group: ohlq-annual-sales-sync-${{ github.event_name == 'schedule' && 'production' || inputs.deploymentEnvironment }}
   cancel-in-progress: false
 
 jobs:
   sync:
     name: Download and import OHLQ reports
+    environment: ${{ github.event_name == 'schedule' && 'production' || inputs.deploymentEnvironment }}
     runs-on: ubuntu-latest
     timeout-minutes: 75
 
     env:
+      APP_ENV: ${{ github.event_name == 'schedule' && 'production' || inputs.deploymentEnvironment }}
+      DATABASE_ENVIRONMENT: ${{ github.event_name == 'schedule' && 'production' || inputs.deploymentEnvironment }}
+      DATABASE_TARGET_ID: ${{ vars.DATABASE_TARGET_ID }}
+      EXPECTED_DATABASE_HOST: ${{ vars.EXPECTED_DATABASE_HOST }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       OHLQ_OPS_USERNAME: ${{ secrets.OHLQ_OPS_USERNAME }}
       OHLQ_OPS_PASSWORD: ${{ secrets.OHLQ_OPS_PASSWORD }}
@@ -53,6 +66,7 @@ jobs:
       OHLQ_BROWSER_CHANNEL: ""
       OHLQ_CRON_REFRESH_DAYS: ${{ vars.OHLQ_CRON_REFRESH_DAYS || '2' }}
       OHLQ_HEADLESS: "1"
+      OHLQ_IMPORT_ENABLED: "true"
       OHLQ_REPORT_RETENTION_DAYS: ${{ vars.OHLQ_REPORT_RETENTION_DAYS || '30' }}
       OHLQ_USE_PERSISTENT_BROWSER_CONTEXT: "1"
       OHLQ_USE_SERVERLESS_CHROMIUM: "0"
@@ -119,6 +133,10 @@ jobs:
             printf 'Missing required GitHub secret(s): %s\n' "${missing[*]}" >&2
             exit 1
           fi
+
+      - name: Report isolated target
+        if: steps.schedule_window.outputs.should_run == 'true'
+        run: echo "environment=${APP_ENV} databaseTarget=${DATABASE_TARGET_ID:-unlabeled} runId=${GITHUB_RUN_ID}"
 
       - name: Run OHLQ annual sales import
         if: steps.schedule_window.outputs.should_run == 'true'

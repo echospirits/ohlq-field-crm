@@ -36,6 +36,7 @@ export const navigationItems: NavigationItem[] = [
   { key: 'users', href: '/users', label: 'Users', section: 'admin', adminOnly: true, moreOrder: 7 },
   { key: 'account-research', href: '/admin/account-research', label: 'Account Research', section: 'admin', adminOnly: true },
   { key: 'data-health', href: '/admin/data-status', label: 'Data Health', section: 'admin', adminOnly: true },
+  { key: 'environment', href: '/admin/environment', label: 'Environment', section: 'admin', adminOnly: true },
   { key: 'weekly-digest', href: '/admin/weekly-digest', label: 'Weekly Digest', section: 'admin', adminOnly: true },
   { key: 'opportunity-performance', href: '/admin/opportunity-performance', label: 'Opportunity Performance', section: 'admin', adminOnly: true },
 ];

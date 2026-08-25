@@ -16,6 +16,7 @@ import {
 } from '../../../../lib/githubActionsDispatch';
 import { getOhlqAnnualSalesReportDate } from '../../../../lib/ohlqAnnualSalesReport';
 import { runOhlqAnnualSalesWorkflow } from '../../../../lib/ohlqAnnualSalesWorkflow';
+import { isSideEffectEnabled, logEnvironmentEvent } from '../../../../lib/appEnvironment';
 
 const unauthorized = () => NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
@@ -25,6 +26,11 @@ export async function GET(request: Request) {
 
   if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
     return unauthorized();
+  }
+
+  if (!isSideEffectEnabled('cron') || !isSideEffectEnabled('ohlqImport')) {
+    logEnvironmentEvent('cron.ohlq-import.suppressed');
+    return NextResponse.json({ ok: true, skipped: true, environmentDisabled: true, reportDates: [] });
   }
 
   try {

@@ -13,12 +13,14 @@ import {
 } from '../../../../../lib/calendar/google';
 import { syncOutstandingWorklistItemsForUser } from '../../../../../lib/calendar/worklistSync';
 import { prisma } from '../../../../../lib/prisma';
+import { isSideEffectEnabled } from '../../../../../lib/appEnvironment';
 
 const redirectWithStatus = (request: Request, status: string) =>
   NextResponse.redirect(new URL(`/settings/calendar?status=${encodeURIComponent(status)}`, request.url));
 
 export async function GET(request: Request) {
   const user = await requireUser();
+  if (!isSideEffectEnabled('calendar')) return redirectWithStatus(request, 'environment-disabled');
   const url = new URL(request.url);
   const code = url.searchParams.get('code');
   const state = url.searchParams.get('state');

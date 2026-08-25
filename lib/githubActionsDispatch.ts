@@ -1,3 +1,5 @@
+import { getAppEnvironment } from './appEnvironment';
+
 export type GithubWorkflowDispatchResult = {
   ref: string;
   repository: string;
@@ -5,7 +7,6 @@ export type GithubWorkflowDispatchResult = {
 };
 
 const OHLQ_WORKFLOW_ID = 'ohlq-annual-sales.yml';
-const DEFAULT_GITHUB_ACTIONS_REF = 'main';
 
 const resolveRepository = () => {
   const explicitRepository = process.env.GITHUB_ACTIONS_REPOSITORY?.trim() || process.env.GITHUB_REPOSITORY?.trim();
@@ -22,8 +23,15 @@ export function getGithubActionsDispatchConfig() {
   const token = process.env.GITHUB_ACTIONS_DISPATCH_TOKEN?.trim();
   if (!token) return null;
 
+  const environment = getAppEnvironment();
+  const expectedRef = environment === 'production' ? 'main' : environment === 'test' ? 'tst' : null;
+  const ref = process.env.GITHUB_ACTIONS_REF?.trim() || expectedRef;
+  if (!ref || !expectedRef) return null;
+  if (ref !== expectedRef) throw new Error(`GITHUB_ACTIONS_REF=${ref} is unsafe for APP_ENV=${environment}; expected ${expectedRef}.`);
+
   return {
-    ref: process.env.GITHUB_ACTIONS_REF?.trim() || DEFAULT_GITHUB_ACTIONS_REF,
+    deploymentEnvironment: environment,
+    ref,
     repository: resolveRepository(),
     token,
     workflowId: process.env.GITHUB_ACTIONS_OHLQ_WORKFLOW_ID?.trim() || OHLQ_WORKFLOW_ID,
@@ -42,6 +50,7 @@ export async function dispatchOhlqAnnualSalesWorkflow({ reportDate }: { reportDa
       body: JSON.stringify({
         inputs: {
           days: '1',
+          deploymentEnvironment: config.deploymentEnvironment,
           reportDate,
         },
         ref: config.ref,

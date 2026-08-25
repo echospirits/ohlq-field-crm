@@ -11,6 +11,7 @@ import {
   isFutureOhlqReportDate,
   normalizeManualOhlqReportDate,
 } from '../../../../lib/ohlqManualImport';
+import { isSideEffectEnabled } from '../../../../lib/appEnvironment';
 
 const redirectToDataStatus = (request: Request, status: string, params?: Record<string, string | number>) => {
   const query = new URLSearchParams({ status });
@@ -30,6 +31,10 @@ export async function POST(request: Request) {
 
   if (session.user.role !== UserRole.ADMIN) {
     return NextResponse.redirect(new URL('/', request.url), 303);
+  }
+
+  if (!isSideEffectEnabled('ohlqImport')) {
+    return redirectToDataStatus(request, 'ohlq-error', { message: 'OHLQ imports are disabled in this environment.' });
   }
 
   const formData = await request.formData();

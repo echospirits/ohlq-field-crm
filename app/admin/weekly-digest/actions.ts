@@ -46,10 +46,11 @@ export async function sendWeeklyDigestTestAction(formData: FormData) {
         ? renderAdminWeeklyDigestEmail(await getAdminWeeklyDigest(window, organizationId))
         : renderUserWeeklyDigestEmail(await getUserWeeklyDigest(selectedUserId, window));
 
-    await sendTestWeeklyDigestEmail({
+    const delivery = await sendTestWeeklyDigestEmail({
       recipientEmail,
       rendered,
     });
+    if (delivery.suppressed) redirectWithStatus('test-suppressed');
   } catch (error) {
     redirectWithStatus('test-failed', {
       message: error instanceof Error ? error.message.slice(0, 120) : 'Unknown failure',

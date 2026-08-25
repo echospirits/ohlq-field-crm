@@ -5,6 +5,7 @@ import {
   isValidVisitPhotoUploadSessionId,
   MAX_VISIT_PHOTO_BYTES,
 } from '../../../../lib/visitPhotoUploadShared';
+import { isSideEffectEnabled } from '../../../../lib/appEnvironment';
 
 export const runtime = 'nodejs';
 
@@ -20,6 +21,9 @@ const getUploadSessionId = (clientPayload: string | null) => {
 };
 
 export async function POST(request: Request) {
+  if (!isSideEffectEnabled('fileUploads')) {
+    return Response.json({ error: 'File uploads are disabled in this environment.' }, { status: 503 });
+  }
   let body: HandleUploadBody;
 
   try {

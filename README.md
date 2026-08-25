@@ -24,6 +24,7 @@ npm run dev
 ```
 
 ## Deploy to Vercel
+- Follow [docs/environment-isolation.md](docs/environment-isolation.md). Production and staging use separate Vercel projects, databases, Blob stores, OAuth clients, secrets, and GitHub Environments.
 - Push this folder to GitHub.
 - Import the repo into Vercel.
 - Add `DATABASE_URL`, `APP_BASE_URL`, `CRON_SECRET`, `RESEND_API_KEY`, `EMAIL_FROM`, `BLOB_READ_WRITE_TOKEN`, `GITHUB_ACTIONS_DISPATCH_TOKEN`, optional `OHLQ_REPORT_RETENTION_DAYS`, and optional `EVENTBRITE_TOKEN` as environment variables.

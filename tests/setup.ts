@@ -1,0 +1,12 @@
+process.env.APP_ENV = 'development';
+process.env.APP_BASE_URL = 'http://localhost:3000';
+process.env.DATABASE_ENVIRONMENT = 'development';
+process.env.DATABASE_TARGET_ID = 'unit-test';
+process.env.BLOB_ENVIRONMENT = 'development';
+process.env.OAUTH_ENVIRONMENT = 'development';
+process.env.CALENDAR_SYNC_ENABLED = 'true';
+process.env.CRON_JOBS_ENABLED = 'false';
+process.env.EMAIL_SEND_ENABLED = 'false';
+process.env.FILE_UPLOADS_ENABLED = 'false';
+process.env.OHLQ_IMPORT_ENABLED = 'false';
+process.env.WEBHOOK_REGISTRATION_ENABLED = 'false';

@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { AppBreadcrumbs, AppSidebarNavigation, MobileTabbar } from './components/AppNavigation';
 import { GlobalSearchForm } from './components/GlobalSearchForm';
 import './styles.css';
+import { getAppEnvironment, getEnvironmentLabel } from '../lib/appEnvironment';
 
 export const metadata: Metadata = {
   applicationName: APP_NAME,
@@ -28,6 +29,7 @@ export const metadata: Metadata = {
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const appEnvironment = getAppEnvironment();
   const user = await getCurrentUser();
   const isTaster = user ? isTasterRole(user.role) : false;
   const organizationContext = user ? await getOrganizationContext(user) : null;
@@ -38,6 +40,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html lang="en">
       <body>
+        {appEnvironment !== 'production' ? (
+          <div className="environment-banner" role="status">
+            {APP_NAME} — {getEnvironmentLabel().toUpperCase()} ENVIRONMENT
+          </div>
+        ) : null}
         {user ? (
           <>
             <aside>

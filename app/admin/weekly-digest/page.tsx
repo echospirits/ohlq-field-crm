@@ -21,6 +21,7 @@ export const metadata = buildPageMetadata('Weekly Digest');
 
 const statusMessages: Record<string, string> = {
   'test-sent': 'Test digest sent to your email.',
+  'test-suppressed': 'Test digest was safely suppressed because email delivery is disabled in this environment.',
   'test-failed': 'Test digest failed.',
   'manual-sent': 'Manual weekly digest run finished.',
   'manual-failed': 'Manual weekly digest run failed.',

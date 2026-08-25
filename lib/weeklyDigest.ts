@@ -1093,6 +1093,21 @@ async function sendRenderedDigestWithLog({
       idempotencyKey: `${digestType}:${recipientEmail}:${window.pastStart.toISOString()}:${window.pastEnd.toISOString()}`,
     });
 
+    if (sent.suppressed) {
+      await prisma.weeklyDigestLog.update({
+        where: { id: log.id },
+        data: {
+          organizationId,
+          status: WeeklyDigestStatus.SKIPPED,
+          errorMessage: null,
+          lastSkippedAt: new Date(),
+          lastSkipReason: 'Email delivery is disabled in this environment.',
+          runAt: new Date(),
+        },
+      });
+      return { recipientEmail, digestType, status: 'skipped' };
+    }
+
     await prisma.weeklyDigestLog.update({
       where: { id: log.id },
       data: {

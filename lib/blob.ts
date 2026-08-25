@@ -1,5 +1,6 @@
 import { del, head, put } from '@vercel/blob';
 import { isVisitPhotoPathForSession, MAX_VISIT_PHOTO_BYTES } from './visitPhotoUploadShared';
+import { assertSideEffectEnabled } from './appEnvironment';
 
 const MAX_PHOTO_BYTES = MAX_VISIT_PHOTO_BYTES;
 
@@ -41,6 +42,7 @@ export const validateRecipePhotoFile = validatePhotoFile;
 export const validateMenuPlacementProofFile = validatePhotoFile;
 
 export async function uploadVisitPhoto(file: File, visitId: string, userId: string, index: number) {
+  assertSideEffectEnabled('fileUploads');
   const extension = extensionByContentType[file.type] ?? 'jpg';
   const storageKey = `visit-photos/${visitId}/${Date.now()}-${index}-${userId}.${extension}`;
   const blob = await put(storageKey, file, {
@@ -65,6 +67,7 @@ export async function verifyClientUploadedVisitPhoto({
   storageKey: string;
   url: string;
 }) {
+  assertSideEffectEnabled('fileUploads');
   if (!isVisitPhotoPathForSession(storageKey, sessionId)) {
     throw new Error('Visit photo pathname does not match its upload session.');
   }
@@ -83,6 +86,7 @@ export async function verifyClientUploadedVisitPhoto({
 }
 
 export async function uploadRecipePhoto(file: File, recipeId: string, userId: string) {
+  assertSideEffectEnabled('fileUploads');
   const extension = extensionByContentType[file.type] ?? 'jpg';
   const storageKey = `recipe-photos/${recipeId}/${Date.now()}-${userId}.${extension}`;
   const blob = await put(storageKey, file, {
@@ -99,6 +103,7 @@ export async function uploadRecipePhoto(file: File, recipeId: string, userId: st
 }
 
 export async function uploadMenuPlacementProof(file: File, accountId: string, userId: string) {
+  assertSideEffectEnabled('fileUploads');
   const extension = extensionByContentType[file.type] ?? 'jpg';
   const storageKey = `menu-placement-proofs/${accountId}/${Date.now()}-${userId}.${extension}`;
   const blob = await put(storageKey, file, {
@@ -118,6 +123,8 @@ export async function deleteStoredPhoto(urlOrPathname: string | null | undefined
   if (!urlOrPathname || !process.env.BLOB_READ_WRITE_TOKEN) {
     return;
   }
+
+  assertSideEffectEnabled('fileUploads');
 
   await del(urlOrPathname);
 }

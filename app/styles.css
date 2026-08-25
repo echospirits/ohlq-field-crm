@@ -4229,6 +4229,7 @@ legend {
 }
 
 .support-view-banner { align-items:center; background:#fff7d6; border:1px solid #d89b00; border-radius:.65rem; color:#6a4300; display:flex; gap:1rem; justify-content:space-between; margin-bottom:1rem; padding:.7rem .9rem; }
+.environment-banner { background:#6d28d9; color:#fff; font-size:.75rem; font-weight:800; letter-spacing:.08em; padding:.38rem .75rem; position:sticky; text-align:center; text-transform:uppercase; top:0; width:100%; z-index:1000; }
 .support-view-banner form { margin:0; }
 .platform-metrics { display:grid; gap:.75rem; grid-template-columns:repeat(4,minmax(0,1fr)); margin-bottom:1rem; }
 .platform-metrics article { display:grid; gap:.3rem; }

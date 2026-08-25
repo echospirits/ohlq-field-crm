@@ -9,6 +9,7 @@ import {
   isWeeklyDigestCronSendWindow,
   sendWeeklyDigestForAllUsers,
 } from '../../../../lib/weeklyDigest';
+import { isSideEffectEnabled, logEnvironmentEvent } from '../../../../lib/appEnvironment';
 
 const unauthorized = () => NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
@@ -18,6 +19,11 @@ export async function GET(request: Request) {
 
   if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
     return unauthorized();
+  }
+
+  if (!isSideEffectEnabled('cron') || !isSideEffectEnabled('email')) {
+    logEnvironmentEvent('cron.weekly-digest.suppressed');
+    return NextResponse.json({ attempted: 0, sent: 0, skipped: 0, failed: 0, environmentDisabled: true });
   }
 
   const now = new Date();

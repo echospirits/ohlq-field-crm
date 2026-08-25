@@ -8,6 +8,7 @@ import {
 } from '../dateTime';
 import { prisma } from '../prisma';
 import { APP_NAME } from '../appBrand';
+import { isSideEffectEnabled, logEnvironmentEvent } from '../appEnvironment';
 import { getCalendarProvider } from './index';
 import { CalendarProviderError, type CalendarEventInput, type ExternalCalendarEvent } from './types';
 
@@ -112,6 +113,10 @@ async function removeExternalEvent(item: NonNullable<WorklistForCalendar>, reaso
 }
 
 export async function syncWorklistItemCalendar(worklistItemId: string, { force = false } = {}) {
+  if (!isSideEffectEnabled('calendar')) {
+    logEnvironmentEvent('calendar.sync.suppressed', { worklistItemId });
+    return { status: 'environment-disabled' as const };
+  }
   const item = await loadWorklistItem(worklistItemId);
   if (!item) return { status: 'missing' as const };
   const existing = item.calendarEvents.find((event) => event.provider === GOOGLE);
@@ -218,6 +223,7 @@ async function applyGoogleChange(connectionId: string, event: ExternalCalendarEv
 }
 
 export async function syncGoogleCalendarConnection(connectionId: string) {
+  if (!isSideEffectEnabled('calendar')) return { skipped: 1, updated: 0, removed: 0, ignored: 0 };
   const connection = await prisma.calendarConnection.findUnique({ where: { id: connectionId } });
   if (!connection || connection.provider !== GOOGLE || !connection.syncEnabled || connection.requiresReconnect) return { skipped: 1, updated: 0, removed: 0, ignored: 0 };
   const provider = getCalendarProvider(GOOGLE);
@@ -256,6 +262,10 @@ export async function syncGoogleCalendarConnection(connectionId: string) {
 }
 
 export async function syncAllGoogleCalendarConnections() {
+  if (!isSideEffectEnabled('calendar')) {
+    logEnvironmentEvent('calendar.poll.suppressed');
+    return { attempted: 0, succeeded: 0, failed: 0, updated: 0, removed: 0, ignored: 0, retried: 0 };
+  }
   const connections = await prisma.calendarConnection.findMany({ where: { provider: GOOGLE, syncEnabled: true, requiresReconnect: false }, select: { id: true } });
   const result = { attempted: connections.length, succeeded: 0, failed: 0, updated: 0, removed: 0, ignored: 0, retried: 0 };
   for (const connection of connections) {
@@ -282,6 +292,7 @@ export async function syncAllGoogleCalendarConnections() {
 }
 
 export async function syncOutstandingWorklistItemsForUser(userId: string) {
+  if (!isSideEffectEnabled('calendar')) return 0;
   const items = await prisma.worklistItem.findMany({ where: { assignedToUserId: userId, dueDate: { not: null }, status: { in: ACTIVE_STATUSES } }, select: { id: true } });
   for (const item of items) await syncWorklistItemCalendar(item.id);
   return items.length;
