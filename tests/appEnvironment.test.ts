@@ -90,9 +90,14 @@ test('database reset is test-only and requires a one-time confirmation', () => {
 
 test('environment banner and protected diagnostics are wired into the app', () => {
   const layout = readFileSync('app/layout.tsx', 'utf8');
+  const styles = readFileSync('app/styles.css', 'utf8');
   const diagnostics = readFileSync('app/admin/environment/page.tsx', 'utf8');
   assert.match(layout, /appEnvironment !== 'production'/);
+  assert.match(layout, /has-environment-banner/);
   assert.match(layout, /ENVIRONMENT/);
+  assert.match(styles, /\.has-environment-banner\s*\{[^}]*padding-top:/s);
+  assert.match(styles, /\.environment-banner\s*\{[^}]*position:fixed;/s);
+  assert.match(styles, /\.environment-banner\s*\{[^}]*left:0;[^}]*right:0;/s);
   assert.match(diagnostics, /requireAdmin\(\)/);
   assert.doesNotMatch(diagnostics, /DATABASE_URL|CLIENT_SECRET|CRON_SECRET/);
 });

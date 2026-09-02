@@ -39,7 +39,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
 
   return (
     <html lang="en">
-      <body>
+      <body className={appEnvironment !== 'production' ? 'has-environment-banner' : undefined}>
         {appEnvironment !== 'production' ? (
           <div className="environment-banner" role="status">
             {APP_NAME} — {getEnvironmentLabel().toUpperCase()} ENVIRONMENT
