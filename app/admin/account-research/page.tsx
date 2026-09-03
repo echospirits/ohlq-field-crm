@@ -4,11 +4,11 @@ export const maxDuration = 300;
 
 import Link from 'next/link';
 import { buildPageMetadata } from '../../../lib/appBrand';
-import { requireAdmin } from '../../../lib/auth';
+import { requirePlatformAdmin } from '../../../lib/auth';
 import { getAccountResearchQueue, PURSUED_RESEARCH_DAYS, STANDARD_RESEARCH_DAYS } from '../../../lib/accountResearch';
 import { formatEasternDateTime } from '../../../lib/dateTime';
 import { prisma } from '../../../lib/prisma';
-import { requireFeatureForUser } from '../../../lib/organizations';
+import { requireFeatureForUser, requireOrganizationContext } from '../../../lib/organizations';
 import { PageHeader, SectionHeading } from '../../components/PageChrome';
 import { uploadAccountResearchCsv } from './actions';
 
@@ -24,7 +24,8 @@ const statusMessage = (params: { status?: string; rows?: string; imported?: stri
 };
 
 export default async function AccountResearchPage({ searchParams }: { searchParams?: Promise<{ status?: string; rows?: string; imported?: string; errors?: string; detail?: string }> }) {
-  const user = await requireAdmin();
+  const user = await requirePlatformAdmin();
+  await requireOrganizationContext(user);
   await requireFeatureForUser(user, 'ADVANCED_INTELLIGENCE');
   const params = (await searchParams) ?? {};
   const [dueAccounts, latestResearch, completedCount] = await Promise.all([

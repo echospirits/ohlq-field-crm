@@ -44,9 +44,11 @@ test('organization setup access separates tenant configuration from platform dat
   const tenantAdminItems = getNavigationItems('admin', [], false);
   assert.equal(tenantAdminItems.some((item) => item.href === '/admin/organization'), true);
   assert.equal(tenantAdminItems.some((item) => item.href === '/admin/data-status'), false);
+  assert.equal(getNavigationItems('admin', ['ADVANCED_INTELLIGENCE'], false).some((item) => item.href === '/admin/account-research'), false);
   assert.equal(tenantAdminItems.some((item) => item.href === '/admin/opportunity-performance'), false);
   assert.equal(getNavigationItems('admin', ['WHOLESALE_OPPORTUNITIES'], false).some((item) => item.href === '/admin/opportunity-performance'), true);
   assert.equal(getNavigationItems('admin', [], true).some((item) => item.href === '/admin/data-status'), true);
+  assert.equal(getNavigationItems('admin', ['ADVANCED_INTELLIGENCE'], true).some((item) => item.href === '/admin/account-research'), true);
 
   const organizationPage = readFileSync('app/admin/organization/page.tsx', 'utf8');
   assert.match(organizationPage, /requireOrganizationContext/);
@@ -68,6 +70,9 @@ test('manual shared OHLQ data loads require Platform Admin', () => {
   assert.match(dataStatus, /requirePlatformAdminSession/);
   assert.doesNotMatch(dataStatus, /requireAdminSession/);
   assert.match(manualImport, /session\.user\.role !== UserRole\.PLATFORM_ADMIN/);
+  for (const path of ['app/admin/account-research/page.tsx', 'app/admin/account-research/actions.ts', 'app/api/admin/account-research/export/route.ts']) {
+    assert.match(readFileSync(path, 'utf8'), /requirePlatformAdmin/);
+  }
 });
 
 test('intelligence sections are omitted from core-only dashboards and account pages', () => {

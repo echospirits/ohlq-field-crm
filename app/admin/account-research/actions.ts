@@ -2,9 +2,9 @@
 
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
-import { getUserDisplayName, requireAdmin } from '../../../lib/auth';
+import { getUserDisplayName, requirePlatformAdmin } from '../../../lib/auth';
 import { importAccountResearchCsv } from '../../../lib/accountResearch';
-import { requireFeatureForUser } from '../../../lib/organizations';
+import { requireFeatureForUser, requireOrganizationContext } from '../../../lib/organizations';
 
 const returnWith = (values: Record<string, string | number>): never => {
   const query = new URLSearchParams();
@@ -13,7 +13,8 @@ const returnWith = (values: Record<string, string | number>): never => {
 };
 
 export async function uploadAccountResearchCsv(formData: FormData) {
-  const user = await requireAdmin();
+  const user = await requirePlatformAdmin();
+  await requireOrganizationContext(user);
   await requireFeatureForUser(user, 'ADVANCED_INTELLIGENCE');
   const file = formData.get('researchFile');
   const dryRun = String(formData.get('mode') ?? 'dry-run') !== 'commit';

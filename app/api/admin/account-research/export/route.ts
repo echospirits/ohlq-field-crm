@@ -1,12 +1,13 @@
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-import { requireAdminSession } from '../../../../../lib/auth';
+import { requirePlatformAdminSession } from '../../../../../lib/auth';
 import { createAccountResearchCsv, getAccountResearchQueue, normalizeResearchExportLimit } from '../../../../../lib/accountResearch';
-import { requireFeatureForUser } from '../../../../../lib/organizations';
+import { requireFeatureForUser, requireOrganizationContext } from '../../../../../lib/organizations';
 
 export async function GET(request: Request) {
-  const session = await requireAdminSession();
+  const session = await requirePlatformAdminSession();
+  await requireOrganizationContext(session.user);
   await requireFeatureForUser(session.user, 'ADVANCED_INTELLIGENCE');
   const url = new URL(request.url);
   const limit = normalizeResearchExportLimit(url.searchParams.get('limit'));
