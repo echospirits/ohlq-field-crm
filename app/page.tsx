@@ -11,7 +11,7 @@ import { buildPageMetadata } from '../lib/appBrand';
 import { getUserDisplayName, requireUser } from '../lib/auth';
 import { EASTERN_TIME_ZONE } from '../lib/dateTime';
 import { prisma } from '../lib/prisma';
-import { requireOrganizationContext } from '../lib/organizations';
+import { getOrganizationFeatures, requireOrganizationContext } from '../lib/organizations';
 import { DashboardOpportunitySummary } from './components/DashboardOpportunitySummary';
 import { DashboardAgencyIntelligence } from './components/DashboardAgencyIntelligence';
 
@@ -173,6 +173,7 @@ function MetricSplits({ agency, wholesale }: { agency: number; wholesale: number
 export default async function Dashboard() {
   const user = await requireUser();
   const { organizationId } = await requireOrganizationContext(user);
+  const enabledFeatures = await getOrganizationFeatures(organizationId);
   const ranges = getDashboardRanges();
   const visitQueryStart = ranges.weekStart < ranges.monthStart ? ranges.weekStart : ranges.monthStart;
 
@@ -281,7 +282,7 @@ export default async function Dashboard() {
         </Link>
         <Link className="quick-action-card" href="/accounts">
           <strong>Find account</strong>
-          <span>Agency, wholesale, or opportunity</span>
+          <span>{enabledFeatures.has('WHOLESALE_OPPORTUNITIES') ? 'Agency, wholesale, or opportunity' : 'Agency or wholesale'}</span>
         </Link>
         <Link className="quick-action-card" href="/my-week">
           <strong>My Week</strong>
@@ -297,9 +298,9 @@ export default async function Dashboard() {
         <Link className="btn secondary compact-btn" href="/alerts">Open full worklist</Link>
       </div>
 
-      <DashboardOpportunitySummary organizationId={organizationId} />
+      {enabledFeatures.has('WHOLESALE_OPPORTUNITIES') ? <DashboardOpportunitySummary organizationId={organizationId} /> : null}
 
-      <DashboardAgencyIntelligence organizationId={organizationId} />
+      {enabledFeatures.has('AGENCY_INTELLIGENCE') ? <DashboardAgencyIntelligence organizationId={organizationId} /> : null}
 
       <div className="grid">
         <div className="card metric-card">

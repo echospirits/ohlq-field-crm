@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { buildPageMetadata } from '../../lib/appBrand';
 import { requireUser } from '../../lib/auth';
+import { getOrganizationFeatures, requireOrganizationContext } from '../../lib/organizations';
 import { isTasterRole } from '../../lib/userAccess';
 import { AccountViewNavigation } from '../components/AccountViewNavigation';
 
@@ -28,6 +29,8 @@ const accountAreas = [
 export default async function AccountsPage() {
   const user = await requireUser();
   if (isTasterRole(user.role)) redirect('/visits/new');
+  const { organizationId } = await requireOrganizationContext(user);
+  const hasIntelligence = (await getOrganizationFeatures(organizationId)).has('WHOLESALE_OPPORTUNITIES');
 
   return (
     <>
@@ -35,7 +38,7 @@ export default async function AccountsPage() {
         <div>
           <span className="page-eyebrow">Accounts</span>
           <h1>Find the right account</h1>
-          <p className="muted">Start with the account type, then use Opportunities to prioritize the next best work.</p>
+          <p className="muted">{hasIntelligence ? 'Start with the account type, then use Opportunities to prioritize the next best work.' : 'Start with the account type, then find and manage the right locations.'}</p>
         </div>
         <Link className="btn" href="/visits/new">Log Visit</Link>
       </header>
@@ -59,7 +62,7 @@ export default async function AccountsPage() {
           <p className="muted">Manage reusable tags that help the team group and find locations.</p>
         </div>
         <div className="page-actions">
-          <Link className="btn" href="/opportunities">View opportunities</Link>
+          {hasIntelligence ? <Link className="btn" href="/opportunities">View opportunities</Link> : null}
           <Link className="btn secondary" href="/tags">Manage tags</Link>
         </div>
       </section>

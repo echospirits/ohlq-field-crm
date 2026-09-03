@@ -85,14 +85,14 @@ async function executeStep(organizationId: string, kind: ProvisioningStepKind) {
   if (kind === ProvisioningStepKind.VALIDATE_CONFIGURATION) {
     const organization = await prisma.organization.findUnique({
       where: { id: organizationId },
-      include: { features: true, vendorIdentifiers: { where: { active: true } } },
+      include: { a3aStoreIdentifiers: { where: { active: true } }, features: true, vendorIdentifiers: { where: { active: true } } },
     });
     if (!organization) throw new Error('Organization no longer exists.');
     if (!organization.name || !organization.displayName || !organization.slug || !organization.timezone) throw new Error('Organization identity is incomplete.');
     if (!organization.contactEmail) throw new Error('A customer contact email is required.');
     if (!organization.features.length) throw new Error('At least one entitlement must be configured.');
     if (!organization.vendorIdentifiers.length) return { waiting: true, message: 'Add at least one active Vendor ID.' };
-    return { organizationId, vendorIds: organization.vendorIdentifiers.length };
+    return { a3aStoreIds: organization.a3aStoreIdentifiers.length, organizationId, vendorIds: organization.vendorIdentifiers.length };
   }
 
   if (kind === ProvisioningStepKind.DISCOVER_PRODUCTS) {

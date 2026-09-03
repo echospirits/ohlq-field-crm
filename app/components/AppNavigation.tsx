@@ -14,7 +14,6 @@ type NavGroup = {
   label: string;
 };
 
-const adminItems = getNavigationItems('admin');
 const mobileItems = getMobileNavigationItems();
 
 const isActivePath = (pathname: string, item: NavigationItem, useSectionMatch = false) => {
@@ -65,6 +64,7 @@ export function AppSidebarNavigation({ enabledFeatures, isAdmin, isPlatformAdmin
   const pathname = usePathname();
   const workItems = getNavigationItems('work', enabledFeatures);
   const accountItems = getNavigationItems('accounts', enabledFeatures);
+  const adminItems = getNavigationItems('admin', enabledFeatures, isPlatformAdmin);
 
   if (isTaster) {
     return (
@@ -130,6 +130,7 @@ const getBreadcrumbs = (pathname: string): BreadcrumbItem[] => {
     { prefix: '/accounts', crumbs: [{ href: '/accounts', label: 'Accounts' }] },
     { prefix: '/users', crumbs: [{ href: '/users', label: 'Administration' }, { href: '/users', label: 'Users' }] },
     { prefix: '/admin/account-research', crumbs: [{ href: '/users', label: 'Administration' }, { href: pathname, label: 'Account Research' }] },
+    { prefix: '/admin/organization', crumbs: [{ href: '/users', label: 'Administration' }, { href: pathname, label: 'Organization Setup' }] },
     { prefix: '/admin/data-status', crumbs: [{ href: '/users', label: 'Administration' }, { href: pathname, label: 'Data Health' }] },
     { prefix: '/admin/weekly-digest', crumbs: [{ href: '/users', label: 'Administration' }, { href: pathname, label: 'Weekly Digest' }] },
     { prefix: '/admin/opportunity-performance', crumbs: [{ href: '/users', label: 'Administration' }, { href: pathname, label: 'Opportunity Performance' }] },
@@ -162,9 +163,9 @@ export function AppBreadcrumbs({ isTaster }: { isTaster: boolean }) {
   );
 }
 
-export function MobileTabbar({ enabledFeatures, isAdmin, isTaster }: { enabledFeatures: string[]; isAdmin: boolean; isTaster: boolean }) {
+export function MobileTabbar({ enabledFeatures, isAdmin, isPlatformAdmin, isTaster }: { enabledFeatures: string[]; isAdmin: boolean; isPlatformAdmin: boolean; isTaster: boolean }) {
   const pathname = usePathname();
-  const moreItems = getMoreNavigationItems(isAdmin, enabledFeatures);
+  const moreItems = getMoreNavigationItems(isAdmin, enabledFeatures, isPlatformAdmin);
 
   if (isTaster) return null;
 

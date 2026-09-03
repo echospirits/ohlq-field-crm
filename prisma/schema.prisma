@@ -213,6 +213,7 @@ enum OrganizationAuditAction {
   FEATURE_CHANGED
   VENDOR_IDENTIFIER_ADDED
   VENDOR_IDENTIFIER_REMOVED
+  A3A_STORE_CONFIGURATION_CHANGED
   PRODUCT_CONFIGURATION_CHANGED
   INITIAL_ADMIN_CREATED
   SUPPORT_VIEW_STARTED
@@ -364,56 +365,57 @@ model User {
 }
 
 model Organization {
-  id                 String                         @id @default(cuid())
-  name               String
-  displayName        String
-  slug               String                         @unique
-  active             Boolean                        @default(true)
-  primaryState       String                         @default("OH")
-  timezone           String                         @default("America/New_York")
-  website            String?
-  logoUrl            String?
-  appName            String                         @default("Neat")
-  digestName         String                         @default("Neat")
-  productLabel       String                         @default("product")
-  productPluralLabel String                         @default("products")
-  brandPrimaryColor  String                         @default("#2458ff")
-  brandAccentColor   String                         @default("#6d28d9")
-  contactName        String?
-  contactEmail       String?
-  contactPhone       String?
-  supportEmail       String?
-  settings           Json                           @default("{}")
-  accountStatus      OrganizationStatus             @default(TRIAL)
-  onboardingStatus   OrganizationOnboardingStatus   @default(PROVISIONING)
-  onboardingData     Json                           @default("{}")
-  notes              String?
-  createdAt          DateTime                       @default(now())
-  updatedAt          DateTime                       @updatedAt
-  vendorIdentifiers  OrganizationVendorIdentifier[]
-  products           OrganizationProduct[]
-  features           OrganizationFeature[]
-  accountOverlays    OrganizationAccountOverlay[]
-  auditEvents        OrganizationAuditEvent[]
-  provisioningRuns   OrganizationProvisioningRun[]
-  weeklyDigestLogs   WeeklyDigestLog[]
-  tags               Tag[]
-  menuPlacements     MenuPlacement[]
-  recipes            Recipe[]
-  recipeSuggestions  RecipeSuggestion[]
-  targetProfiles     TargetAccountProfile[]
-  locationTags       LocationTag[]
-  locationContacts   LocationContact[]
-  loggedVisits       LoggedVisit[]
-  visitPhotos        VisitPhoto[]
-  worklistItems      WorklistItem[]
-  agencyProducts     AgencyProductIntelligence[]
-  agencySummaries    AgencyIntelligenceSummary[]
-  agencyEvents       AgencyIntelligenceEvent[]
-  opportunitySignals OpportunityAccountSignal[]
-  accountSalesEvents AccountSalesEvent[]
-  salesOpportunities SalesOpportunity[]
-  opportunityEvents  OpportunityEvent[]
+  id                  String                           @id @default(cuid())
+  name                String
+  displayName         String
+  slug                String                           @unique
+  active              Boolean                          @default(true)
+  primaryState        String                           @default("OH")
+  timezone            String                           @default("America/New_York")
+  website             String?
+  logoUrl             String?
+  appName             String                           @default("Neat")
+  digestName          String                           @default("Neat")
+  productLabel        String                           @default("product")
+  productPluralLabel  String                           @default("products")
+  brandPrimaryColor   String                           @default("#2458ff")
+  brandAccentColor    String                           @default("#6d28d9")
+  contactName         String?
+  contactEmail        String?
+  contactPhone        String?
+  supportEmail        String?
+  settings            Json                             @default("{}")
+  accountStatus       OrganizationStatus               @default(TRIAL)
+  onboardingStatus    OrganizationOnboardingStatus     @default(PROVISIONING)
+  onboardingData      Json                             @default("{}")
+  notes               String?
+  createdAt           DateTime                         @default(now())
+  updatedAt           DateTime                         @updatedAt
+  vendorIdentifiers   OrganizationVendorIdentifier[]
+  a3aStoreIdentifiers OrganizationA3aStoreIdentifier[]
+  products            OrganizationProduct[]
+  features            OrganizationFeature[]
+  accountOverlays     OrganizationAccountOverlay[]
+  auditEvents         OrganizationAuditEvent[]
+  provisioningRuns    OrganizationProvisioningRun[]
+  weeklyDigestLogs    WeeklyDigestLog[]
+  tags                Tag[]
+  menuPlacements      MenuPlacement[]
+  recipes             Recipe[]
+  recipeSuggestions   RecipeSuggestion[]
+  targetProfiles      TargetAccountProfile[]
+  locationTags        LocationTag[]
+  locationContacts    LocationContact[]
+  loggedVisits        LoggedVisit[]
+  visitPhotos         VisitPhoto[]
+  worklistItems       WorklistItem[]
+  agencyProducts      AgencyProductIntelligence[]
+  agencySummaries     AgencyIntelligenceSummary[]
+  agencyEvents        AgencyIntelligenceEvent[]
+  opportunitySignals  OpportunityAccountSignal[]
+  accountSalesEvents  AccountSalesEvent[]
+  salesOpportunities  SalesOpportunity[]
+  opportunityEvents   OpportunityEvent[]
 
   @@index([active, accountStatus])
   @@index([onboardingStatus])
@@ -474,6 +476,21 @@ model OrganizationVendorIdentifier {
 
   @@unique([organizationId, market, vendorId])
   @@index([market, vendorId])
+}
+
+model OrganizationA3aStoreIdentifier {
+  id             String       @id @default(cuid())
+  organizationId String
+  market         String       @default("OH")
+  storeId        String
+  active         Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, market, storeId])
+  @@index([market, storeId])
+  @@index([organizationId, active])
 }
 
 model OrganizationProduct {

@@ -7,7 +7,7 @@ import { revalidatePath } from 'next/cache';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { buildPageMetadata } from '../../../lib/appBrand';
-import { requireAdminSession } from '../../../lib/auth';
+import { requirePlatformAdminSession } from '../../../lib/auth';
 import { EASTERN_TIME_ZONE, formatEasternDateTime } from '../../../lib/dateTime';
 import { importOhlqBrandMasterCsv } from '../../../lib/ohlqBrandMasterImport';
 import {
@@ -154,7 +154,7 @@ const redirectWithDataStatus = (status: string, params?: Record<string, string |
 async function importBrandMaster(formData: FormData) {
   'use server';
 
-  await requireAdminSession();
+  await requirePlatformAdminSession();
   const file = formData.get('brandMasterFile');
 
   if (!(file instanceof File) || file.size === 0) {
@@ -194,7 +194,7 @@ export default async function DataStatusPage({
     wholesaleRows?: string;
   }>;
 }) {
-  await requireAdminSession();
+  await requirePlatformAdminSession();
 
   const params = (await searchParams) ?? {};
   const dates = getReportDateRange();

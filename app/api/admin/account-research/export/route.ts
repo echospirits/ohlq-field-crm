@@ -3,9 +3,11 @@ export const runtime = 'nodejs';
 
 import { requireAdminSession } from '../../../../../lib/auth';
 import { createAccountResearchCsv, getAccountResearchQueue, normalizeResearchExportLimit } from '../../../../../lib/accountResearch';
+import { requireFeatureForUser } from '../../../../../lib/organizations';
 
 export async function GET(request: Request) {
-  await requireAdminSession();
+  const session = await requireAdminSession();
+  await requireFeatureForUser(session.user, 'ADVANCED_INTELLIGENCE');
   const url = new URL(request.url);
   const limit = normalizeResearchExportLimit(url.searchParams.get('limit'));
   const includeFresh = url.searchParams.get('scope') === 'all';

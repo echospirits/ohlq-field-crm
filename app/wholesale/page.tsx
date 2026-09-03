@@ -10,7 +10,7 @@ import { requireUser } from '../../lib/auth';
 import { formatEasternDate } from '../../lib/dateTime';
 import { getGeocodeResetForAddressChange } from '../../lib/location/geocode';
 import { prisma } from '../../lib/prisma';
-import { requireOrganizationContext } from '../../lib/organizations';
+import { getOrganizationFeatures, requireOrganizationContext } from '../../lib/organizations';
 import {
   formatWholesaleLicenseeIds,
   getPrimaryWholesaleLicenseeId,
@@ -107,8 +107,8 @@ const toOptional = (value: string | undefined) => {
 
 const formatMetric = (value: number | null, suffix = '') => (value === null ? 'n/a' : `${value.toFixed(1)}${suffix}`);
 
-const isWholesaleSortKey = (value: string | undefined): value is WholesaleSortKey =>
-  wholesaleSortColumns.some((column) => column.key === value);
+const isWholesaleSortKey = (value: string | undefined, columns = wholesaleSortColumns): value is WholesaleSortKey =>
+  columns.some((column) => column.key === value);
 
 const getDefaultSortDirection = (sortKey: WholesaleSortKey): SortDirection =>
   descendingDefaultSortKeys.has(sortKey) ? 'desc' : 'asc';
@@ -393,7 +393,7 @@ async function createWholesale(formData: FormData) {
   redirect('/wholesale?status=saved');
 }
 
-const wholesaleSearchWhere = (q: string, organizationId: string): Prisma.WholesaleAccountWhereInput => ({
+const wholesaleSearchWhere = (q: string, organizationId: string, includeIntelligence: boolean): Prisma.WholesaleAccountWhereInput => ({
   OR: [
     { name: { contains: q, mode: 'insensitive' } },
     ...getWholesaleLicenseeIdTextSearchWhere(q),
@@ -403,9 +403,11 @@ const wholesaleSearchWhere = (q: string, organizationId: string): Prisma.Wholesa
     { tags: { some: { organizationId, tag: { name: { contains: q, mode: 'insensitive' } } } } },
     { menuPlacements: { some: { organizationId, product: { contains: q, mode: 'insensitive' } } } },
     { menuPlacements: { some: { organizationId, menuItemName: { contains: q, mode: 'insensitive' } } } },
-    { opportunities: { some: { organizationId, title: { contains: q, mode: 'insensitive' } } } },
-    { opportunities: { some: { organizationId, recommendedAction: { contains: q, mode: 'insensitive' } } } },
-    { opportunities: { some: { organizationId, targetCategory: { contains: q, mode: 'insensitive' } } } },
+    ...(includeIntelligence ? [
+      { opportunities: { some: { organizationId, title: { contains: q, mode: 'insensitive' as const } } } },
+      { opportunities: { some: { organizationId, recommendedAction: { contains: q, mode: 'insensitive' as const } } } },
+      { opportunities: { some: { organizationId, targetCategory: { contains: q, mode: 'insensitive' as const } } } },
+    ] : []),
   ],
 });
 
@@ -429,15 +431,20 @@ export default async function WholesalePage({
 }) {
   const user = await requireUser();
   const { organizationId } = await requireOrganizationContext(user);
+  const enabledFeatures = await getOrganizationFeatures(organizationId);
+  const hasWholesaleOpportunities = enabledFeatures.has('WHOLESALE_OPPORTUNITIES');
+  const visibleSortColumns = hasWholesaleOpportunities
+    ? wholesaleSortColumns
+    : wholesaleSortColumns.filter((column) => !['opportunityPriority', 'opportunityScore', 'nextAction'].includes(column.key));
 
   const params = (await searchParams) ?? {};
   const q = (params.q ?? '').trim();
-  const sortKey = isWholesaleSortKey(params.sort) ? params.sort : 'name';
+  const sortKey = isWholesaleSortKey(params.sort, visibleSortColumns) ? params.sort : 'name';
   const sortDirection = getSortDirection(params.dir, sortKey);
   const requestedPage = Number.parseInt(params.page ?? '1', 10);
   const accountWhere: Prisma.WholesaleAccountWhereInput = {
     isActive: true,
-    ...(q ? wholesaleSearchWhere(q, organizationId) : {}),
+    ...(q ? wholesaleSearchWhere(q, organizationId, hasWholesaleOpportunities) : {}),
   };
 
   const [accounts, tags, officialCandidates] = await Promise.all([
@@ -517,7 +524,7 @@ export default async function WholesalePage({
             },
             _max: { visitAt: true },
           }),
-          prisma.salesOpportunity.findMany({
+          hasWholesaleOpportunities ? prisma.salesOpportunity.findMany({
             where: {
               organizationId,
               wholesaleAccountId: { in: accountIds },
@@ -530,7 +537,7 @@ export default async function WholesalePage({
               productionScore: true,
               recommendedAction: true,
             },
-          }),
+          }) : Promise.resolve([]),
         ])
       : [[], []];
   const visitStatMap = Object.fromEntries(
@@ -605,7 +612,7 @@ export default async function WholesalePage({
         <input name="page" type="hidden" value="1" />
         <label>Sort by</label>
         <select name="sort" defaultValue={sortKey}>
-          {wholesaleSortColumns.map((column) => (
+          {visibleSortColumns.map((column) => (
             <option key={column.key} value={column.key}>
               {column.label}
             </option>
@@ -675,7 +682,7 @@ export default async function WholesalePage({
         <table className="responsive-table">
           <thead>
             <tr>
-              {wholesaleSortColumns.map((column) => (
+              {visibleSortColumns.map((column) => (
                 <SortableHeader
                   currentSortDirection={sortDirection}
                   currentSortKey={sortKey}
@@ -723,11 +730,12 @@ export default async function WholesalePage({
                 <td data-label="Address">{row.address}</td>
                 <td data-label="City">{row.city}</td>
                 <td data-label="Most Recent Visit">{formatEasternDate(row.mostRecentVisit)}</td>
-                <td data-label="Opportunity Priority">
+                {hasWholesaleOpportunities ? <><td data-label="Opportunity Priority">
                   {row.opportunityPriority ? <span className={`priority priority-${row.opportunityPriority.toLowerCase()}`}>{row.opportunityPriority}</span> : <span className="muted">None active</span>}
                 </td>
                 <td data-label="Opportunity Score">{formatMetric(row.opportunityScore)}</td>
                 <td data-label="Next Action">{row.nextAction ?? '—'}</td>
+                </> : null}
               </tr>
             ))}
           </tbody>

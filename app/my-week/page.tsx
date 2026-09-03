@@ -11,7 +11,7 @@ import { syncWorklistItemCalendar } from '../../lib/calendar/worklistSync';
 import { evaluateOpportunityIntelligence } from '../../lib/opportunityEngine';
 import { splitReactivationPurchasedAgainDetail } from '../../lib/ohlqWholesaleReactivation';
 import { prisma } from '../../lib/prisma';
-import { requireOrganizationContext } from '../../lib/organizations';
+import { getOrganizationFeatures, requireOrganizationContext } from '../../lib/organizations';
 import { getAgenciesForVisitPicker, getWholesaleAccountsForVisitPicker } from '../../lib/visitPickerOptions';
 import { getWorklistLocationFallbackLabel, getWorklistLocations } from '../../lib/worklistLocations';
 import { createVisit } from '../visits/actions';
@@ -212,6 +212,11 @@ async function updateWorklistItem(formData: FormData) {
 export default async function MyWeekPage() {
   const currentUser = await requireUser();
   const { organizationId } = await requireOrganizationContext(currentUser);
+  const enabledFeatures = await getOrganizationFeatures(organizationId);
+  const excludedIntelligenceSources: WorklistSource[] = [
+    ...(!enabledFeatures.has('AGENCY_INTELLIGENCE') ? [WorklistSource.AGENCY_INTELLIGENCE] : []),
+    ...(!enabledFeatures.has('WHOLESALE_OPPORTUNITIES') ? [WorklistSource.OPPORTUNITY_INTELLIGENCE] : []),
+  ];
   const actorName = getUserDisplayName(currentUser);
   const ranges = getWeekRange();
   const assignedWhere: Prisma.WorklistItemWhereInput = {
@@ -228,6 +233,7 @@ export default async function MyWeekPage() {
     prisma.worklistItem.findMany({
       where: {
         organizationId,
+        ...(excludedIntelligenceSources.length ? { source: { notIn: excludedIntelligenceSources } } : {}),
         AND: [
           assignedWhere,
           { status: { notIn: inactiveWorklistStatuses } },
@@ -304,7 +310,7 @@ export default async function MyWeekPage() {
           </p>
         </div>
       </header>
-      <WorkViewNavigation active="week" />
+      <WorkViewNavigation active="week" showPursuing={enabledFeatures.has('WHOLESALE_OPPORTUNITIES')} />
 
       <div className="grid account-summary-grid">
         <div className="card metric-card">

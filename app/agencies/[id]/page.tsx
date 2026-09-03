@@ -8,7 +8,7 @@ import { getUserDisplayName, requireUser } from '../../../lib/auth';
 import { formatEasternDate } from '../../../lib/dateTime';
 import { getAgencyRecentItemSales } from '../../../lib/ohlqSalesData';
 import { prisma } from '../../../lib/prisma';
-import { requireOrganizationContext } from '../../../lib/organizations';
+import { getOrganizationFeatures, requireOrganizationContext } from '../../../lib/organizations';
 import { AgencyRecentSalesCard } from '../AgencyRecentSalesCard';
 import { AgencyIntelligencePanel } from '../AgencyIntelligencePanel';
 import { AccountTagPanel } from '../../tags/AccountTagPanel';
@@ -45,6 +45,9 @@ export default async function AgencyActivityPage({
 }) {
   const currentUser = await requireUser();
   const { organizationId } = await requireOrganizationContext(currentUser);
+  const enabledFeatures = await getOrganizationFeatures(organizationId);
+  const hasAgencyIntelligence = enabledFeatures.has('AGENCY_INTELLIGENCE');
+  const hasWholesaleOpportunities = enabledFeatures.has('WHOLESALE_OPPORTUNITIES');
   const { id } = await params;
   const query = (await searchParams) ?? {};
 
@@ -118,7 +121,7 @@ export default async function AgencyActivityPage({
       {query.tagStatus ? <p className="pill">{tagStatusMessages[query.tagStatus] ?? query.tagStatus}</p> : null}
       <AccountWorkspaceNavigation sections={[
         { href: '#overview', label: 'Overview' },
-        { href: '#intelligence', label: 'Intelligence' },
+        ...(hasAgencyIntelligence || hasWholesaleOpportunities ? [{ href: '#intelligence', label: 'Intelligence' }] : []),
         { href: '#current-inventory', label: 'Inventory' },
         { href: '#sales', label: 'Sales' },
         { href: '#wholesale-influence', label: 'Wholesale' },
@@ -162,13 +165,13 @@ export default async function AgencyActivityPage({
         />
       </div>
 
-      <div className="account-workspace-section">
+      {hasAgencyIntelligence ? <div className="account-workspace-section" id="intelligence">
         <AgencyIntelligencePanel agencyId={agency.id} agencyName={agency.name} currentUserId={currentUser.id} organizationId={organizationId} users={actionUsers} />
-      </div>
+      </div> : null}
 
-      <div className="account-workspace-section">
+      {hasWholesaleOpportunities ? <div className="account-workspace-section" id={hasAgencyIntelligence ? undefined : 'intelligence'}>
         <OpportunityAccountPanel agencyId={agency.agencyId} currentUserId={currentUser.id} returnTo={`/agencies/${agency.id}`} users={actionUsers} />
-      </div>
+      </div> : null}
 
       <div className="account-workspace-section" id="sales">
         <AgencyRecentSalesCard salesWindows={salesWindows} />

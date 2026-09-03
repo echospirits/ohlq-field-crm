@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { getUserDisplayName, requireAdmin } from '../../../lib/auth';
 import { importAccountResearchCsv } from '../../../lib/accountResearch';
+import { requireFeatureForUser } from '../../../lib/organizations';
 
 const returnWith = (values: Record<string, string | number>): never => {
   const query = new URLSearchParams();
@@ -13,6 +14,7 @@ const returnWith = (values: Record<string, string | number>): never => {
 
 export async function uploadAccountResearchCsv(formData: FormData) {
   const user = await requireAdmin();
+  await requireFeatureForUser(user, 'ADVANCED_INTELLIGENCE');
   const file = formData.get('researchFile');
   const dryRun = String(formData.get('mode') ?? 'dry-run') !== 'commit';
   if (!(file instanceof File) || file.size === 0) returnWith({ status: 'missing-file' });

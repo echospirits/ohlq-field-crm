@@ -12,7 +12,7 @@ import { syncWorklistItemCalendar } from '../../lib/calendar/worklistSync';
 import { evaluateOpportunityIntelligence } from '../../lib/opportunityEngine';
 import { splitReactivationPurchasedAgainDetail } from '../../lib/ohlqWholesaleReactivation';
 import { prisma } from '../../lib/prisma';
-import { requireOrganizationContext } from '../../lib/organizations';
+import { getOrganizationFeatures, requireOrganizationContext } from '../../lib/organizations';
 import { getAgenciesForVisitPicker, getWholesaleAccountsForVisitPicker } from '../../lib/visitPickerOptions';
 import {
   getWorklistCategoryForLocationSelection,
@@ -229,6 +229,12 @@ export default async function Alerts({
 }) {
   const currentUser = await requireUser();
   const { organizationId } = await requireOrganizationContext(currentUser);
+  const enabledFeatures = await getOrganizationFeatures(organizationId);
+  const excludedIntelligenceSources: WorklistSource[] = [
+    ...(!enabledFeatures.has('AGENCY_INTELLIGENCE') ? [WorklistSource.AGENCY_INTELLIGENCE] : []),
+    ...(!enabledFeatures.has('WHOLESALE_OPPORTUNITIES') ? [WorklistSource.OPPORTUNITY_INTELLIGENCE] : []),
+  ];
+  const visibleSources = Object.values(WorklistSource).filter((source) => !excludedIntelligenceSources.includes(source));
 
   const params = (await searchParams) ?? {};
   const q = (params.q ?? '').trim();
@@ -236,7 +242,7 @@ export default async function Alerts({
   const categoryFilter = params.category ?? 'ALL';
   const sourceFilter = params.source ?? 'ALL';
   const pursuingView = params.view === 'pursuing';
-  const where: Prisma.WorklistItemWhereInput = { organizationId };
+  const where: Prisma.WorklistItemWhereInput = { organizationId, ...(excludedIntelligenceSources.length ? { source: { notIn: excludedIntelligenceSources } } : {}) };
 
   if (statusFilter === 'ACTIVE') {
     where.status = { notIn: [WorklistStatus.COMPLETED, WorklistStatus.CANCELLED] };
@@ -249,10 +255,11 @@ export default async function Alerts({
   }
 
   if (sourceFilter !== 'ALL') {
-    where.source = toWorklistSource(sourceFilter);
+    const requestedSource = toWorklistSource(sourceFilter);
+    if (!excludedIntelligenceSources.includes(requestedSource)) where.source = requestedSource;
   }
 
-  if (pursuingView) {
+  if (pursuingView && enabledFeatures.has('WHOLESALE_OPPORTUNITIES')) {
     where.salesOpportunity = { status: OpportunityStatus.ACTIONED };
   }
 
@@ -333,7 +340,7 @@ export default async function Alerts({
           </p>
         </div>
       </header>
-      <WorkViewNavigation active={pursuingView ? 'pursuing' : 'all'} />
+      <WorkViewNavigation active={pursuingView ? 'pursuing' : 'all'} showPursuing={enabledFeatures.has('WHOLESALE_OPPORTUNITIES')} />
 
       {params.created === '1' ? <p className="pill">Worklist item created.</p> : null}
       {params.created === 'invalid' ? <p className="pill">A title is required.</p> : null}
@@ -418,7 +425,7 @@ export default async function Alerts({
             <label>Source</label>
             <select name="source" defaultValue={sourceFilter}>
               <option value="ALL">All sources</option>
-              {Object.values(WorklistSource).map((source) => (
+              {visibleSources.map((source) => (
                 <option key={source} value={source}>
                   {sourceLabels[source]}
                 </option>

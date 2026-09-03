@@ -29,7 +29,7 @@ export async function POST(request: Request) {
     return NextResponse.redirect(new URL('/login', request.url), 303);
   }
 
-  if (session.user.role !== UserRole.ADMIN) {
+  if (session.user.role !== UserRole.PLATFORM_ADMIN) {
     return NextResponse.redirect(new URL('/', request.url), 303);
   }
 

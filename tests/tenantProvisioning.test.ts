@@ -24,7 +24,7 @@ test('customer configuration lives on Organization and sensitive operational row
   for (const field of ['appName', 'digestName', 'productLabel', 'brandPrimaryColor', 'contactEmail', 'supportEmail', 'settings']) {
     assert.match(schema, new RegExp(`\\b${field}\\s+`));
   }
-  for (const model of ['LoggedVisit', 'WorklistItem', 'LocationContact', 'MenuPlacement', 'Recipe', 'SalesOpportunity']) {
+  for (const model of ['OrganizationA3aStoreIdentifier', 'LoggedVisit', 'WorklistItem', 'LocationContact', 'MenuPlacement', 'Recipe', 'SalesOpportunity']) {
     assert.match(schema, new RegExp(`model ${model} \\{[\\s\\S]*?organizationId\\s+String\\s`, 'm'));
   }
   assert.match(schema, /@@unique\(\[organizationId, submissionKey\]\)/);

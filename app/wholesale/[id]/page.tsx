@@ -9,7 +9,7 @@ import { getUserDisplayName, requireUser } from '../../../lib/auth';
 import { formatEasternDate } from '../../../lib/dateTime';
 import { getWholesaleRecentPurchases } from '../../../lib/ohlqSalesData';
 import { prisma } from '../../../lib/prisma';
-import { requireOrganizationContext } from '../../../lib/organizations';
+import { getOrganizationFeatures, requireOrganizationContext } from '../../../lib/organizations';
 import { getOrganizationTenantConfig } from '../../../lib/tenantConfig';
 import { formatWholesaleLicenseeIds, getWholesaleLicenseeIdValues } from '../../../lib/wholesaleAccounts';
 import { MenuPlacementPanel } from '../../menu-placements/MenuPlacementPanel';
@@ -67,6 +67,8 @@ export default async function WholesaleActivityPage({
 }) {
   const user = await requireUser();
   const { organizationId } = await requireOrganizationContext(user);
+  const enabledFeatures = await getOrganizationFeatures(organizationId);
+  const hasWholesaleOpportunities = enabledFeatures.has('WHOLESALE_OPPORTUNITIES');
   const tenantConfig = await getOrganizationTenantConfig(organizationId);
   const { id } = await params;
   const query = (await searchParams) ?? {};
@@ -237,7 +239,7 @@ export default async function WholesaleActivityPage({
         { href: '#overview', label: 'Overview' },
         { href: '#placements', label: 'Placements' },
         { href: '#purchases', label: 'Purchases' },
-        { href: '#intelligence', label: 'Intelligence' },
+        ...(hasWholesaleOpportunities ? [{ href: '#intelligence', label: 'Intelligence' }] : []),
         { href: '#activity', label: 'Activity' },
       ]} />
 
@@ -302,9 +304,9 @@ export default async function WholesaleActivityPage({
         <WholesaleRecentPurchasesCard purchases={purchases} />
       </div>
 
-      <div className="account-workspace-section" id="intelligence">
+      {hasWholesaleOpportunities ? <div className="account-workspace-section" id="intelligence">
         <OpportunityAccountPanel wholesaleAccountId={account.id} currentUserId={user.id} returnTo={`/wholesale/${account.id}`} users={actionUsers} />
-      </div>
+      </div> : null}
 
       <section className="dashboard-section account-workspace-section" id="activity">
         <div className="section-heading">
