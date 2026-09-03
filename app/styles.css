@@ -4274,7 +4274,7 @@ legend {
 .product-selection-summary strong { color:var(--text); font-size:.95rem; }
 .product-selection-summary .product-selection-new strong { color:#fbbf24; }
 .product-transfer-grid { align-items:stretch; display:grid; gap:.65rem; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); }
-.product-transfer-pane { display:grid; gap:.4rem; min-width:0; }
+.product-transfer-pane { display:grid; gap:.4rem; grid-template-rows:auto auto minmax(0,1fr); min-width:0; }
 .product-transfer-pane > div { display:grid; gap:.05rem; }
 .product-transfer-pane small,.product-selection-footer small { color:var(--muted-2); font-size:.7rem; }
 .product-transfer-pane input { min-height:34px; padding:.4rem .55rem; }
