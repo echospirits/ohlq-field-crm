@@ -58,6 +58,7 @@ jobs:
       DATABASE_ENVIRONMENT: ${{ github.event_name == 'schedule' && (github.repository == 'echospirits/neat-tst' && 'test' || 'production') || inputs.deploymentEnvironment }}
       DATABASE_TARGET_ID: ${{ vars.DATABASE_TARGET_ID }}
       EXPECTED_DATABASE_HOST: ${{ vars.EXPECTED_DATABASE_HOST }}
+      PRODUCTION_BASE_URL: ${{ vars.PRODUCTION_BASE_URL }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       OHLQ_OPS_USERNAME: ${{ secrets.OHLQ_OPS_USERNAME }}
       OHLQ_OPS_PASSWORD: ${{ secrets.OHLQ_OPS_PASSWORD }}
