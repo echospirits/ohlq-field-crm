@@ -16,6 +16,7 @@ import { hasFeature, writeOrganizationAudit } from './organizations';
 import { captureWholesaleSalesEvents, evaluateOpportunityIntelligence } from './opportunityEngine';
 import { prisma } from './prisma';
 import { createUserInvitationToken, getUserInvitationUrl, sendUserInvitationEmail } from './userInvitations';
+import { discoverOrganizationProducts } from './organizationProductDiscovery';
 
 export const PROVISIONING_STEP_ORDER: ProvisioningStepKind[] = [
   ProvisioningStepKind.VALIDATE_CONFIGURATION,
@@ -95,27 +96,11 @@ async function executeStep(organizationId: string, kind: ProvisioningStepKind) {
   }
 
   if (kind === ProvisioningStepKind.DISCOVER_PRODUCTS) {
-    const vendors = await prisma.organizationVendorIdentifier.findMany({ where: { organizationId, active: true }, select: { vendorId: true } });
-    const candidates = await prisma.ohlqAgencyInventoryCurrent.findMany({
-      where: { vendorId: { in: vendors.map((row) => row.vendorId) } },
-      distinct: ['itemCode'],
-      orderBy: { itemCode: 'asc' },
-      select: { itemCode: true, itemName: true },
-    });
-    const created = await prisma.organizationProduct.createMany({
-      skipDuplicates: true,
-      data: candidates.map((candidate) => ({
-        displayName: candidate.itemName,
-        externalItemCode: candidate.itemCode,
-        market: 'OH',
-        organizationId,
-        status: OrganizationProductStatus.PENDING_REVIEW,
-      })),
-    });
-    return { candidates: candidates.length, created: created.count };
+    return discoverOrganizationProducts({ organizationId });
   }
 
   if (kind === ProvisioningStepKind.CONFIRM_PRODUCTS) {
+    await discoverOrganizationProducts({ organizationId });
     const [pending, decided] = await Promise.all([
       prisma.organizationProduct.count({ where: { organizationId, active: true, status: OrganizationProductStatus.PENDING_REVIEW } }),
       prisma.organizationProduct.count({ where: { organizationId, active: true, status: { in: [OrganizationProductStatus.OWNED, OrganizationProductStatus.REPRESENTED, OrganizationProductStatus.EXCLUDED] } } }),

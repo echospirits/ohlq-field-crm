@@ -55,11 +55,17 @@ describe('importOhlqBrandMasterCsv', () => {
         }),
     } as unknown as PrismaClient;
 
-    const result = await importOhlqBrandMasterCsv({ csv, db });
+    const result = await importOhlqBrandMasterCsv({
+      csv,
+      db,
+      discoverProducts: async () => ({ organizationsScanned: 2, productsDiscovered: 7 }),
+    });
 
     assert.deepEqual(calls, ['delete', 'create:2']);
     assert.equal(result.deletedRows, 12);
     assert.equal(result.importedRows, 2);
     assert.equal(result.parsedRows, 2);
+    assert.equal(result.organizationsScanned, 2);
+    assert.equal(result.productsDiscovered, 7);
   });
 });

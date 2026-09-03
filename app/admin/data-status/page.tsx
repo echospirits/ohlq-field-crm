@@ -104,6 +104,7 @@ const brandMasterStatusMessage = (params: {
   date?: string;
   inventoryRows?: string;
   message?: string;
+  productsDiscovered?: string;
   replaced?: string;
   skipped?: string;
   status?: string;
@@ -129,7 +130,7 @@ const brandMasterStatusMessage = (params: {
   if (params.status === 'brand-master-imported') {
     return `Brand master refreshed: ${params.count ?? '0'} rows loaded, ${params.replaced ?? '0'} replaced, ${
       params.skipped ?? '0'
-    } skipped.`;
+    } skipped; ${params.productsDiscovered ?? '0'} new organization product candidates added for review.`;
   }
 
   if (params.status === 'brand-master-invalid') return 'Choose a brand master CSV file before importing.';
@@ -173,7 +174,7 @@ async function importBrandMaster(formData: FormData) {
   revalidatePath('/agencies');
   revalidatePath('/wholesale');
   redirect(
-    `/admin/data-status?status=brand-master-imported&count=${result.importedRows}&replaced=${result.deletedRows}&skipped=${result.skippedRows}`,
+    `/admin/data-status?status=brand-master-imported&count=${result.importedRows}&replaced=${result.deletedRows}&skipped=${result.skippedRows}&productsDiscovered=${result.productsDiscovered}`,
   );
 }
 
@@ -189,6 +190,7 @@ export default async function DataStatusPage({
     annualRows?: string;
     date?: string;
     inventoryRows?: string;
+    productsDiscovered?: string;
     wholesaleRows?: string;
   }>;
 }) {

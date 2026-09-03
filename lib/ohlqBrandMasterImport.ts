@@ -1,5 +1,6 @@
 import { Prisma, type PrismaClient } from '@prisma/client';
 import Papa from 'papaparse';
+import { discoverProductsForOrganizations } from './organizationProductDiscovery';
 import { prisma } from './prisma';
 
 const REQUIRED_HEADERS = [
@@ -26,7 +27,9 @@ type CsvParseResult<T> = {
 export type OhlqBrandMasterImportResult = {
   deletedRows: number;
   importedRows: number;
+  organizationsScanned: number;
   parsedRows: number;
+  productsDiscovered: number;
   skippedRows: number;
 };
 
@@ -111,9 +114,11 @@ export function parseOhlqBrandMasterCsv(csv: string | Buffer) {
 export async function importOhlqBrandMasterCsv({
   csv,
   db = prisma,
+  discoverProducts = discoverProductsForOrganizations,
 }: {
   csv: string | Buffer;
   db?: PrismaClient;
+  discoverProducts?: (options: { db: PrismaClient }) => Promise<{ organizationsScanned: number; productsDiscovered: number }>;
 }) {
   const parsed = parseOhlqBrandMasterCsv(csv);
   const chunkSize = 1_000;
@@ -138,11 +143,14 @@ export async function importOhlqBrandMasterCsv({
     },
     { timeout: 120_000 },
   );
+  const discovery = await discoverProducts({ db });
 
   return {
     deletedRows: result.deletedRows,
     importedRows: result.importedRows,
+    organizationsScanned: discovery.organizationsScanned,
     parsedRows: parsed.rows.length,
+    productsDiscovered: discovery.productsDiscovered,
     skippedRows: parsed.skippedRows,
   } satisfies OhlqBrandMasterImportResult;
 }
