@@ -4278,7 +4278,7 @@ legend {
 .product-transfer-pane > div { display:grid; gap:.05rem; }
 .product-transfer-pane small,.product-selection-footer small { color:var(--muted-2); font-size:.7rem; }
 .product-transfer-pane input { min-height:34px; padding:.4rem .55rem; }
-.product-transfer-pane select { min-height:16rem; padding:.2rem; }
+.product-transfer-pane select { height:14rem; min-height:0; padding:.2rem; }
 .product-transfer-pane option { border-radius:.25rem; overflow:hidden; padding:.3rem .4rem; text-overflow:ellipsis; white-space:nowrap; }
 .product-transfer-actions { align-content:center; display:grid; gap:.45rem; }
 .product-transfer-actions button { display:grid; gap:.1rem; min-width:5.2rem; }
@@ -4303,7 +4303,7 @@ legend {
   .product-transfer-actions button { display:flex; justify-content:center; min-width:0; }
   .product-transfer-actions button:first-child span[aria-hidden="true"] { transform:rotate(90deg); }
   .product-transfer-actions button:last-child span[aria-hidden="true"] { transform:rotate(90deg); }
-  .product-transfer-pane select { min-height:11rem; }
+  .product-transfer-pane select { height:9rem; }
   .product-selection-footer { align-items:stretch; flex-direction:column; }
   .product-selection-footer button { width:100%; }
 }
