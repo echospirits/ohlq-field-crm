@@ -9,7 +9,7 @@ import { importOhlqAgencyInventoryCsv } from './ohlqAgencyInventoryImport';
 import { pruneOhlqAnnualSalesRows } from './ohlqAnnualSalesRetention';
 import { runOpportunityIntelligenceAfterImport } from './opportunityEngine';
 import { refreshAgencyIntelligence } from './agencyIntelligenceService';
-import { ECHO_ORGANIZATION_ID, hasFeature } from './organizations';
+import { prisma } from './prisma';
 import { toOhlqDateOnlyUtc } from './ohlqDataStatus';
 import {
   downloadOhlqAnnualSalesReports,
@@ -163,9 +163,20 @@ export async function runOhlqAnnualSalesWorkflow(options: OhlqAnnualSalesWorkflo
         `converted ${opportunityIntelligence.intelligence.converted} opportunity instance(s).`,
     );
 
-    const agencyIntelligence = await hasFeature(ECHO_ORGANIZATION_ID, 'AGENCY_INTELLIGENCE')
-      ? await refreshAgencyIntelligence({ inventoryReportDate: toOhlqDateOnlyUtc(inventoryObservationDate), salesReportDate: toOhlqDateOnlyUtc(reportDate) })
-      : { productsProcessed: 0, agenciesProcessed: 0, eventsCreated: 0 };
+    const agencyOrganizations = await prisma.organization.findMany({
+      where: { active: true, features: { some: { enabled: true, featureKey: 'AGENCY_INTELLIGENCE' } } },
+      select: { id: true },
+    });
+    const agencyResults = [];
+    for (const organization of agencyOrganizations) {
+      agencyResults.push(await refreshAgencyIntelligence({ inventoryReportDate: toOhlqDateOnlyUtc(inventoryObservationDate), organizationId: organization.id, salesReportDate: toOhlqDateOnlyUtc(reportDate) }));
+    }
+    const agencyIntelligence = {
+      agenciesProcessed: agencyResults.reduce((total, result) => total + result.agenciesProcessed, 0),
+      eventsCreated: agencyResults.reduce((total, result) => total + result.eventsCreated, 0),
+      productsProcessed: agencyResults.reduce((total, result) => total + result.productsProcessed, 0),
+      organizationsProcessed: agencyResults.length,
+    };
     logger.log(
       `Agency intelligence refreshed ${agencyIntelligence.productsProcessed} Agency-product signal(s) across ` +
         `${agencyIntelligence.agenciesProcessed} agencies and recorded ${agencyIntelligence.eventsCreated} meaningful change(s).`,

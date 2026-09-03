@@ -203,8 +203,9 @@ describe('syncWholesaleAccountEchoPurchaseState', () => {
       rows: [purchaseRow()],
     });
 
-    assert.equal(firstWholesaleWhere?.isActive, undefined);
-    assert.equal(firstWholesaleWhere?.mergedIntoId, null);
+    const capturedWhere = firstWholesaleWhere as Record<string, unknown> | null;
+    assert.equal(capturedWhere?.isActive, undefined);
+    assert.equal(capturedWhere?.mergedIntoId, null);
     assert.equal(result.matchedPermitNumbers, 1);
     assert.equal(result.updatedAccounts, 1);
     assert.equal(updates.length, 1);

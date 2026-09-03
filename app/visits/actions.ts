@@ -231,7 +231,7 @@ export async function createVisit(formData: FormData) {
 
   if (submissionKey) {
     const existingVisit = await prisma.loggedVisit.findUnique({
-      where: { submissionKey },
+      where: { organizationId_submissionKey: { organizationId, submissionKey } },
       select: { createdByUserId: true, id: true },
     });
     if (existingVisit?.createdByUserId === user.id) redirectToVisitConfirmation(existingVisit.id, formOrigin);
@@ -416,6 +416,7 @@ export async function createVisit(formData: FormData) {
     if (locationType === 'wholesale' && wholesaleAccountId && selectedTagIds.length > 0) {
       await tx.locationTag.createMany({
         data: selectedTagIds.map((tagId) => ({
+          organizationId,
           tagId,
           wholesaleAccountId,
           note: 'Applied during visit logging',
@@ -590,12 +591,12 @@ export async function createVisit(formData: FormData) {
 
     if (salesOpportunity) {
       await tx.opportunityEvent.create({
-        data: { opportunityId: salesOpportunity.id, eventType: OpportunityEventType.VISIT_LOGGED, eventKey: `VISIT_LOGGED:${loggedVisit.id}`, wholesaleAccountId: salesOpportunity.wholesaleAccountId, userId: user.id, loggedVisitId: loggedVisit.id, metadata: { sourceType: toOptional(formData.get('sourceType')), productItemCode: toOptional(formData.get('productItemCode')), productName: toOptional(formData.get('productName')) }, occurredAt: new Date() },
+        data: { organizationId, opportunityId: salesOpportunity.id, eventType: OpportunityEventType.VISIT_LOGGED, eventKey: `VISIT_LOGGED:${loggedVisit.id}`, wholesaleAccountId: salesOpportunity.wholesaleAccountId, userId: user.id, loggedVisitId: loggedVisit.id, metadata: { sourceType: toOptional(formData.get('sourceType')), productItemCode: toOptional(formData.get('productItemCode')), productName: toOptional(formData.get('productName')) }, occurredAt: new Date() },
       });
     }
     if (agencyProductIntelligence) {
       await tx.agencyIntelligenceEvent.create({
-        data: { agencyId: agencyProductIntelligence.agencyId, agencyProductIntelligenceId: agencyProductIntelligence.id, eventKey: `${agencyProductIntelligence.id}:VISIT_LOGGED:${loggedVisit.id}`, eventType: 'VISIT_LOGGED', inventoryState: agencyProductIntelligence.inventoryState, itemCode: agencyProductIntelligence.itemCode, opportunityState: agencyProductIntelligence.opportunityState, occurredAt: new Date(), snapshot: { actorUserId: user.id, loggedVisitId: loggedVisit.id } },
+        data: { organizationId, agencyId: agencyProductIntelligence.agencyId, agencyProductIntelligenceId: agencyProductIntelligence.id, eventKey: `${agencyProductIntelligence.id}:VISIT_LOGGED:${loggedVisit.id}`, eventType: 'VISIT_LOGGED', inventoryState: agencyProductIntelligence.inventoryState, itemCode: agencyProductIntelligence.itemCode, opportunityState: agencyProductIntelligence.opportunityState, occurredAt: new Date(), snapshot: { actorUserId: user.id, loggedVisitId: loggedVisit.id } },
       });
     }
 
@@ -641,6 +642,7 @@ export async function createVisit(formData: FormData) {
             const uploadedPhoto = await uploadVisitPhoto(photo.file, visit.id, user.id, index);
 
             return {
+              organizationId,
               loggedVisitId: visit.id,
               type: photo.type,
               url: uploadedPhoto.url,
@@ -654,6 +656,7 @@ export async function createVisit(formData: FormData) {
 
           if (photo.storageKey) {
             return {
+              organizationId,
               loggedVisitId: visit.id,
               type: photo.type,
               url: photo.url ?? '',
@@ -759,7 +762,7 @@ export async function updateVisit(visitId: string, formData: FormData) {
 
   const contactId = toOptional(formData.get('contactId'));
   if (contactId) {
-    const contact = await prisma.locationContact.findUnique({ where: { id: contactId } });
+    const contact = await prisma.locationContact.findFirst({ where: { id: contactId, organizationId } });
     const agencyKeys = new Set([agencyId, locationType === 'agency' && agencyId ? (await prisma.agency.findUnique({ where: { id: agencyId }, select: { agencyId: true } }))?.agencyId : null].filter(Boolean));
     const contactMatches =
       contact &&

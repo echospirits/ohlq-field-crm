@@ -4234,6 +4234,14 @@ legend {
 .support-view-banner form { margin:0; }
 .platform-metrics { display:grid; gap:.75rem; grid-template-columns:repeat(4,minmax(0,1fr)); margin-bottom:1rem; }
 .platform-metrics article { display:grid; gap:.3rem; }
+.provisioning-step-grid { display:grid; gap:.55rem; grid-template-columns:repeat(auto-fit,minmax(15rem,1fr)); margin-top:1rem; }
+.provisioning-step { align-items:center; border:1px solid var(--line); border-radius:.65rem; display:flex; gap:.7rem; padding:.65rem .75rem; }
+.provisioning-step > span { align-items:center; background:var(--panel-2); border-radius:999px; display:flex; flex:0 0 1.8rem; font-size:.75rem; font-weight:800; height:1.8rem; justify-content:center; }
+.provisioning-step div { display:grid; gap:.15rem; }
+.provisioning-step small { color:var(--muted); }
+.provisioning-invitation-controls { display:grid; gap:.65rem; margin-top:1rem; }
+.provisioning-invitation-controls form { margin:0; }
+.provisioning-invitation-controls label { max-width:none; }
 .platform-metrics span { color:var(--muted-2); font-size:.72rem; font-weight:750; letter-spacing:.04em; text-transform:uppercase; }
 .platform-metrics strong { font-size:1.8rem; }
 .platform-grid { display:grid; gap:1rem; grid-template-columns:repeat(auto-fit,minmax(min(100%,24rem),1fr)); margin-bottom:1rem; }

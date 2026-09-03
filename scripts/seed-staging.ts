@@ -31,7 +31,7 @@ async function main() {
     update: { isActive: true, name: 'Synthetic Test Restaurant' },
   });
   await prisma.worklistItem.upsert({
-    where: { submissionKey: 'staging-seed-follow-up' },
+    where: { organizationId_submissionKey: { organizationId: organization.id, submissionKey: 'staging-seed-follow-up' } },
     create: { organizationId: organization.id, submissionKey: 'staging-seed-follow-up', title: 'Synthetic staging follow-up', detail: 'Safe sample task; no production data.', category: WorklistCategory.GENERAL, source: WorklistSource.MANUAL, agencyId: agency.id, assignedToUserId: admin.id, createdByUserId: admin.id },
     update: { organizationId: organization.id, agencyId: agency.id, wholesaleAccountId: null, assignedToUserId: admin.id, createdByUserId: admin.id },
   });

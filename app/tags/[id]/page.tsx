@@ -7,6 +7,7 @@ import { buildPageMetadata } from '../../../lib/appBrand';
 import { getUserDisplayName, requireUser } from '../../../lib/auth';
 import { formatEasternDateTime } from '../../../lib/dateTime';
 import { prisma } from '../../../lib/prisma';
+import { requireOrganizationContext } from '../../../lib/organizations';
 import { TagBadges } from '../TagBadges';
 import { EmptyState, PageHeader, SectionHeading } from '../../components/PageChrome';
 
@@ -17,11 +18,12 @@ export default async function TagDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireUser();
+  const user = await requireUser();
+  const { organizationId } = await requireOrganizationContext(user);
   const { id } = await params;
 
-  const tag = await prisma.tag.findUnique({
-    where: { id },
+  const tag = await prisma.tag.findFirst({
+    where: { id, organizationId },
     include: {
       createdByUser: true,
       locationTags: {

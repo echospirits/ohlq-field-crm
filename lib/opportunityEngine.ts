@@ -5,7 +5,7 @@ import { getOhlqLicenseeMatchKeys } from './ohlqWholesaleMatching';
 import { isConfiguredTenantItem } from './ohlqSalesData';
 import { normalizeOpportunityCategory, OPPORTUNITY_RANKING_VERSION, OPPORTUNITY_RULES_VERSION, OPPORTUNITY_SIGNAL_VERSION, opportunityRules } from './opportunityConfig';
 import { detectOpportunityHypotheses, RuleBasedOpportunityRanker, selectPrimaryOpportunity, type AccountOpportunitySignals } from './opportunityIntelligence';
-import { ECHO_ORGANIZATION_ID, hasFeature } from './organizations';
+import { ECHO_ORGANIZATION_ID } from './organizations';
 
 const DAY = 86400000;
 const dateOnly = (date: Date) => date.toISOString().slice(0, 10);
@@ -71,12 +71,12 @@ export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = 
         id: true,
         name: true,
         ohlqLastEchoPurchaseDate: true,
-        targetProfile: { select: { assignedUserId: true, researchStatus: true, ownershipGroup: { select: { name: true } } } },
+        targetProfiles: { where: { organizationId }, take: 1, select: { assignedUserId: true, researchStatus: true, ownershipGroup: { select: { name: true } } } },
         targetScores: { orderBy: { scoringDate: 'desc' }, take: 1, select: { dataScore: true, publicFitScore: true, componentScores: true } },
         targetMetrics: { orderBy: { periodEnd: 'desc' }, take: 1, select: { priceFitPercent: true, ohioCraft9L: true, ohioCraftAffinity: true, purchaseConsistency: true, momentumScore: true } },
         targetPublicResearch: { select: { patioOutdoor: true, cocktailProgram: true, popularitySignal: true, ownershipVerification: true, buyerStructure: true, isNationalChain: true, googleRating: true, googleReviewCount: true, yelpRating: true, yelpReviewCount: true, localBrandsOnMenu: true, sourceUrls: true } },
-        tags: { select: { tag: { select: { name: true } } } },
-        opportunitySignal: true,
+        tags: { where: { organizationId }, select: { tag: { select: { name: true } } } },
+        opportunitySignals: { where: { organizationId }, take: 1 },
       },
     }),
     db.accountSalesEvent.findMany({ where: { organizationId, reportDate: { gte: start90, lte: asOfDate } }, orderBy: { reportDate: 'asc' } }),
@@ -97,6 +97,8 @@ export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = 
   await db.salesOpportunity.updateMany({ where: { organizationId, status: OpportunityStatus.SNOOZED, snoozedUntil: { lte: asOfDate } }, data: { status: OpportunityStatus.OPEN, snoozedUntil: null } });
 
   for (const account of accounts) {
+    const targetProfile = account.targetProfiles[0];
+    const opportunitySignal = account.opportunitySignals[0];
     const accountEvents = eventsByAccount.get(account.id) ?? [];
     const accountVisits = visitsByAccount.get(account.id) ?? [];
     const lastVisit = accountVisits.at(-1)?.visitAt ?? null;
@@ -108,7 +110,7 @@ export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = 
         lastPurchaseAt: dateOnly(itemEvents.at(-1)!.reportDate), bottles30: sumSince(30), bottles60: sumSince(60), bottles90: sumSince(90), currentAnnualBottles: itemEvents.at(-1)!.annualBottlesAfter };
     });
     const echoEvents = accountEvents.filter((event) => event.isTenantProduct);
-    const firstObserved = account.opportunitySignal?.firstEchoPurchaseAt ?? echoEvents[0]?.reportDate ?? null;
+    const firstObserved = opportunitySignal?.firstEchoPurchaseAt ?? echoEvents[0]?.reportDate ?? null;
     const lastEcho = account.ohlqLastEchoPurchaseDate ?? echoEvents.at(-1)?.reportDate ?? null;
     const latestTargetScore = account.targetScores[0];
     const latestTargetMetric = account.targetMetrics[0];
@@ -116,18 +118,18 @@ export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = 
     const normalizedTags = new Set(account.tags.map(({ tag }) => tag.name.toUpperCase().replace(/[\s-]+/g, '_')));
     const signal: AccountOpportunitySignals = {
       accountName: account.name, asOfDate: dateOnly(asOfDate), accountStatus: normalizedTags.has('DO_NOT_PURSUE') ? 'DO_NOT_PURSUE' : 'ACTIVE',
-      assignedUserId: account.targetProfile?.assignedUserId ?? null, daysSinceLastEchoPurchase: daysBetween(asOfDate, lastEcho), daysSinceLastVisit: daysBetween(asOfDate, lastVisit),
+      assignedUserId: targetProfile?.assignedUserId ?? null, daysSinceLastEchoPurchase: daysBetween(asOfDate, lastEcho), daysSinceLastVisit: daysBetween(asOfDate, lastVisit),
       echoBottles30: echoEvents.filter((e) => e.reportDate >= new Date(asOfDate.getTime() - 29 * DAY)).reduce((n, e) => n + e.bottles, 0),
       echoBottles60: echoEvents.filter((e) => e.reportDate >= new Date(asOfDate.getTime() - 59 * DAY)).reduce((n, e) => n + e.bottles, 0), echoBottles90: echoEvents.reduce((n, e) => n + e.bottles, 0), echoPurchaseEvents90: echoEvents.length,
-      firstEchoPurchaseAt: firstObserved ? dateOnly(firstObserved) : null, historyComplete: account.opportunitySignal?.historyComplete ?? false,
+      firstEchoPurchaseAt: firstObserved ? dateOnly(firstObserved) : null, historyComplete: opportunitySignal?.historyComplete ?? false,
       lastEchoPurchaseAt: lastEcho ? dateOnly(lastEcho) : null, lastVisitAt: lastVisit?.toISOString() ?? null, openWorklistCount: openWork.get(account.id) ?? 0, purchases,
-      targetStatus: account.targetProfile?.researchStatus ?? null, visits30: accountVisits.filter((v) => v.visitAt >= new Date(asOfDate.getTime() - 29 * DAY)).length,
+      targetStatus: targetProfile?.researchStatus ?? null, visits30: accountVisits.filter((v) => v.visitAt >= new Date(asOfDate.getTime() - 29 * DAY)).length,
       visits60: accountVisits.filter((v) => v.visitAt >= new Date(asOfDate.getTime() - 59 * DAY)).length, visits90: accountVisits.filter((v) => v.visitAt >= start90).length,
       targetDataScore: numberValue(latestTargetScore?.dataScore), targetPublicFitScore: numberValue(latestTargetScore?.publicFitScore),
       targetPriceFitPercent: numberValue(latestTargetMetric?.priceFitPercent), targetTotalVolumePercentile: jsonNumber(latestTargetScore?.componentScores, 'totalVolumePercentile'),
       targetConsistencyScore: numberValue(latestTargetMetric?.purchaseConsistency), targetMomentumScore: numberValue(latestTargetMetric?.momentumScore),
       ohioCraft9L: numberValue(latestTargetMetric?.ohioCraft9L), ohioCraftAffinity: numberValue(latestTargetMetric?.ohioCraftAffinity),
-      ownershipGroupName: account.targetProfile?.ownershipGroup?.name ?? null,
+      ownershipGroupName: targetProfile?.ownershipGroup?.name ?? null,
       isNationalChain: normalizedTags.has('NATIONAL_CHAIN') ? true : normalizedTags.has('LOCAL_INDEPENDENT') ? false : research?.isNationalChain ?? null,
       ownershipVerification: research?.ownershipVerification ?? null, buyerStructure: research?.buyerStructure ?? null,
       patioOutdoor: research?.patioOutdoor ?? null, cocktailProgram: research?.cocktailProgram ?? null, popularitySignal: research?.popularitySignal ?? null,
@@ -135,7 +137,7 @@ export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = 
       yelpRating: numberValue(research?.yelpRating), yelpReviewCount: research?.yelpReviewCount ?? null,
       localBrandsOnMenu: stringList(research?.localBrandsOnMenu), publicResearchSourceUrls: stringList(research?.sourceUrls),
     };
-    await db.opportunityAccountSignal.upsert({ where: { wholesaleAccountId: account.id }, create: { organizationId, wholesaleAccountId: account.id, asOfDate, signalVersion: OPPORTUNITY_SIGNAL_VERSION, features: signal, firstEchoPurchaseAt: firstObserved, lastEchoPurchaseAt: lastEcho, historyComplete: false }, update: { organizationId, asOfDate, signalVersion: OPPORTUNITY_SIGNAL_VERSION, features: signal, firstEchoPurchaseAt: firstObserved, lastEchoPurchaseAt: lastEcho } });
+    await db.opportunityAccountSignal.upsert({ where: { organizationId_wholesaleAccountId: { organizationId, wholesaleAccountId: account.id } }, create: { organizationId, wholesaleAccountId: account.id, asOfDate, signalVersion: OPPORTUNITY_SIGNAL_VERSION, features: signal, firstEchoPurchaseAt: firstObserved, lastEchoPurchaseAt: lastEcho, historyComplete: false }, update: { asOfDate, signalVersion: OPPORTUNITY_SIGNAL_VERSION, features: signal, firstEchoPurchaseAt: firstObserved, lastEchoPurchaseAt: lastEcho } });
 
     const primary = selectPrimaryOpportunity(detectOpportunityHypotheses(signal), signal, ranker);
     if (primary) {
@@ -198,8 +200,27 @@ export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = 
 }
 
 export async function runOpportunityIntelligenceAfterImport({ db = prisma, reportDate }: { db?: PrismaClient; reportDate: Date }) {
-  if (!(await hasFeature(ECHO_ORGANIZATION_ID, 'WHOLESALE_OPPORTUNITIES'))) return { salesEvents: { created: 0, skippedWithoutBaseline: false }, intelligence: { accountsEvaluated: 0, detected: 0, converted: 0, worklistCreated: 0, rulesVersion: OPPORTUNITY_RULES_VERSION, scoringVersion: OPPORTUNITY_RANKING_VERSION }, skipped: true, reason: 'WHOLESALE_OPPORTUNITIES disabled' };
-  const salesEvents = await captureWholesaleSalesEvents({ db, reportDate, organizationId: ECHO_ORGANIZATION_ID });
-  const intelligence = await evaluateOpportunityIntelligence({ db, asOfDate: reportDate, organizationId: ECHO_ORGANIZATION_ID });
-  return { salesEvents, intelligence };
+  const organizations = await db.organization.findMany({
+    where: { active: true, features: { some: { enabled: true, featureKey: 'WHOLESALE_OPPORTUNITIES' } } },
+    select: { id: true },
+  });
+  if (!organizations.length) return { salesEvents: { created: 0, skippedWithoutBaseline: false }, intelligence: { accountsEvaluated: 0, detected: 0, converted: 0, worklistCreated: 0, rulesVersion: OPPORTUNITY_RULES_VERSION, scoringVersion: OPPORTUNITY_RANKING_VERSION }, skipped: true, reason: 'WHOLESALE_OPPORTUNITIES disabled' };
+  const results = [];
+  for (const organization of organizations) {
+    const salesEvents = await captureWholesaleSalesEvents({ db, reportDate, organizationId: organization.id });
+    const intelligence = await evaluateOpportunityIntelligence({ db, asOfDate: reportDate, organizationId: organization.id });
+    results.push({ organizationId: organization.id, salesEvents, intelligence });
+  }
+  return {
+    organizations: results,
+    salesEvents: { created: results.reduce((total, row) => total + row.salesEvents.created, 0), skippedWithoutBaseline: results.every((row) => row.salesEvents.skippedWithoutBaseline) },
+    intelligence: {
+      accountsEvaluated: results.reduce((total, row) => total + row.intelligence.accountsEvaluated, 0),
+      detected: results.reduce((total, row) => total + row.intelligence.detected, 0),
+      converted: results.reduce((total, row) => total + row.intelligence.converted, 0),
+      worklistCreated: results.reduce((total, row) => total + row.intelligence.worklistCreated, 0),
+      rulesVersion: OPPORTUNITY_RULES_VERSION,
+      scoringVersion: OPPORTUNITY_RANKING_VERSION,
+    },
+  };
 }

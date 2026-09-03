@@ -8,6 +8,7 @@ import { getUserDisplayName, requireUser } from '../../../lib/auth';
 import { formatEasternDate } from '../../../lib/dateTime';
 import { getAgencyRecentItemSales } from '../../../lib/ohlqSalesData';
 import { prisma } from '../../../lib/prisma';
+import { requireOrganizationContext } from '../../../lib/organizations';
 import { AgencyRecentSalesCard } from '../AgencyRecentSalesCard';
 import { AgencyIntelligencePanel } from '../AgencyIntelligencePanel';
 import { AccountTagPanel } from '../../tags/AccountTagPanel';
@@ -43,13 +44,14 @@ export default async function AgencyActivityPage({
   searchParams?: Promise<{ status?: string; tagStatus?: string }>;
 }) {
   const currentUser = await requireUser();
+  const { organizationId } = await requireOrganizationContext(currentUser);
   const { id } = await params;
   const query = (await searchParams) ?? {};
 
   const agency = await prisma.agency.findUnique({
     where: { id },
     include: {
-      tags: {
+          tags: { where: { organizationId },
         include: {
           tag: true,
           createdByUser: true,
@@ -67,6 +69,7 @@ export default async function AgencyActivityPage({
     prisma.loggedVisit.findMany({
       where: {
         agencyId: id,
+        organizationId,
         locationType: 'agency',
       },
       include: {
@@ -80,14 +83,14 @@ export default async function AgencyActivityPage({
       },
       orderBy: [{ visitAt: 'desc' }],
     }),
-    prisma.tag.findMany({ orderBy: [{ name: 'asc' }] }),
+    prisma.tag.findMany({ where: { organizationId }, orderBy: [{ name: 'asc' }] }),
     getAgencyRecentItemSales({ agencyId: agency.agencyId }),
-    prisma.user.findMany({ where: { isActive: true, role: { not: 'TASTER' } }, orderBy: [{ name: 'asc' }, { email: 'asc' }] }),
+    prisma.user.findMany({ where: { organizationId, isActive: true, role: { not: 'TASTER' } }, orderBy: [{ name: 'asc' }, { email: 'asc' }] }),
   ]);
   const actionUsers = users.map((user) => ({ id: user.id, name: getUserDisplayName(user) }));
 
   const contacts = await prisma.locationContact.findMany({
-    where: { id: { in: visits.map((visit) => visit.contactId).filter(Boolean) as string[] } },
+    where: { organizationId, id: { in: visits.map((visit) => visit.contactId).filter(Boolean) as string[] } },
   });
   const contactMap = Object.fromEntries(contacts.map((contact) => [contact.id, contact.name]));
   const latestVisitAt = visits[0]?.visitAt;
@@ -160,7 +163,7 @@ export default async function AgencyActivityPage({
       </div>
 
       <div className="account-workspace-section">
-        <AgencyIntelligencePanel agencyId={agency.id} agencyName={agency.name} currentUserId={currentUser.id} users={actionUsers} />
+        <AgencyIntelligencePanel agencyId={agency.id} agencyName={agency.name} currentUserId={currentUser.id} organizationId={organizationId} users={actionUsers} />
       </div>
 
       <div className="account-workspace-section">

@@ -162,9 +162,47 @@ enum OrganizationOnboardingStatus {
 }
 
 enum OrganizationProductStatus {
+  PENDING_REVIEW
   OWNED
   EXCLUDED
   REPRESENTED
+}
+
+enum ProvisioningRunStatus {
+  PENDING
+  RUNNING
+  WAITING_FOR_INPUT
+  COMPLETE
+  FAILED
+}
+
+enum ProvisioningStepStatus {
+  PENDING
+  RUNNING
+  WAITING_FOR_INPUT
+  COMPLETE
+  FAILED
+  SKIPPED
+}
+
+enum ProvisioningStepKind {
+  VALIDATE_CONFIGURATION
+  DISCOVER_PRODUCTS
+  CONFIRM_PRODUCTS
+  APPLY_ENTITLEMENTS
+  CREATE_INITIAL_ADMIN
+  SEND_INITIAL_INVITATION
+  BACKFILL_SALES
+  BACKFILL_AGENCY_INTELLIGENCE
+  BACKFILL_OPPORTUNITIES
+  FINALIZE
+}
+
+enum InvitationDeliveryStatus {
+  PENDING
+  SENT
+  SUPPRESSED
+  FAILED
 }
 
 enum OrganizationAuditAction {
@@ -326,30 +364,101 @@ model User {
 }
 
 model Organization {
-  id                String                         @id @default(cuid())
-  name              String
-  displayName       String
-  slug              String                         @unique
-  active            Boolean                        @default(true)
-  primaryState      String                         @default("OH")
-  timezone          String                         @default("America/New_York")
-  website           String?
-  logoUrl           String?
-  accountStatus     OrganizationStatus             @default(TRIAL)
-  onboardingStatus  OrganizationOnboardingStatus   @default(PROVISIONING)
-  onboardingData    Json                           @default("{}")
-  notes             String?
-  createdAt         DateTime                       @default(now())
-  updatedAt         DateTime                       @updatedAt
-  vendorIdentifiers OrganizationVendorIdentifier[]
-  products          OrganizationProduct[]
-  features          OrganizationFeature[]
-  accountOverlays   OrganizationAccountOverlay[]
-  auditEvents       OrganizationAuditEvent[]
+  id                 String                         @id @default(cuid())
+  name               String
+  displayName        String
+  slug               String                         @unique
+  active             Boolean                        @default(true)
+  primaryState       String                         @default("OH")
+  timezone           String                         @default("America/New_York")
+  website            String?
+  logoUrl            String?
+  appName            String                         @default("Neat")
+  digestName         String                         @default("Neat")
+  productLabel       String                         @default("product")
+  productPluralLabel String                         @default("products")
+  brandPrimaryColor  String                         @default("#2458ff")
+  brandAccentColor   String                         @default("#6d28d9")
+  contactName        String?
+  contactEmail       String?
+  contactPhone       String?
+  supportEmail       String?
+  settings           Json                           @default("{}")
+  accountStatus      OrganizationStatus             @default(TRIAL)
+  onboardingStatus   OrganizationOnboardingStatus   @default(PROVISIONING)
+  onboardingData     Json                           @default("{}")
+  notes              String?
+  createdAt          DateTime                       @default(now())
+  updatedAt          DateTime                       @updatedAt
+  vendorIdentifiers  OrganizationVendorIdentifier[]
+  products           OrganizationProduct[]
+  features           OrganizationFeature[]
+  accountOverlays    OrganizationAccountOverlay[]
+  auditEvents        OrganizationAuditEvent[]
+  provisioningRuns   OrganizationProvisioningRun[]
+  weeklyDigestLogs   WeeklyDigestLog[]
+  tags               Tag[]
+  menuPlacements     MenuPlacement[]
+  recipes            Recipe[]
+  recipeSuggestions  RecipeSuggestion[]
+  targetProfiles     TargetAccountProfile[]
+  locationTags       LocationTag[]
+  locationContacts   LocationContact[]
+  loggedVisits       LoggedVisit[]
+  visitPhotos        VisitPhoto[]
+  worklistItems      WorklistItem[]
+  agencyProducts     AgencyProductIntelligence[]
+  agencySummaries    AgencyIntelligenceSummary[]
+  agencyEvents       AgencyIntelligenceEvent[]
+  opportunitySignals OpportunityAccountSignal[]
+  accountSalesEvents AccountSalesEvent[]
+  salesOpportunities SalesOpportunity[]
+  opportunityEvents  OpportunityEvent[]
 
   @@index([active, accountStatus])
   @@index([onboardingStatus])
   @@index([createdAt])
+}
+
+model OrganizationProvisioningRun {
+  id                String                         @id @default(cuid())
+  organizationId    String
+  status            ProvisioningRunStatus          @default(PENDING)
+  configuration     Json                           @default("{}")
+  currentStep       ProvisioningStepKind?
+  requestedByUserId String
+  startedAt         DateTime?
+  completedAt       DateTime?
+  lastError         String?
+  attemptCount      Int                            @default(0)
+  createdAt         DateTime                       @default(now())
+  updatedAt         DateTime                       @updatedAt
+  organization      Organization                   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  steps             OrganizationProvisioningStep[]
+
+  @@index([organizationId, createdAt])
+  @@index([status, createdAt])
+}
+
+model OrganizationProvisioningStep {
+  id           String                      @id @default(cuid())
+  runId        String
+  kind         ProvisioningStepKind
+  status       ProvisioningStepStatus      @default(PENDING)
+  sequence     Int
+  attemptCount Int                         @default(0)
+  input        Json?
+  output       Json?
+  lastError    String?
+  startedAt    DateTime?
+  completedAt  DateTime?
+  createdAt    DateTime                    @default(now())
+  updatedAt    DateTime                    @updatedAt
+  run          OrganizationProvisioningRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@unique([runId, kind])
+  @@unique([runId, sequence])
+  @@index([status, updatedAt])
 }
 
 model OrganizationVendorIdentifier {
@@ -484,7 +593,7 @@ model CalendarOAuthState {
 
 model WeeklyDigestLog {
   id                String             @id @default(cuid())
-  organizationId    String?
+  organizationId    String
   digestType        WeeklyDigestType
   recipientUserId   String?
   recipientEmail    String
@@ -501,8 +610,9 @@ model WeeklyDigestLog {
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
   recipientUser     User?              @relation("WeeklyDigestRecipient", fields: [recipientUserId], references: [id], onDelete: SetNull)
+  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  @@unique([digestType, recipientEmail, periodStart, periodEnd])
+  @@unique([organizationId, digestType, recipientEmail, periodStart, periodEnd])
   @@index([digestType])
   @@index([organizationId])
   @@index([recipientUserId])
@@ -525,14 +635,19 @@ model UserSession {
 }
 
 model UserInvitation {
-  id                String    @id @default(cuid())
+  id                String                   @id @default(cuid())
   userId            String
-  tokenHash         String    @unique
+  tokenHash         String                   @unique
   expiresAt         DateTime
   acceptedAt        DateTime?
   providerMessageId String?
-  createdAt         DateTime  @default(now())
-  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deliveryStatus    InvitationDeliveryStatus @default(PENDING)
+  deliveredTo       String?
+  lastAttemptAt     DateTime?
+  lastError         String?
+  attemptCount      Int                      @default(0)
+  createdAt         DateTime                 @default(now())
+  user              User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([expiresAt])
@@ -603,8 +718,8 @@ model Sku {
 
 model Tag {
   id              String        @id @default(cuid())
-  organizationId  String?
-  name            String        @unique
+  organizationId  String
+  name            String
   color           String?
   description     String?
   createdByUserId String?
@@ -613,7 +728,9 @@ model Tag {
   accounts        AccountTag[]
   locationTags    LocationTag[]
   createdByUser   User?         @relation("TagCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  organization    Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
+  @@unique([organizationId, name])
   @@index([createdByUserId])
   @@index([organizationId])
 }
@@ -857,7 +974,7 @@ model Photo {
 
 model MenuPlacement {
   id                 String              @id @default(cuid())
-  organizationId     String?
+  organizationId     String
   accountId          String
   wholesaleAccountId String?
   visitId            String?
@@ -887,6 +1004,7 @@ model MenuPlacement {
   assignedToUser     User?               @relation("MenuPlacementAssignedTo", fields: [assignedToUserId], references: [id], onDelete: SetNull)
   createdByUser      User?               @relation("MenuPlacementCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
   updatedByUser      User?               @relation("MenuPlacementUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([accountId])
   @@index([organizationId])
@@ -916,7 +1034,7 @@ model EventShift {
 
 model Recipe {
   id                String             @id @default(cuid())
-  organizationId    String?
+  organizationId    String
   name              String
   primarySpirit     String?
   preparation       String?
@@ -937,7 +1055,7 @@ model Recipe {
   photoSizeBytes    Int?
   photoCaption      String?
   importSource      String?
-  importKey         String?            @unique
+  importKey         String?
   skuId             String?
   createdByUserId   String?
   updatedByUserId   String?
@@ -947,7 +1065,9 @@ model Recipe {
   createdByUser     User?              @relation("RecipeCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
   updatedByUser     User?              @relation("RecipeUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
   suggestions       RecipeSuggestion[]
+  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
+  @@unique([organizationId, importKey])
   @@index([name])
   @@index([organizationId])
   @@index([primarySpirit])
@@ -958,7 +1078,7 @@ model Recipe {
 
 model RecipeSuggestion {
   id                 String           @id @default(cuid())
-  organizationId     String?
+  organizationId     String
   recipeId           String
   wholesaleAccountId String
   note               String?
@@ -969,8 +1089,9 @@ model RecipeSuggestion {
   recipe             Recipe           @relation(fields: [recipeId], references: [id], onDelete: Cascade)
   wholesaleAccount   WholesaleAccount @relation(fields: [wholesaleAccountId], references: [id], onDelete: Cascade)
   createdByUser      User?            @relation("RecipeSuggestionCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  organization       Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  @@unique([recipeId, wholesaleAccountId])
+  @@unique([organizationId, recipeId, wholesaleAccountId])
   @@index([recipeId])
   @@index([organizationId])
   @@index([wholesaleAccountId])
@@ -1008,7 +1129,7 @@ model Agency {
   inventorySnapshots       OhlqAgencyInventorySnapshot[] @relation("AgencyInventorySnapshots")
   currentInventory         OhlqAgencyInventoryCurrent[]  @relation("AgencyInventoryCurrent")
   productIntelligence      AgencyProductIntelligence[]
-  intelligenceSummary      AgencyIntelligenceSummary?
+  intelligenceSummaries    AgencyIntelligenceSummary[]
   intelligenceEvents       AgencyIntelligenceEvent[]
 
   @@index([latitude, longitude])
@@ -1058,7 +1179,7 @@ model WholesaleAccount {
   tags                          LocationTag[]               @relation("WholesaleLocationTags")
   recipeSuggestions             RecipeSuggestion[]
   menuPlacements                MenuPlacement[]
-  targetProfile                 TargetAccountProfile?
+  targetProfiles                TargetAccountProfile[]
   targetScores                  TargetAccountScoreHistory[]
   targetMetrics                 TargetAccountMetric[]
   targetPublicResearch          TargetPublicResearch?
@@ -1066,7 +1187,7 @@ model WholesaleAccount {
   targetHeatLossAlerts          TargetHeatLossAlert[]
   targetChainMemberships        TargetChainMembership[]
   opportunities                 SalesOpportunity[]
-  opportunitySignal             OpportunityAccountSignal?
+  opportunitySignals            OpportunityAccountSignal[]
   salesEvents                   AccountSalesEvent[]
 
   @@index([createdByUserId])
@@ -1145,8 +1266,8 @@ model TargetOwnershipGroup {
 
 model TargetAccountProfile {
   id                      String                @id @default(cuid())
-  organizationId          String?
-  wholesaleAccountId      String                @unique
+  organizationId          String
+  wholesaleAccountId      String
   ownershipGroupId        String?
   sourceImportId          String?
   ohlqIdentifier          String
@@ -1173,7 +1294,9 @@ model TargetAccountProfile {
   ownershipGroup          TargetOwnershipGroup? @relation(fields: [ownershipGroupId], references: [id], onDelete: SetNull)
   sourceImport            TargetModelImport?    @relation(fields: [sourceImportId], references: [id], onDelete: SetNull)
   assignedUser            User?                 @relation("TargetAccountAssignedTo", fields: [assignedUserId], references: [id], onDelete: SetNull)
+  organization            Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
+  @@unique([organizationId, wholesaleAccountId])
   @@index([ownershipGroupId])
   @@index([sourceImportId])
   @@index([assignedUserId])
@@ -1385,7 +1508,7 @@ model WholesaleLicenseeId {
 
 model LocationTag {
   id                 String            @id @default(cuid())
-  organizationId     String?
+  organizationId     String
   tagId              String
   agencyId           String?
   wholesaleAccountId String?
@@ -1396,9 +1519,10 @@ model LocationTag {
   agency             Agency?           @relation("AgencyLocationTags", fields: [agencyId], references: [id], onDelete: Cascade)
   wholesaleAccount   WholesaleAccount? @relation("WholesaleLocationTags", fields: [wholesaleAccountId], references: [id], onDelete: Cascade)
   createdByUser      User?             @relation("LocationTagCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  organization       Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  @@unique([tagId, agencyId])
-  @@unique([tagId, wholesaleAccountId])
+  @@unique([organizationId, tagId, agencyId])
+  @@unique([organizationId, tagId, wholesaleAccountId])
   @@index([tagId])
   @@index([agencyId])
   @@index([wholesaleAccountId])
@@ -1407,8 +1531,8 @@ model LocationTag {
 }
 
 model LocationContact {
-  id                 String   @id @default(cuid())
-  organizationId     String?
+  id                 String       @id @default(cuid())
+  organizationId     String
   name               String
   role               String?
   phone              String?
@@ -1417,16 +1541,17 @@ model LocationContact {
   wholesaleAccountId String?
   notes              String?
   createdByUserId    String?
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
-  createdByUser      User?    @relation("LocationContactCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+  createdByUser      User?        @relation("LocationContactCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([createdByUserId])
 }
 
 model LoggedVisit {
   id                          String                     @id @default(cuid())
-  organizationId              String?
+  organizationId              String
   visitAt                     DateTime                   @default(now())
   locationType                String
   agencyId                    String?
@@ -1446,7 +1571,7 @@ model LoggedVisit {
   followUpAssignedToUserId    String?
   createdBy                   String?
   createdByUserId             String?
-  submissionKey               String?                    @unique
+  submissionKey               String?
   createdAt                   DateTime                   @default(now())
   updatedAt                   DateTime                   @default(now()) @updatedAt
   createdByUser               User?                      @relation("LoggedVisitCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
@@ -1456,7 +1581,9 @@ model LoggedVisit {
   salesOpportunity            SalesOpportunity?          @relation(fields: [salesOpportunityId], references: [id], onDelete: SetNull)
   agencyProductIntelligence   AgencyProductIntelligence? @relation(fields: [agencyProductIntelligenceId], references: [id], onDelete: SetNull)
   originatingWorklistItem     WorklistItem?              @relation("OriginatingWorklistItem", fields: [originatingWorklistItemId], references: [id], onDelete: SetNull)
+  organization                Organization               @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
+  @@unique([organizationId, submissionKey])
   @@index([createdByUserId])
   @@index([followUpAssignedToUserId])
   @@index([locationType, agencyId, visitAt])
@@ -1467,8 +1594,8 @@ model LoggedVisit {
 }
 
 model VisitPhoto {
-  id              String      @id @default(cuid())
-  organizationId  String?
+  id              String       @id @default(cuid())
+  organizationId  String
   loggedVisitId   String
   type            PhotoType
   url             String
@@ -1477,9 +1604,10 @@ model VisitPhoto {
   sizeBytes       Int?
   caption         String?
   createdByUserId String?
-  createdAt       DateTime    @default(now())
-  createdByUser   User?       @relation("VisitPhotoCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
-  visit           LoggedVisit @relation(fields: [loggedVisitId], references: [id], onDelete: Cascade)
+  createdAt       DateTime     @default(now())
+  createdByUser   User?        @relation("VisitPhotoCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  visit           LoggedVisit  @relation(fields: [loggedVisitId], references: [id], onDelete: Cascade)
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([loggedVisitId])
   @@index([createdByUserId])
@@ -1487,7 +1615,7 @@ model VisitPhoto {
 
 model WorklistItem {
   id                          String                     @id @default(cuid())
-  organizationId              String?
+  organizationId              String
   title                       String
   detail                      String?
   status                      WorklistStatus             @default(OPEN)
@@ -1498,7 +1626,7 @@ model WorklistItem {
   loggedVisitId               String?
   salesOpportunityId          String?
   agencyProductIntelligenceId String?
-  submissionKey               String?                    @unique
+  submissionKey               String?
   dueDate                     DateTime?
   dueTimeMinutes              Int?
   assignedTo                  String?
@@ -1520,7 +1648,9 @@ model WorklistItem {
   salesOpportunity            SalesOpportunity?          @relation(fields: [salesOpportunityId], references: [id], onDelete: SetNull)
   agencyProductIntelligence   AgencyProductIntelligence? @relation(fields: [agencyProductIntelligenceId], references: [id], onDelete: SetNull)
   originatedVisits            LoggedVisit[]              @relation("OriginatingWorklistItem")
+  organization                Organization               @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
+  @@unique([organizationId, submissionKey])
   @@index([status])
   @@index([category])
   @@index([dueDate])
@@ -1538,7 +1668,7 @@ model WorklistItem {
 
 model AgencyProductIntelligence {
   id                       String                        @id @default(cuid())
-  organizationId           String?
+  organizationId           String
   agencyId                 String
   itemCode                 String
   itemName                 String
@@ -1586,8 +1716,9 @@ model AgencyProductIntelligence {
   agency                   Agency                        @relation(fields: [agencyId], references: [id], onDelete: Cascade)
   worklistItems            WorklistItem[]
   loggedVisits             LoggedVisit[]
+  organization             Organization                  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  @@unique([agencyId, itemCode])
+  @@unique([organizationId, agencyId, itemCode])
   @@index([agencyId, priorityScore])
   @@index([itemCode, fitBand])
   @@index([asOfDate])
@@ -1601,8 +1732,8 @@ model AgencyProductIntelligence {
 
 model AgencyIntelligenceSummary {
   id                            String                 @id @default(cuid())
-  organizationId                String?
-  agencyId                      String                 @unique
+  organizationId                String
+  agencyId                      String
   asOfDate                      DateTime               @db.Date
   retailBand                    AgencyIntelligenceBand
   wholesaleInfluenceBand        AgencyIntelligenceBand
@@ -1629,7 +1760,9 @@ model AgencyIntelligenceSummary {
   createdAt                     DateTime               @default(now())
   updatedAt                     DateTime               @updatedAt
   agency                        Agency                 @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  organization                  Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
+  @@unique([organizationId, agencyId])
   @@index([retailBand, asOfDate])
   @@index([wholesaleInfluenceBand, asOfDate])
   @@index([stockoutCount])
@@ -1640,12 +1773,12 @@ model AgencyIntelligenceSummary {
 
 model AgencyIntelligenceEvent {
   id                          String                         @id @default(cuid())
-  organizationId              String?
+  organizationId              String
   agencyId                    String
   agencyProductIntelligenceId String?
   itemCode                    String?
   eventType                   String
-  eventKey                    String                         @unique
+  eventKey                    String
   previousInventoryState      AgencyInventoryState?
   inventoryState              AgencyInventoryState?
   previousOpportunityState    AgencyProductOpportunityState?
@@ -1654,7 +1787,9 @@ model AgencyIntelligenceEvent {
   occurredAt                  DateTime
   createdAt                   DateTime                       @default(now())
   agency                      Agency                         @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  organization                Organization                   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
+  @@unique([organizationId, eventKey])
   @@index([agencyId, occurredAt])
   @@index([agencyProductIntelligenceId, occurredAt])
   @@index([itemCode, occurredAt])
@@ -1663,8 +1798,8 @@ model AgencyIntelligenceEvent {
 
 model OpportunityAccountSignal {
   id                  String           @id @default(cuid())
-  organizationId      String?
-  wholesaleAccountId  String           @unique
+  organizationId      String
+  wholesaleAccountId  String
   asOfDate            DateTime         @db.Date
   signalVersion       String
   features            Json
@@ -1674,14 +1809,16 @@ model OpportunityAccountSignal {
   createdAt           DateTime         @default(now())
   updatedAt           DateTime         @updatedAt
   wholesaleAccount    WholesaleAccount @relation(fields: [wholesaleAccountId], references: [id], onDelete: Cascade)
+  organization        Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
+  @@unique([organizationId, wholesaleAccountId])
   @@index([asOfDate])
   @@index([lastEchoPurchaseAt])
 }
 
 model AccountSalesEvent {
   id                 String           @id @default(cuid())
-  organizationId     String?
+  organizationId     String
   wholesaleAccountId String
   reportDate         DateTime         @db.Date
   agencyId           String
@@ -1692,10 +1829,12 @@ model AccountSalesEvent {
   bottles            Int
   annualBottlesAfter Int
   isTenantProduct    Boolean
-  sourceKey          String           @unique
+  sourceKey          String
   createdAt          DateTime         @default(now())
   wholesaleAccount   WholesaleAccount @relation(fields: [wholesaleAccountId], references: [id], onDelete: Cascade)
+  organization       Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
+  @@unique([organizationId, sourceKey])
   @@index([wholesaleAccountId, reportDate])
   @@index([reportDate])
   @@index([vendor, reportDate])
@@ -1723,11 +1862,11 @@ model OpportunityModelVersion {
 
 model SalesOpportunity {
   id                   String             @id @default(cuid())
-  organizationId       String?
+  organizationId       String
   wholesaleAccountId   String
   type                 OpportunityType
   status               OpportunityStatus  @default(OPEN)
-  activeAccountKey     String?            @unique
+  activeAccountKey     String?
   cycleKey             String
   targetCategory       String?
   title                String
@@ -1758,7 +1897,9 @@ model SalesOpportunity {
   scores               OpportunityScore[]
   worklistItems        WorklistItem[]
   loggedVisits         LoggedVisit[]
+  organization         Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
+  @@unique([organizationId, activeAccountKey])
   @@index([wholesaleAccountId, type, cycleKey])
   @@index([wholesaleAccountId, status])
   @@index([type, status, productionScore])
@@ -1769,7 +1910,7 @@ model SalesOpportunity {
 
 model OpportunityEvent {
   id                 String               @id @default(cuid())
-  organizationId     String?
+  organizationId     String
   opportunityId      String
   eventType          OpportunityEventType
   eventKey           String
@@ -1782,6 +1923,7 @@ model OpportunityEvent {
   occurredAt         DateTime
   createdAt          DateTime             @default(now())
   opportunity        SalesOpportunity     @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  organization       Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@unique([opportunityId, eventKey])
   @@index([wholesaleAccountId, occurredAt])

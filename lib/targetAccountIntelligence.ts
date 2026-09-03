@@ -8,6 +8,7 @@ import {
   type PrismaClient,
 } from '@prisma/client';
 import { prisma } from './prisma';
+import { ECHO_ORGANIZATION_ID } from './organizations';
 import {
   DEFAULT_TARGET_MODEL_PERIOD,
   DEFAULT_TARGET_MODEL_VERSION,
@@ -36,6 +37,7 @@ type ImportTargetWorkbookOptions = {
   filename: string;
   importedByUserId?: string | null;
   modelVersion?: string;
+  organizationId?: string;
 };
 
 type TargetImportStats = {
@@ -185,6 +187,7 @@ const upsertWholesaleAccount = async ({
 const upsertTargetRowsForAccount = async ({
   importId,
   modelVersion,
+  organizationId,
   portfolioSkus,
   row,
   tx,
@@ -192,6 +195,7 @@ const upsertTargetRowsForAccount = async ({
 }: {
   importId: string;
   modelVersion: string;
+  organizationId: string;
   portfolioSkus: ParsedTargetWorkbook['portfolioSkus'];
   row: TargetAccountImportRow;
   tx: TargetDb;
@@ -206,8 +210,9 @@ const upsertTargetRowsForAccount = async ({
   const explanation = buildScoreExplanation(row);
 
   await tx.targetAccountProfile.upsert({
-    where: { wholesaleAccountId },
+    where: { organizationId_wholesaleAccountId: { organizationId, wholesaleAccountId } },
     create: {
+      organizationId,
       wholesaleAccountId,
       ownershipGroupId: ownershipGroup?.id,
       sourceImportId: importId,
@@ -471,6 +476,7 @@ export const importTargetAccountWorkbook = async ({
   filename,
   importedByUserId = null,
   modelVersion = DEFAULT_TARGET_MODEL_VERSION,
+  organizationId = ECHO_ORGANIZATION_ID,
 }: ImportTargetWorkbookOptions) => {
   const parsed = await parseTargetAccountWorkbook(buffer);
   const blockingProblems = hasBlockingWorkbookProblems(parsed);
@@ -573,6 +579,7 @@ export const importTargetAccountWorkbook = async ({
           await upsertTargetRowsForAccount({
             importId: importRecord.id,
             modelVersion,
+            organizationId,
             portfolioSkus: parsed.portfolioSkus,
             row,
             tx,
@@ -661,15 +668,19 @@ export const importTargetAccountWorkbook = async ({
 
 export const getTargetAccountBriefing = async ({
   db = prisma,
+  organizationId = ECHO_ORGANIZATION_ID,
   wholesaleAccountId,
 }: {
   db?: PrismaClient;
+  organizationId?: string;
   wholesaleAccountId: string;
 }) => {
   const account = await db.wholesaleAccount.findUnique({
     where: { id: wholesaleAccountId },
     include: {
-      targetProfile: {
+      targetProfiles: {
+        where: { organizationId },
+        take: 1,
         include: {
           ownershipGroup: true,
         },
@@ -695,26 +706,27 @@ export const getTargetAccountBriefing = async ({
 
   const [recentActivities, openWorklistItems, menuPlacements] = await Promise.all([
     db.loggedVisit.findMany({
-      where: { wholesaleAccountId, locationType: 'wholesale' },
+      where: { organizationId, wholesaleAccountId, locationType: 'wholesale' },
       orderBy: { visitAt: 'desc' },
       take: 5,
     }),
     db.worklistItem.findMany({
       where: {
         wholesaleAccountId,
+        organizationId,
         ...activeWorklistWhere,
       },
       orderBy: [{ dueDate: 'asc' }, { createdAt: 'desc' }],
       take: 5,
     }),
     db.menuPlacement.findMany({
-      where: { wholesaleAccountId },
+      where: { organizationId, wholesaleAccountId },
       orderBy: [{ updatedAt: 'desc' }],
       take: 10,
     }),
   ]);
 
-  const profile = account.targetProfile;
+  const profile = account.targetProfiles[0];
   const primaryOpportunity = account.targetSkuOpportunities[0];
 
   return {

@@ -31,34 +31,9 @@ npm run dev
 - Deploy.
 
 ## Tenant configuration
-The app defaults to the current Echo Spirits setup. A licensed tenant deployment can override these values with environment variables:
-- `TENANT_ID`: stable tenant slug, for example `echo-spirits`.
-- `TENANT_ENTITY_NAME`: entity name shown in the app shell and login page.
-- `TENANT_APP_NAME`: legacy tenant app-name override retained for compatibility; Neat is the shared product identity.
-- `TENANT_DIGEST_NAME`: legacy digest-name override retained for compatibility; Neat is used by current internal digests.
-- `TENANT_PRODUCT_LABEL`: short product label, for example `Echo`.
-- `TENANT_PRODUCT_PLURAL_LABEL`: plural product label, for example `Echo items`.
-- `TENANT_PRODUCT_FILTER_MODE`: `vendor-exclusions` or `item-list`.
-- `TENANT_OHLQ_VENDOR_IDS`: comma, semicolon, or newline-separated OHLQ vendor IDs.
-- `TENANT_EXCLUDED_ITEM_CODES`: item codes to exclude when using `vendor-exclusions`.
-- `TENANT_ITEM_CODES`: explicit item code allowlist when using `item-list`.
+Platform administrators create and configure organizations at `/platform/organizations/new`. Customer identity, application and digest names, product labels, brand colors, contact details, Ohio Vendor IDs, reviewed products, and feature entitlements are stored per organization in the database. The persisted provisioning workflow validates configuration, discovers products, waits for explicit ownership decisions, creates the initial administrator, delivers or exposes a one-time invitation, backfills enabled intelligence, and marks the organization ready. No per-customer Vercel variables are required.
 
-Esther Rum tenant values:
-```env
-TENANT_ID="esther-rum"
-TENANT_ENTITY_NAME="Esther Rum"
-TENANT_APP_NAME="Neat"
-TENANT_DIGEST_NAME="Neat"
-TENANT_PRODUCT_LABEL="Esther Rum"
-TENANT_PRODUCT_PLURAL_LABEL="Esther Rum items"
-TENANT_PRODUCT_FILTER_MODE="item-list"
-TENANT_OHLQ_VENDOR_IDS="Z90399001"
-TENANT_ITEM_CODES="3150B"
-SEED_ADMIN_EMAIL="cheers@echospirits.com"
-SEED_ADMIN_FIRST_NAME="Esther"
-SEED_ADMIN_LAST_NAME="Admin"
-SEED_ADMIN_PASSWORD="<set-a-secure-password>"
-```
+Deployment-level secrets and infrastructure identifiers remain Vercel configuration because they are shared platform resources, not customer configuration. The `TENANT_*` variables in `.env.example` are retained only for legacy Echo bootstrap scripts and local tooling; do not create them for new organizations.
 
 ## OHLQ daily sales and agency inventory export
 - Vercel Cron calls `/api/cron/ohlq-annual-sales` daily at 11:07 UTC, which is 7:07 AM Eastern during daylight saving time and 6:07 AM Eastern during standard time.

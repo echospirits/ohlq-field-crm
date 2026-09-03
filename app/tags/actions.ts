@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { requireUser } from '../../lib/auth';
 import { prisma } from '../../lib/prisma';
+import { requireOrganizationContext } from '../../lib/organizations';
 
 const defaultTagColor = '#7c9cff';
 const hexColorPattern = /^#[0-9a-fA-F]{6}$/;
@@ -28,6 +29,7 @@ const safeReturnTo = (value: FormDataEntryValue | null | undefined, fallback = '
 
 export async function createTag(formData: FormData) {
   const user = await requireUser();
+  const { organizationId } = await requireOrganizationContext(user);
   const name = normalizeTagName(formData.get('name'));
 
   if (!name) {
@@ -35,8 +37,9 @@ export async function createTag(formData: FormData) {
   }
 
   await prisma.tag.upsert({
-    where: { name },
+    where: { organizationId_name: { organizationId, name } },
     create: {
+      organizationId,
       name,
       color: toTagColor(formData.get('color')),
       description: toOptional(formData.get('description')),
@@ -55,14 +58,15 @@ export async function createTag(formData: FormData) {
 }
 
 export async function deleteTag(formData: FormData) {
-  await requireUser();
+  const user = await requireUser();
+  const { organizationId } = await requireOrganizationContext(user);
   const id = toOptional(formData.get('id'));
 
   if (!id) {
     redirect('/tags?status=invalid');
   }
 
-  await prisma.tag.delete({ where: { id } });
+  await prisma.tag.deleteMany({ where: { id, organizationId } });
 
   revalidatePath('/tags');
   revalidatePath('/agencies');
@@ -72,6 +76,7 @@ export async function deleteTag(formData: FormData) {
 
 export async function addLocationTag(formData: FormData) {
   const user = await requireUser();
+  const { organizationId } = await requireOrganizationContext(user);
   const tagId = toOptional(formData.get('tagId'));
   const agencyId = toOptional(formData.get('agencyId'));
   const wholesaleAccountId = toOptional(formData.get('wholesaleAccountId'));
@@ -84,8 +89,9 @@ export async function addLocationTag(formData: FormData) {
 
   if (agencyId) {
     await prisma.locationTag.upsert({
-      where: { tagId_agencyId: { tagId, agencyId } },
+      where: { organizationId_tagId_agencyId: { organizationId, tagId, agencyId } },
       create: {
+        organizationId,
         tagId,
         agencyId,
         note,
@@ -99,8 +105,9 @@ export async function addLocationTag(formData: FormData) {
 
   if (wholesaleAccountId) {
     await prisma.locationTag.upsert({
-      where: { tagId_wholesaleAccountId: { tagId, wholesaleAccountId } },
+      where: { organizationId_tagId_wholesaleAccountId: { organizationId, tagId, wholesaleAccountId } },
       create: {
+        organizationId,
         tagId,
         wholesaleAccountId,
         note,
@@ -121,7 +128,8 @@ export async function addLocationTag(formData: FormData) {
 }
 
 export async function removeLocationTag(formData: FormData) {
-  await requireUser();
+  const user = await requireUser();
+  const { organizationId } = await requireOrganizationContext(user);
   const id = toOptional(formData.get('id'));
   const returnTo = safeReturnTo(formData.get('returnTo'));
   const agencyId = toOptional(formData.get('agencyId'));
@@ -131,7 +139,7 @@ export async function removeLocationTag(formData: FormData) {
     redirect(`${returnTo}?tagStatus=invalid`);
   }
 
-  await prisma.locationTag.delete({ where: { id } });
+  await prisma.locationTag.deleteMany({ where: { id, organizationId } });
 
   revalidatePath('/tags');
   revalidatePath('/agencies');

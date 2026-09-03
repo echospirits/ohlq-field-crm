@@ -7,6 +7,7 @@ import { buildPageMetadata } from '../../lib/appBrand';
 import { requireUser } from '../../lib/auth';
 import { formatWorklistDue } from '../../lib/dateTime';
 import { prisma } from '../../lib/prisma';
+import { requireOrganizationContext } from '../../lib/organizations';
 import { GlobalSearchForm } from '../components/GlobalSearchForm';
 
 export const metadata = buildPageMetadata('Search');
@@ -15,7 +16,8 @@ const resultLimit = 12;
 const inactiveWorkStatuses = [WorklistStatus.COMPLETED, WorklistStatus.CANCELLED];
 
 export default async function SearchPage({ searchParams }: { searchParams?: Promise<{ q?: string }> }) {
-  await requireUser();
+  const user = await requireUser();
+  const { organizationId } = await requireOrganizationContext(user);
   const params = (await searchParams) ?? {};
   const query = (params.q ?? '').trim();
   const canSearch = query.length >= 2;
@@ -49,9 +51,9 @@ export default async function SearchPage({ searchParams }: { searchParams?: Prom
               { city: { contains: query, mode: 'insensitive' } },
               { ownership: { contains: query, mode: 'insensitive' } },
               { licenseeIds: { some: { licenseeId: { contains: query, mode: 'insensitive' } } } },
-              { opportunities: { some: { title: { contains: query, mode: 'insensitive' } } } },
-              { opportunities: { some: { recommendedAction: { contains: query, mode: 'insensitive' } } } },
-              { opportunities: { some: { targetCategory: { contains: query, mode: 'insensitive' } } } },
+              { opportunities: { some: { organizationId, title: { contains: query, mode: 'insensitive' } } } },
+              { opportunities: { some: { organizationId, recommendedAction: { contains: query, mode: 'insensitive' } } } },
+              { opportunities: { some: { organizationId, targetCategory: { contains: query, mode: 'insensitive' } } } },
             ],
           },
           orderBy: [{ name: 'asc' }],
@@ -63,7 +65,7 @@ export default async function SearchPage({ searchParams }: { searchParams?: Prom
             address: true,
             city: true,
             opportunities: {
-              where: { status: { in: [OpportunityStatus.OPEN, OpportunityStatus.ACTIONED, OpportunityStatus.SNOOZED] } },
+              where: { organizationId, status: { in: [OpportunityStatus.OPEN, OpportunityStatus.ACTIONED, OpportunityStatus.SNOOZED] } },
               orderBy: [{ productionScore: 'desc' }, { lastDetectedAt: 'desc' }],
               take: 1,
               select: { priorityBand: true, recommendedAction: true },
@@ -73,6 +75,7 @@ export default async function SearchPage({ searchParams }: { searchParams?: Prom
         prisma.worklistItem.findMany({
           take: resultLimit,
           where: {
+            organizationId,
             status: { notIn: inactiveWorkStatuses },
             OR: [
               { title: { contains: query, mode: 'insensitive' } },

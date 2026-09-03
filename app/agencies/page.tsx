@@ -10,6 +10,7 @@ import { requireUser } from '../../lib/auth';
 import { formatEasternDate } from '../../lib/dateTime';
 import { getGeocodeResetForAddressChange } from '../../lib/location/geocode';
 import { prisma } from '../../lib/prisma';
+import { requireOrganizationContext } from '../../lib/organizations';
 import { LiveFilterForm } from '../components/LiveFilterForm';
 import { AccountViewNavigation } from '../components/AccountViewNavigation';
 import { NearbyAccountsSection } from '../components/NearbyAccountsSection';
@@ -31,6 +32,7 @@ async function importAgencies(formData: FormData) {
   'use server';
 
   const user = await requireUser();
+  const { organizationId } = await requireOrganizationContext(user);
   const file = formData.get('csvFile');
   if (!(file instanceof File) || file.size === 0) {
     redirect('/agencies?status=invalid');
@@ -100,9 +102,10 @@ async function importAgencies(formData: FormData) {
     });
 
     await prisma.locationContact.upsert({
-      where: { id: `agency-${agencyId}-default` },
+      where: { id: `${organizationId}-agency-${agencyId}-default` },
       create: {
-        id: `agency-${agencyId}-default`,
+        id: `${organizationId}-agency-${agencyId}-default`,
+        organizationId,
         agencyId: agency.id,
         name: primaryContact ?? `Agency Contact ${agencyId}`,
         phone: primaryContactPhone,
@@ -130,7 +133,8 @@ export default async function AgenciesPage({
 }: {
   searchParams?: Promise<{ q?: string; status?: string; count?: string }>;
 }) {
-  await requireUser();
+  const user = await requireUser();
+  const { organizationId } = await requireOrganizationContext(user);
 
   const params = (await searchParams) ?? {};
   const q = (params.q ?? '').trim();
@@ -138,7 +142,7 @@ export default async function AgenciesPage({
   const agencies = await prisma.agency.findMany({
     take: 250,
     include: {
-      tags: {
+      tags: { where: { organizationId },
         include: { tag: true },
         orderBy: { createdAt: 'desc' },
       },
@@ -152,7 +156,7 @@ export default async function AgenciesPage({
             { primaryContactPhone: { contains: q, mode: 'insensitive' } },
             { phone: { contains: q, mode: 'insensitive' } },
             { agencyId: { contains: q, mode: 'insensitive' } },
-            { tags: { some: { tag: { name: { contains: q, mode: 'insensitive' } } } } },
+            { tags: { some: { organizationId, tag: { name: { contains: q, mode: 'insensitive' } } } } },
           ],
         }
       : undefined,
@@ -165,6 +169,7 @@ export default async function AgenciesPage({
           by: ['agencyId'],
           where: {
             locationType: 'agency',
+            organizationId,
             agencyId: { in: agencyIds },
           },
           _count: { _all: true },

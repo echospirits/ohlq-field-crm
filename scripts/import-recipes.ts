@@ -2,6 +2,7 @@ import { createHash } from 'crypto';
 import { UserRole } from '@prisma/client';
 import Papa from 'papaparse';
 import { prisma } from '../lib/prisma';
+import { ECHO_ORGANIZATION_ID } from '../lib/organizations';
 
 const DEFAULT_RECIPE_SHEET_URL =
   'https://docs.google.com/spreadsheets/d/1bcs325mQPmwKfOgo8K_75ZsfzGyw5ay-Pt6ww03TQTA/gviz/tq?tqx=out:csv';
@@ -80,6 +81,7 @@ async function getSheetRows() {
 }
 
 async function main() {
+  const organizationId = process.env.ORGANIZATION_ID?.trim() || ECHO_ORGANIZATION_ID;
   const rows = await getSheetRows();
   const importUserId = await getImportUserId();
   let created = 0;
@@ -97,7 +99,7 @@ async function main() {
 
     const importKey = getImportKey(row);
     const existingRecipe = await prisma.recipe.findUnique({
-      where: { importKey },
+      where: { organizationId_importKey: { organizationId, importKey } },
       select: { id: true },
     });
     const recipeData = {
@@ -125,6 +127,7 @@ async function main() {
       await prisma.recipe.create({
         data: {
           ...recipeData,
+          organizationId,
           importKey,
           createdByUserId: importUserId,
         },

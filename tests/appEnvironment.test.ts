@@ -10,6 +10,7 @@ import {
 import { getEmailDeliveryPolicy } from '../lib/email/sendEmail';
 
 const production = (): NodeJS.ProcessEnv => ({
+  NODE_ENV: 'production',
   APP_ENV: 'production',
   APP_BASE_URL: 'https://crm.example.com',
   DATABASE_URL: 'postgresql://user:password@prod-db.example.com:5432/neat',
@@ -22,6 +23,7 @@ const production = (): NodeJS.ProcessEnv => ({
 });
 
 const staging = (): NodeJS.ProcessEnv => ({
+  NODE_ENV: 'production',
   APP_ENV: 'test',
   APP_BASE_URL: 'https://tst.example.com',
   DATABASE_URL: 'postgresql://user:password@test-db.example.com:5432/neat',
@@ -35,7 +37,7 @@ const staging = (): NodeJS.ProcessEnv => ({
 });
 
 test('Vercel requires an explicit APP_ENV', () => {
-  assert.throws(() => getAppEnvironment({ VERCEL: '1' }), /APP_ENV is required/);
+  assert.throws(() => getAppEnvironment({ NODE_ENV: 'test', VERCEL: '1' }), /APP_ENV is required/);
 });
 
 test('production and test are restricted to their expected Git branches', () => {

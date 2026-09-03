@@ -18,12 +18,11 @@ import {
   type WholesaleInfluenceAnalysis,
 } from './agencyIntelligence';
 import { agencyIntelligenceConfig } from './agencyIntelligenceConfig';
-import { ECHO_ORGANIZATION_ID } from './organizations';
 import { getTenantAgencyInventoryWhere } from './ohlqAgencyInventory';
 import { getTenantSalesWhere, getTenantWholesaleSalesWhere } from './ohlqSalesData';
 import { getOhlqLicenseeMatchKeys, normalizeOhlqId } from './ohlqWholesaleMatching';
 import { prisma } from './prisma';
-import { getTenantConfig } from './tenantConfig';
+import { getOrganizationTenantConfig, type TenantConfig } from './tenantConfig';
 
 const DAY = 86_400_000;
 const INPUT_SOURCES = [
@@ -37,7 +36,9 @@ type InputStatus = { dataSource: OhlqReportDataSource; status: OhlqReportRunStat
 type RefreshOptions = {
   db?: PrismaClient;
   inventoryReportDate: Date;
+  organizationId: string;
   salesReportDate: Date;
+  tenantConfig?: TenantConfig;
 };
 
 type MutableSales = {
@@ -171,7 +172,7 @@ export async function assertAgencyIntelligenceInputsComplete({
   db,
   inventoryReportDate,
   salesReportDate,
-}: Required<RefreshOptions>) {
+}: { db: PrismaClient; inventoryReportDate: Date; salesReportDate: Date }) {
   const statuses = await db.ohlqReportImportStatus.findMany({
     where: {
       OR: [
@@ -197,10 +198,12 @@ export async function assertAgencyIntelligenceInputsComplete({
 export async function refreshAgencyIntelligence({
   db = prisma,
   inventoryReportDate,
+  organizationId,
   salesReportDate,
+  tenantConfig: configuredTenant,
 }: RefreshOptions) {
   await assertAgencyIntelligenceInputsComplete({ db, inventoryReportDate, salesReportDate });
-  const tenantConfig = getTenantConfig();
+  const tenantConfig = configuredTenant ?? await getOrganizationTenantConfig(organizationId, db);
   const salesStart = addDays(salesReportDate, -29);
   const sales7Start = addDays(salesReportDate, -6);
   const placementHistoryStart = addDays(inventoryReportDate, -179);
@@ -246,7 +249,7 @@ export async function refreshAgencyIntelligence({
         select: { agencyNumber: true, itemCode: true },
       }),
       db.loggedVisit.findMany({
-        where: { locationType: 'agency', agencyId: { not: null }, visitAt: { lte: inventoryReportDate } },
+        where: { organizationId, locationType: 'agency', agencyId: { not: null }, visitAt: { lte: inventoryReportDate } },
         orderBy: { visitAt: 'desc' },
         distinct: ['agencyId'],
         select: { agencyId: true, visitAt: true },
@@ -261,7 +264,7 @@ export async function refreshAgencyIntelligence({
           licenseeIds: { select: { licenseeId: true } },
           ohlqLastEchoPurchaseDate: true,
           opportunities: {
-            where: { status: { in: [OpportunityStatus.OPEN, OpportunityStatus.ACTIONED] } },
+            where: { organizationId, status: { in: [OpportunityStatus.OPEN, OpportunityStatus.ACTIONED] } },
             select: { id: true },
           },
         },
@@ -274,6 +277,7 @@ export async function refreshAgencyIntelligence({
         select: { permitNumber: true, wholesaleBottlesSold: true },
       }),
       db.agencyProductIntelligence.findMany({
+        where: { organizationId },
         select: {
           id: true,
           agencyId: true,
@@ -464,9 +468,9 @@ export async function refreshAgencyIntelligence({
         wholesaleInfluence: wholesale,
       };
       const persisted = await db.agencyProductIntelligence.upsert({
-        where: { agencyId_itemCode: { agencyId: agency.id, itemCode: product.signals.itemCode } },
+        where: { organizationId_agencyId_itemCode: { organizationId, agencyId: agency.id, itemCode: product.signals.itemCode } },
         create: {
-          organizationId: ECHO_ORGANIZATION_ID,
+          organizationId,
           agencyId: agency.id,
           itemCode: product.signals.itemCode,
           itemName: product.signals.itemName,
@@ -554,6 +558,7 @@ export async function refreshAgencyIntelligence({
         await db.worklistItem.updateMany({
           where: {
             agencyProductIntelligenceId: persisted.id,
+            organizationId,
             status: { in: ['OPEN', 'IN_PROGRESS'] },
           },
           data: { completedAt: now, status: 'COMPLETED' },
@@ -564,7 +569,7 @@ export async function refreshAgencyIntelligence({
         const result = await db.agencyIntelligenceEvent.createMany({
           skipDuplicates: true,
           data: [{
-            organizationId: ECHO_ORGANIZATION_ID,
+            organizationId,
             agencyId: agency.id,
             agencyProductIntelligenceId: persisted.id,
             itemCode: product.signals.itemCode,
@@ -591,9 +596,9 @@ export async function refreshAgencyIntelligence({
       null,
     );
     await db.agencyIntelligenceSummary.upsert({
-      where: { agencyId: agency.id },
+      where: { organizationId_agencyId: { organizationId, agencyId: agency.id } },
       create: {
-        organizationId: ECHO_ORGANIZATION_ID,
+        organizationId,
         agencyId: agency.id,
         asOfDate: inventoryReportDate,
         retailBand,

@@ -206,8 +206,9 @@ describe('findOhlqWholesaleReactivationCandidates', () => {
       runAt,
     });
 
-    assert.equal(lapsedWhere?.isActive, undefined);
-    assert.equal(lapsedWhere?.mergedIntoId, null);
+    const capturedWhere = lapsedWhere as Record<string, unknown> | null;
+    assert.equal(capturedWhere?.isActive, undefined);
+    assert.equal(capturedWhere?.mergedIntoId, null);
     assert.equal(result.candidates.length, 1);
     assert.equal(result.candidates[0].wholesaleAccountId, 'inactive-official');
     assert.equal(result.candidates[0].licenseeId, '02831291-1');
@@ -299,6 +300,7 @@ describe('getOhlqWholesaleReactivationDashboardSummary', () => {
 
     assert.deepEqual(worklistWhere, {
       category: 'WHOLESALE',
+      organizationId: 'org_echo_spirits',
       source: 'OHLQ_WHOLESALE_REACTIVATION',
       status: { notIn: ['COMPLETED', 'CANCELLED'] },
       wholesaleAccountId: { not: null },

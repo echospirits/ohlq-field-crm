@@ -5,7 +5,6 @@ import Link from 'next/link';
 import { buildPageMetadata } from '../../lib/appBrand';
 import { requirePlatformAdmin } from '../../lib/auth';
 import { FEATURE_REGISTRY } from '../../lib/featureRegistry';
-import { ensureEchoOrganization } from '../../lib/organizations';
 import { prisma } from '../../lib/prisma';
 import { PageHeader } from '../components/PageChrome';
 
@@ -13,7 +12,6 @@ export const metadata = buildPageMetadata('Platform');
 
 export default async function PlatformDashboard() {
   await requirePlatformAdmin();
-  await ensureEchoOrganization();
   const [total, active, onboarding, disabled, recent, featureCounts, importHealth] = await Promise.all([
     prisma.organization.count(),
     prisma.organization.count({ where: { active: true, accountStatus: { notIn: ['SUSPENDED', 'CANCELLED'] } } }),

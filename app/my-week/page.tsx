@@ -11,6 +11,7 @@ import { syncWorklistItemCalendar } from '../../lib/calendar/worklistSync';
 import { evaluateOpportunityIntelligence } from '../../lib/opportunityEngine';
 import { splitReactivationPurchasedAgainDetail } from '../../lib/ohlqWholesaleReactivation';
 import { prisma } from '../../lib/prisma';
+import { requireOrganizationContext } from '../../lib/organizations';
 import { getAgenciesForVisitPicker, getWholesaleAccountsForVisitPicker } from '../../lib/visitPickerOptions';
 import { getWorklistLocationFallbackLabel, getWorklistLocations } from '../../lib/worklistLocations';
 import { createVisit } from '../visits/actions';
@@ -148,6 +149,7 @@ async function updateWorklistStatus(formData: FormData) {
   'use server';
 
   const currentUser = await requireUser();
+  const { organizationId } = await requireOrganizationContext(currentUser);
   const id = toOptional(formData.get('id'));
   const status = toWorklistStatus(formData.get('status'));
 
@@ -155,8 +157,10 @@ async function updateWorklistStatus(formData: FormData) {
     return;
   }
 
+  const owned = await prisma.worklistItem.findFirst({ where: { id, organizationId }, select: { id: true } });
+  if (!owned) return;
   const item = await prisma.worklistItem.update({
-    where: { id },
+    where: { id: owned.id },
     data: {
       status,
       completedAt: status === WorklistStatus.COMPLETED ? new Date() : null,
@@ -166,7 +170,7 @@ async function updateWorklistStatus(formData: FormData) {
     },
   });
   await syncWorklistItemCalendar(id);
-  if (item.wholesaleAccountId) await evaluateOpportunityIntelligence({ accountIds: [item.wholesaleAccountId] });
+  if (item.wholesaleAccountId) await evaluateOpportunityIntelligence({ accountIds: [item.wholesaleAccountId], organizationId });
 
   revalidatePath('/my-week');
   revalidatePath('/alerts');
@@ -175,18 +179,21 @@ async function updateWorklistStatus(formData: FormData) {
 
 async function updateWorklistItem(formData: FormData) {
   'use server';
-  await requireUser();
+  const currentUser = await requireUser();
+  const { organizationId } = await requireOrganizationContext(currentUser);
   const id = toOptional(formData.get('id'));
   const title = toOptional(formData.get('title'));
   const assignedToUserId = toOptional(formData.get('assignedToUserId'));
   if (!id || !title) return;
   const assignedUser = assignedToUserId
-    ? await prisma.user.findFirst({ where: { id: assignedToUserId, isActive: true, role: { not: 'TASTER' } } })
+    ? await prisma.user.findFirst({ where: { id: assignedToUserId, organizationId, isActive: true, role: { not: 'TASTER' } } })
     : null;
   if (assignedToUserId && !assignedUser) return;
   const dueDate = toDate(formData.get('dueDate'));
+  const owned = await prisma.worklistItem.findFirst({ where: { id, organizationId }, select: { id: true } });
+  if (!owned) return;
   await prisma.worklistItem.update({
-    where: { id },
+    where: { id: owned.id },
     data: {
       title,
       detail: toOptional(formData.get('detail')),
@@ -204,6 +211,7 @@ async function updateWorklistItem(formData: FormData) {
 
 export default async function MyWeekPage() {
   const currentUser = await requireUser();
+  const { organizationId } = await requireOrganizationContext(currentUser);
   const actorName = getUserDisplayName(currentUser);
   const ranges = getWeekRange();
   const assignedWhere: Prisma.WorklistItemWhereInput = {
@@ -219,6 +227,7 @@ export default async function MyWeekPage() {
   const [items, agencyOptions, wholesaleOptions, contacts, tags, users] = await Promise.all([
     prisma.worklistItem.findMany({
       where: {
+        organizationId,
         AND: [
           assignedWhere,
           { status: { notIn: inactiveWorklistStatuses } },
@@ -246,6 +255,7 @@ export default async function MyWeekPage() {
     getAgenciesForVisitPicker(),
     getWholesaleAccountsForVisitPicker(),
     prisma.locationContact.findMany({
+      where: { organizationId },
       orderBy: { name: 'asc' },
       take: 1000,
       select: {
@@ -259,6 +269,7 @@ export default async function MyWeekPage() {
       },
     }),
     prisma.tag.findMany({
+      where: { organizationId },
       orderBy: { name: 'asc' },
       select: {
         id: true,
@@ -267,7 +278,7 @@ export default async function MyWeekPage() {
       },
     }),
     prisma.user.findMany({
-      where: { isActive: true, role: { not: 'TASTER' } },
+      where: { organizationId, isActive: true, role: { not: 'TASTER' } },
       orderBy: [{ name: 'asc' }, { email: 'asc' }],
       select: { id: true, email: true, firstName: true, lastName: true, name: true },
     }),

@@ -1,6 +1,6 @@
 'use server';
 
-import { OpportunityEventType, OpportunityStatus, UserRole, WorklistCategory, WorklistSource, WorklistStatus } from '@prisma/client';
+import { OpportunityEventType, OpportunityStatus, Prisma, UserRole, WorklistCategory, WorklistSource, WorklistStatus } from '@prisma/client';
 import { revalidatePath } from 'next/cache';
 import { getUserDisplayName, requireUser } from '../../lib/auth';
 import { syncWorklistItemCalendar } from '../../lib/calendar/worklistSync';
@@ -17,7 +17,7 @@ export async function updateOpportunity(formData: FormData) {
   const opportunity = await prisma.salesOpportunity.findFirst({ where: { id, organizationId } });
   if (!opportunity) return;
   const now = new Date();
-  const event = (data: Parameters<typeof prisma.opportunityEvent.create>[0]['data']) => prisma.opportunityEvent.create({ data: { ...data, organizationId } }).catch(() => undefined);
+  const event = (data: Omit<Prisma.OpportunityEventUncheckedCreateInput, 'organizationId'>) => prisma.opportunityEvent.create({ data: { ...data, organizationId } }).catch(() => undefined);
   if (action === 'pursue') {
     const requestedAssigneeId = String(formData.get('assignedToUserId') ?? '');
     const assignee = user.role === UserRole.ADMIN || user.role === UserRole.PLATFORM_ADMIN

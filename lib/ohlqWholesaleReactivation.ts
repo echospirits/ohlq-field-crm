@@ -9,6 +9,7 @@ import { formatOhlqDate } from './ohlqDataStatus';
 import { getOhlqLicenseeMatchKeys, normalizeOhlqId } from './ohlqWholesaleMatching';
 import { prisma } from './prisma';
 import { getTenantConfig } from './tenantConfig';
+import { ECHO_ORGANIZATION_ID } from './organizations';
 
 export const OHLQ_WHOLESALE_REACTIVATION_SOURCE = WorklistSource.OHLQ_WHOLESALE_REACTIVATION;
 export const getOhlqWholesaleReactivationTitle = () =>
@@ -644,14 +645,17 @@ export const buildWholesaleReactivationDetail = (candidate: WholesaleReactivatio
 
 export async function syncOhlqWholesaleReactivationWorklist({
   db = prisma,
+  organizationId = ECHO_ORGANIZATION_ID,
   runAt = new Date(),
 }: {
   db?: PrismaClient;
+  organizationId?: string;
   runAt?: Date;
 } = {}) {
   const analysis = await findOhlqWholesaleReactivationCandidates({ db, runAt });
   const sourceItems = await db.worklistItem.findMany({
     where: {
+      organizationId,
       category: WorklistCategory.WHOLESALE,
       source: OHLQ_WHOLESALE_REACTIVATION_SOURCE,
       wholesaleAccountId: { not: null },
@@ -701,6 +705,7 @@ export async function syncOhlqWholesaleReactivationWorklist({
   for (const candidate of plan.createCandidates) {
     await db.worklistItem.create({
       data: {
+        organizationId,
         category: WorklistCategory.WHOLESALE,
         createdBy: 'OHLQ sales automation',
         detail: buildWholesaleReactivationDetail(candidate),
@@ -754,14 +759,17 @@ export async function syncOhlqWholesaleReactivationWorklist({
 
 export async function getOhlqWholesaleReactivationDashboardSummary({
   db = prisma,
+  organizationId = ECHO_ORGANIZATION_ID,
   runAt = new Date(),
   take = 5,
 }: {
   db?: PrismaClient;
+  organizationId?: string;
   runAt?: Date;
   take?: number;
 } = {}) {
   const activeSourceWhere = {
+    organizationId,
     category: WorklistCategory.WHOLESALE,
     source: OHLQ_WHOLESALE_REACTIVATION_SOURCE,
     status: { notIn: inactiveWorklistStatuses },

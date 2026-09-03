@@ -319,6 +319,7 @@ const sortPurchaseItemsByName = (left: WholesalePurchaseSummaryItem, right: Whol
 
 export async function getWholesaleRecentPurchases({
   account,
+  config = getTenantConfig(),
   db = prisma,
   days = 30,
   licenseeId,
@@ -326,13 +327,14 @@ export async function getWholesaleRecentPurchases({
   takeEcho = 50,
 }: {
   account?: OhlqWholesaleLookupAccount;
+  config?: TenantConfig;
   db?: PrismaClient;
   days?: number;
   licenseeId?: string | null | undefined;
   takeAll?: number;
   takeEcho?: number;
 }) {
-  const tenantConfig = getTenantConfig();
+  const tenantConfig = config;
   const lookupAccount = account ?? { licenseeId };
   const lookup = await resolveOhlqWholesaleSalesLookup({ account: lookupAccount, db });
   const linkedLicenseeId = lookup.primaryLicenseeId ?? Array.from(lookup.permitNumbers)[0] ?? null;

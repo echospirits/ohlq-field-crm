@@ -87,6 +87,56 @@ export function getTenantConfig(env: NodeJS.ProcessEnv = process.env): TenantCon
   };
 }
 
+/**
+ * Runtime tenant configuration comes from organization records, never from
+ * per-customer deployment variables. Environment-backed configuration remains
+ * only as a legacy/default bootstrap path for Echo and local tooling.
+ */
+export async function getOrganizationTenantConfig(
+  organizationId: string,
+  db: PrismaClient = prisma,
+): Promise<TenantConfig> {
+  const organization = await db.organization.findUnique({
+    where: { id: organizationId },
+    select: {
+      appName: true,
+      digestName: true,
+      displayName: true,
+      id: true,
+      productLabel: true,
+      productPluralLabel: true,
+      products: {
+        where: {
+          active: true,
+          status: { in: [OrganizationProductStatus.OWNED, OrganizationProductStatus.REPRESENTED] },
+        },
+        select: { externalItemCode: true },
+      },
+      vendorIdentifiers: {
+        where: { active: true },
+        select: { vendorId: true },
+      },
+    },
+  });
+  if (!organization) throw new Error(`Organization ${organizationId} was not found.`);
+
+  const itemCodes = Array.from(new Set(organization.products.map((row) => row.externalItemCode)));
+  return {
+    appName: organization.appName,
+    digestName: organization.digestName,
+    entityName: organization.displayName,
+    id: organization.id,
+    productLabel: organization.productLabel,
+    productPluralLabel: organization.productPluralLabel,
+    productFilter: {
+      excludedItemCodes: [],
+      itemCodes,
+      mode: itemCodes.length ? 'item-list' : 'vendor-exclusions',
+      vendorIds: Array.from(new Set(organization.vendorIdentifiers.map((row) => row.vendorId))),
+    },
+  };
+}
+
 export function matchesTenantProductFilter({
   filter,
   itemCode,
@@ -125,3 +175,5 @@ export function matchesTenantProduct({
     vendor,
   });
 }
+import { OrganizationProductStatus, type PrismaClient } from '@prisma/client';
+import { prisma } from './prisma';

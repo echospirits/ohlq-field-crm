@@ -30,6 +30,7 @@
     "seed:admin": "tsx scripts/seed-admin.ts",
     "seed:staging": "tsx scripts/seed-staging.ts",
     "bootstrap:multitenancy": "tsx scripts/bootstrap-multitenancy.ts",
+    "verify:tenant-isolation": "tsx scripts/verify-tenant-isolation.ts",
     "vercel:link": "vercel link",
     "vercel:preview": "vercel --yes",
     "vercel:prod": "vercel --prod --yes"

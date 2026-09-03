@@ -37,6 +37,7 @@ export async function acceptUserInvitation(formData: FormData) {
     select: {
       id: true,
       userId: true,
+      user: { select: { organizationId: true } },
     },
   });
 
@@ -45,6 +46,9 @@ export async function acceptUserInvitation(formData: FormData) {
   }
 
   const passwordHash = hashPassword(password);
+  const organizationId = invitation.user.organizationId;
+  const organization = organizationId ? await prisma.organization.findUnique({ where: { id: organizationId }, select: { onboardingData: true } }) : null;
+  const onboarding = organization?.onboardingData && typeof organization.onboardingData === 'object' && !Array.isArray(organization.onboardingData) ? organization.onboardingData as Record<string, unknown> : {};
   const accepted = await prisma.$transaction(async (tx) => {
     const claim = await tx.userInvitation.updateMany({
       where: {
@@ -76,6 +80,9 @@ export async function acceptUserInvitation(formData: FormData) {
         acceptedAt: null,
       },
     });
+    if (organizationId) {
+      await tx.organization.update({ where: { id: organizationId }, data: { onboardingData: { ...onboarding, firstLogin: true } } });
+    }
 
     return true;
   });

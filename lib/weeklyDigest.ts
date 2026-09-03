@@ -24,7 +24,7 @@ const maxEmailUpcomingWork = 15;
 
 type DigestUser = {
   id: string;
-  organizationId: string | null;
+  organizationId: string;
   email: string | null;
   firstName: string | null;
   lastName: string | null;
@@ -584,10 +584,10 @@ const workItemToDigestItem = (
 };
 
 export async function getActiveDigestRecipients(organizationId?: string) {
-  return prisma.user.findMany({
+  const users = await prisma.user.findMany({
     where: {
       isActive: true,
-      organizationId,
+      organizationId: organizationId ?? { not: null },
       role: { notIn: [UserRole.TASTER, UserRole.PLATFORM_ADMIN] },
     },
     orderBy: [{ role: 'asc' }, { lastName: 'asc' }, { firstName: 'asc' }, { email: 'asc' }],
@@ -602,6 +602,9 @@ export async function getActiveDigestRecipients(organizationId?: string) {
       isActive: true,
     },
   });
+  return users.filter(
+    (user): user is typeof user & { organizationId: string } => Boolean(user.organizationId),
+  );
 }
 
 export async function getUserWeeklyDigest(userId: string, window: WeeklyDigestWindow) {
@@ -619,13 +622,14 @@ export async function getUserWeeklyDigest(userId: string, window: WeeklyDigestWi
     },
   });
 
-  if (!user) {
+  if (!user || !user.organizationId) {
     throw new Error('User not found');
   }
+  const digestUser: DigestUser = { ...user, organizationId: user.organizationId };
 
   const [visits, worklists] = await Promise.all([
-    getVisitRecords(user, window),
-    getWorklistRecords(user, window),
+    getVisitRecords(digestUser, window),
+    getWorklistRecords(digestUser, window),
   ]);
   const allWorkItems = [...worklists.completedWork, ...worklists.openWork];
   const lookups = await getLocationLookups(visits, allWorkItems);
@@ -644,8 +648,8 @@ export async function getUserWeeklyDigest(userId: string, window: WeeklyDigestWi
   };
   const digest: UserWeeklyDigest = {
     kind: 'user',
-    user,
-    userName: getUserDisplayName(user),
+    user: digestUser,
+    userName: getUserDisplayName(digestUser),
     window,
     visits: digestVisits,
     completedWork,
@@ -1006,11 +1010,13 @@ export function renderAdminWeeklyDigestEmail(digest: AdminWeeklyDigest, appBaseU
 }
 
 const uniqueDigestWhere = (
+  organizationId: string,
   digestType: WeeklyDigestType,
   recipientEmail: string,
   window: WeeklyDigestWindow,
 ) => ({
-  digestType_recipientEmail_periodStart_periodEnd: {
+  organizationId_digestType_recipientEmail_periodStart_periodEnd: {
+    organizationId,
     digestType,
     recipientEmail,
     periodStart: window.pastStart,
@@ -1033,10 +1039,10 @@ async function sendRenderedDigestWithLog({
   window: WeeklyDigestWindow;
   rendered: RenderedDigestEmail;
   emailSender?: SendEmailFn;
-  organizationId: string | null;
+  organizationId: string;
 }): Promise<DigestSendResult> {
   const existing = await prisma.weeklyDigestLog.findUnique({
-    where: uniqueDigestWhere(digestType, recipientEmail, window),
+    where: uniqueDigestWhere(organizationId, digestType, recipientEmail, window),
   });
 
   if (shouldSkipExistingDigestLog(existing)) {
@@ -1072,6 +1078,7 @@ async function sendRenderedDigestWithLog({
       })
     : await prisma.weeklyDigestLog.create({
         data: {
+          organizationId,
           digestType,
           recipientUserId,
           recipientEmail,
@@ -1194,7 +1201,7 @@ export async function sendAdminWeeklyDigestToUser(
     prisma.user.findUnique({ where: { id: adminUserId }, select: { organizationId: true } }).then((user) => user?.organizationId ? getAdminWeeklyDigest(window, user.organizationId) : Promise.reject(new Error('Admin organization not found'))),
   ]);
 
-  if (!adminUser || adminUser.role !== UserRole.ADMIN) {
+  if (!adminUser || adminUser.role !== UserRole.ADMIN || !adminUser.organizationId) {
     throw new Error('Admin recipient not found');
   }
 

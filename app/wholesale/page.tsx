@@ -10,6 +10,7 @@ import { requireUser } from '../../lib/auth';
 import { formatEasternDate } from '../../lib/dateTime';
 import { getGeocodeResetForAddressChange } from '../../lib/location/geocode';
 import { prisma } from '../../lib/prisma';
+import { requireOrganizationContext } from '../../lib/organizations';
 import {
   formatWholesaleLicenseeIds,
   getPrimaryWholesaleLicenseeId,
@@ -292,6 +293,7 @@ async function createWholesale(formData: FormData) {
   'use server';
 
   const user = await requireUser();
+  const { organizationId } = await requireOrganizationContext(user);
   const licenseeIds = parseWholesaleLicenseeIds(
     String(formData.get('licenseeIds') ?? formData.get('licenseeId') ?? ''),
   );
@@ -302,7 +304,10 @@ async function createWholesale(formData: FormData) {
     redirect('/wholesale?status=invalid');
   }
 
-  const tagIds = getSelectedTagIds(formData);
+  const requestedTagIds = getSelectedTagIds(formData);
+  const tagIds = requestedTagIds.length
+    ? (await prisma.tag.findMany({ where: { id: { in: requestedTagIds }, organizationId }, select: { id: true } })).map((tag) => tag.id)
+    : [];
   const matchingAccounts = await prisma.wholesaleAccount.findMany({
     where: getWholesaleLicenseeIdConflictWhere(licenseeIds),
     select: { id: true, address: true, city: true, state: true, zip: true },
@@ -372,6 +377,7 @@ async function createWholesale(formData: FormData) {
   if (tagIds.length > 0) {
     await prisma.locationTag.createMany({
       data: tagIds.map((tagId) => ({
+        organizationId,
         tagId,
         wholesaleAccountId: account.id,
         note: 'Applied from wholesale account form',
@@ -387,19 +393,19 @@ async function createWholesale(formData: FormData) {
   redirect('/wholesale?status=saved');
 }
 
-const wholesaleSearchWhere = (q: string): Prisma.WholesaleAccountWhereInput => ({
+const wholesaleSearchWhere = (q: string, organizationId: string): Prisma.WholesaleAccountWhereInput => ({
   OR: [
     { name: { contains: q, mode: 'insensitive' } },
     ...getWholesaleLicenseeIdTextSearchWhere(q),
     { agencyId: { contains: q, mode: 'insensitive' } },
     { address: { contains: q, mode: 'insensitive' } },
     { phone: { contains: q, mode: 'insensitive' } },
-    { tags: { some: { tag: { name: { contains: q, mode: 'insensitive' } } } } },
-    { menuPlacements: { some: { product: { contains: q, mode: 'insensitive' } } } },
-    { menuPlacements: { some: { menuItemName: { contains: q, mode: 'insensitive' } } } },
-    { opportunities: { some: { title: { contains: q, mode: 'insensitive' } } } },
-    { opportunities: { some: { recommendedAction: { contains: q, mode: 'insensitive' } } } },
-    { opportunities: { some: { targetCategory: { contains: q, mode: 'insensitive' } } } },
+    { tags: { some: { organizationId, tag: { name: { contains: q, mode: 'insensitive' } } } } },
+    { menuPlacements: { some: { organizationId, product: { contains: q, mode: 'insensitive' } } } },
+    { menuPlacements: { some: { organizationId, menuItemName: { contains: q, mode: 'insensitive' } } } },
+    { opportunities: { some: { organizationId, title: { contains: q, mode: 'insensitive' } } } },
+    { opportunities: { some: { organizationId, recommendedAction: { contains: q, mode: 'insensitive' } } } },
+    { opportunities: { some: { organizationId, targetCategory: { contains: q, mode: 'insensitive' } } } },
   ],
 });
 
@@ -421,7 +427,8 @@ export default async function WholesalePage({
 }: {
   searchParams?: Promise<WholesalePageParams>;
 }) {
-  await requireUser();
+  const user = await requireUser();
+  const { organizationId } = await requireOrganizationContext(user);
 
   const params = (await searchParams) ?? {};
   const q = (params.q ?? '').trim();
@@ -430,7 +437,7 @@ export default async function WholesalePage({
   const requestedPage = Number.parseInt(params.page ?? '1', 10);
   const accountWhere: Prisma.WholesaleAccountWhereInput = {
     isActive: true,
-    ...(q ? wholesaleSearchWhere(q) : {}),
+    ...(q ? wholesaleSearchWhere(q, organizationId) : {}),
   };
 
   const [accounts, tags, officialCandidates] = await Promise.all([
@@ -445,7 +452,7 @@ export default async function WholesalePage({
       },
       orderBy: [{ name: 'asc' }, { licenseeId: 'asc' }],
     }),
-    prisma.tag.findMany({ orderBy: [{ name: 'asc' }] }),
+    prisma.tag.findMany({ where: { organizationId }, orderBy: [{ name: 'asc' }] }),
     q
       ? prisma.account.findMany({
           where: officialWholesaleSearchWhere(q),
@@ -504,6 +511,7 @@ export default async function WholesalePage({
           prisma.loggedVisit.groupBy({
             by: ['wholesaleAccountId'],
             where: {
+              organizationId,
               locationType: 'wholesale',
               wholesaleAccountId: { in: accountIds },
             },
@@ -511,6 +519,7 @@ export default async function WholesalePage({
           }),
           prisma.salesOpportunity.findMany({
             where: {
+              organizationId,
               wholesaleAccountId: { in: accountIds },
               status: { in: [OpportunityStatus.OPEN, OpportunityStatus.ACTIONED, OpportunityStatus.SNOOZED] },
             },

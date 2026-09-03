@@ -6,6 +6,7 @@ import { buildPageMetadata } from '../../lib/appBrand';
 import { getUserDisplayName, requireUser } from '../../lib/auth';
 import { formatEasternDate } from '../../lib/dateTime';
 import { prisma } from '../../lib/prisma';
+import { requireOrganizationContext } from '../../lib/organizations';
 import { createTag, deleteTag } from './actions';
 import { TagBadges } from './TagBadges';
 import { AccountViewNavigation } from '../components/AccountViewNavigation';
@@ -24,9 +25,11 @@ export default async function TagsPage({
 }: {
   searchParams?: Promise<{ status?: string }>;
 }) {
-  await requireUser();
+  const user = await requireUser();
+  const { organizationId } = await requireOrganizationContext(user);
   const params = (await searchParams) ?? {};
   const tags = await prisma.tag.findMany({
+    where: { organizationId },
     include: {
       createdByUser: true,
       _count: {

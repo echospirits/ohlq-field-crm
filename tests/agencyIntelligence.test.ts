@@ -176,6 +176,12 @@ describe('daily Agency intelligence safety and idempotency', () => {
 
 test('uses the tenant product filter for wholesale rows', () => {
   const config = {
+    appName: 'Neat',
+    digestName: 'Neat',
+    entityName: 'Echo Spirits',
+    id: 'echo-spirits',
+    productLabel: 'Echo',
+    productPluralLabel: 'Echo items',
     productFilter: {
       excludedItemCodes: ['EXCLUDED'],
       itemCodes: [],

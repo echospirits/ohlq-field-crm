@@ -22,33 +22,11 @@ export function ensureEchoOrganization() {
     await prisma.organizationProduct.createMany({ skipDuplicates: true, data: DEFAULT_TENANT_EXCLUDED_ITEM_CODES.map((externalItemCode) => ({ organizationId: ECHO_ORGANIZATION_ID, market: 'OH', externalItemCode, status: OrganizationProductStatus.EXCLUDED, active: true, notes: 'Migrated from the legacy Echo exclusion list.' })) });
     const echoProducts = await prisma.ohlqAgencyInventoryCurrent.findMany({ where: { vendorId: { in: [...DEFAULT_TENANT_OHLQ_VENDOR_IDS] }, itemCode: { notIn: [...DEFAULT_TENANT_EXCLUDED_ITEM_CODES] } }, distinct: ['itemCode'], orderBy: { itemCode: 'asc' }, select: { itemCode: true, itemName: true } });
     await prisma.organizationProduct.createMany({ skipDuplicates: true, data: echoProducts.map((product) => ({ organizationId: ECHO_ORGANIZATION_ID, market: 'OH', externalItemCode: product.itemCode, displayName: product.itemName, status: OrganizationProductStatus.OWNED, active: true, notes: 'Discovered from the migrated Echo Vendor ID.' })) });
-    await Promise.all([
-      prisma.user.updateMany({ where: { organizationId: null, role: { not: UserRole.PLATFORM_ADMIN } }, data: { organizationId: ECHO_ORGANIZATION_ID } }),
-      prisma.weeklyDigestLog.updateMany({ where: { organizationId: null }, data: { organizationId: ECHO_ORGANIZATION_ID } }),
-      prisma.tag.updateMany({ where: { organizationId: null }, data: { organizationId: ECHO_ORGANIZATION_ID } }),
-      prisma.menuPlacement.updateMany({ where: { organizationId: null }, data: { organizationId: ECHO_ORGANIZATION_ID } }),
-      prisma.recipe.updateMany({ where: { organizationId: null }, data: { organizationId: ECHO_ORGANIZATION_ID } }),
-      prisma.recipeSuggestion.updateMany({ where: { organizationId: null }, data: { organizationId: ECHO_ORGANIZATION_ID } }),
-      prisma.targetAccountProfile.updateMany({ where: { organizationId: null }, data: { organizationId: ECHO_ORGANIZATION_ID } }),
-      prisma.locationTag.updateMany({ where: { organizationId: null }, data: { organizationId: ECHO_ORGANIZATION_ID } }),
-      prisma.locationContact.updateMany({ where: { organizationId: null }, data: { organizationId: ECHO_ORGANIZATION_ID } }),
-      prisma.loggedVisit.updateMany({ where: { organizationId: null }, data: { organizationId: ECHO_ORGANIZATION_ID } }),
-      prisma.visitPhoto.updateMany({ where: { organizationId: null }, data: { organizationId: ECHO_ORGANIZATION_ID } }),
-      prisma.worklistItem.updateMany({ where: { organizationId: null }, data: { organizationId: ECHO_ORGANIZATION_ID } }),
-      prisma.salesOpportunity.updateMany({ where: { organizationId: null }, data: { organizationId: ECHO_ORGANIZATION_ID } }),
-      prisma.opportunityEvent.updateMany({ where: { organizationId: null }, data: { organizationId: ECHO_ORGANIZATION_ID } }),
-      prisma.accountSalesEvent.updateMany({ where: { organizationId: null }, data: { organizationId: ECHO_ORGANIZATION_ID } }),
-      prisma.opportunityAccountSignal.updateMany({ where: { organizationId: null }, data: { organizationId: ECHO_ORGANIZATION_ID } }),
-      prisma.agencyProductIntelligence.updateMany({ where: { organizationId: null }, data: { organizationId: ECHO_ORGANIZATION_ID } }),
-      prisma.agencyIntelligenceSummary.updateMany({ where: { organizationId: null }, data: { organizationId: ECHO_ORGANIZATION_ID } }),
-      prisma.agencyIntelligenceEvent.updateMany({ where: { organizationId: null }, data: { organizationId: ECHO_ORGANIZATION_ID } }),
-    ]);
   })().catch((error) => { echoBootstrap = null; throw error; });
   return echoBootstrap;
 }
 
 export async function getOrganizationContext(user: { id: string; organizationId: string | null; role: UserRole }) {
-  await ensureEchoOrganization();
   const supportOrganizationId = user.role === UserRole.PLATFORM_ADMIN ? (await cookies()).get(SUPPORT_VIEW_COOKIE)?.value : null;
   const organizationId = supportOrganizationId || user.organizationId;
   if (!organizationId) return null;

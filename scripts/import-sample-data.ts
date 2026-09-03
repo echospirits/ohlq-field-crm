@@ -2,6 +2,9 @@ import fs from 'fs';
 import path from 'path';
 import Papa from 'papaparse';
 import { prisma } from '../lib/prisma';
+import { ECHO_ORGANIZATION_ID } from '../lib/organizations';
+
+const organizationId = process.env.ORGANIZATION_ID?.trim() || ECHO_ORGANIZATION_ID;
 
 const DATA_DIR = process.env.DATA_DIR || '/mnt/data';
 function rows(file:string){ return Papa.parse(fs.readFileSync(file,'utf8').replace(/^\uFEFF/,''),{header:true,skipEmptyLines:true}).data as any[]; }
@@ -13,7 +16,7 @@ async function importAccounts(){
    const agencyId = clean(r.AgencyID); if(!agencyId) continue;
    await prisma.account.upsert({where:{agencyId}, update:{name:clean(r.DBA), city:clean(r.City), county:clean(r.County), zip:clean(r.Zip), phone:clean(r['Agency Phone']), d8Permit:clean(r['D-8 Permit']).toLowerCase().startsWith('y')}, create:{agencyId,type:'LIQUOR_AGENCY',name:clean(r.DBA),address:clean(r.Address),city:clean(r.City),county:clean(r.County),zip:clean(r.Zip),phone:clean(r['Agency Phone']),d8Permit:clean(r['D-8 Permit']).toLowerCase().startsWith('y')}});
  }
- for (const tag of ['Cut','Fix','Add','Outperform','Watchlist','Menu Target','Display Opportunity','Lapsed Buyer']) await prisma.tag.upsert({where:{name:tag},update:{},create:{name:tag}});
+ for (const tag of ['Cut','Fix','Add','Outperform','Watchlist','Menu Target','Display Opportunity','Lapsed Buyer']) await prisma.tag.upsert({where:{organizationId_name:{organizationId,name:tag}},update:{},create:{organizationId,name:tag}});
 }
 
 async function importCoverage(){
@@ -30,12 +33,12 @@ async function importCoverage(){
 
 async function seedRecipes(){
  const vodka = await prisma.sku.findFirst({where:{itemCode:'3135B'}});
- await prisma.recipe.upsert({where:{id:'sample-echo-mule'}, update:{}, create:{id:'sample-echo-mule',name:'Echo Mule',skuId:vodka?.id,season:'Year-round',flavorProfile:'bright, ginger, citrus',complexity:'easy',glassware:'Collins',ingredients:[{'item':'Vodka','amount':'1.5 oz'},{'item':'lime','amount':'.5 oz'},{'item':'ginger beer','amount':'top'}],instructions:'Build over ice and garnish with lime.',garnish:'lime wheel'}});
+ await prisma.recipe.upsert({where:{id:'sample-echo-mule'}, update:{}, create:{id:'sample-echo-mule',organizationId,name:'Echo Mule',skuId:vodka?.id,season:'Year-round',flavorProfile:'bright, ginger, citrus',complexity:'easy',glassware:'Collins',ingredients:[{'item':'Vodka','amount':'1.5 oz'},{'item':'lime','amount':'.5 oz'},{'item':'ginger beer','amount':'top'}],instructions:'Build over ice and garnish with lime.',garnish:'lime wheel'}});
 }
 
 async function generateLapsedBuyerAlerts(){
  // Placeholder rule: accounts with historical inventory coverage but no open alert yet.
- const tag = await prisma.tag.findUnique({where:{name:'Lapsed Buyer'}});
+ const tag = await prisma.tag.findUnique({where:{organizationId_name:{organizationId,name:'Lapsed Buyer'}}});
  const facts = await prisma.inventoryFact.findMany({take:25,include:{account:true,sku:true}});
  for (const f of facts) await prisma.alert.create({data:{accountId:f.accountId,skuId:f.skuId,type:'LAPSED_BUYER_REVIEW',title:`Review ${f.account.name}`,detail:`Check recent orders for ${f.sku.itemCode}; dismiss, snooze, or add a note after review.`}}).catch(()=>{});
 }

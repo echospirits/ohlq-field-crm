@@ -9,10 +9,10 @@ const tiles = [
   ['Dead inventory', AgencyProductOpportunityState.DEAD_INVENTORY, 'Inventory without acceptable sell-through'],
 ] as const;
 
-export async function DashboardAgencyIntelligence() {
+export async function DashboardAgencyIntelligence({ organizationId }: { organizationId: string }) {
   const [counts, agenciesNeedingAttention] = await Promise.all([
-    Promise.all(tiles.map(([, state]) => prisma.agencyProductIntelligence.count({ where: { status: OpportunityStatus.OPEN, opportunityState: state } }))),
-    prisma.agencyIntelligenceSummary.count({ where: { OR: [
+    Promise.all(tiles.map(([, state]) => prisma.agencyProductIntelligence.count({ where: { organizationId, status: OpportunityStatus.OPEN, opportunityState: state } }))),
+    prisma.agencyIntelligenceSummary.count({ where: { organizationId, OR: [
       { openProductOpportunityCount: { gt: 0 } },
       { openWholesaleOpportunityCount: { gt: 0 } },
       { lapsedWholesaleCount: { gt: 0 } },

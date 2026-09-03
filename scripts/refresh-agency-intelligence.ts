@@ -1,6 +1,7 @@
 import { OhlqReportDataSource, OhlqReportRunStatus } from '@prisma/client';
 import { refreshAgencyIntelligence } from '../lib/agencyIntelligenceService';
 import { prisma } from '../lib/prisma';
+import { ECHO_ORGANIZATION_ID } from '../lib/organizations';
 
 async function main() {
   const completed = await prisma.ohlqReportImportStatus.findMany({
@@ -25,7 +26,8 @@ async function main() {
     throw new Error('No complete matching sales and inventory inputs are available for Agency intelligence.');
   }
 
-  const result = await refreshAgencyIntelligence({ inventoryReportDate, salesReportDate });
+  const organizationId = process.argv[2] || ECHO_ORGANIZATION_ID;
+  const result = await refreshAgencyIntelligence({ inventoryReportDate, organizationId, salesReportDate });
   console.log(JSON.stringify({ inventoryReportDate, salesReportDate, ...result }, null, 2));
 }
 

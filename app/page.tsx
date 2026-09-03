@@ -11,6 +11,7 @@ import { buildPageMetadata } from '../lib/appBrand';
 import { getUserDisplayName, requireUser } from '../lib/auth';
 import { EASTERN_TIME_ZONE } from '../lib/dateTime';
 import { prisma } from '../lib/prisma';
+import { requireOrganizationContext } from '../lib/organizations';
 import { DashboardOpportunitySummary } from './components/DashboardOpportunitySummary';
 import { DashboardAgencyIntelligence } from './components/DashboardAgencyIntelligence';
 
@@ -170,7 +171,8 @@ function MetricSplits({ agency, wholesale }: { agency: number; wholesale: number
 }
 
 export default async function Dashboard() {
-  await requireUser();
+  const user = await requireUser();
+  const { organizationId } = await requireOrganizationContext(user);
   const ranges = getDashboardRanges();
   const visitQueryStart = ranges.weekStart < ranges.monthStart ? ranges.weekStart : ranges.monthStart;
 
@@ -184,10 +186,11 @@ export default async function Dashboard() {
     staleMenuPlacements,
   ] = await Promise.all([
     prisma.worklistItem.count({
-      where: { status: { notIn: inactiveWorklistStatuses } },
+      where: { organizationId, status: { notIn: inactiveWorklistStatuses } },
     }),
     prisma.loggedVisit.findMany({
       where: {
+        organizationId,
         visitAt: {
           gte: visitQueryStart,
           lte: ranges.now,
@@ -208,6 +211,7 @@ export default async function Dashboard() {
     prisma.worklistItem.groupBy({
       by: ['category'],
       where: {
+        organizationId,
         status: { notIn: inactiveWorklistStatuses },
         category: { in: [WorklistCategory.AGENCY, WorklistCategory.WHOLESALE] },
         dueDate: {
@@ -219,6 +223,7 @@ export default async function Dashboard() {
     }),
     prisma.visitPhoto.count({
       where: {
+        organizationId,
         createdAt: {
           gte: ranges.lastMonthStart,
           lte: ranges.now,
@@ -226,16 +231,18 @@ export default async function Dashboard() {
       },
     }),
     prisma.menuPlacement.count({
-      where: { status: MenuPlacementStatus.LIVE },
+      where: { organizationId, status: MenuPlacementStatus.LIVE },
     }),
     prisma.menuPlacement.count({
       where: {
+        organizationId,
         status: MenuPlacementStatus.PROMISED,
         proofUrl: null,
       },
     }),
     prisma.menuPlacement.count({
       where: {
+        organizationId,
         status: MenuPlacementStatus.LIVE,
         OR: [{ lastVerifiedAt: null }, { lastVerifiedAt: { lt: ranges.stalePlacementCutoff } }],
       },
@@ -290,9 +297,9 @@ export default async function Dashboard() {
         <Link className="btn secondary compact-btn" href="/alerts">Open full worklist</Link>
       </div>
 
-      <DashboardOpportunitySummary />
+      <DashboardOpportunitySummary organizationId={organizationId} />
 
-      <DashboardAgencyIntelligence />
+      <DashboardAgencyIntelligence organizationId={organizationId} />
 
       <div className="grid">
         <div className="card metric-card">

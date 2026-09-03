@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-import { UserRole } from '@prisma/client';
+import { InvitationDeliveryStatus, UserRole } from '@prisma/client';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { buildPageMetadata } from '../../lib/appBrand';
@@ -129,6 +129,8 @@ async function inviteUser(formData: FormData) {
   });
 
   let providerMessageId: string | undefined;
+  let deliveredTo: string | undefined;
+  let deliveryStatus: InvitationDeliveryStatus = InvitationDeliveryStatus.PENDING;
 
   try {
     const result = await sendUserInvitationEmail({
@@ -138,22 +140,15 @@ async function inviteUser(formData: FormData) {
       token: invitationToken.token,
     });
     providerMessageId = result.providerMessageId;
+    deliveredTo = result.deliveredTo;
+    deliveryStatus = result.suppressed ? InvitationDeliveryStatus.SUPPRESSED : InvitationDeliveryStatus.SENT;
   } catch (error) {
     console.error('[users/invite] invitation email failed', {
       invitationId: invitation.id,
       message: error instanceof Error ? error.message : String(error),
       userId: user.id,
     });
-    await prisma.userInvitation.deleteMany({ where: { id: invitation.id } });
-
-    if (!existingUser) {
-      await prisma.user.deleteMany({
-        where: {
-          id: user.id,
-          passwordHash: null,
-        },
-      });
-    }
+    await prisma.userInvitation.update({ where: { id: invitation.id }, data: { attemptCount: { increment: 1 }, deliveryStatus: InvitationDeliveryStatus.FAILED, lastAttemptAt: new Date(), lastError: error instanceof Error ? error.message : String(error) } });
 
     redirect('/users?status=invite-email-failed');
   }
@@ -162,7 +157,7 @@ async function inviteUser(formData: FormData) {
     await prisma.$transaction([
       prisma.userInvitation.update({
         where: { id: invitation.id },
-        data: { providerMessageId },
+        data: { attemptCount: { increment: 1 }, deliveredTo, deliveryStatus, lastAttemptAt: new Date(), providerMessageId },
       }),
       prisma.userInvitation.deleteMany({
         where: {
@@ -226,6 +221,8 @@ async function sendActivationReminder(formData: FormData) {
   });
 
   let providerMessageId: string | undefined;
+  let deliveredTo: string | undefined;
+  let deliveryStatus: InvitationDeliveryStatus = InvitationDeliveryStatus.PENDING;
 
   try {
     const result = await sendUserInvitationEmail({
@@ -236,13 +233,15 @@ async function sendActivationReminder(formData: FormData) {
       token: invitationToken.token,
     });
     providerMessageId = result.providerMessageId;
+    deliveredTo = result.deliveredTo;
+    deliveryStatus = result.suppressed ? InvitationDeliveryStatus.SUPPRESSED : InvitationDeliveryStatus.SENT;
   } catch (error) {
     console.error('[users/reminder] activation reminder email failed', {
       invitationId: invitation.id,
       message: error instanceof Error ? error.message : String(error),
       userId: user.id,
     });
-    await prisma.userInvitation.deleteMany({ where: { id: invitation.id } });
+    await prisma.userInvitation.update({ where: { id: invitation.id }, data: { attemptCount: { increment: 1 }, deliveryStatus: InvitationDeliveryStatus.FAILED, lastAttemptAt: new Date(), lastError: error instanceof Error ? error.message : String(error) } });
     redirect('/users?status=reminder-email-failed');
   }
 
@@ -250,7 +249,7 @@ async function sendActivationReminder(formData: FormData) {
     await prisma.$transaction([
       prisma.userInvitation.update({
         where: { id: invitation.id },
-        data: { providerMessageId },
+        data: { attemptCount: { increment: 1 }, deliveredTo, deliveryStatus, lastAttemptAt: new Date(), providerMessageId },
       }),
       prisma.userInvitation.deleteMany({
         where: {

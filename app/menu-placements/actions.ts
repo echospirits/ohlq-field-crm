@@ -10,6 +10,7 @@ import {
   validateMenuPlacementProofFile,
 } from '../../lib/blob';
 import { prisma } from '../../lib/prisma';
+import { requireOrganizationContext } from '../../lib/organizations';
 import {
   getLegacyAccountCreateDataFromWholesaleAccount,
   getWholesaleLicenseeIdValues,
@@ -180,6 +181,7 @@ async function createProofPhoto({
 
 export async function createMenuPlacement(formData: FormData) {
   const user = await requireUser();
+  const { organizationId } = await requireOrganizationContext(user);
   const returnTo = safeReturnTo(formData.get('returnTo'));
   const wholesaleAccountId = toOptional(formData.get('wholesaleAccountId'));
   const directAccountId = toOptional(formData.get('accountId'));
@@ -215,6 +217,7 @@ export async function createMenuPlacement(formData: FormData) {
 
   await prisma.menuPlacement.create({
     data: {
+      organizationId,
       accountId: account.id,
       wholesaleAccountId,
       visitId,
@@ -246,6 +249,7 @@ export async function createMenuPlacement(formData: FormData) {
 
 export async function updateMenuPlacement(formData: FormData) {
   const user = await requireUser();
+  const { organizationId } = await requireOrganizationContext(user);
   const returnTo = safeReturnTo(formData.get('returnTo'));
   const id = toOptional(formData.get('id'));
 
@@ -255,8 +259,8 @@ export async function updateMenuPlacement(formData: FormData) {
 
   const placementId = id!;
 
-  const existingPlacement = await prisma.menuPlacement.findUnique({
-    where: { id: placementId },
+  const existingPlacement = await prisma.menuPlacement.findFirst({
+    where: { id: placementId, organizationId },
   });
 
   if (!existingPlacement) {
@@ -322,7 +326,8 @@ export async function updateMenuPlacement(formData: FormData) {
 }
 
 export async function deleteMenuPlacement(formData: FormData) {
-  await requireUser();
+  const user = await requireUser();
+  const { organizationId } = await requireOrganizationContext(user);
   const returnTo = safeReturnTo(formData.get('returnTo'));
   const id = toOptional(formData.get('id'));
 
@@ -332,8 +337,8 @@ export async function deleteMenuPlacement(formData: FormData) {
 
   const placementId = id!;
 
-  const placement = await prisma.menuPlacement.findUnique({
-    where: { id: placementId },
+  const placement = await prisma.menuPlacement.findFirst({
+    where: { id: placementId, organizationId },
     select: {
       proofPhotoId: true,
       proofStorageKey: true,

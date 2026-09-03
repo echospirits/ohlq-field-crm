@@ -37,12 +37,12 @@ function IntelligenceBand({ label, value }: { label: string; value: string }) {
   return <div><dt>{label}</dt><dd><span className={`priority priority-${value.toLowerCase()}`}>{titleCase(value)}</span></dd></div>;
 }
 
-export async function AgencyIntelligencePanel({ agencyId, agencyName, currentUserId, users }: { agencyId: string; agencyName: string; currentUserId: string; users: Array<{ id: string; name: string }> }) {
+export async function AgencyIntelligencePanel({ agencyId, agencyName, currentUserId, organizationId, users }: { agencyId: string; agencyName: string; currentUserId: string; organizationId: string; users: Array<{ id: string; name: string }> }) {
   const [summary, products] = await Promise.all([
-    prisma.agencyIntelligenceSummary.findUnique({ where: { agencyId } }),
+    prisma.agencyIntelligenceSummary.findUnique({ where: { organizationId_agencyId: { organizationId, agencyId } } }),
     prisma.agencyProductIntelligence.findMany({
-      where: { agencyId },
-      include: { worklistItems: { where: { status: { in: ['OPEN', 'IN_PROGRESS'] } }, select: { id: true } } },
+      where: { agencyId, organizationId },
+      include: { worklistItems: { where: { organizationId, status: { in: ['OPEN', 'IN_PROGRESS'] } }, select: { id: true } } },
       orderBy: [{ priorityScore: 'desc' }, { itemName: 'asc' }],
     }),
   ]);

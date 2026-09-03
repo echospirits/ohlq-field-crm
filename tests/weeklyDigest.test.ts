@@ -34,6 +34,7 @@ const makeWorkItem = (overrides: Partial<DigestWorklistItem>): DigestWorklistIte
 });
 
 const baseUser = {
+  organizationId: 'org_test',
   id: 'user-1',
   email: 'rep@example.com',
   firstName: 'Rep',

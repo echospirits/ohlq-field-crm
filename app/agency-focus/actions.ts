@@ -4,18 +4,20 @@ import { OpportunityStatus, WorklistCategory, WorklistSource, WorklistStatus } f
 import { revalidatePath } from 'next/cache';
 import { requireUser } from '../../lib/auth';
 import { prisma } from '../../lib/prisma';
+import { requireOrganizationContext } from '../../lib/organizations';
 
 const getId = (formData: FormData) => String(formData.get('id') ?? '').trim();
 
 export async function updateAgencyOpportunity(formData: FormData) {
   const user = await requireUser();
+  const { organizationId } = await requireOrganizationContext(user);
   const id = getId(formData);
   const action = String(formData.get('action') ?? '');
   const opportunity = await prisma.agencyProductIntelligence.findUnique({
     where: { id },
     include: { agency: { select: { id: true, name: true } } },
   });
-  if (!opportunity) return;
+  if (!opportunity || opportunity.organizationId !== organizationId) return;
   const now = new Date();
 
   if (action === 'worklist') {
@@ -23,6 +25,7 @@ export async function updateAgencyOpportunity(formData: FormData) {
     const existing = await prisma.worklistItem.findFirst({
       where: {
         agencyProductIntelligenceId: opportunity.id,
+        organizationId,
         status: { in: [WorklistStatus.OPEN, WorklistStatus.IN_PROGRESS] },
       },
     });
@@ -30,6 +33,7 @@ export async function updateAgencyOpportunity(formData: FormData) {
       await prisma.worklistItem.create({
         data: {
           agencyId: opportunity.agency.id,
+          organizationId,
           agencyProductIntelligenceId: opportunity.id,
           assignedToUserId: user.id,
           category: WorklistCategory.AGENCY,
@@ -65,6 +69,7 @@ export async function updateAgencyOpportunity(formData: FormData) {
     await prisma.agencyIntelligenceEvent.create({
       data: {
         agencyId: opportunity.agency.id,
+        organizationId,
         agencyProductIntelligenceId: opportunity.id,
         eventKey: `${opportunity.id}:USER_${action.toUpperCase()}:${now.toISOString()}`,
         eventType: `USER_${action.toUpperCase()}`,

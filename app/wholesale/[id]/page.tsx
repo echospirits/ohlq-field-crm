@@ -9,6 +9,8 @@ import { getUserDisplayName, requireUser } from '../../../lib/auth';
 import { formatEasternDate } from '../../../lib/dateTime';
 import { getWholesaleRecentPurchases } from '../../../lib/ohlqSalesData';
 import { prisma } from '../../../lib/prisma';
+import { requireOrganizationContext } from '../../../lib/organizations';
+import { getOrganizationTenantConfig } from '../../../lib/tenantConfig';
 import { formatWholesaleLicenseeIds, getWholesaleLicenseeIdValues } from '../../../lib/wholesaleAccounts';
 import { MenuPlacementPanel } from '../../menu-placements/MenuPlacementPanel';
 import { AccountTagPanel } from '../../tags/AccountTagPanel';
@@ -64,6 +66,8 @@ export default async function WholesaleActivityPage({
   }>;
 }) {
   const user = await requireUser();
+  const { organizationId } = await requireOrganizationContext(user);
+  const tenantConfig = await getOrganizationTenantConfig(organizationId);
   const { id } = await params;
   const query = (await searchParams) ?? {};
 
@@ -71,6 +75,7 @@ export default async function WholesaleActivityPage({
     where: { id },
     include: {
       tags: {
+        where: { organizationId },
         include: {
           tag: true,
           createdByUser: true,
@@ -96,6 +101,7 @@ export default async function WholesaleActivityPage({
   const [visits, tags, backingAccount, users, purchases] = await Promise.all([
     prisma.loggedVisit.findMany({
       where: {
+        organizationId,
         wholesaleAccountId: id,
         locationType: 'wholesale',
       },
@@ -110,7 +116,7 @@ export default async function WholesaleActivityPage({
       },
       orderBy: [{ visitAt: 'desc' }],
     }),
-    prisma.tag.findMany({ orderBy: [{ name: 'asc' }] }),
+    prisma.tag.findMany({ where: { organizationId }, orderBy: [{ name: 'asc' }] }),
     prisma.account.findFirst({
       where: {
         OR: accountLicenseeIds.map((licenseeId) => ({
@@ -119,8 +125,8 @@ export default async function WholesaleActivityPage({
       },
       select: { id: true },
     }),
-    prisma.user.findMany({ orderBy: [{ name: 'asc' }, { email: 'asc' }] }),
-    getWholesaleRecentPurchases({ account }),
+    prisma.user.findMany({ where: { organizationId }, orderBy: [{ name: 'asc' }, { email: 'asc' }] }),
+    getWholesaleRecentPurchases({ account, config: tenantConfig }),
   ]);
   const placementQ = (query.placementQ ?? '').trim();
   const placementStatusFilter = Object.values(MenuPlacementStatus).includes(
@@ -140,6 +146,7 @@ export default async function WholesaleActivityPage({
   }
 
   const menuPlacementWhere: Prisma.MenuPlacementWhereInput = {
+    organizationId,
     OR: placementLocationWhere,
   };
 
@@ -191,7 +198,7 @@ export default async function WholesaleActivityPage({
   ]);
 
   const contacts = await prisma.locationContact.findMany({
-    where: { id: { in: visits.map((visit) => visit.contactId).filter(Boolean) as string[] } },
+    where: { organizationId, id: { in: visits.map((visit) => visit.contactId).filter(Boolean) as string[] } },
   });
   const contactMap = Object.fromEntries(contacts.map((contact) => [contact.id, contact.name]));
   const latestVisitAt = visits[0]?.visitAt;
