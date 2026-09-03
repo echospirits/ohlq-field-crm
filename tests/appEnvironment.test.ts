@@ -109,4 +109,5 @@ test('GitHub OHLQ workflow isolates production and test secrets with GitHub Envi
   assert.match(workflow, /deploymentEnvironment:/);
   assert.match(workflow, /environment: \$\{\{/);
   assert.match(workflow, /DATABASE_ENVIRONMENT:/);
+  assert.match(workflow, /github\.repository == 'echospirits\/neat-tst' && 'test' \|\| 'production'/);
 });

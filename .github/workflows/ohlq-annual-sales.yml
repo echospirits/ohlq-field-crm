@@ -43,19 +43,19 @@ on:
           - test
 
 concurrency:
-  group: ohlq-annual-sales-sync-${{ github.event_name == 'schedule' && 'production' || inputs.deploymentEnvironment }}
+  group: ohlq-annual-sales-sync-${{ github.event_name == 'schedule' && (github.repository == 'echospirits/neat-tst' && 'test' || 'production') || inputs.deploymentEnvironment }}
   cancel-in-progress: false
 
 jobs:
   sync:
     name: Download and import OHLQ reports
-    environment: ${{ github.event_name == 'schedule' && 'production' || inputs.deploymentEnvironment }}
+    environment: ${{ github.event_name == 'schedule' && (github.repository == 'echospirits/neat-tst' && 'test' || 'production') || inputs.deploymentEnvironment }}
     runs-on: ubuntu-latest
     timeout-minutes: 75
 
     env:
-      APP_ENV: ${{ github.event_name == 'schedule' && 'production' || inputs.deploymentEnvironment }}
-      DATABASE_ENVIRONMENT: ${{ github.event_name == 'schedule' && 'production' || inputs.deploymentEnvironment }}
+      APP_ENV: ${{ github.event_name == 'schedule' && (github.repository == 'echospirits/neat-tst' && 'test' || 'production') || inputs.deploymentEnvironment }}
+      DATABASE_ENVIRONMENT: ${{ github.event_name == 'schedule' && (github.repository == 'echospirits/neat-tst' && 'test' || 'production') || inputs.deploymentEnvironment }}
       DATABASE_TARGET_ID: ${{ vars.DATABASE_TARGET_ID }}
       EXPECTED_DATABASE_HOST: ${{ vars.EXPECTED_DATABASE_HOST }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
