@@ -13,6 +13,7 @@ import { discoverOrganizationProducts } from '../../../../lib/organizationProduc
 import { prisma } from '../../../../lib/prisma';
 import { PageHeader } from '../../../components/PageChrome';
 import { InvitationControls } from './InvitationControls';
+import { ProductSelectionEditor } from './ProductSelectionEditor';
 import { runProvisioningAction, startProvisioningAction } from './actions';
 
 export const metadata = buildPageMetadata('Organization');
@@ -81,37 +82,24 @@ async function refreshProductCandidates(formData: FormData) {
   redirect(`/platform/organizations/${organizationId}?status=${discovery.created ? `products-discovered-${discovery.created}` : 'no-new-products'}`);
 }
 
-async function setProductStatus(formData: FormData) {
+async function saveProductSelection(formData: FormData) {
   'use server';
   const actor = await requirePlatformAdmin();
   const organizationId = clean(formData.get('organizationId'));
-  const productId = clean(formData.get('productId'));
-  const status = clean(formData.get('status')) as OrganizationProductStatus;
-  if (!Object.values(OrganizationProductStatus).includes(status)) redirect(`/platform/organizations/${organizationId}?status=invalid-product-status`);
-  const result = await prisma.organizationProduct.updateMany({ where: { id: productId, organizationId }, data: { status } });
-  if (result.count !== 1) redirect(`/platform/organizations/${organizationId}?status=product-not-found`);
-  const pending = await prisma.organizationProduct.count({ where: { organizationId, status: OrganizationProductStatus.PENDING_REVIEW } });
+  const includedProductIds = [...new Set(formData.getAll('includedProductIds').map(clean).filter(Boolean))];
+  const products = await prisma.organizationProduct.findMany({ where: { organizationId }, select: { id: true } });
+  const productIds = new Set(products.map((product) => product.id));
+  if (includedProductIds.some((id) => !productIds.has(id))) redirect(`/platform/organizations/${organizationId}?status=invalid-product-selection`);
   const organization = await prisma.organization.findUnique({ where: { id: organizationId }, select: { onboardingData: true } });
   const onboarding = organization?.onboardingData && typeof organization.onboardingData === 'object' && !Array.isArray(organization.onboardingData) ? organization.onboardingData as Record<string, unknown> : {};
-  await prisma.organization.update({ where: { id: organizationId }, data: { onboardingData: { ...onboarding, productsConfirmed: pending === 0 } } });
-  await writeOrganizationAudit(actor.id, organizationId, OrganizationAuditAction.PRODUCT_CONFIGURATION_CHANGED, { productId, status });
+  await prisma.$transaction([
+    prisma.organizationProduct.updateMany({ where: { organizationId, id: { in: includedProductIds } }, data: { status: OrganizationProductStatus.OWNED } }),
+    prisma.organizationProduct.updateMany({ where: { organizationId, id: { notIn: includedProductIds } }, data: { status: OrganizationProductStatus.EXCLUDED } }),
+    prisma.organization.update({ where: { id: organizationId }, data: { onboardingData: { ...onboarding, productsConfirmed: products.length > 0 } } }),
+  ]);
+  await writeOrganizationAudit(actor.id, organizationId, OrganizationAuditAction.PRODUCT_CONFIGURATION_CHANGED, { includedCount: includedProductIds.length, excludedCount: products.length - includedProductIds.length });
   revalidatePath(`/platform/organizations/${organizationId}`);
-  redirect(`/platform/organizations/${organizationId}?status=product-${status.toLowerCase()}`);
-}
-
-async function setPendingProductStatus(formData: FormData) {
-  'use server';
-  const actor = await requirePlatformAdmin();
-  const organizationId = clean(formData.get('organizationId'));
-  const status = clean(formData.get('status')) as OrganizationProductStatus;
-  if (status !== OrganizationProductStatus.OWNED && status !== OrganizationProductStatus.EXCLUDED && status !== OrganizationProductStatus.REPRESENTED) redirect(`/platform/organizations/${organizationId}?status=invalid-product-status`);
-  const result = await prisma.organizationProduct.updateMany({ where: { organizationId, status: OrganizationProductStatus.PENDING_REVIEW }, data: { status } });
-  const organization = await prisma.organization.findUnique({ where: { id: organizationId }, select: { onboardingData: true } });
-  const onboarding = organization?.onboardingData && typeof organization.onboardingData === 'object' && !Array.isArray(organization.onboardingData) ? organization.onboardingData as Record<string, unknown> : {};
-  await prisma.organization.update({ where: { id: organizationId }, data: { onboardingData: { ...onboarding, productsConfirmed: true } } });
-  await writeOrganizationAudit(actor.id, organizationId, OrganizationAuditAction.PRODUCT_CONFIGURATION_CHANGED, { bulkStatus: status, count: result.count });
-  revalidatePath(`/platform/organizations/${organizationId}`);
-  redirect(`/platform/organizations/${organizationId}?status=pending-products-${status.toLowerCase()}-${result.count}`);
+  redirect(`/platform/organizations/${organizationId}?status=product-selection-saved`);
 }
 
 export default async function OrganizationPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams?: Promise<{ status?: string }> }) {
@@ -135,10 +123,10 @@ export default async function OrganizationPage({ params, searchParams }: { param
       <article className="card"><div className="section-heading"><div><span className="page-eyebrow">Onboarding</span><h2>{progress}% complete</h2></div><span className="pill">{organization.onboardingStatus}</span></div><div className="onboarding-progress"><span style={{ width: `${progress}%` }} /></div><ul className="checklist">{checks.map(([label, complete]) => <li className={complete ? 'complete' : ''} key={label}>{complete ? '✓' : '○'} {label}</li>)}</ul></article>
     </section>
     {latestRun ? <article className="card"><div className="section-heading"><div><span className="page-eyebrow">Provisioning workflow</span><h2>{latestRun.status.replaceAll('_', ' ')}</h2><p className="muted">Persisted, retryable steps make onboarding safe to resume after configuration changes or failures.</p></div><form action={runProvisioningAction}><input name="organizationId" type="hidden" value={id} /><input name="runId" type="hidden" value={latestRun.id} /><button type="submit">Run or resume provisioning</button></form></div>{latestRun.lastError ? <p className="notice danger">{latestRun.lastError}</p> : null}<div className="provisioning-step-grid">{latestRun.steps.map((step) => <div className="provisioning-step" key={step.id}><span>{step.sequence + 1}</span><div><strong>{step.kind.replaceAll('_', ' ')}</strong><small>{step.status.replaceAll('_', ' ')}{step.lastError ? ` · ${step.lastError}` : ''}</small></div></div>)}</div><InvitationControls organizationId={id} /></article> : <article className="card"><span className="page-eyebrow">Provisioning workflow</span><h2>Not started</h2><p className="muted">Create a persisted workflow for this existing organization, discover its products, and continue through activation.</p><form action={startProvisioningAction}><input name="organizationId" type="hidden" value={id} /><button type="submit">Start provisioning workflow</button></form></article>}
-    <form action={saveFeatures} className="card"><input name="organizationId" type="hidden" value={id} /><div className="section-heading"><div><span className="page-eyebrow">Product access</span><h2>Feature entitlements</h2></div><button type="submit">Save features</button></div><div className="entitlement-grid">{Object.values(FEATURE_REGISTRY).map((feature) => <label className="entitlement-option" key={feature.key}><input defaultChecked={enabled.has(feature.key)} name="features" type="checkbox" value={feature.key} /><span><strong>{feature.label}</strong><small>{feature.description}</small>{feature.dependencies.length ? <small>Requires: {feature.dependencies.map((key) => FEATURE_REGISTRY[key].label).join(', ')}</small> : null}</span></label>)}</div></form>
+    <form action={saveFeatures} className="card feature-entitlements-form"><input name="organizationId" type="hidden" value={id} /><div className="section-heading"><div><span className="page-eyebrow">Product access</span><h2>Feature entitlements</h2></div><button className="compact-btn" type="submit">Save features</button></div><div className="entitlement-grid">{Object.values(FEATURE_REGISTRY).map((feature) => <label className="entitlement-option" key={feature.key}><input defaultChecked={enabled.has(feature.key)} name="features" type="checkbox" value={feature.key} /><span><strong>{feature.label}</strong><small>{feature.description}</small>{feature.dependencies.length ? <small>Requires: {feature.dependencies.map((key) => FEATURE_REGISTRY[key].label).join(', ')}</small> : null}</span></label>)}</div></form>
     <section className="platform-grid"><article className="card"><div className="section-heading"><div><span className="page-eyebrow">Ohio market</span><h2>Vendor IDs</h2></div></div><div className="platform-list">{organization.vendorIdentifiers.map((vendor) => <div key={vendor.id}><span><strong>{vendor.vendorId}</strong><small>{vendor.label || 'Ohio Vendor ID'}</small></span><span className="pill">{vendor.active ? 'Active' : 'Inactive'}</span></div>)}</div><form action={addVendor} className="inline-form"><input name="organizationId" type="hidden" value={id} /><label>Vendor ID<input name="vendorId" required /></label><label>Label<input name="label" /></label><button type="submit">Add and discover</button></form></article>
       <article className="card"><div className="section-heading"><div><span className="page-eyebrow">People</span><h2>Organization users</h2></div></div><div className="platform-list">{users.map((user) => <div key={user.id}><span><strong>{getUserDisplayName(user)}</strong><small>{user.email}</small></span><span className="pill">{user.role}</span></div>)}</div></article></section>
-    <article className="card"><div className="section-heading"><div><span className="page-eyebrow">Catalog configuration</span><h2>Discovered products</h2><p className="muted">Shared OHLQ product facts with a private, organization-specific ownership decision. Brand Master imports automatically add new matching items as pending review.</p></div><div className="inline-actions"><span className="pill">{organization.products.length}</span><form action={refreshProductCandidates}><input name="organizationId" type="hidden" value={id} /><button className="compact-btn secondary" type="submit">Scan Brand Master</button></form><form action={setPendingProductStatus}><input name="organizationId" type="hidden" value={id} /><input name="status" type="hidden" value={OrganizationProductStatus.OWNED} /><button className="compact-btn secondary" type="submit">Confirm all pending</button></form><form action={setPendingProductStatus}><input name="organizationId" type="hidden" value={id} /><input name="status" type="hidden" value={OrganizationProductStatus.EXCLUDED} /><button className="compact-btn secondary" type="submit">Exclude all pending</button></form></div></div><div className="table-wrap"><table><thead><tr><th>Item</th><th>Name</th><th>Decision</th></tr></thead><tbody>{organization.products.map((product) => <tr key={product.id}><td>{product.externalItemCode}</td><td>{product.displayName || 'Name pending'}</td><td><form action={setProductStatus} className="inline-control-form"><input name="organizationId" type="hidden" value={id} /><input name="productId" type="hidden" value={product.id} /><select defaultValue={product.status} name="status">{Object.values(OrganizationProductStatus).map((value) => <option key={value} value={value}>{value.replaceAll('_', ' ')}</option>)}</select><button type="submit">Save</button></form></td></tr>)}</tbody></table></div></article>
+    <article className="card product-selection-card"><div className="section-heading"><div><span className="page-eyebrow">Catalog configuration</span><h2>Product selection</h2><p className="muted">Move items between the two lists, then save once. New Brand Master matches appear on the excluded side for review.</p></div><form action={refreshProductCandidates}><input name="organizationId" type="hidden" value={id} /><button className="compact-btn secondary" type="submit">Scan Brand Master</button></form></div><ProductSelectionEditor action={saveProductSelection} organizationId={id} products={organization.products.map((product) => ({ id: product.id, itemCode: product.externalItemCode, name: product.displayName, status: product.status }))} /></article>
     <article className="card"><div className="section-heading"><div><span className="page-eyebrow">Auditability</span><h2>Recent platform activity</h2></div></div><div className="platform-list">{organization.auditEvents.map((event) => <div key={event.id}><span><strong>{event.action.replaceAll('_', ' ')}</strong><small>{event.occurredAt.toLocaleString('en-US', { timeZone: 'America/New_York' })}</small></span><code>{event.actorUserId.slice(-8)}</code></div>)}</div></article>
   </>;
 }
