@@ -23,11 +23,13 @@ const POWER_BI_REPORT_FRAME_TIMEOUT_MS = 180_000;
 const POWER_BI_REPORT_FRAME_RELOAD_AFTER_MS = 75_000;
 const MICROSOFT_INPUT_ACTION_TIMEOUT_MS = 5_000;
 const OHLQ_LOGIN_TIMEOUT_MS = 60_000;
+const OHLQ_LOGIN_FORM_TIMEOUT_MS = 15_000;
 const OHLQ_REPORT_REDIRECT_TIMEOUT_MS = 120_000;
 const OHLQ_REPORT_REDIRECT_ATTEMPTS = 2;
 const OHLQ_NAVIGATION_RETRY_ATTEMPTS = 3;
 const OHLQ_NAVIGATION_RETRY_DELAY_MS = 5_000;
 const OHLQ_INVALID_LOGIN_TEXT = /incorrect username or password|try resetting your password|further assistance/i;
+const OHLQ_REQUEST_BLOCKED_TEXT = /\bthe request is blocked\b/i;
 const BROWSER_COMPATIBILITY_LAUNCH_ARGS = ['--disable-blink-features=AutomationControlled'];
 const MICROSOFT_LOGOUT_URL = 'https://login.microsoftonline.com/common/oauth2/v2.0/logout';
 const MICROSOFT_AUTH_RESET_DOMAINS = [
@@ -107,6 +109,10 @@ export function getOhlqAgencyInventoryReportConfig() {
     parameter: { name: 'Brand', values: 'all' },
     reportId: OHLQ_AGENCY_INVENTORY_REPORT_ID,
   } satisfies OhlqPowerBiReportConfig;
+}
+
+export function isOhlqRequestBlockedPageSummary(summary: string) {
+  return OHLQ_REQUEST_BLOCKED_TEXT.test(summary);
 }
 
 export type ReportDate = {
@@ -952,13 +958,56 @@ async function signInToOhlqPartner(page: Page) {
   const ohlqUsername = requireEnv('OHLQ_OPS_USERNAME');
   const ohlqPassword = requireEnv('OHLQ_OPS_PASSWORD');
 
-  await gotoWithRetry(page, 'https://ops.ohlq.com/login', { waitUntil: 'domcontentloaded', timeout: 60_000 });
-  if (!page.url().includes('/partner')) {
-    await page.getByPlaceholder('username or email').fill(ohlqUsername);
-    await page.getByPlaceholder('please enter your password').fill(ohlqPassword);
-    await page.getByRole('button', { name: 'Log In' }).click();
-    await waitForOhlqPartnerLogin(page);
+  const usernameInput = page
+    .locator('input#userEmail2, input[name="userEmail2"], input[placeholder="username or email"]')
+    .first();
+  const passwordInput = page
+    .locator('input#userPassword2, input[name="userPassword2"], input[placeholder="please enter your password"]')
+    .first();
+  const submitButton = page.locator('input#submitSignin, input[type="submit"][value="Log In"]').first();
+  let lastPageSummary = '';
+  let requestWasBlocked = false;
+
+  for (let attempt = 1; attempt <= OHLQ_NAVIGATION_RETRY_ATTEMPTS; attempt += 1) {
+    await gotoWithRetry(page, 'https://ops.ohlq.com/login', { waitUntil: 'domcontentloaded', timeout: 60_000 });
+    if (page.url().includes('/partner')) return;
+
+    lastPageSummary = await getPageSummary(page);
+    let pageIsBlocked = isOhlqRequestBlockedPageSummary(lastPageSummary);
+    requestWasBlocked ||= pageIsBlocked;
+
+    if (!pageIsBlocked) {
+      const loginFormVisible = await usernameInput
+        .waitFor({ state: 'visible', timeout: OHLQ_LOGIN_FORM_TIMEOUT_MS })
+        .then(() => true, () => false);
+      if (loginFormVisible) {
+        await usernameInput.fill(ohlqUsername);
+        await passwordInput.fill(ohlqPassword);
+        await submitButton.click();
+        await waitForOhlqPartnerLogin(page);
+        return;
+      }
+      lastPageSummary = await getPageSummary(page);
+      pageIsBlocked = isOhlqRequestBlockedPageSummary(lastPageSummary);
+      requestWasBlocked ||= pageIsBlocked;
+    }
+
+    if (attempt < OHLQ_NAVIGATION_RETRY_ATTEMPTS) {
+      await page.waitForTimeout(OHLQ_NAVIGATION_RETRY_DELAY_MS * attempt).catch(() => undefined);
+    }
   }
+
+  const pageDescription = lastPageSummary || sanitizeOhlqUrl(page.url());
+  if (requestWasBlocked) {
+    throw new Error(
+      `OHLQ OPS blocked the login page request after ${OHLQ_NAVIGATION_RETRY_ATTEMPTS} attempts. ` +
+        `This is an upstream OHLQ access/WAF failure, not a missing login field or credential error. Page: ${pageDescription}`,
+    );
+  }
+
+  throw new Error(
+    `OHLQ OPS login form did not load after ${OHLQ_NAVIGATION_RETRY_ATTEMPTS} attempts. Page: ${pageDescription}`,
+  );
 }
 
 function isOhlqOpsLoginUrl(rawUrl: string) {

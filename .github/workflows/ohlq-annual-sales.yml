@@ -3,10 +3,12 @@ name: OHLQ Annual Sales Sync
 on:
   schedule:
     # Backup scheduler. Vercel Cron remains the primary trigger; these UTC
-    # slots map to 7:27 AM America/New_York across daylight saving time, and
-    # the first workflow step skips whichever slot is not active for the season.
-    - cron: "27 11 * * *"
-    - cron: "27 12 * * *"
+    # slots map to 6:47 AM America/New_York across daylight saving time. Main
+    # intentionally runs 40 minutes before neat-tst so OHLQ does not receive
+    # concurrent automated browser logins from both repositories.
+    # The first workflow step skips whichever slot is not active for the season.
+    - cron: "47 10 * * *"
+    - cron: "47 11 * * *"
   workflow_dispatch:
     inputs:
       reportDate:
@@ -70,12 +72,12 @@ jobs:
           eastern_offset="$(TZ=America/New_York date '+%z')"
           eastern_time="$(TZ=America/New_York date '+%Y-%m-%d %H:%M:%S %Z %z')"
 
-          if [[ "$schedule" == "27 11 * * *" && "$eastern_offset" == "-0400" ]]; then
+          if [[ "$schedule" == "47 10 * * *" && "$eastern_offset" == "-0400" ]]; then
             echo "should_run=true" >> "$GITHUB_OUTPUT"
-            echo "reason=scheduled daylight-time 7:27 AM Eastern fallback at $eastern_time" >> "$GITHUB_OUTPUT"
-          elif [[ "$schedule" == "27 12 * * *" && "$eastern_offset" == "-0500" ]]; then
+            echo "reason=scheduled daylight-time 6:47 AM Eastern fallback at $eastern_time" >> "$GITHUB_OUTPUT"
+          elif [[ "$schedule" == "47 11 * * *" && "$eastern_offset" == "-0500" ]]; then
             echo "should_run=true" >> "$GITHUB_OUTPUT"
-            echo "reason=scheduled standard-time 7:27 AM Eastern fallback at $eastern_time" >> "$GITHUB_OUTPUT"
+            echo "reason=scheduled standard-time 6:47 AM Eastern fallback at $eastern_time" >> "$GITHUB_OUTPUT"
           else
             echo "should_run=false" >> "$GITHUB_OUTPUT"
             echo "reason=skipping inactive seasonal fallback slot $schedule at $eastern_time" >> "$GITHUB_OUTPUT"

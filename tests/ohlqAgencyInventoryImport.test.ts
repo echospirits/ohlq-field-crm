@@ -7,6 +7,7 @@ import {
 } from '../lib/ohlqAgencyInventoryImport';
 import {
   getOhlqAgencyInventoryReportConfig,
+  isOhlqRequestBlockedPageSummary,
   OHLQ_AGENCY_INVENTORY_REPORT_ID,
 } from '../lib/ohlqAnnualSalesReport';
 
@@ -55,6 +56,11 @@ describe('parseOhlqAgencyInventoryCsv', () => {
     assert.equal(config.reportId, OHLQ_AGENCY_INVENTORY_REPORT_ID);
     assert.deepEqual(config.parameter, { name: 'Brand', values: 'all' });
     assert.equal(config.renderedTitle, undefined);
+  });
+
+  it('recognizes the upstream OHLQ request-block page instead of treating it as a missing login field', () => {
+    assert.equal(isOhlqRequestBlockedPageSummary('The request is blocked.'), true);
+    assert.equal(isOhlqRequestBlockedPageSummary('Log in to your account'), false);
   });
 
   it('maps values by header name rather than column position', () => {
