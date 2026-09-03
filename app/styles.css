@@ -4264,6 +4264,13 @@ legend {
 .entitlement-option input[type="checkbox"] { flex:0 0 1rem; height:1rem; margin:.15rem 0 0; min-height:1rem; width:1rem; }
 .entitlement-option span { display:grid; gap:.18rem; min-width:0; }
 .entitlement-option small { color:var(--muted-2); font-size:.72rem; line-height:1.35; }
+.package-entitlement-grid { display:grid; gap:.6rem; grid-template-columns:repeat(2,minmax(0,1fr)); }
+.package-entitlement { align-items:center; background:var(--panel-2); border:1px solid var(--line); border-radius:.65rem; display:flex; gap:.75rem; justify-content:space-between; min-width:0; padding:.8rem; }
+.package-entitlement.selectable { cursor:pointer; }
+.package-entitlement.selectable:hover { border-color:var(--line-strong); }
+.package-entitlement > input[type="checkbox"] { flex:0 0 1.05rem; height:1.05rem; margin:0; min-height:1.05rem; width:1.05rem; }
+.package-entitlement > span:first-of-type { display:grid; flex:1; gap:.15rem; min-width:0; }
+.package-entitlement small { color:var(--muted-2); font-size:.75rem; line-height:1.35; }
 .product-selection-card { padding:clamp(.85rem,2vw,1.15rem); }
 .product-selection-card > .section-heading { margin-bottom:.75rem; }
 .product-selection-card > .section-heading h2 { margin-bottom:.2rem; }
@@ -4306,4 +4313,5 @@ legend {
   .product-transfer-pane select { height:9rem; }
   .product-selection-footer { align-items:stretch; flex-direction:column; }
   .product-selection-footer button { width:100%; }
+  .package-entitlement-grid { grid-template-columns:1fr; }
 }
