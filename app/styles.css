@@ -2198,24 +2198,9 @@ fieldset {
   font-size: 10px;
 }
 
-.tap-to-activate,
 .view-more-note {
   color: var(--muted);
   font-size: 11px;
-}
-
-.inactive-official-row {
-  background: #10101466;
-}
-
-.inline-activate-form {
-  display: block;
-  max-width: none;
-}
-
-.tap-to-activate {
-  display: block;
-  margin-top: 4px;
 }
 
 .data-pipeline-section {

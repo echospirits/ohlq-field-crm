@@ -3,7 +3,6 @@ import { describe, it } from 'node:test';
 import {
   chooseWholesaleOfficialAccountCandidate,
   getLegacyAccountCreateDataFromWholesaleAccount,
-  getWholesaleCreateDataFromOfficialAccount,
   getWholesaleEditableValuesFromOfficialAccount,
   getWholesaleLicenseeIdValues,
   getWholesaleOfficialLookupLicenseeIds,
@@ -163,37 +162,6 @@ describe('getWholesaleLicenseeIdValues', () => {
       }),
       ['72045', '00072045-1'],
     );
-  });
-});
-
-describe('getWholesaleCreateDataFromOfficialAccount', () => {
-  it('uses official fields only as initial activation values', () => {
-    const data = getWholesaleCreateDataFromOfficialAccount(
-      {
-        address: '37565 Colorado Av',
-        agencyRefId: '40949',
-        city: 'Avon',
-        county: 'Lorain',
-        deliveryDay: 'Tuesday',
-        districtId: '9',
-        id: 'official-1',
-        licenseeId: 't40949003',
-        name: '1 Stop Beverage Shop',
-        ownership: 'Independent',
-        phone: 'N/A',
-        state: 'OH',
-        zip: '44011',
-      },
-      'user-1',
-    );
-
-    assert.equal(data.licenseeId, 'T40949003');
-    assert.equal(data.name, '1 Stop Beverage Shop');
-    assert.equal(data.agencyId, '40949');
-    assert.equal(data.deliveryDay, 'Tuesday');
-    assert.equal(data.isActive, true);
-    assert.deepEqual(data.officialAccount, { connect: { id: 'official-1' } });
-    assert.deepEqual(data.licenseeIds, { create: [{ isPrimary: true, licenseeId: 'T40949003' }] });
   });
 });
 

@@ -30,7 +30,6 @@ const tagStatusMessages: Record<string, string> = {
 };
 const statusMessages: Record<string, string> = {
   updated: 'Wholesale account updated.',
-  activated: 'Account activated.',
   merged: 'Accounts merged successfully. Activity from the manual account is now shown here.',
   'visit-logged': 'Visit logged.',
   'visit-logged-photo-upload-failed': 'Visit logged, but one or more photos could not be uploaded.',
@@ -230,7 +229,6 @@ export default async function WholesaleActivityPage({
           ) : null}
         </div>
       </header>
-      {!account.isActive ? <p className="pill">Inactive</p> : null}
       {query.status ? <p className="toast-notice" role="status">{statusMessages[query.status] ?? query.status}</p> : null}
       {query.tagStatus ? <p className="pill">{tagStatusMessages[query.tagStatus] ?? query.tagStatus}</p> : null}
       {query.placementStatus ? (

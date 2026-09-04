@@ -17,7 +17,6 @@ import {
   getWholesaleLicenseeIdConflictWhere,
   getWholesaleLicenseeIdCreateData,
   getWholesaleLicenseeIdTextSearchWhere,
-  getWholesaleLicenseeIdValues,
   normalizeWholesaleLicenseeId,
   parseWholesaleLicenseeIds,
   syncWholesaleAccountLicenseeIds,
@@ -25,7 +24,6 @@ import {
 import { LiveFilterForm } from '../components/LiveFilterForm';
 import { AccountViewNavigation } from '../components/AccountViewNavigation';
 import { NearbyAccountsSection } from '../components/NearbyAccountsSection';
-import { activateOfficialWholesaleAccount } from './actions';
 
 export const metadata = buildPageMetadata('Wholesale Accounts');
 
@@ -58,7 +56,6 @@ type WholesaleTableRow = {
   agencyId: string | null;
   city: string | null;
   id: string;
-  isOfficialCandidate: boolean;
   licenseeIdsText: string | null;
   mostRecentVisit: Date | null;
   name: string;
@@ -68,7 +65,7 @@ type WholesaleTableRow = {
   opportunityScore: number | null;
 };
 
-const MAX_WHOLESALE_ACCOUNT_ROWS = 5000;
+const MAX_WHOLESALE_ACCOUNT_ROWS = 25000;
 const WHOLESALE_PAGE_SIZE = 300;
 
 const wholesaleSortColumns: Array<{ key: WholesaleSortKey; label: string }> = [
@@ -411,19 +408,6 @@ const wholesaleSearchWhere = (q: string, organizationId: string, includeIntellig
   ],
 });
 
-const officialWholesaleSearchWhere = (q: string): Prisma.AccountWhereInput => ({
-  licenseeId: { not: null },
-  type: AccountType.BAR_RESTAURANT,
-  OR: [
-    { name: { contains: q, mode: 'insensitive' } },
-    { licenseeId: { contains: q, mode: 'insensitive' } },
-    { agencyRefId: { contains: q, mode: 'insensitive' } },
-    { address: { contains: q, mode: 'insensitive' } },
-    { city: { contains: q, mode: 'insensitive' } },
-    { phone: { contains: q, mode: 'insensitive' } },
-  ],
-});
-
 export default async function WholesalePage({
   searchParams,
 }: {
@@ -447,7 +431,7 @@ export default async function WholesalePage({
     ...(q ? wholesaleSearchWhere(q, organizationId, hasWholesaleOpportunities) : {}),
   };
 
-  const [accounts, tags, officialCandidates] = await Promise.all([
+  const [accounts, tags] = await Promise.all([
     prisma.wholesaleAccount.findMany({
       take: MAX_WHOLESALE_ACCOUNT_ROWS,
       where: accountWhere,
@@ -460,57 +444,7 @@ export default async function WholesalePage({
       orderBy: [{ name: 'asc' }, { licenseeId: 'asc' }],
     }),
     prisma.tag.findMany({ where: { organizationId }, orderBy: [{ name: 'asc' }] }),
-    q
-      ? prisma.account.findMany({
-          where: officialWholesaleSearchWhere(q),
-          orderBy: [{ name: 'asc' }, { licenseeId: 'asc' }],
-          take: 40,
-          select: {
-            id: true,
-            licenseeId: true,
-            agencyRefId: true,
-            name: true,
-            address: true,
-            city: true,
-          },
-        })
-      : [],
   ]);
-  const candidateLicenseeIds = officialCandidates
-    .map((account) => normalizeWholesaleLicenseeId(account.licenseeId))
-    .filter(Boolean) as string[];
-  const linkedWholesaleAccounts =
-    candidateLicenseeIds.length > 0
-      ? await prisma.wholesaleAccount.findMany({
-          where: {
-            OR: [
-              ...candidateLicenseeIds.map((licenseeId) => ({
-                licenseeId: { equals: licenseeId, mode: 'insensitive' as const },
-              })),
-              {
-                licenseeIds: {
-                  some: {
-                    OR: candidateLicenseeIds.map((licenseeId) => ({
-                      licenseeId: { equals: licenseeId, mode: 'insensitive' as const },
-                    })),
-                  },
-                },
-              },
-            ],
-          },
-          select: {
-            licenseeId: true,
-            licenseeIds: { select: { licenseeId: true } },
-          },
-        })
-      : [];
-  const linkedLicenseeIds = new Set(
-    linkedWholesaleAccounts.flatMap((account) => getWholesaleLicenseeIdValues(account)),
-  );
-  const officialAccounts = officialCandidates.filter((account) => {
-    const licenseeId = normalizeWholesaleLicenseeId(account.licenseeId);
-    return licenseeId && !linkedLicenseeIds.has(licenseeId);
-  });
   const accountIds = accounts.map((account) => account.id);
   const [visitStats, opportunities] =
     accountIds.length > 0
@@ -561,7 +495,6 @@ export default async function WholesalePage({
       agencyId: account.agencyId,
       city: account.city,
       id: account.id,
-      isOfficialCandidate: false,
       licenseeIdsText: formatWholesaleLicenseeIds(account),
       mostRecentVisit: lastVisitAt,
       name: account.name,
@@ -571,23 +504,7 @@ export default async function WholesalePage({
       opportunityScore: opportunity?.productionScore ?? null,
     };
   });
-  const officialRows: WholesaleTableRow[] = officialAccounts.map((account) => ({
-    actionHref: null,
-    actionLabel: 'Activate',
-    address: account.address,
-    agencyId: account.agencyRefId,
-    city: account.city,
-    id: account.id,
-    isOfficialCandidate: true,
-    licenseeIdsText: account.licenseeId,
-    mostRecentVisit: null,
-    name: account.name,
-    nameHref: null,
-    nextAction: null,
-    opportunityPriority: null,
-    opportunityScore: null,
-  }));
-  const sortedRows = sortWholesaleRows([...activeRows, ...officialRows], sortKey, sortDirection);
+  const sortedRows = sortWholesaleRows(activeRows, sortKey, sortDirection);
   const totalPages = Math.max(1, Math.ceil(sortedRows.length / WHOLESALE_PAGE_SIZE));
   const currentPage = Math.min(Math.max(Number.isFinite(requestedPage) ? requestedPage : 1, 1), totalPages);
   const startIndex = (currentPage - 1) * WHOLESALE_PAGE_SIZE;
@@ -601,7 +518,7 @@ export default async function WholesalePage({
         <div>
           <span className="page-eyebrow">Accounts</span>
           <h1>Wholesale Accounts</h1>
-          <p className="muted">Active accounts by default. Search also checks inactive official OHLQ records.</p>
+          <p className="muted">Current Ohio accounts from the OHLQ Account Master, plus manually created accounts.</p>
         </div>
       </header>
       <AccountViewNavigation active="wholesale" />
@@ -629,7 +546,6 @@ export default async function WholesalePage({
       {params.status === 'duplicate-licensee' ? (
         <p className="pill">Those Licensee IDs are already split across multiple wholesale accounts.</p>
       ) : null}
-      {params.status === 'invalid-official' ? <p className="pill">Select a valid official wholesale record.</p> : null}
 
       <details className="card compact-details admin-panel">
         <summary>Create non-official wholesale account</summary>
@@ -696,35 +612,17 @@ export default async function WholesalePage({
           </thead>
           <tbody>
             {tableRows.map((row) => (
-              <tr className={row.isOfficialCandidate ? 'inactive-official-row' : undefined} key={row.id}>
+              <tr key={row.id}>
                 <td data-label="Actions">
-                  {row.actionHref ? (
-                    <Link className="btn compact-btn" href={row.actionHref}>
-                      {row.actionLabel}
-                    </Link>
-                  ) : (
-                    <form action={activateOfficialWholesaleAccount}>
-                      <input name="officialAccountId" type="hidden" value={row.id} />
-                      <button className="compact-btn secondary" type="submit">
-                        {row.actionLabel}
-                      </button>
-                    </form>
-                  )}
+                  <Link className="btn compact-btn" href={row.actionHref ?? '/wholesale'}>
+                    {row.actionLabel}
+                  </Link>
                 </td>
                 <td data-label="Licensee IDs">{row.licenseeIdsText}</td>
                 <td data-label="Name">
-                  {row.nameHref ? (
-                    <Link className="table-link" href={row.nameHref}>
-                      {row.name}
-                    </Link>
-                  ) : (
-                    <form action={activateOfficialWholesaleAccount} className="inline-activate-form">
-                      <input name="officialAccountId" type="hidden" value={row.id} />
-                      <button className="link-button table-link" type="submit">
-                        {row.name}
-                      </button>
-                    </form>
-                  )}
+                  <Link className="table-link" href={row.nameHref ?? '/wholesale'}>
+                    {row.name}
+                  </Link>
                 </td>
                 <td data-label="Agency ID">{row.agencyId}</td>
                 <td data-label="Address">{row.address}</td>

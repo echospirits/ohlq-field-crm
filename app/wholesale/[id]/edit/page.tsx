@@ -117,7 +117,6 @@ async function updateWholesaleAccount(formData: FormData) {
   );
   const submittedLicenseeId = getPrimaryWholesaleLicenseeId(submittedLicenseeIds);
   const name = toOptional(formData.get('name'));
-  const isActive = formData.get('isActive') === 'true';
 
   if (!id || !submittedLicenseeId || !name) {
     redirect(id ? `/wholesale/${id}/edit?status=invalid` : '/wholesale?status=invalid');
@@ -232,7 +231,7 @@ async function updateWholesaleAccount(formData: FormData) {
       where: { id },
       data: {
         licenseeId,
-        isActive,
+        isActive: true,
         officialAccountId: officialAccount?.id ?? (licenseeIdsChanged ? null : existingAccount.officialAccountId),
         name: accountValues.name,
         agencyId: accountValues.agencyId,
@@ -314,13 +313,6 @@ export default async function EditWholesaleAccountPage({
             <label>
               Account name
               <input name="name" defaultValue={account.name} required />
-            </label>
-            <label>
-              Status
-              <select name="isActive" defaultValue={account.isActive ? 'true' : 'false'}>
-                <option value="true">Active</option>
-                <option value="false">Inactive</option>
-              </select>
             </label>
             <label>
               Phone
