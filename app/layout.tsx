@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import type { CSSProperties } from 'react';
 import { getCurrentUser, getUserDisplayName } from '../lib/auth';
 import { APP_COMPANY, APP_DESCRIPTION, APP_NAME } from '../lib/appBrand';
-import { isTasterRole } from '../lib/userAccess';
+import { isAdminRole, isTasterRole } from '../lib/userAccess';
 import { getOrganizationContext, getOrganizationFeatures } from '../lib/organizations';
 import Link from 'next/link';
 import { AppBreadcrumbs, AppSidebarNavigation, MobileTabbar } from './components/AppNavigation';
@@ -36,7 +36,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const organizationContext = user ? await getOrganizationContext(user) : null;
   const enabledFeatures = organizationContext ? [...await getOrganizationFeatures(organizationContext.organizationId)] : [];
   const isPlatformAdmin = user?.role === 'PLATFORM_ADMIN';
-  const isAdmin = user?.role === 'ADMIN' || (isPlatformAdmin && Boolean(organizationContext));
+  const isAdmin = Boolean(user && isAdminRole(user.role) && (!isPlatformAdmin || organizationContext));
   const tenantAppName = organizationContext?.organization.appName || APP_NAME;
   const tenantCompany = organizationContext?.organization.displayName || APP_COMPANY;
   const tenantTheme = organizationContext

@@ -3,7 +3,7 @@ import { UserRole } from '@prisma/client';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { prisma } from './prisma';
-import { isTasterRole } from './userAccess';
+import { isAdminRole, isTasterRole } from './userAccess';
 
 export const SESSION_COOKIE = 'echo_session';
 
@@ -98,7 +98,7 @@ export async function requireUser(options?: UserAccessOptions) {
 export async function requireAdminSession() {
   const session = await requireUserSession();
 
-  if (session.user.role !== UserRole.ADMIN && session.user.role !== UserRole.PLATFORM_ADMIN) {
+  if (!isAdminRole(session.user.role)) {
     redirect('/');
   }
 

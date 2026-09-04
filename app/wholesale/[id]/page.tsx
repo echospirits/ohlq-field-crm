@@ -11,6 +11,7 @@ import { getWholesaleRecentPurchases } from '../../../lib/ohlqSalesData';
 import { prisma } from '../../../lib/prisma';
 import { getOrganizationFeatures, requireOrganizationContext } from '../../../lib/organizations';
 import { getOrganizationTenantConfig } from '../../../lib/tenantConfig';
+import { isAdminRole } from '../../../lib/userAccess';
 import { formatWholesaleLicenseeIds, getWholesaleLicenseeIdValues } from '../../../lib/wholesaleAccounts';
 import { MenuPlacementPanel } from '../../menu-placements/MenuPlacementPanel';
 import { AccountTagPanel } from '../../tags/AccountTagPanel';
@@ -224,7 +225,7 @@ export default async function WholesaleActivityPage({
           />
           <Link className="btn compact-btn secondary" href={`/visits/new?type=wholesale&wholesaleAccountId=${account.id}&voice=1`}>Voice note</Link>
           <Link className="btn compact-btn secondary" href={`/wholesale/${account.id}/edit`}>Edit</Link>
-          {user.role === UserRole.ADMIN && !account.officialAccountId ? (
+          {isAdminRole(user.role) && !account.officialAccountId ? (
             <Link className="btn compact-btn secondary" href={`/wholesale/${account.id}/merge`}>Merge account</Link>
           ) : null}
         </div>
