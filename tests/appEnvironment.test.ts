@@ -106,9 +106,14 @@ test('environment banner and protected diagnostics are wired into the app', () =
 
 test('GitHub OHLQ workflow isolates production and test secrets with GitHub Environments', () => {
   const workflow = readFileSync('.github/workflows/ohlq-annual-sales.yml', 'utf8');
+  const packageJson = readFileSync('package.json', 'utf8');
   assert.match(workflow, /deploymentEnvironment:/);
   assert.match(workflow, /environment: \$\{\{/);
   assert.match(workflow, /DATABASE_ENVIRONMENT:/);
   assert.match(workflow, /PRODUCTION_BASE_URL: \$\{\{ vars\.PRODUCTION_BASE_URL \}\}/);
   assert.match(workflow, /github\.repository == 'echospirits\/neat-tst' && 'test' \|\| 'production'/);
+  assert.match(workflow, /Download and import current OHLQ Account Master/);
+  assert.match(workflow, /sync:ohlq-account-master -- --environment "\$APP_ENV" --apply/);
+  assert.match(workflow, /inputs\.purchaseStateOnly != true/);
+  assert.match(packageJson, /"sync:ohlq-account-master": "tsx scripts\/sync-ohlq-account-master\.ts"/);
 });

@@ -2,8 +2,9 @@ import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { AccountType, Prisma, PrismaClient } from '@prisma/client';
-import { validateRuntimeEnvironment, logEnvironmentEvent } from '../lib/appEnvironment';
+import { assertSideEffectEnabled, validateRuntimeEnvironment, logEnvironmentEvent } from '../lib/appEnvironment';
 import {
+  assertAccountMasterSelectionIsSafe,
   choosePrimaryAccountMasterRow,
   getImportedWholesaleName,
   groupAccountMasterRowsByLocation,
@@ -24,6 +25,15 @@ const explainArgIndex = process.argv.indexOf('--explain-licensee');
 const sourcePath = fileArgIndex >= 0 ? path.resolve(process.argv[fileArgIndex + 1] ?? '') : '';
 const expectedEnvironment = environmentArgIndex >= 0 ? process.argv[environmentArgIndex + 1] : '';
 const explainLicenseeId = explainArgIndex >= 0 ? (process.argv[explainArgIndex + 1] ?? '').trim().toUpperCase() : '';
+const getNonNegativeIntegerEnv = (name: string, fallback: number) => {
+  const raw = process.env[name]?.trim();
+  if (!raw) return fallback;
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value < 0) throw new Error(`${name} must be a non-negative integer.`);
+  return value;
+};
+const maximumNewLocations = getNonNegativeIntegerEnv('OHLQ_ACCOUNT_MASTER_MAX_NEW_LOCATIONS', 250);
+const maximumDeactivations = getNonNegativeIntegerEnv('OHLQ_ACCOUNT_MASTER_MAX_DEACTIVATIONS', 500);
 
 const identity = (account: {
   name: string;
@@ -91,6 +101,9 @@ async function main() {
   );
 
   const selection = parseAccountMasterCsv(source, identitiesByLicenseeId);
+  assertAccountMasterSelectionIsSafe(selection, {
+    minimumSelectedRows: getNonNegativeIntegerEnv('OHLQ_ACCOUNT_MASTER_MIN_SELECTED_ROWS', 10_000),
+  });
   const officialByLicenseeId = new Map(
     officialAccounts
       .filter((account) => account.licenseeId)
@@ -246,12 +259,14 @@ async function main() {
     consolidatedLicenseeAliases: importRows.length - importLocationGroups.length,
     existingWholesaleAccountsMatched: existingWholesaleIds.size,
     wholesaleAccountsToCreate: newWholesaleLocationPlans.length,
+    maximumNewLocations,
     newWholesaleLocationExamples: newWholesaleLocationPlans.slice(0, 20).map(({ rows }) => ({
       location: `${rows[0]?.address ?? ''} | ${rows[0]?.city ?? ''} | ${rows[0]?.zip ?? ''}`,
       names: Array.from(new Set(rows.map((row) => row.name))),
       sourceLicenseeIds: rows.map((row) => row.licenseeId),
     })),
     closedOfficialAccountsToDeactivate: closedOfficialAccounts.length,
+    maximumDeactivations,
     ambiguousExamples: selection.ambiguous.slice(0, 20).map((group) => ({
       licenseeId: group.licenseeId,
       candidates: group.rows.map((row) => `${row.name} | ${row.address ?? ''} | ${row.city ?? ''}`),
@@ -276,8 +291,19 @@ async function main() {
   };
   console.log(JSON.stringify(summary, null, 2));
   if (!APPLY) return;
+  assertSideEffectEnabled('ohlqImport');
   if (selection.ambiguous.length || blockedIds.size || blockedLocationPlans.length || unresolvedAccountReuse.length) {
     throw new Error('Apply refused because ambiguous Licensee IDs or conflicting wholesale locations remain. Resolve them before importing.');
+  }
+  if (newWholesaleLocationPlans.length > maximumNewLocations) {
+    throw new Error(
+      `Apply refused because ${newWholesaleLocationPlans.length} new locations exceed the safety limit of ${maximumNewLocations}.`,
+    );
+  }
+  if (closedOfficialAccounts.length > maximumDeactivations) {
+    throw new Error(
+      `Apply refused because ${closedOfficialAccounts.length} deactivations exceed the safety limit of ${maximumDeactivations}.`,
+    );
   }
 
   logEnvironmentEvent('ohlq.account-master.started', { sourceHash, selectedLicenseeIds: importRows.length });

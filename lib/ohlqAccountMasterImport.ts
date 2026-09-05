@@ -45,7 +45,39 @@ export type AccountMasterSelection = {
   excludedTransientRows: number;
   duplicateGroups: number;
   parsedRows: number;
+  headers: string[];
 };
+
+export const ACCOUNT_MASTER_REQUIRED_HEADERS = [
+  'LicenseeID',
+  'AgencyID',
+  'Ownership',
+  'DBA',
+  'Address',
+  'City',
+  'County',
+  'ZipCode',
+  'DistrictId',
+  'DeliveryDay',
+  'PhoneNumber',
+] as const;
+
+export const DEFAULT_ACCOUNT_MASTER_MIN_SELECTED_ROWS = 10_000;
+
+export function assertAccountMasterSelectionIsSafe(
+  selection: AccountMasterSelection,
+  { minimumSelectedRows = DEFAULT_ACCOUNT_MASTER_MIN_SELECTED_ROWS }: { minimumSelectedRows?: number } = {},
+) {
+  const missingHeaders = ACCOUNT_MASTER_REQUIRED_HEADERS.filter((header) => !selection.headers.includes(header));
+  if (missingHeaders.length) {
+    throw new Error(`Account Master is missing required header(s): ${missingHeaders.join(', ')}.`);
+  }
+  if (selection.selected.length < minimumSelectedRows) {
+    throw new Error(
+      `Account Master selected only ${selection.selected.length} Licensee IDs; expected at least ${minimumSelectedRows}.`,
+    );
+  }
+}
 
 const clean = (value: unknown) => {
   const text = String(value ?? '').trim();
@@ -283,7 +315,11 @@ export function parseAccountMasterCsv(
   const parsed = Papa.parse(csv.replace(/^\uFEFF/, ''), {
     header: true,
     skipEmptyLines: true,
-  }) as { data: AccountMasterCsvRow[]; errors: Array<{ row?: number; message: string }> };
+  }) as {
+    data: AccountMasterCsvRow[];
+    errors: Array<{ row?: number; message: string }>;
+    meta: { fields?: string[] };
+  };
 
   if (parsed.errors.length > 0) {
     const first = parsed.errors[0];
@@ -336,6 +372,7 @@ export function parseAccountMasterCsv(
     ambiguous,
     excludedTransientRows: parsed.data.length - eligibleRows.length,
     duplicateGroups,
+    headers: parsed.meta.fields ?? [],
     parsedRows: parsed.data.length,
   };
 }

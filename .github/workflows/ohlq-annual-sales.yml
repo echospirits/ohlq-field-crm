@@ -171,6 +171,10 @@ jobs:
             npm run backfill:ohlq-annual-sales -- --days "$days"
           fi
 
+      - name: Download and import current OHLQ Account Master
+        if: steps.schedule_window.outputs.should_run == 'true' && (github.event_name == 'schedule' || inputs.purchaseStateOnly != true)
+        run: npm run sync:ohlq-account-master -- --environment "$APP_ENV" --apply
+
       - name: Upload OHLQ debug artifacts
         if: always() && steps.schedule_window.outputs.should_run == 'true'
         uses: actions/upload-artifact@v4

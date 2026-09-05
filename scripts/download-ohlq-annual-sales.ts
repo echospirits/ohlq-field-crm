@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import {
+  downloadOhlqAccountMaster,
   downloadOhlqAgencyInventoryReport,
   downloadOhlqAnnualSalesSummary,
   downloadOhlqAnnualSalesSummaryByWholesale,
@@ -35,7 +36,9 @@ function loadEnvFile(fileName: string) {
 
 const reportName = process.argv[2] ?? 'summary';
 const downloader =
-  reportName === 'inventory'
+  reportName === 'account-master'
+    ? downloadOhlqAccountMaster
+    : reportName === 'inventory'
     ? downloadOhlqAgencyInventoryReport
     : reportName === 'wholesale'
       ? downloadOhlqAnnualSalesSummaryByWholesale

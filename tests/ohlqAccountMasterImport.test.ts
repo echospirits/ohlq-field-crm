@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  assertAccountMasterSelectionIsSafe,
   chooseAccountMasterDuplicate,
   choosePrimaryAccountMasterRow,
   getImportedWholesaleName,
@@ -9,6 +10,7 @@ import {
   parseAccountMasterCsv,
   type AccountMasterRow,
 } from '../lib/ohlqAccountMasterImport';
+import { getOhlqAccountMasterDate, getOhlqAccountMasterFilename } from '../lib/ohlqAnnualSalesReport';
 
 const row = (overrides: Partial<AccountMasterRow> = {}): AccountMasterRow => ({
   licenseeId: '0001234',
@@ -38,6 +40,28 @@ test('filters Transient from either DBA or Ownership and prefers DBA as the acco
   assert.equal(result.excludedTransientRows, 2);
   assert.equal(result.selected.length, 1);
   assert.equal(result.selected[0].name, 'Public House');
+});
+
+test('requires a complete, non-sparse Account Master before import', () => {
+  const result = parseAccountMasterCsv([
+    'LicenseeID,AgencyID,Ownership,DBA,Address,City,County,ZipCode,DistrictId,DeliveryDay,PhoneNumber',
+    '3,100,Usable Owner,Public House,Three St,Akron,Summit,44301,GRN,N/A,N/A',
+  ].join('\n'));
+  assert.doesNotThrow(() => assertAccountMasterSelectionIsSafe(result, { minimumSelectedRows: 1 }));
+  assert.throws(() => assertAccountMasterSelectionIsSafe(result), /expected at least 10000/);
+
+  const missingHeaders = parseAccountMasterCsv('LicenseeID,Ownership,DBA\n3,Usable Owner,Public House');
+  assert.throws(
+    () => assertAccountMasterSelectionIsSafe(missingHeaders, { minimumSelectedRows: 1 }),
+    /missing required header/,
+  );
+});
+
+test('uses the current Eastern date and exact OHLQ Account Master filename', () => {
+  assert.equal(getOhlqAccountMasterDate(new Date('2026-09-05T03:30:00.000Z')), '2026-09-04');
+  assert.equal(getOhlqAccountMasterDate(new Date('2026-09-05T12:00:00.000Z')), '2026-09-05');
+  assert.equal(getOhlqAccountMasterFilename('2026-09-05'), 'OHLQData_Account_Master2026-09-05.csv');
+  assert.throws(() => getOhlqAccountMasterFilename('09-05-2026'), /Invalid Account Master report date/);
 });
 
 test('uses an existing address match to resolve a duplicated Licensee ID', () => {
