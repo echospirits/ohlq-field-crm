@@ -1,47 +1,49 @@
-# Opportunity Intelligence V1
+# Tenant opportunity intelligence V3
 
-## Architecture
+## Product-specific fit
 
-The learning loop is deliberately separated into raw events (`AccountSalesEvent`, CRM visits and worklist history), current signals (`OpportunityAccountSignal`), immutable detection snapshots (`SalesOpportunity.signalSnapshot`), hypotheses (`detectOpportunityHypotheses`), ranking (`OpportunityRanker`), recommended actions, lifecycle events (`OpportunityEvent`), outcomes, and historical evaluation.
+Opportunities are scored for an individual active OWNED or REPRESENTED organization product. Discontinued products and products with strategicPriority zero are excluded from new prospect recommendations. All owned products, including Capital City within Echo's tenant, remain eligible by default. Category, item identity and price come from the shared OHLQ catalog; purchasing, contacts, suppression, assignment, opportunities and outcome models are organization scoped.
 
-OHLQ annual reports are cumulative daily snapshots. Before the existing 30-day retention job deletes an old snapshot, the import workflow compares the new report with the previous successful report and persists positive bottle deltas as immutable account sales events. The first available report is a baseline and is not misrepresented as a purchase. `sourceKey` makes retries idempotent.
+Prices are current OHLQ retail prices normalized to 750ml. `productVolume` is US fluid ounces (25.4 = 750ml, 33.8 = 1L, 59.2 = 1.75L), not liters. These prices are a market-position proxy, not historical invoice prices.
 
-## V1 rules and scoring
+Price fit contributes up to 35 points: same-category volume share in a comparable price band (75–175% of the target price), plus actual comparable purchasing volume saturating at 24 equivalent bottles. Missing prices reduce the contribution. A mostly inexpensive account can still have a meaningful premium niche.
 
-Rules live in `lib/opportunityConfig.ts` and are versioned as `RULES_V1`.
+When price coverage is at least 70%, at least 12 equivalent bottles were observed, 80% or more is below 60% of the target's price, and fewer than six comparable bottles were purchased, the acquisition score is capped at 30. Existing-customer follow-up opportunities are not subject to that acquisition cap.
 
-- Lapsed buyer: an Echo purchase in 90 days, none in 30. A new cycle is keyed to the last purchase.
-- First-order follow-up: first observed Echo purchase within 30 days and no second observed item purchase. It is only enabled when `historyComplete` is true, preventing a retained-data window from becoming a false “first ever” claim.
-- Category conquest: at least six bottles in a mapped Bourbon, Rye, or Rum category in 90 days and no observed Echo purchase in that category.
-- Cross-sell: the same category condition, plus an existing Echo relationship in another category.
-- No recent touch: at least six Echo bottles in 90 days and no qualifying CRM visit in 45 days.
+Verified Ohio-brand purchasing adds at most two general preference points. Up to eight additional points require Ohio-brand purchases in the target category at comparable prices. No aggregate Ohio-liter or workbook-affinity bonus can make budget vodka look like premium rum affinity. The initial conservative registry covers Echo Spirits, Noble Cut, Buckeye Vodka and Capital City. Unlisted brands have unknown local status; extend it with verified brand identities, not distributor-wide assumptions.
 
-`RuleBasedOpportunityRanker` returns a 0–100 score, HIGH/MEDIUM/LOW band, explanation factors, and `RULE_BASED_V1`. It combines Echo velocity, relevant category volume, CRM-touch age and open-workload pressure. The explanation, not the number, is the primary UI.
+Other components: base 10, category demand up to 15, public research up to 15, tenant relationship up to 10, contact urgency up to 5, buyer comparison up to 5, workload deduction up to 5, and validated outcome adjustment bounded to ±10. National-chain priorities retain the 20-point cap. Scores are prioritization points, not probabilities.
 
-## History, outcomes, and worklist behavior
+Catalog category takes precedence over name matching; Rumple Minze is a cordial. Whiskey names use whole-word subtype recognition. Missing subtype information is not invented. Historical workbook price fits and private target scores no longer supply the price component.
 
-Detection stores the complete feature JSON plus rule/scoring versions. It is never overwritten; later current-signal updates cannot mutate it. `OpportunityEvent` is append-oriented and uses `(opportunityId,eventKey)` uniqueness for cron retry safety. Dismissal and snooze are scoped to one opportunity cycle; a genuinely new cycle can surface later. A `DO NOT PURSUE` tag suppresses all automatic detection.
+## Existing buyers
 
-New Echo purchases convert lapsed/first-order opportunities. A first Echo purchase in the target category converts category conquest/cross-sell. A subsequent visit resolves no-touch. Converted/resolved opportunities close only their linked automated worklist item; manual work is never changed. Open negative examples remain and eventually become `EXPIRED` after 120 days.
+For each product, compare same-category, non-tenant-product baskets at accounts buying at least two bottles of that particular product. One account gets one vote; exclude the account being scored. Capital City customers are not the evidence for premium Echo bourbon. Ten comparable independent buyer accounts are required before this contributes up to five points. This is descriptive similarity, not causality.
 
-Automatic work creation is per-type configuration. V1 creates work for lapsed, first-order and no-touch; category and cross-sell initially remain suggestions. `salesOpportunityId` prevents duplicates.
+## Daily source and retained history
 
-## Analysis and learning
+The downloader sets From date and To date to the same day. Despite the report's “Annual Sales” name, rows represent daily sales. V1/V2 incorrectly subtracted consecutive rows. V3 records daily quantities directly with deterministic `DAILY_V3:` keys scoped to organization, account, permit, date, agency, vendor and item. Ambiguous license mappings are skipped.
 
-`analyzeActivityToPurchases` reports whether a purchase followed a visit or completed follow-up within 7, 14 and 30 days and the days to the next purchase. The admin report uses correlational language. Account pages provide one mobile vertical timeline combining visits, purchases, and opportunity detections; purchase entries always show item code and name.
+Evaluation reconstructs retained reports and prefers them over ledger copies. It fills missing V3 ledger rows before retention so future evaluations retain up to 90 days of verified daily history. Legacy events are preserved but excluded from V3 scoring and training. Already-pruned raw data cannot be reconstructed from incorrect delta records. Explanations disclose the earliest observation date; partial windows are not full histories.
 
-Historical snapshots can be passed to any `OpportunityRanker` through `rescoreHistoricalSnapshot` without changing the production score. `OpportunityModelVersion` and `OpportunityScore.mode` support ACTIVE and SHADOW strategies. A future learned per-opportunity model should register its configuration/version, score the same immutable snapshots in SHADOW mode, and compare top-N precision, lift, conversion by decile, dismissal rate and time-to-conversion before promotion.
+A first-ever purchase is never inferred from a short retained window. `historyComplete` requires explicit verified history. Product membership is resolved from the organization at evaluation time; legacy Echo classifications do not leak into another customer's scores.
 
-Future training should use rolling 12–18 month windows with more weight on the latest 90–180 days. Model performance should be trended by month/quarter and model version to reveal drift. A later recommendation allocator may reserve a controlled 10–20% exploration cohort without inserting random low-quality work.
+## Learning and outcomes
 
-## Operational sequence
+The old engine refreshed signals and recorded outcomes, but did not learn weights. V3 adds a bounded outcome-learning component. Rule/price scoring works without a trained model.
 
-After both sales reports import successfully: derive sales events, update account signals, detect hypotheses, preserve new snapshots/events, calculate active scores, create configured work, label conversions/resolutions/expirations, then prune raw snapshots. Failed or incomplete imports never invoke the engine. Visits trigger account-scoped reevaluation immediately.
+Detection stores immutable features including product prices, research, peer evidence and pre-detection CRM contact activity. The DETECTED event stores its original hypothesis and signal version. Daily updates refresh current signals, explanations and scores without overwriting detection features. V2 snapshots are not relabeled as trustworthy V3 examples.
 
-## Manual QA
+Learning waits for complete 90-day windows after V3 detection. Missing successful report days censor the example instead of labeling a failed sale. The outcome is a purchase of the original target item, independent of dismissal/pursuit/closure status. Features include opportunity type, category, price alignment, comparable Ohio-brand purchasing and prior CRM contact. Activity associations do not establish causation.
 
-Verify seeded or real examples for active, lapsed, first, category, cross-sell, no-touch, do-not-pursue, snoozed, dismissed, converted and expired states. For each, inspect the Inbox card, dashboard count, account intelligence, timeline, linked work, snapshot JSON, unique event history and scoring version. Run one report date twice and confirm no duplicate sales events, opportunities, lifecycle events, scores or work. Confirm a visit followed by a purchase and a visit with no purchase in the admin report, on a narrow mobile viewport.
+Each tenant trains independently. Only the earliest eligible example per account is used, with a chronological 80/20 split and no account overlap. Segment rates require ten training accounts and shrink toward the tenant baseline with 20 prior observations. Activation requires 80 training accounts, 20 validation accounts, ten training conversions and nonconversions, five validation conversions and nonconversions, and greater-than-5% improvement in Brier error over the baseline. Until then the learner contributes zero; after validation, at most ±10 points.
 
-## Known V1 assumptions and next steps
+Product configuration and learned models are recorded in tenant-named `OpportunityModelVersion` entries. Administration → Opportunity Performance reports whether learning is collecting evidence or influencing scores. This initial learner uses interpretable segments; richer interaction/outcome models can replace it through the ranker interface after historical validation.
 
-Category aliases are centralized but should be validated against live OHLQ master category/name values. Dollar/case features are not claimed because the wholesale feed currently persists bottles, not transactional dollars. Historical `historyComplete` remains false until a trustworthy purchase-history backfill establishes a real beginning. Next: backfill the account sales-event ledger from retained/archive reports, validate portfolio category mappings, materialize first/reorder labels, add score-decile/top-N evaluation, and configure the first shadow ranker.
+## Lifecycle and validation
+
+One active opportunity per tenant/account remains the invariant. Pursued records retain identity and task links. V3 product recommendations stay anchored to the original product while scores refresh. Product-specific conversions require that item, not an unrelated inexpensive product from the tenant. Legacy recommendations can transition to specific products without converting their old snapshots into training examples.
+
+Tests cover categories, sizes, cheap/local versus comparable/local purchasing, premium niches, missing prices, tenant fit, buyer self-exclusion, consecutive daily purchases, ambiguous identities, mature outcomes and independent validation. `scripts/audit-opportunity-affinity.ts --score` runs the evaluator with `dryRun: true` inside a database-enforced read-only transaction.
+
+No schema migration is required. Publish before recalculating production scores. The first V3 run backfills only retained reports into the new ledger; it does not erase historical records or fabricate missing history.

@@ -21,13 +21,13 @@ describe('opportunity detectors', () => {
 
 it('ranker returns score, band, explanation, and swappable historical rescore without mutating snapshot', () => { const signal = base({ echoBottles90: 20 }); const hypothesis = { type: OpportunityType.NO_RECENT_TOUCH, cycleKey: 'x', targetCategory: null, title: 'x', recommendedAction: 'visit', explanation: ['No visit'] }; const before = structuredClone(signal); const result = rescoreHistoricalSnapshot(signal, hypothesis, new RuleBasedOpportunityRanker()); assert.ok(result.score > 0); assert.ok(result.factors.length); assert.deepEqual(signal, before); });
 
-it('strongly rewards demonstrated Ohio craft purchasing', () => {
+it('does not let unqualified legacy Ohio volume imply premium affinity', () => {
   const hypothesis = { type: OpportunityType.CATEGORY_CONQUEST, cycleKey: 'x', targetCategory: 'BOURBON' as const, title: 'x', recommendedAction: 'visit', explanation: ['Bourbon buyer'] };
   const ranker = new RuleBasedOpportunityRanker();
   const withoutLocal = ranker.rank(hypothesis, base({ purchases: [item({ isEcho: false, bottles90: 20 })] }));
   const withLocal = ranker.rank(hypothesis, base({ purchases: [item({ isEcho: false, bottles90: 20 })], ohioCraft9L: 18, ohioCraftAffinity: 90 }));
-  assert.ok(withLocal.score - withoutLocal.score >= 20);
-  assert.match(withLocal.factors.join(' '), /Ohio craft/i);
+  assert.ok(withLocal.score - withoutLocal.score <= 1);
+  assert.match(withLocal.factors.join(' '), /unverified for category and price/i);
 });
 
 it('caps national chains at very low priority even when volume is strong', () => {
