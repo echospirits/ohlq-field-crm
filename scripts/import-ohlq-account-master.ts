@@ -4,8 +4,11 @@ import path from 'node:path';
 import { AccountType, Prisma, PrismaClient } from '@prisma/client';
 import { validateRuntimeEnvironment, logEnvironmentEvent } from '../lib/appEnvironment';
 import {
+  choosePrimaryAccountMasterRow,
   getImportedWholesaleName,
+  groupAccountMasterRowsByLocation,
   parseAccountMasterCsv,
+  rowMatchesWholesaleImportIdentity,
   type AccountMasterRow,
   type ExistingAccountIdentity,
 } from '../lib/ohlqAccountMasterImport';
@@ -50,16 +53,6 @@ const values = (row: AccountMasterRow) => ({
   zip: row.zip,
 });
 
-const normalizeName = (value: string | null | undefined) =>
-  String(value ?? '').replace(/&/g, ' AND ').replace(/[^A-Z0-9]+/gi, ' ').trim().replace(/\s+/g, ' ').toUpperCase();
-
-const rowMatchesWholesaleIdentity = (
-  row: AccountMasterRow,
-  account: { name: string; address: string | null; city: string | null; state: string | null; zip: string | null },
-) =>
-  areOhlqAddressesSame(row, account) ||
-  [row.name, row.dba, row.ownership].map(normalizeName).filter(Boolean).includes(normalizeName(account.name));
-
 async function main() {
   if (!sourcePath || !existsSync(sourcePath)) throw new Error('Pass an existing Account Master CSV with --file <path>.');
   if (!['test', 'production'].includes(expectedEnvironment)) {
@@ -79,6 +72,7 @@ async function main() {
       select: { id: true, type: true, licenseeId: true, name: true, address: true, city: true, zip: true, agencyRefId: true },
     }),
     prisma.wholesaleAccount.findMany({
+      where: { mergedIntoId: null },
       include: { licenseeIds: { select: { licenseeId: true } } },
     }),
   ]);
@@ -138,7 +132,7 @@ async function main() {
   const resolvedWholesaleByLicenseeId = new Map<string, typeof wholesaleAccounts[number]>();
   selection.selected.forEach((row) => {
     const exact = wholesaleByLicenseeId.get(row.licenseeId);
-    if (exact) {
+    if (exact && rowMatchesWholesaleImportIdentity(row, exact)) {
       resolvedWholesaleByLicenseeId.set(row.licenseeId, exact);
       return;
     }
@@ -146,12 +140,14 @@ async function main() {
     getOhlqLicenseeMatchKeys(row.licenseeId).forEach((matchKey) =>
       wholesaleByMatchKey.get(matchKey)?.forEach((account) => candidates.set(account.id, account)),
     );
-    const strongMatches = Array.from(candidates.values()).filter((account) => rowMatchesWholesaleIdentity(row, account));
+    const strongMatches = Array.from(candidates.values()).filter((account) => rowMatchesWholesaleImportIdentity(row, account));
     const sourceKeyIsUnique = getOhlqLicenseeMatchKeys(row.licenseeId).some(
       (matchKey) => sourceRowsByMatchKey.get(matchKey)?.size === 1,
     );
     const resolved = strongMatches.length === 1
       ? strongMatches[0]
+      : exact
+        ? exact
       : sourceKeyIsUnique && candidates.size === 1
         ? Array.from(candidates.values())[0]
         : null;
@@ -169,10 +165,61 @@ async function main() {
     ...blockedWholesaleConflicts.map((row) => row.licenseeId),
   ]);
   const importRows = selection.selected.filter((row) => !blockedIds.has(row.licenseeId));
-  const newWholesaleRows = importRows.filter((row) => !resolvedWholesaleByLicenseeId.has(row.licenseeId));
-  const existingWholesaleIds = new Set(
-    importRows.map((row) => resolvedWholesaleByLicenseeId.get(row.licenseeId)?.id).filter(Boolean) as string[],
-  );
+  const importLocationGroups = groupAccountMasterRowsByLocation(importRows);
+  const resolvedAccountsForGroup = (rows: AccountMasterRow[]) => {
+    const resolved = new Map(
+      rows
+      .map((row) => resolvedWholesaleByLicenseeId.get(row.licenseeId))
+      .filter(Boolean)
+      .map((account) => [account!.id, account!]),
+    );
+    if (resolved.size <= 1) return resolved;
+    const sourceAddressMatches = new Map(
+      Array.from(resolved.values())
+        .filter((account) => rows.some((row) => areOhlqAddressesSame(row, account)))
+        .map((account) => [account.id, account]),
+    );
+    if (sourceAddressMatches.size === 1) return sourceAddressMatches;
+    const candidates = sourceAddressMatches.size > 1 ? sourceAddressMatches : resolved;
+    const activeCandidates = new Map(
+      Array.from(candidates.values()).filter((account) => account.isActive).map((account) => [account.id, account]),
+    );
+    return activeCandidates.size === 1 ? activeCandidates : candidates;
+  };
+  const locationPlans = importLocationGroups.map((rows) => {
+    const accounts = resolvedAccountsForGroup(rows);
+    return { rows, account: accounts.size === 1 ? Array.from(accounts.values())[0] : null, accounts };
+  });
+  const blockedLocationPlans = locationPlans.filter(({ accounts }) => accounts.size > 1);
+  const plansByWholesaleId = new Map<string, typeof locationPlans>();
+  locationPlans.forEach((plan) => {
+    if (!plan.account) return;
+    plansByWholesaleId.set(plan.account.id, [...(plansByWholesaleId.get(plan.account.id) ?? []), plan]);
+  });
+  const unresolvedAccountReuse: typeof locationPlans = [];
+  plansByWholesaleId.forEach((plans) => {
+    if (plans.length <= 1) return;
+    const account = plans[0].account!;
+    const addressMatches = plans.filter(({ rows }) => rows.some((row) => areOhlqAddressesSame(row, account)));
+    if (addressMatches.length === plans.length) return;
+    const primaryIdMatches = plans.filter(({ rows }) =>
+      rows.some((row) => row.licenseeId === account.licenseeId.trim().toUpperCase()),
+    );
+    const destinationPlan = addressMatches.length === 1
+      ? addressMatches[0]
+      : primaryIdMatches.length === 1
+        ? primaryIdMatches[0]
+        : null;
+    if (!destinationPlan) {
+      unresolvedAccountReuse.push(...plans);
+      return;
+    }
+    plans.forEach((plan) => {
+      if (plan !== destinationPlan) plan.account = null;
+    });
+  });
+  const newWholesaleLocationPlans = locationPlans.filter(({ account, accounts }) => !account && accounts.size <= 1);
+  const existingWholesaleIds = new Set(locationPlans.map(({ account }) => account?.id).filter(Boolean) as string[]);
   const closedOfficialAccounts = wholesaleAccounts.filter(
     (account) =>
       account.isActive &&
@@ -193,14 +240,34 @@ async function main() {
     ambiguousLicenseeIds: selection.ambiguous.length,
     blockedTypeConflicts: blockedTypeConflicts.length,
     blockedWholesaleConflicts: blockedWholesaleConflicts.length,
+    blockedLocationConflicts: blockedLocationPlans.length,
+    unresolvedAccountReuseConflicts: new Set(unresolvedAccountReuse.map(({ account }) => account?.id).filter(Boolean)).size,
+    sourceLocationGroups: importLocationGroups.length,
+    consolidatedLicenseeAliases: importRows.length - importLocationGroups.length,
     existingWholesaleAccountsMatched: existingWholesaleIds.size,
-    wholesaleAccountsToCreate: newWholesaleRows.length,
+    wholesaleAccountsToCreate: newWholesaleLocationPlans.length,
+    newWholesaleLocationExamples: newWholesaleLocationPlans.slice(0, 20).map(({ rows }) => ({
+      location: `${rows[0]?.address ?? ''} | ${rows[0]?.city ?? ''} | ${rows[0]?.zip ?? ''}`,
+      names: Array.from(new Set(rows.map((row) => row.name))),
+      sourceLicenseeIds: rows.map((row) => row.licenseeId),
+    })),
     closedOfficialAccountsToDeactivate: closedOfficialAccounts.length,
     ambiguousExamples: selection.ambiguous.slice(0, 20).map((group) => ({
       licenseeId: group.licenseeId,
       candidates: group.rows.map((row) => `${row.name} | ${row.address ?? ''} | ${row.city ?? ''}`),
     })),
     blockedExamples: [...blockedTypeConflicts, ...blockedWholesaleConflicts].slice(0, 20).map((row) => row.licenseeId),
+    blockedLocationExamples: blockedLocationPlans.slice(0, 20).map(({ rows, accounts }) => ({
+      accounts: Array.from(accounts.values()).map(
+        (account) => `${account.name} | ${account.licenseeId} | ${account.address ?? ''} | ${account.city ?? ''} | ${account.zip ?? ''}`,
+      ),
+      sourceLicenseeIds: rows.map((row) => row.licenseeId),
+    })),
+    unresolvedAccountReuseExamples: unresolvedAccountReuse.slice(0, 20).map(({ account, rows }) => ({
+      account: account ? `${account.name} | ${account.licenseeId} | ${account.address ?? ''} | ${account.city ?? ''} | ${account.zip ?? ''}` : null,
+      sourceLocation: `${rows[0]?.address ?? ''} | ${rows[0]?.city ?? ''} | ${rows[0]?.zip ?? ''}`,
+      sourceLicenseeIds: rows.map((row) => row.licenseeId),
+    })),
     explainedSelection: explainLicenseeId
       ? selection.selected.find((row) => row.licenseeId === explainLicenseeId) ??
         selection.ambiguous.find((group) => group.licenseeId === explainLicenseeId) ??
@@ -209,8 +276,8 @@ async function main() {
   };
   console.log(JSON.stringify(summary, null, 2));
   if (!APPLY) return;
-  if (selection.ambiguous.length || blockedIds.size) {
-    throw new Error('Apply refused because ambiguous or conflicting Licensee IDs remain. Resolve them before importing.');
+  if (selection.ambiguous.length || blockedIds.size || blockedLocationPlans.length || unresolvedAccountReuse.length) {
+    throw new Error('Apply refused because ambiguous Licensee IDs or conflicting wholesale locations remain. Resolve them before importing.');
   }
 
   logEnvironmentEvent('ohlq.account-master.started', { sourceHash, selectedLicenseeIds: importRows.length });
@@ -252,11 +319,13 @@ async function main() {
   }
 
   const rowsByWholesaleId = new Map<string, AccountMasterRow[]>();
-  const rowsForNewWholesale = new Map<string, AccountMasterRow>();
-  importRows.forEach((row) => {
-    const account = resolvedWholesaleByLicenseeId.get(row.licenseeId);
-    if (account) rowsByWholesaleId.set(account.id, [...(rowsByWholesaleId.get(account.id) ?? []), row]);
-    else rowsForNewWholesale.set(row.licenseeId, row);
+  const rowsForNewWholesale = new Map<string, AccountMasterRow[]>();
+  locationPlans.forEach(({ rows, account }) => {
+    if (account) rowsByWholesaleId.set(account.id, [...(rowsByWholesaleId.get(account.id) ?? []), ...rows]);
+    else {
+      const primaryRow = choosePrimaryAccountMasterRow(rows);
+      rowsForNewWholesale.set(primaryRow.licenseeId, rows);
+    }
   });
 
   const existingUpdates = Array.from(rowsByWholesaleId.entries());
@@ -265,7 +334,8 @@ async function main() {
     const operations: Prisma.PrismaPromise<unknown>[] = [];
     for (const [wholesaleId, rows] of batch) {
         const account = wholesaleAccounts.find((candidate) => candidate.id === wholesaleId)!;
-        const primaryRow = rows.find((row) => row.licenseeId === account.licenseeId.trim().toUpperCase()) ?? rows[0];
+        const primaryRow = rows.find((row) => row.licenseeId === account.licenseeId.trim().toUpperCase()) ??
+          choosePrimaryAccountMasterRow(rows);
         const officialAccountId = account.officialAccountId ?? officialIdsByLicenseeId.get(primaryRow.licenseeId);
         const sourceValues = values(primaryRow);
         operations.push(prisma.wholesaleAccount.update({
@@ -296,7 +366,7 @@ async function main() {
           operations.push(prisma.wholesaleLicenseeId.upsert({
             where: { licenseeId: row.licenseeId },
             create: { wholesaleAccountId: wholesaleId, licenseeId: row.licenseeId, isPrimary: row.licenseeId === account.licenseeId },
-            update: {},
+            update: { wholesaleAccountId: wholesaleId, isPrimary: row.licenseeId === account.licenseeId },
           }));
         }
     }
@@ -304,11 +374,12 @@ async function main() {
     if (offset % 1000 === 0) console.log(`Existing wholesale accounts: ${Math.min(offset + batch.length, existingUpdates.length)}/${existingUpdates.length}`);
   }
 
-  const newRows = Array.from(rowsForNewWholesale.values());
-  for (let offset = 0; offset < newRows.length; offset += 500) {
-    const batch = newRows.slice(offset, offset + 500);
+  const newLocationGroups = Array.from(rowsForNewWholesale.values());
+  for (let offset = 0; offset < newLocationGroups.length; offset += 500) {
+    const batch = newLocationGroups.slice(offset, offset + 500);
+    const primaryRows = batch.map(choosePrimaryAccountMasterRow);
     await prisma.wholesaleAccount.createMany({
-      data: batch.map((row) => ({
+      data: primaryRows.map((row) => ({
         ...values(row),
         isActive: true,
         licenseeId: row.licenseeId,
@@ -318,18 +389,23 @@ async function main() {
       skipDuplicates: true,
     });
     const createdAccounts = await prisma.wholesaleAccount.findMany({
-      where: { licenseeId: { in: batch.map((row) => row.licenseeId) } },
+      where: { licenseeId: { in: primaryRows.map((row) => row.licenseeId) } },
       select: { id: true, licenseeId: true },
     });
-    await prisma.wholesaleLicenseeId.createMany({
-      data: createdAccounts.map((account) => ({
-        wholesaleAccountId: account.id,
-        licenseeId: account.licenseeId,
-        isPrimary: true,
-      })),
-      skipDuplicates: true,
+    const createdByPrimaryLicenseeId = new Map(createdAccounts.map((account) => [account.licenseeId, account]));
+    const aliasOperations: Prisma.PrismaPromise<unknown>[] = [];
+    batch.forEach((rows, index) => {
+        const primaryRow = primaryRows[index];
+        const account = createdByPrimaryLicenseeId.get(primaryRow.licenseeId);
+        if (!account) return;
+        rows.forEach((row) => aliasOperations.push(prisma.wholesaleLicenseeId.upsert({
+          where: { licenseeId: row.licenseeId },
+          create: { wholesaleAccountId: account.id, licenseeId: row.licenseeId, isPrimary: row.licenseeId === primaryRow.licenseeId },
+          update: { wholesaleAccountId: account.id, isPrimary: row.licenseeId === primaryRow.licenseeId },
+        })));
     });
-    console.log(`New wholesale accounts: ${Math.min(offset + batch.length, newRows.length)}/${newRows.length}`);
+    if (aliasOperations.length) await prisma.$transaction(aliasOperations);
+    console.log(`New wholesale accounts: ${Math.min(offset + batch.length, newLocationGroups.length)}/${newLocationGroups.length}`);
   }
 
   if (closedOfficialAccounts.length > 0) {

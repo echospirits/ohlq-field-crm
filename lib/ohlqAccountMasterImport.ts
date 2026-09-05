@@ -1,4 +1,5 @@
 import Papa from 'papaparse';
+import { areOhlqAddressesSame, getOhlqLicenseeMatchKeys, normalizeOhlqAddressPart } from './ohlqWholesaleMatching';
 
 export type AccountMasterCsvRow = {
   LicenseeID?: string;
@@ -60,6 +61,135 @@ const normalizeComparison = (value: string | null | undefined) =>
     .trim()
     .replace(/\s+/g, ' ')
     .toUpperCase();
+
+const normalizeZip = (value: string | null | undefined) => String(value ?? '').replace(/\D/g, '').slice(0, 5);
+
+export const getWholesaleLocationKey = (identity: {
+  address: string | null;
+  city: string | null;
+  state?: string | null;
+  zip: string | null;
+}) => {
+  const address = normalizeOhlqAddressPart(identity.address);
+  if (!address) return null;
+  const zip = normalizeZip(identity.zip);
+  const city = normalizeOhlqAddressPart(identity.city);
+  const state = normalizeOhlqAddressPart(identity.state) ?? 'OH';
+  if (!zip && !city) return null;
+  return `${address}|${zip || city}|${state}`;
+};
+
+export const rowMatchesWholesaleImportIdentity = (
+  row: AccountMasterRow,
+  account: { name: string; address: string | null; city: string | null; state: string | null; zip: string | null },
+) => {
+  if (row.address && account.address) return areOhlqAddressesSame(row, account);
+  return [row.name, row.dba, row.ownership]
+    .map(normalizeComparison)
+    .filter(Boolean)
+    .includes(normalizeComparison(account.name));
+};
+
+const getLicenseeKeys = (licenseeIds: string[]) => new Set(licenseeIds.flatMap(getOhlqLicenseeMatchKeys));
+
+const BUSINESS_NAME_STOP_WORDS = new Set(['AND', 'AT', 'DBA', 'LLC', 'OF', 'THE']);
+
+const getBusinessNameTokens = (value: string) =>
+  normalizeComparison(value).split(' ').filter((token) => token && !BUSINESS_NAME_STOP_WORDS.has(token));
+
+const getBusinessNameKey = (value: string | null | undefined) => getBusinessNameTokens(String(value ?? '')).join(' ');
+
+const getBusinessNameOverlap = (left: string, right: string) => {
+  const leftTokens = new Set(getBusinessNameTokens(left));
+  const rightTokens = new Set(getBusinessNameTokens(right));
+  if (!leftTokens.size || !rightTokens.size) return 0;
+  let shared = 0;
+  leftTokens.forEach((token) => {
+    if (rightTokens.has(token)) shared += 1;
+  });
+  return shared / Math.max(leftTokens.size, rightTokens.size);
+};
+
+export const wholesaleLocationIdentitiesMatch = (
+  left: { address: string | null; city: string | null; state?: string | null; zip: string | null; name: string; ownership?: string | null; licenseeIds: string[] },
+  right: { address: string | null; city: string | null; state?: string | null; zip: string | null; name: string; ownership?: string | null; licenseeIds: string[] },
+) => {
+  const leftLocation = getWholesaleLocationKey(left);
+  if (!leftLocation || leftLocation !== getWholesaleLocationKey(right)) return false;
+  if (getBusinessNameKey(left.name) === getBusinessNameKey(right.name)) return true;
+  const leftKeys = getLicenseeKeys(left.licenseeIds);
+  const sharesLicenseFamily = right.licenseeIds.flatMap(getOhlqLicenseeMatchKeys).some((key) => leftKeys.has(key));
+  const leftOwnership = getBusinessNameKey(left.ownership);
+  const rightOwnership = getBusinessNameKey(right.ownership);
+  if (sharesLicenseFamily && leftOwnership && leftOwnership === rightOwnership) return true;
+  return sharesLicenseFamily && getBusinessNameOverlap(left.name, right.name) >= 0.5;
+};
+
+type WholesaleLocationIdentity = {
+  address: string | null;
+  city: string | null;
+  state?: string | null;
+  zip: string | null;
+  name: string;
+  ownership?: string | null;
+  licenseeIds: string[];
+};
+
+export function groupWholesaleLocationIdentities<T extends WholesaleLocationIdentity>(rows: T[]) {
+  const locationBuckets = new Map<string, T[]>();
+  const ungrouped: T[][] = [];
+  rows.forEach((row) => {
+    const key = getWholesaleLocationKey(row);
+    if (!key) ungrouped.push([row]);
+    else locationBuckets.set(key, [...(locationBuckets.get(key) ?? []), row]);
+  });
+
+  const groups = [...ungrouped];
+  for (const bucket of locationBuckets.values()) {
+    const parents = bucket.map((_, index) => index);
+    const find = (index: number): number => parents[index] === index ? index : (parents[index] = find(parents[index]));
+    const union = (left: number, right: number) => {
+      const leftRoot = find(left);
+      const rightRoot = find(right);
+      if (leftRoot !== rightRoot) parents[rightRoot] = leftRoot;
+    };
+    for (let left = 0; left < bucket.length; left += 1) {
+      for (let right = left + 1; right < bucket.length; right += 1) {
+        if (wholesaleLocationIdentitiesMatch(
+          bucket[left],
+          bucket[right],
+        )) union(left, right);
+      }
+    }
+    const components = new Map<number, T[]>();
+    bucket.forEach((row, index) => {
+      const root = find(index);
+      components.set(root, [...(components.get(root) ?? []), row]);
+    });
+    groups.push(...components.values());
+  }
+  return groups;
+}
+
+export function groupAccountMasterRowsByLocation(rows: AccountMasterRow[]) {
+  return groupWholesaleLocationIdentities(
+    rows.map((row) => ({ ...row, licenseeIds: [row.licenseeId] })),
+  ).map((group) => group.map(({ licenseeIds: _licenseeIds, ...row }) => row));
+}
+
+export function choosePrimaryAccountMasterRow(rows: AccountMasterRow[]) {
+  if (rows.length === 0) throw new Error('Cannot choose a primary row from an empty location group.');
+  const nameFrequency = new Map<string, number>();
+  rows.forEach((row) => {
+    const key = normalizeComparison(row.name);
+    nameFrequency.set(key, (nameFrequency.get(key) ?? 0) + 1);
+  });
+  return [...rows].sort((left, right) =>
+    (nameFrequency.get(normalizeComparison(right.name)) ?? 0) - (nameFrequency.get(normalizeComparison(left.name)) ?? 0) ||
+    Number(Boolean(right.dba)) - Number(Boolean(left.dba)) ||
+    left.licenseeId.localeCompare(right.licenseeId),
+  )[0];
+}
 
 const normalizeLicenseeId = (value: unknown) => String(value ?? '').trim().toUpperCase();
 

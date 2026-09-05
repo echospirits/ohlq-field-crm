@@ -18,6 +18,7 @@
     "import:recipes": "tsx scripts/import-recipes.ts",
     "import:ohlq-brand-master": "tsx scripts/import-ohlq-brand-master.ts",
     "import:ohlq-account-master": "tsx scripts/import-ohlq-account-master.ts",
+    "repair:wholesale-location-duplicates": "tsx scripts/repair-wholesale-location-duplicates.ts",
     "download:ohlq-annual-sales": "tsx scripts/download-ohlq-annual-sales.ts",
     "download:ohlq-annual-sales:wholesale": "tsx scripts/download-ohlq-annual-sales.ts wholesale",
     "download:ohlq-agency-inventory": "tsx scripts/download-ohlq-annual-sales.ts inventory",

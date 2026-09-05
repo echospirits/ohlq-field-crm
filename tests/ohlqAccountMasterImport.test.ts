@@ -2,7 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   chooseAccountMasterDuplicate,
+  choosePrimaryAccountMasterRow,
   getImportedWholesaleName,
+  groupAccountMasterRowsByLocation,
+  rowMatchesWholesaleImportIdentity,
   parseAccountMasterCsv,
   type AccountMasterRow,
 } from '../lib/ohlqAccountMasterImport';
@@ -80,4 +83,67 @@ test('uses the production identity decision for the one equal-frequency duplicat
 test('preserves an active wholesale name and refreshes an inactive one', () => {
   assert.equal(getImportedWholesaleName({ currentName: 'Custom Name', officialName: 'Official Name', wasActive: true }), 'Custom Name');
   assert.equal(getImportedWholesaleName({ currentName: 'Licensee 123', officialName: 'Official Name', wasActive: false }), 'Official Name');
+});
+
+test('groups related Licensee IDs at one physical location', () => {
+  const groups = groupAccountMasterRowsByLocation([
+    row({ licenseeId: '0258173-00003', name: 'MAYFIELD SAND RIDGE CLUB' }),
+    row({ licenseeId: '0258173-00004', name: 'MAYFIELD SAND RIDGE CLUB' }),
+    row({ licenseeId: '0258173-00005', name: 'MAYFIELD CURLING CLUB' }),
+    row({ licenseeId: '0258173-0005', name: 'OTHER LOCATION', address: '12150 MAYFIELD RD', zip: '44024' }),
+  ]);
+
+  assert.deepEqual(groups.map((group) => group.map((item) => item.licenseeId).sort()).sort((a, b) => a.length - b.length), [
+    ['0258173-0005'],
+    ['0258173-00003', '0258173-00004', '0258173-00005'],
+  ]);
+});
+
+test('groups historical licenses with the same name and location', () => {
+  const groups = groupAccountMasterRowsByLocation([
+    row({ licenseeId: '1111111', name: 'TEAK OTR', ownership: 'TEAK OWNER' }),
+    row({ licenseeId: '2222222', name: 'TEAK OTR', ownership: 'TEAK OWNER' }),
+    row({ licenseeId: '3333333', name: 'DIFFERENT TENANT', ownership: 'OTHER OWNER' }),
+  ]);
+
+  assert.equal(groups.length, 2);
+  assert.equal(groups.find((group) => group.some((item) => item.name === 'TEAK OTR'))?.length, 2);
+});
+
+test('groups DBA and ownership variants at the same licensed location', () => {
+  const groups = groupAccountMasterRowsByLocation([
+    row({ licenseeId: '08840720-27', name: 'SCRAMBLERS', ownership: 'SCRAMBLERS' }),
+    row({ licenseeId: '5598704', name: 'DBA SCRAMBLERS', ownership: 'MASA RESTAURANT GROUP LLC' }),
+    row({ licenseeId: '0951198', name: 'BRIDGE PARK HOTEL LLC', ownership: 'BRIDGE PARK HOTEL LLC' }),
+    row({ licenseeId: '0951198-00003', name: 'VASO', ownership: 'BRIDGE PARK HOTEL LLC' }),
+  ]);
+  assert.deepEqual(groups.map((group) => group.map((item) => item.licenseeId).sort()), [
+    ['08840720-27', '5598704'],
+    ['0951198', '0951198-00003'],
+  ]);
+});
+
+test('keeps unrelated businesses at a shared address separate', () => {
+  const groups = groupAccountMasterRowsByLocation([
+    row({ licenseeId: '03993801-1', name: 'PGA TOUR GRILL', ownership: 'PGA TOUR GRILL' }),
+    row({ licenseeId: '03993801-2', name: 'CHILIS', ownership: 'CHILIS' }),
+    row({ licenseeId: '03993801-6', name: 'LAND GRANT BREWING', ownership: 'LAND GRANT BREWING' }),
+  ]);
+  assert.equal(groups.length, 3);
+});
+
+test('does not use a matching name to join license-family accounts at different addresses', () => {
+  assert.equal(rowMatchesWholesaleImportIdentity(
+    row({ licenseeId: '3157115-00003', name: 'GERVASI 1700 LLC', address: '1700 55TH ST NE', zip: '44721' }),
+    { name: 'Gervasi 1700 LLC', address: '7160 FULTON DR NW', city: 'Jackson Twp', state: 'OH', zip: '44718' },
+  ), false);
+});
+
+test('chooses the most representative DBA as the location primary', () => {
+  const primary = choosePrimaryAccountMasterRow([
+    row({ licenseeId: '0258173', name: 'ARECO GOLF LLC', dba: null }),
+    row({ licenseeId: '0258173-00003', name: 'MAYFIELD SAND RIDGE CLUB', dba: 'MAYFIELD SAND RIDGE CLUB' }),
+    row({ licenseeId: '0258173-00004', name: 'MAYFIELD SAND RIDGE CLUB', dba: 'MAYFIELD SAND RIDGE CLUB' }),
+  ]);
+  assert.equal(primary.licenseeId, '0258173-00003');
 });
