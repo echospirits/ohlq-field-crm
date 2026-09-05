@@ -1176,7 +1176,7 @@ async function downloadOhlqAccountMasterFromPage(
 
   const heading = page.getByRole('heading', { name: /^ACCOUNT MASTER DATA$/i });
   await heading.waitFor({ state: 'visible', timeout: 60_000 });
-  const table = heading.locator('xpath=following-sibling::table[1]');
+  const table = heading.locator('xpath=following::table[1]');
   const firstDataRow = table.getByRole('row').nth(1);
   await firstDataRow.waitFor({ state: 'visible', timeout: 30_000 });
 

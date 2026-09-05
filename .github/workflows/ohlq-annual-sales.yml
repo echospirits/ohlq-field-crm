@@ -172,7 +172,7 @@ jobs:
           fi
 
       - name: Download and import current OHLQ Account Master
-        if: steps.schedule_window.outputs.should_run == 'true' && (github.event_name == 'schedule' || inputs.purchaseStateOnly != true)
+        if: always() && steps.schedule_window.outputs.should_run == 'true' && (github.event_name == 'schedule' || inputs.purchaseStateOnly != true)
         run: npm run sync:ohlq-account-master -- --environment "$APP_ENV" --apply
 
       - name: Upload OHLQ debug artifacts
