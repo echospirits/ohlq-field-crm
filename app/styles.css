@@ -1823,6 +1823,39 @@ fieldset {
   margin: 0;
 }
 
+.data-source-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.account-master-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.account-master-metrics div {
+  display: grid;
+  gap: 2px;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgb(255 255 255 / 0.025);
+}
+
+.account-master-metrics strong {
+  color: #f8fafc;
+  font-size: 18px;
+}
+
+.account-master-metrics span {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.25;
+}
+
 .data-source-meta {
   display: grid;
   gap: 4px;

@@ -43,7 +43,12 @@ async function main() {
   }
 
   logEnvironmentEvent('database.command.started', { command, expectedEnvironment: expectedEnvironment || null });
-  const result = spawnSync(process.platform === 'win32' ? 'npx.cmd' : 'npx', prismaArgs, { cwd: root, env: process.env, stdio: 'inherit' });
+  const prismaCli = path.join(root, 'node_modules', 'prisma', 'build', 'index.js');
+  const result = spawnSync(process.execPath, [prismaCli, ...prismaArgs.slice(1)], {
+    cwd: root,
+    env: process.env,
+    stdio: 'inherit',
+  });
   if (result.error) throw result.error;
   if (result.status !== 0) process.exit(result.status ?? 1);
   logEnvironmentEvent('database.command.completed', { command });

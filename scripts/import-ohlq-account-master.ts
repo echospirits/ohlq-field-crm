@@ -1,18 +1,24 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
-import { AccountType, Prisma, PrismaClient } from '@prisma/client';
+import { AccountType, OhlqReportDataSource, Prisma, PrismaClient } from '@prisma/client';
 import { assertSideEffectEnabled, validateRuntimeEnvironment, logEnvironmentEvent } from '../lib/appEnvironment';
 import {
   assertAccountMasterSelectionIsSafe,
   choosePrimaryAccountMasterRow,
   getImportedWholesaleName,
   groupAccountMasterRowsByLocation,
+  hasAccountMasterWholesaleChanges,
   parseAccountMasterCsv,
   rowMatchesWholesaleImportIdentity,
   type AccountMasterRow,
   type ExistingAccountIdentity,
 } from '../lib/ohlqAccountMasterImport';
+import {
+  recordOhlqReportRunCompleted,
+  recordOhlqReportRunErrored,
+  recordOhlqReportRunStarted,
+} from '../lib/ohlqDataStatus';
 import { getGeocodeResetForAddressChange } from '../lib/location/geocode';
 import { areOhlqAddressesSame, getOhlqLicenseeMatchKeys } from '../lib/ohlqWholesaleMatching';
 import { getWholesaleLicenseeIdValues } from '../lib/wholesaleAccounts';
@@ -34,6 +40,15 @@ const getNonNegativeIntegerEnv = (name: string, fallback: number) => {
 };
 const maximumNewLocations = getNonNegativeIntegerEnv('OHLQ_ACCOUNT_MASTER_MAX_NEW_LOCATIONS', 250);
 const maximumDeactivations = getNonNegativeIntegerEnv('OHLQ_ACCOUNT_MASTER_MAX_DEACTIVATIONS', 500);
+let trackedReportDate: string | null = null;
+
+const getAccountMasterReportDate = () => {
+  const match = path.basename(sourcePath).match(/^OHLQData_Account_Master(\d{4}-\d{2}-\d{2})\.csv$/i);
+  if (!match) {
+    throw new Error('Account Master filename must use OHLQData_Account_MasterYYYY-MM-DD.csv.');
+  }
+  return match[1];
+};
 
 const identity = (account: {
   name: string;
@@ -63,7 +78,44 @@ const values = (row: AccountMasterRow) => ({
   zip: row.zip,
 });
 
-async function main() {
+const getNextWholesaleValues = (
+  account: {
+    address: string | null;
+    agencyId: string | null;
+    city: string | null;
+    county: string | null;
+    deliveryDay: string | null;
+    districtId: string | null;
+    isActive: boolean;
+    name: string;
+    officialAccountId: string | null;
+    ownership: string | null;
+    phone: string | null;
+    state: string | null;
+    zip: string | null;
+  },
+  row: AccountMasterRow,
+  officialAccountId: string | null,
+) => {
+  const sourceValues = values(row);
+  return {
+    address: sourceValues.address ?? account.address,
+    agencyId: sourceValues.agencyId ?? account.agencyId,
+    city: sourceValues.city ?? account.city,
+    county: sourceValues.county ?? account.county,
+    deliveryDay: sourceValues.deliveryDay ?? account.deliveryDay,
+    districtId: sourceValues.districtId ?? account.districtId,
+    isActive: true,
+    name: getImportedWholesaleName({ currentName: account.name, officialName: row.name, wasActive: account.isActive }),
+    officialAccountId,
+    ownership: sourceValues.ownership ?? account.ownership,
+    phone: sourceValues.phone ?? account.phone,
+    state: sourceValues.state ?? account.state,
+    zip: sourceValues.zip ?? account.zip,
+  };
+};
+
+async function runImport() {
   if (!sourcePath || !existsSync(sourcePath)) throw new Error('Pass an existing Account Master CSV with --file <path>.');
   if (!['test', 'production'].includes(expectedEnvironment)) {
     throw new Error('Pass --environment test or --environment production.');
@@ -72,6 +124,13 @@ async function main() {
   const runtime = validateRuntimeEnvironment();
   if (runtime.appEnvironment !== expectedEnvironment) {
     throw new Error(`Requested ${expectedEnvironment}, but APP_ENV=${runtime.appEnvironment}.`);
+  }
+
+  const reportDate = getAccountMasterReportDate();
+  if (APPLY) {
+    assertSideEffectEnabled('ohlqImport');
+    trackedReportDate = reportDate;
+    await recordOhlqReportRunStarted({ reportDate, source: OhlqReportDataSource.ACCOUNT_MASTER });
   }
 
   const source = readFileSync(sourcePath, 'utf8');
@@ -240,6 +299,19 @@ async function main() {
       Boolean(account.officialAccountId) &&
       !getWholesaleLicenseeIdValues(account).some((licenseeId) => importedIds.has(licenseeId)),
   );
+  const existingWholesaleAccountsToUpdate = locationPlans.filter(({ account, rows }) => {
+    if (!account) return false;
+    const primaryRow = rows.find((row) => row.licenseeId === account.licenseeId.trim().toUpperCase()) ??
+      choosePrimaryAccountMasterRow(rows);
+    const officialAccountId = account.officialAccountId ?? officialByLicenseeId.get(primaryRow.licenseeId)?.id ?? null;
+    const next = getNextWholesaleValues(account, primaryRow, officialAccountId);
+    return hasAccountMasterWholesaleChanges({
+      current: account,
+      existingLicenseeIds: getWholesaleLicenseeIdValues(account),
+      next,
+      sourceLicenseeIds: rows.map((row) => row.licenseeId),
+    });
+  }).length;
 
   const summary = {
     mode: APPLY ? 'apply' : 'dry-run',
@@ -258,6 +330,7 @@ async function main() {
     sourceLocationGroups: importLocationGroups.length,
     consolidatedLicenseeAliases: importRows.length - importLocationGroups.length,
     existingWholesaleAccountsMatched: existingWholesaleIds.size,
+    wholesaleAccountsToUpdate: existingWholesaleAccountsToUpdate,
     wholesaleAccountsToCreate: newWholesaleLocationPlans.length,
     maximumNewLocations,
     newWholesaleLocationExamples: newWholesaleLocationPlans.slice(0, 20).map(({ rows }) => ({
@@ -363,28 +436,16 @@ async function main() {
         const primaryRow = rows.find((row) => row.licenseeId === account.licenseeId.trim().toUpperCase()) ??
           choosePrimaryAccountMasterRow(rows);
         const officialAccountId = account.officialAccountId ?? officialIdsByLicenseeId.get(primaryRow.licenseeId);
-        const sourceValues = values(primaryRow);
+        const nextValues = getNextWholesaleValues(account, primaryRow, officialAccountId ?? null);
         operations.push(prisma.wholesaleAccount.update({
           where: { id: wholesaleId },
           data: {
-            isActive: true,
-            officialAccountId,
-            name: getImportedWholesaleName({ currentName: account.name, officialName: primaryRow.name, wasActive: account.isActive }),
-            address: sourceValues.address ?? account.address,
-            agencyId: sourceValues.agencyId ?? account.agencyId,
-            city: sourceValues.city ?? account.city,
-            county: sourceValues.county ?? account.county,
-            deliveryDay: sourceValues.deliveryDay ?? account.deliveryDay,
-            districtId: sourceValues.districtId ?? account.districtId,
-            ownership: sourceValues.ownership ?? account.ownership,
-            phone: sourceValues.phone ?? account.phone,
-            state: sourceValues.state ?? account.state,
-            zip: sourceValues.zip ?? account.zip,
+            ...nextValues,
             ...getGeocodeResetForAddressChange(account, {
-              address: sourceValues.address ?? account.address,
-              city: sourceValues.city ?? account.city,
-              state: sourceValues.state ?? account.state,
-              zip: sourceValues.zip ?? account.zip,
+              address: nextValues.address,
+              city: nextValues.city,
+              state: nextValues.state,
+              zip: nextValues.zip,
             }),
           },
         }));
@@ -476,6 +537,41 @@ async function main() {
   console.log(JSON.stringify({ applied: true, ...verification }, null, 2));
   if (missingImportedLicenseeIds.length || activeNameChanges.length) {
     throw new Error('Post-import verification failed. Review missing Licensee IDs or changed active names.');
+  }
+  await recordOhlqReportRunCompleted({
+    downloadResult: {
+      filename: path.basename(sourcePath),
+      sizeBytes: Buffer.byteLength(source),
+    },
+    importResult: {
+      deletedRows: closedOfficialAccounts.length,
+      diagnostics: {
+        activeWholesaleAccounts: activeCount,
+        createdWholesaleAccounts: newWholesaleLocationPlans.length,
+        deactivatedWholesaleAccounts: closedOfficialAccounts.length,
+        updatedWholesaleAccounts: existingWholesaleAccountsToUpdate,
+      },
+      importedRows: activeCount,
+      parsedRows: selection.parsedRows,
+      reportDate,
+      skippedRows: selection.excludedTransientRows,
+    },
+    source: OhlqReportDataSource.ACCOUNT_MASTER,
+  });
+}
+
+async function main() {
+  try {
+    await runImport();
+  } catch (error) {
+    if (APPLY && trackedReportDate) {
+      await recordOhlqReportRunErrored({
+        error,
+        reportDate: trackedReportDate,
+        source: OhlqReportDataSource.ACCOUNT_MASTER,
+      }).catch((statusError) => console.error('Unable to record Account Master import error status:', statusError));
+    }
+    throw error;
   }
 }
 

@@ -39,6 +39,22 @@ export type ExistingAccountIdentity = {
   agencyId: string | null;
 };
 
+export type AccountMasterWholesaleValues = {
+  address: string | null;
+  agencyId: string | null;
+  city: string | null;
+  county: string | null;
+  deliveryDay: string | null;
+  districtId: string | null;
+  isActive: boolean;
+  name: string;
+  officialAccountId: string | null;
+  ownership: string | null;
+  phone: string | null;
+  state: string | null;
+  zip: string | null;
+};
+
 export type AccountMasterSelection = {
   selected: AccountMasterRow[];
   ambiguous: Array<{ licenseeId: string; rows: AccountMasterRow[] }>;
@@ -387,4 +403,36 @@ export function getImportedWholesaleName({
   wasActive: boolean;
 }) {
   return wasActive ? currentName : officialName;
+}
+
+const ACCOUNT_MASTER_WHOLESALE_FIELDS = [
+  'address',
+  'agencyId',
+  'city',
+  'county',
+  'deliveryDay',
+  'districtId',
+  'isActive',
+  'name',
+  'officialAccountId',
+  'ownership',
+  'phone',
+  'state',
+  'zip',
+] as const satisfies ReadonlyArray<keyof AccountMasterWholesaleValues>;
+
+export function hasAccountMasterWholesaleChanges({
+  current,
+  existingLicenseeIds,
+  next,
+  sourceLicenseeIds,
+}: {
+  current: AccountMasterWholesaleValues;
+  existingLicenseeIds: string[];
+  next: AccountMasterWholesaleValues;
+  sourceLicenseeIds: string[];
+}) {
+  if (ACCOUNT_MASTER_WHOLESALE_FIELDS.some((field) => current[field] !== next[field])) return true;
+  const existing = new Set(existingLicenseeIds.map(normalizeLicenseeId));
+  return sourceLicenseeIds.some((licenseeId) => !existing.has(normalizeLicenseeId(licenseeId)));
 }

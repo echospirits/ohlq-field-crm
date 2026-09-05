@@ -6,6 +6,7 @@ import {
   choosePrimaryAccountMasterRow,
   getImportedWholesaleName,
   groupAccountMasterRowsByLocation,
+  hasAccountMasterWholesaleChanges,
   rowMatchesWholesaleImportIdentity,
   parseAccountMasterCsv,
   type AccountMasterRow,
@@ -107,6 +108,43 @@ test('uses the production identity decision for the one equal-frequency duplicat
 test('preserves an active wholesale name and refreshes an inactive one', () => {
   assert.equal(getImportedWholesaleName({ currentName: 'Custom Name', officialName: 'Official Name', wasActive: true }), 'Custom Name');
   assert.equal(getImportedWholesaleName({ currentName: 'Licensee 123', officialName: 'Official Name', wasActive: false }), 'Official Name');
+});
+
+test('counts only material Account Master changes to existing wholesale locations', () => {
+  const current = {
+    address: '1941 TRIPLETT BLVD',
+    agencyId: '40880',
+    city: 'AKRON',
+    county: 'SUMMIT',
+    deliveryDay: null,
+    districtId: 'GRN',
+    isActive: true,
+    name: 'Custom Name',
+    officialAccountId: 'official-1',
+    ownership: 'FIRE AND ICE BAR AND GRILL',
+    phone: null,
+    state: 'OH',
+    zip: '44312',
+  };
+
+  assert.equal(hasAccountMasterWholesaleChanges({
+    current,
+    existingLicenseeIds: ['0001234'],
+    next: { ...current },
+    sourceLicenseeIds: ['0001234'],
+  }), false);
+  assert.equal(hasAccountMasterWholesaleChanges({
+    current,
+    existingLicenseeIds: ['0001234'],
+    next: { ...current, phone: '330-555-0100' },
+    sourceLicenseeIds: ['0001234'],
+  }), true);
+  assert.equal(hasAccountMasterWholesaleChanges({
+    current,
+    existingLicenseeIds: ['0001234'],
+    next: { ...current },
+    sourceLicenseeIds: ['0001234', '0001234-00002'],
+  }), true);
 });
 
 test('groups related Licensee IDs at one physical location', () => {

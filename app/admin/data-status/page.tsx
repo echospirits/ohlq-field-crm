@@ -95,6 +95,27 @@ const formatDelta = (delta: number | null, count: number) => {
   return `${delta > 0 ? '+' : ''}${numberFormatter.format(delta)} vs previous day`;
 };
 
+type AccountMasterMetrics = {
+  created: number;
+  deactivated: number;
+  updated: number;
+};
+
+const getAccountMasterMetrics = (diagnostics: unknown): AccountMasterMetrics => {
+  const values = diagnostics && typeof diagnostics === 'object' && !Array.isArray(diagnostics)
+    ? diagnostics as Record<string, unknown>
+    : {};
+  const count = (key: string) => {
+    const value = values[key];
+    return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : 0;
+  };
+  return {
+    created: count('createdWholesaleAccounts'),
+    deactivated: count('deactivatedWholesaleAccounts'),
+    updated: count('updatedWholesaleAccounts'),
+  };
+};
+
 const buildCountMap = (counts: Array<{ reportDate: Date; _count: { _all: number } }>) =>
   new Map(counts.map((item) => [formatOhlqDate(item.reportDate), item._count._all]));
 
@@ -214,6 +235,8 @@ export default async function DataStatusPage({
     inventoryTotalRows,
     brandMasterRows,
     latestBrandMasterRow,
+    latestAccountMasterRun,
+    latestAccountMasterSuccess,
   ] = await Promise.all([
     prisma.ohlqAnnualSalesRow.groupBy({
       by: ['reportDate'],
@@ -245,7 +268,21 @@ export default async function DataStatusPage({
       orderBy: { updatedAt: 'desc' },
       select: { updatedAt: true },
     }),
+    prisma.ohlqReportImportStatus.findFirst({
+      where: { dataSource: OhlqReportDataSource.ACCOUNT_MASTER },
+      orderBy: { startedAt: 'desc' },
+    }),
+    prisma.ohlqReportImportStatus.findFirst({
+      where: {
+        dataSource: OhlqReportDataSource.ACCOUNT_MASTER,
+        status: OhlqReportRunStatus.COMPLETED,
+      },
+      orderBy: { lastSuccessfulAt: 'desc' },
+    }),
   ]);
+
+  const accountMasterMetrics = getAccountMasterMetrics(latestAccountMasterSuccess?.diagnostics);
+  const latestAccountMasterStatus = statusLabel(latestAccountMasterRun?.status, 0);
 
   const countsBySource = {
     [OhlqReportDataSource.ANNUAL_SALES_SUMMARY]: buildCountMap(annualCounts),
@@ -341,6 +378,41 @@ export default async function DataStatusPage({
             </div>
           </article>
         ))}
+        <article className="card data-source-summary">
+          <div className="data-source-heading">
+            <div>
+              <h2>Account Master</h2>
+              <p className="muted">WholesaleAccount</p>
+            </div>
+            <span className={statusClassName(latestAccountMasterStatus)}>{latestAccountMasterStatus}</span>
+          </div>
+          <p className="metric-value">{numberFormatter.format(latestAccountMasterSuccess?.rowCount ?? 0)}</p>
+          <p className="muted metric-caption">Active wholesale accounts after last load</p>
+          <div className="account-master-metrics" aria-label="Latest Account Master changes">
+            <div>
+              <strong>{numberFormatter.format(accountMasterMetrics.created)}</strong>
+              <span>Created</span>
+            </div>
+            <div>
+              <strong>{numberFormatter.format(accountMasterMetrics.deactivated)}</strong>
+              <span>Deleted / deactivated</span>
+            </div>
+            <div>
+              <strong>{numberFormatter.format(accountMasterMetrics.updated)}</strong>
+              <span>Updated</span>
+            </div>
+          </div>
+          <div className="data-source-meta">
+            <span>Most recent successful load</span>
+            <strong>{formatRunTime(latestAccountMasterSuccess?.lastSuccessfulAt)}</strong>
+            {latestAccountMasterSuccess ? (
+              <span>Source date: {formatOhlqDate(latestAccountMasterSuccess.reportDate)}</span>
+            ) : null}
+            {latestAccountMasterRun?.status === OhlqReportRunStatus.ERRORED && latestAccountMasterRun.errorMessage ? (
+              <span className="data-error-text">Latest attempt: {latestAccountMasterRun.errorMessage}</span>
+            ) : null}
+          </div>
+        </article>
         <article className="card data-source-summary">
           <div>
             <h2>Brand Master Lookup</h2>

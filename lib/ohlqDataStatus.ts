@@ -12,6 +12,8 @@ type OhlqReportImportResult = OhlqAnnualSalesImportResult & {
   diagnostics?: unknown;
 };
 
+type OhlqReportDownloadStatus = Pick<OhlqAnnualSalesDownloadResult, 'filename' | 'sizeBytes'>;
+
 export const OHLQ_DATA_SOURCE_CONFIGS = [
   {
     source: OhlqReportDataSource.ANNUAL_SALES_SUMMARY,
@@ -95,7 +97,7 @@ export async function recordOhlqReportRunCompleted({
   source,
 }: {
   db?: PrismaClient;
-  downloadResult: OhlqAnnualSalesDownloadResult;
+  downloadResult: OhlqReportDownloadStatus;
   importResult: OhlqReportImportResult;
   source: OhlqReportDataSource;
 }) {
