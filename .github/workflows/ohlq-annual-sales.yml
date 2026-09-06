@@ -41,6 +41,15 @@ on:
         options:
           - production
           - test
+      repairTenantCredentials:
+        default: false
+        description: "One-time: re-encrypt one organization's OHLQ OPS credentials from this GitHub Environment."
+        required: false
+        type: boolean
+      tenantOrganizationId:
+        description: "Organization ID required when repairTenantCredentials is enabled."
+        required: false
+        type: string
 
 concurrency:
   group: ohlq-annual-sales-sync-${{ github.event_name == 'schedule' && (github.repository == 'echospirits/neat-tst' && 'test' || 'production') || inputs.deploymentEnvironment }}
@@ -139,6 +148,10 @@ jobs:
       - name: Report isolated target
         if: steps.schedule_window.outputs.should_run == 'true'
         run: echo "environment=${APP_ENV} databaseTarget=${DATABASE_TARGET_ID:-unlabeled} runId=${GITHUB_RUN_ID}"
+
+      - name: Repair selected tenant OHLQ credentials
+        if: steps.schedule_window.outputs.should_run == 'true' && github.event_name == 'workflow_dispatch' && inputs.repairTenantCredentials == true
+        run: npm run repair:ohlq-tenant-credentials -- --environment "$APP_ENV" --organization "${{ inputs.tenantOrganizationId }}" --apply
 
       - name: Download and import current OHLQ Account Master
         if: steps.schedule_window.outputs.should_run == 'true' && (github.event_name == 'schedule' || inputs.purchaseStateOnly != true)

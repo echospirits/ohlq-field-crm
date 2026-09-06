@@ -120,6 +120,8 @@ test('GitHub OHLQ workflow isolates production and test secrets with GitHub Envi
   assert.match(workflow, /inputs\.purchaseStateOnly != true/);
   assert.match(workflow, /OHLQ_TENANT_CREDENTIAL_ENCRYPTION_KEY: \$\{\{ secrets\.OHLQ_TENANT_CREDENTIAL_ENCRYPTION_KEY \}\}/);
   assert.match(workflow, /sync:ohlq-tenant-inventory -- --environment "\$APP_ENV"/);
+  assert.match(workflow, /repairTenantCredentials:/);
+  assert.match(workflow, /repair:ohlq-tenant-credentials -- --environment "\$APP_ENV" --organization/);
   assert.match(workflow, /Run OHLQ annual sales import[\s\S]+Download and import tenant OHLQ inventory/);
   assert.match(workflow, /timeout-minutes: 150/);
   assert.match(workflow, /Download and import current OHLQ Account Master[\s\S]+timeout-minutes: 50/);
@@ -127,6 +129,7 @@ test('GitHub OHLQ workflow isolates production and test secrets with GitHub Envi
   assert.match(packageJson, /"sync:ohlq-account-master": "tsx scripts\/sync-ohlq-account-master\.ts"/);
   assert.match(packageJson, /"sync:ohlq-brand-master": "tsx scripts\/sync-ohlq-brand-master\.ts"/);
   assert.match(packageJson, /"sync:ohlq-tenant-inventory": "tsx scripts\/sync-ohlq-tenant-inventory\.ts"/);
+  assert.match(packageJson, /"repair:ohlq-tenant-credentials": "tsx scripts\/repair-ohlq-tenant-credentials\.ts"/);
 });
 
 test('master syncs record an observable run before starting the browser download', () => {
