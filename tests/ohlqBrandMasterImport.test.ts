@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { PrismaClient } from '@prisma/client';
 import {
+  getOhlqBrandMasterChangeMetrics,
   importOhlqBrandMasterCsv,
   parseOhlqBrandMasterCsv,
 } from '../lib/ohlqBrandMasterImport';
@@ -40,7 +41,7 @@ describe('importOhlqBrandMasterCsv', () => {
   it('fully replaces the destination table before loading the new rows', async () => {
     const calls: string[] = [];
     const db = {
-      $transaction: async (callback: (tx: unknown) => Promise<{ deletedRows: number; importedRows: number }>) =>
+      $transaction: async (callback: (tx: unknown) => Promise<unknown>) =>
         callback({
           ohlqBrandMasterItem: {
             createMany: async ({ data }: { data: unknown[] }) => {
@@ -51,6 +52,19 @@ describe('importOhlqBrandMasterCsv', () => {
               calls.push('delete');
               return { count: 12 };
             },
+            findMany: async () => [{
+              bottleLimit: 0,
+              broker: 'RNDC',
+              category: 'Rum',
+              itemCode: '2740L',
+              name: 'OLD NAME',
+              productVolume: '33.8',
+              purchaseUnitSymbol: 'C12',
+              retailPrice: '15.99',
+              solItemStatusCode: '7',
+              vendor: 'SERRALLES USA LLC',
+              wholesalePrice: '15.04',
+            }],
           },
         }),
     } as unknown as PrismaClient;
@@ -59,6 +73,7 @@ describe('importOhlqBrandMasterCsv', () => {
       csv,
       db,
       discoverProducts: async () => ({ organizationsScanned: 2, productsDiscovered: 7 }),
+      minimumRows: 1,
     });
 
     assert.deepEqual(calls, ['delete', 'create:2']);
@@ -67,5 +82,35 @@ describe('importOhlqBrandMasterCsv', () => {
     assert.equal(result.parsedRows, 2);
     assert.equal(result.organizationsScanned, 2);
     assert.equal(result.productsDiscovered, 7);
+    assert.equal(result.createdItems, 1);
+    assert.equal(result.updatedItems, 1);
+    assert.equal(result.removedItems, 0);
+  });
+
+  it('rejects a sparse file before deleting the current catalog', async () => {
+    const db = { $transaction: async () => assert.fail('transaction should not run') } as unknown as PrismaClient;
+    await assert.rejects(() => importOhlqBrandMasterCsv({ csv, db }), /expected at least 1000/);
+  });
+});
+
+describe('getOhlqBrandMasterChangeMetrics', () => {
+  it('separates created, updated, removed, and unchanged item codes', () => {
+    const existing = [
+      { itemCode: 'A', name: 'Same' },
+      { itemCode: 'B', name: 'Old' },
+      { itemCode: 'C', name: 'Removed' },
+    ];
+    const incoming = [
+      { itemCode: 'A', name: 'Same' },
+      { itemCode: 'B', name: 'New' },
+      { itemCode: 'D', name: 'Created' },
+    ];
+
+    assert.deepEqual(getOhlqBrandMasterChangeMetrics(existing, incoming), {
+      createdItems: 1,
+      removedItems: 1,
+      unchangedItems: 1,
+      updatedItems: 1,
+    });
   });
 });

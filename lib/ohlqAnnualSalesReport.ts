@@ -226,12 +226,20 @@ function todayIsoEastern(now = new Date()) {
 export const getOhlqAgencyInventoryObservationDate = () => todayIsoEastern();
 
 export const getOhlqAccountMasterDate = (now = new Date()) => todayIsoEastern(now);
+export const getOhlqBrandMasterDate = (now = new Date()) => todayIsoEastern(now);
 
 export function getOhlqAccountMasterFilename(reportDate: string) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(reportDate)) {
     throw new Error(`Invalid Account Master report date: ${reportDate}`);
   }
   return `OHLQData_Account_Master${reportDate}.csv`;
+}
+
+export function getOhlqBrandMasterFilename(reportDate: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(reportDate)) {
+    throw new Error(`Invalid Brand Master report date: ${reportDate}`);
+  }
+  return `OHLQData_Brand_Master${reportDate}.csv`;
 }
 
 function parseReportDate(rawDate: string | undefined) {
@@ -1164,9 +1172,14 @@ async function downloadOhlqPowerBiReport(
   return result;
 }
 
-async function downloadOhlqAccountMasterFromPage(
+async function downloadOhlqPartnerMasterFromPage(
   page: Page,
   runtime: OhlqDownloadRuntime,
+  config: {
+    displayName: string;
+    filename: (reportDate: string) => string;
+    heading: RegExp;
+  },
 ) {
   await gotoWithRetry(page, OHLQ_ACCOUNT_MASTER_FEED_URL, { waitUntil: 'domcontentloaded', timeout: 60_000 });
   if (isOhlqOpsLoginUrl(page.url())) {
@@ -1174,7 +1187,7 @@ async function downloadOhlqAccountMasterFromPage(
     await gotoWithRetry(page, OHLQ_ACCOUNT_MASTER_FEED_URL, { waitUntil: 'domcontentloaded', timeout: 60_000 });
   }
 
-  const heading = page.getByRole('heading', { name: /^ACCOUNT MASTER DATA$/i });
+  const heading = page.getByRole('heading', { name: config.heading });
   await heading.waitFor({ state: 'visible', timeout: 60_000 });
   const table = heading.locator('xpath=following::table[1]');
   const firstDataRow = table.getByRole('row').nth(1);
@@ -1183,18 +1196,18 @@ async function downloadOhlqAccountMasterFromPage(
   const reportDate = (await firstDataRow.getByRole('cell').nth(0).innerText()).trim();
   if (reportDate !== runtime.runDateIso) {
     throw new Error(
-      `The newest Account Master is dated ${reportDate || 'unknown'}; expected today's Eastern date ${runtime.runDateIso}.`,
+      `The newest ${config.displayName} is dated ${reportDate || 'unknown'}; expected today's Eastern date ${runtime.runDateIso}.`,
     );
   }
 
-  const filename = getOhlqAccountMasterFilename(reportDate);
+  const filename = config.filename(reportDate);
   const downloadLink = firstDataRow.getByRole('link').first();
   const href = await downloadLink.getAttribute('href');
-  if (!href) throw new Error(`The ${reportDate} Account Master row does not contain a download link.`);
+  if (!href) throw new Error(`The ${reportDate} ${config.displayName} row does not contain a download link.`);
   const downloadUrl = new URL(href, page.url());
   const expectedPath = `/partnerDataFeed/${filename}`;
   if (downloadUrl.origin !== 'https://ops.ohlq.com' || downloadUrl.pathname !== expectedPath) {
-    throw new Error(`The ${reportDate} Account Master download link did not match the expected dated file.`);
+    throw new Error(`The ${reportDate} ${config.displayName} download link did not match the expected dated file.`);
   }
 
   const downloadPromise = page.waitForEvent('download', { timeout: 120_000 });
@@ -1203,9 +1216,9 @@ async function downloadOhlqAccountMasterFromPage(
   const outputPath = path.join(runtime.downloadDir, filename);
   await download.saveAs(outputPath);
   const sizeBytes = fs.statSync(outputPath).size;
-  if (sizeBytes === 0) throw new Error(`The ${reportDate} Account Master download was empty.`);
+  if (sizeBytes === 0) throw new Error(`The ${reportDate} ${config.displayName} download was empty.`);
   const csvBuffer = runtime.returnBuffer ? fs.readFileSync(outputPath) : undefined;
-  runtime.logger.log(`Downloaded current Account Master CSV: ${outputPath}`);
+  runtime.logger.log(`Downloaded current ${config.displayName} CSV: ${outputPath}`);
 
   return {
     csvBuffer,
@@ -1222,9 +1235,32 @@ export async function downloadOhlqAccountMaster(options: OhlqAnnualSalesDownload
   const { browser, context, page } = await openBrowserPage(options);
   try {
     await signInToOhlqPartner(page);
-    return await downloadOhlqAccountMasterFromPage(page, runtime);
+    return await downloadOhlqPartnerMasterFromPage(page, runtime, {
+      displayName: 'Account Master',
+      filename: getOhlqAccountMasterFilename,
+      heading: /^ACCOUNT MASTER DATA$/i,
+    });
   } catch (error) {
     const screenshotPath = await saveDebugScreenshot(page, 'ohlq-account-master-error', runtime.debugDir);
+    runtime.logger.error(`Debug screenshot: ${screenshotPath}`);
+    throw error;
+  } finally {
+    await closeBrowserPage(context, browser);
+  }
+}
+
+export async function downloadOhlqBrandMaster(options: OhlqAnnualSalesDownloadOptions = {}) {
+  const runtime = createDownloadRuntime(options);
+  const { browser, context, page } = await openBrowserPage(options);
+  try {
+    await signInToOhlqPartner(page);
+    return await downloadOhlqPartnerMasterFromPage(page, runtime, {
+      displayName: 'Brand Master',
+      filename: getOhlqBrandMasterFilename,
+      heading: /^BRAND MASTER DATA$/i,
+    });
+  } catch (error) {
+    const screenshotPath = await saveDebugScreenshot(page, 'ohlq-brand-master-error', runtime.debugDir);
     runtime.logger.error(`Debug screenshot: ${screenshotPath}`);
     throw error;
   } finally {

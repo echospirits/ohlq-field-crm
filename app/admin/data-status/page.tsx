@@ -112,20 +112,33 @@ type AccountMasterMetrics = {
   updated: number;
 };
 
-const getAccountMasterMetrics = (diagnostics: unknown): AccountMasterMetrics => {
+type BrandMasterMetrics = {
+  created: number;
+  removed: number;
+  updated: number;
+};
+
+const getMetricCount = (diagnostics: unknown, key: string) => {
   const values = diagnostics && typeof diagnostics === 'object' && !Array.isArray(diagnostics)
     ? diagnostics as Record<string, unknown>
     : {};
-  const count = (key: string) => {
-    const value = values[key];
-    return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : 0;
-  };
+  const value = values[key];
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : 0;
+};
+
+const getAccountMasterMetrics = (diagnostics: unknown): AccountMasterMetrics => {
   return {
-    created: count('createdWholesaleAccounts'),
-    deactivated: count('deactivatedWholesaleAccounts'),
-    updated: count('updatedWholesaleAccounts'),
+    created: getMetricCount(diagnostics, 'createdWholesaleAccounts'),
+    deactivated: getMetricCount(diagnostics, 'deactivatedWholesaleAccounts'),
+    updated: getMetricCount(diagnostics, 'updatedWholesaleAccounts'),
   };
 };
+
+const getBrandMasterMetrics = (diagnostics: unknown): BrandMasterMetrics => ({
+  created: getMetricCount(diagnostics, 'createdItems'),
+  removed: getMetricCount(diagnostics, 'removedItems'),
+  updated: getMetricCount(diagnostics, 'updatedItems'),
+});
 
 const buildCountMap = (counts: Array<{ reportDate: Date; _count: { _all: number } }>) =>
   new Map(counts.map((item) => [formatOhlqDate(item.reportDate), item._count._all]));
@@ -133,13 +146,15 @@ const buildCountMap = (counts: Array<{ reportDate: Date; _count: { _all: number 
 const brandMasterStatusMessage = (params: {
   annualRows?: string;
   count?: string;
+  created?: string;
   date?: string;
   inventoryRows?: string;
   message?: string;
   productsDiscovered?: string;
-  replaced?: string;
+  removed?: string;
   skipped?: string;
   status?: string;
+  updated?: string;
   wholesaleRows?: string;
 }) => {
   if (params.status === 'ohlq-imported') {
@@ -160,9 +175,11 @@ const brandMasterStatusMessage = (params: {
   }
 
   if (params.status === 'brand-master-imported') {
-    return `Brand master refreshed: ${params.count ?? '0'} rows loaded, ${params.replaced ?? '0'} replaced, ${
-      params.skipped ?? '0'
-    } skipped; ${params.productsDiscovered ?? '0'} new organization product candidates added for review.`;
+    return `Brand master refreshed: ${params.count ?? '0'} rows loaded; ${params.created ?? '0'} created, ${
+      params.updated ?? '0'
+    } updated, ${params.removed ?? '0'} removed, and ${params.skipped ?? '0'} skipped; ${
+      params.productsDiscovered ?? '0'
+    } new organization product candidates added for review.`;
   }
 
   if (params.status === 'brand-master-invalid') return 'Choose a brand master CSV file before importing.';
@@ -199,9 +216,17 @@ async function importBrandMaster(formData: FormData) {
   let result: Awaited<ReturnType<typeof importOhlqBrandMasterCsv>>;
   try {
     result = await importOhlqBrandMasterCsv({ csv: await file.text() });
+    const diagnostics = {
+      createdItems: result.createdItems,
+      organizationsScanned: result.organizationsScanned,
+      productsDiscovered: result.productsDiscovered,
+      removedItems: result.removedItems,
+      unchangedItems: result.unchangedItems,
+      updatedItems: result.updatedItems,
+    };
     await recordOhlqReportRunCompleted({
       downloadResult: { filename: file.name, sizeBytes: file.size },
-      importResult: { ...result, reportDate },
+      importResult: { ...result, diagnostics, reportDate },
       source: OhlqReportDataSource.BRAND_MASTER,
     });
   } catch (error) {
@@ -217,7 +242,7 @@ async function importBrandMaster(formData: FormData) {
   revalidatePath('/agencies');
   revalidatePath('/wholesale');
   redirect(
-    `/admin/data-status?status=brand-master-imported&count=${result.importedRows}&replaced=${result.deletedRows}&skipped=${result.skippedRows}&productsDiscovered=${result.productsDiscovered}`,
+    `/admin/data-status?status=brand-master-imported&count=${result.importedRows}&created=${result.createdItems}&updated=${result.updatedItems}&removed=${result.removedItems}&skipped=${result.skippedRows}&productsDiscovered=${result.productsDiscovered}`,
   );
 }
 
@@ -226,10 +251,12 @@ export default async function DataStatusPage({
 }: {
   searchParams?: Promise<{
     count?: string;
+    created?: string;
     message?: string;
-    replaced?: string;
+    removed?: string;
     skipped?: string;
     status?: string;
+    updated?: string;
     annualRows?: string;
     date?: string;
     inventoryRows?: string;
@@ -317,6 +344,7 @@ export default async function DataStatusPage({
   ]);
 
   const accountMasterMetrics = getAccountMasterMetrics(latestAccountMasterSuccess?.diagnostics);
+  const brandMasterMetrics = getBrandMasterMetrics(latestBrandMasterSuccess?.diagnostics);
   const latestAccountMasterStatus = statusLabel(latestAccountMasterRun?.status, 0);
   const legacyBrandMasterDate = latestBrandMasterRow?.updatedAt
     ? formatEasternDateInputValue(latestBrandMasterRow.updatedAt)
@@ -409,7 +437,7 @@ export default async function DataStatusPage({
           <p className="muted data-status-form-note">
             {productionNeedsGithubDispatch
               ? 'Add GITHUB_ACTIONS_DISPATCH_TOKEN in Vercel before production can queue the cloud runner.'
-              : 'Queues the current Account Master first, then both dated OHLQ sales reports and the current Agency Inventory Report. Sales rows use the selected date; current files use their actual Eastern download date.'}
+              : 'Queues the current Account Master and Brand Master first, then both dated OHLQ sales reports and the current Agency Inventory Report. Sales rows use the selected date; current files use their actual Eastern download date.'}
           </p>
         </form>
       </details>
@@ -476,6 +504,11 @@ export default async function DataStatusPage({
           </div>
           <p className="metric-value">{numberFormatter.format(brandMasterRows)}</p>
           <p className="muted metric-caption">SKU/item lookup rows loaded</p>
+          <div className="account-master-metrics" aria-label="Latest Brand Master changes">
+            <div><strong>{numberFormatter.format(brandMasterMetrics.created)}</strong><span>Created</span></div>
+            <div><strong>{numberFormatter.format(brandMasterMetrics.removed)}</strong><span>Removed</span></div>
+            <div><strong>{numberFormatter.format(brandMasterMetrics.updated)}</strong><span>Updated</span></div>
+          </div>
           <div className="data-source-meta">
             <span>Most recent refresh</span>
             <strong>{formatRunTime(latestBrandMasterSuccess?.lastSuccessfulAt ?? latestBrandMasterRow?.updatedAt)}</strong>
@@ -527,7 +560,7 @@ export default async function DataStatusPage({
                           +{numberFormatter.format(getAccountMasterMetrics(cell.diagnostics).created)} created · {numberFormatter.format(getAccountMasterMetrics(cell.diagnostics).updated)} updated · {numberFormatter.format(getAccountMasterMetrics(cell.diagnostics).deactivated)} deactivated
                         </span>
                       ) : cell.source === OhlqReportDataSource.BRAND_MASTER ? (
-                        <span className="data-delta">{numberFormatter.format(statusBySourceDate.get(`${cell.source}:${row.date}`)?.replacedRows ?? 0)} replaced · {numberFormatter.format(statusBySourceDate.get(`${cell.source}:${row.date}`)?.skippedRows ?? 0)} skipped</span>
+                        <span className="data-delta">+{numberFormatter.format(getBrandMasterMetrics(cell.diagnostics).created)} created · {numberFormatter.format(getBrandMasterMetrics(cell.diagnostics).updated)} updated · {numberFormatter.format(getBrandMasterMetrics(cell.diagnostics).removed)} removed</span>
                       ) : (
                         <span className={cell.delta === 0 && cell.count > 0 ? 'data-delta data-delta-flat' : 'data-delta'}>
                           {formatDelta(cell.delta, cell.count)}

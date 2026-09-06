@@ -25,13 +25,48 @@ type CsvParseResult<T> = {
 };
 
 export type OhlqBrandMasterImportResult = {
+  createdItems: number;
   deletedRows: number;
   importedRows: number;
   organizationsScanned: number;
   parsedRows: number;
   productsDiscovered: number;
+  removedItems: number;
   skippedRows: number;
+  unchangedItems: number;
+  updatedItems: number;
 };
+
+type BrandMasterComparable = Pick<Prisma.OhlqBrandMasterItemCreateManyInput,
+  'bottleLimit' | 'broker' | 'category' | 'itemCode' | 'name' | 'productVolume' | 'purchaseUnitSymbol' |
+  'retailPrice' | 'solItemStatusCode' | 'vendor' | 'wholesalePrice'>;
+
+const comparableValue = (value: unknown) => value === null || value === undefined ? null : String(value);
+
+const brandMasterValuesMatch = (left: BrandMasterComparable, right: BrandMasterComparable) =>
+  Object.keys(left).every((key) => comparableValue(left[key as keyof BrandMasterComparable]) === comparableValue(right[key as keyof BrandMasterComparable]));
+
+export function getOhlqBrandMasterChangeMetrics(existingRows: BrandMasterComparable[], incomingRows: BrandMasterComparable[]) {
+  const existingByCode = new Map(existingRows.map((row) => [row.itemCode, row]));
+  const incomingByCode = new Map(incomingRows.map((row) => [row.itemCode, row]));
+  let createdItems = 0;
+  let unchangedItems = 0;
+  let updatedItems = 0;
+
+  incomingByCode.forEach((row, itemCode) => {
+    const existing = existingByCode.get(itemCode);
+    if (!existing) createdItems += 1;
+    else if (brandMasterValuesMatch(existing, row)) unchangedItems += 1;
+    else updatedItems += 1;
+  });
+
+  return {
+    createdItems,
+    removedItems: Array.from(existingByCode.keys()).filter((itemCode) => !incomingByCode.has(itemCode)).length,
+    unchangedItems,
+    updatedItems,
+  };
+}
 
 const clean = (value: string | null | undefined) => {
   const trimmed = String(value ?? '').trim();
@@ -115,16 +150,28 @@ export async function importOhlqBrandMasterCsv({
   csv,
   db = prisma,
   discoverProducts = discoverProductsForOrganizations,
+  minimumRows = 1_000,
 }: {
   csv: string | Buffer;
   db?: PrismaClient;
   discoverProducts?: (options: { db: PrismaClient }) => Promise<{ organizationsScanned: number; productsDiscovered: number }>;
+  minimumRows?: number;
 }) {
   const parsed = parseOhlqBrandMasterCsv(csv);
+  if (parsed.rows.length < minimumRows) {
+    throw new Error(`OHLQ brand master CSV has only ${parsed.rows.length} valid items; expected at least ${minimumRows}.`);
+  }
   const chunkSize = 1_000;
 
   const result = await db.$transaction(
     async (tx) => {
+      const existingRows = await tx.ohlqBrandMasterItem.findMany({
+        select: {
+          bottleLimit: true, broker: true, category: true, itemCode: true, name: true, productVolume: true,
+          purchaseUnitSymbol: true, retailPrice: true, solItemStatusCode: true, vendor: true, wholesalePrice: true,
+        },
+      });
+      const changes = getOhlqBrandMasterChangeMetrics(existingRows, parsed.rows);
       const deleted = await tx.ohlqBrandMasterItem.deleteMany();
 
       let importedRows = 0;
@@ -137,6 +184,7 @@ export async function importOhlqBrandMasterCsv({
       }
 
       return {
+        ...changes,
         deletedRows: deleted.count,
         importedRows,
       };
@@ -146,11 +194,15 @@ export async function importOhlqBrandMasterCsv({
   const discovery = await discoverProducts({ db });
 
   return {
+    createdItems: result.createdItems,
     deletedRows: result.deletedRows,
     importedRows: result.importedRows,
     organizationsScanned: discovery.organizationsScanned,
     parsedRows: parsed.rows.length,
     productsDiscovered: discovery.productsDiscovered,
+    removedItems: result.removedItems,
     skippedRows: parsed.skippedRows,
+    unchangedItems: result.unchangedItems,
+    updatedItems: result.updatedItems,
   } satisfies OhlqBrandMasterImportResult;
 }

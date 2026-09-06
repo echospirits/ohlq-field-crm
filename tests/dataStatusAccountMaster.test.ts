@@ -24,3 +24,17 @@ test('Data Status includes Account Master freshness and change metrics', () => {
   assert.match(importer, /updatedWholesaleAccounts/);
   assert.match(importer, /recordOhlqReportRunCompleted/);
 });
+
+test('Data Status includes Brand Master freshness and item change metrics', () => {
+  const page = readFileSync('app/admin/data-status/page.tsx', 'utf8');
+  const importer = readFileSync('lib/ohlqBrandMasterImport.ts', 'utf8');
+  const sync = readFileSync('scripts/sync-ohlq-brand-master.ts', 'utf8');
+
+  assert.match(page, /Latest Brand Master changes/);
+  assert.match(page, /getBrandMasterMetrics/);
+  assert.match(importer, /createdItems/);
+  assert.match(importer, /removedItems/);
+  assert.match(importer, /updatedItems/);
+  assert.match(importer, /expected at least/);
+  assert.match(sync, /recordOhlqReportRunCompleted/);
+});

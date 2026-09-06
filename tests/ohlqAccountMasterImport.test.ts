@@ -11,7 +11,12 @@ import {
   parseAccountMasterCsv,
   type AccountMasterRow,
 } from '../lib/ohlqAccountMasterImport';
-import { getOhlqAccountMasterDate, getOhlqAccountMasterFilename } from '../lib/ohlqAnnualSalesReport';
+import {
+  getOhlqAccountMasterDate,
+  getOhlqAccountMasterFilename,
+  getOhlqBrandMasterDate,
+  getOhlqBrandMasterFilename,
+} from '../lib/ohlqAnnualSalesReport';
 
 const row = (overrides: Partial<AccountMasterRow> = {}): AccountMasterRow => ({
   licenseeId: '0001234',
@@ -63,6 +68,9 @@ test('uses the current Eastern date and exact OHLQ Account Master filename', () 
   assert.equal(getOhlqAccountMasterDate(new Date('2026-09-05T12:00:00.000Z')), '2026-09-05');
   assert.equal(getOhlqAccountMasterFilename('2026-09-05'), 'OHLQData_Account_Master2026-09-05.csv');
   assert.throws(() => getOhlqAccountMasterFilename('09-05-2026'), /Invalid Account Master report date/);
+  assert.equal(getOhlqBrandMasterDate(new Date('2026-09-05T12:00:00.000Z')), '2026-09-05');
+  assert.equal(getOhlqBrandMasterFilename('2026-09-05'), 'OHLQData_Brand_Master2026-09-05.csv');
+  assert.throws(() => getOhlqBrandMasterFilename('09-05-2026'), /Invalid Brand Master report date/);
 });
 
 test('uses an existing address match to resolve a duplicated Licensee ID', () => {

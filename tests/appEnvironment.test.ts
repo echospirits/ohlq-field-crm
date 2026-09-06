@@ -114,7 +114,10 @@ test('GitHub OHLQ workflow isolates production and test secrets with GitHub Envi
   assert.match(workflow, /github\.repository == 'echospirits\/neat-tst' && 'test' \|\| 'production'/);
   assert.match(workflow, /Download and import current OHLQ Account Master/);
   assert.match(workflow, /Download and import current OHLQ Account Master[\s\S]+Run OHLQ annual sales import/);
+  assert.match(workflow, /Download and import current OHLQ Account Master[\s\S]+Download and import current OHLQ Brand Master[\s\S]+Run OHLQ annual sales import/);
   assert.match(workflow, /sync:ohlq-account-master -- --environment "\$APP_ENV" --apply/);
+  assert.match(workflow, /sync:ohlq-brand-master -- --environment "\$APP_ENV" --apply/);
   assert.match(workflow, /inputs\.purchaseStateOnly != true/);
   assert.match(packageJson, /"sync:ohlq-account-master": "tsx scripts\/sync-ohlq-account-master\.ts"/);
+  assert.match(packageJson, /"sync:ohlq-brand-master": "tsx scripts\/sync-ohlq-brand-master\.ts"/);
 });

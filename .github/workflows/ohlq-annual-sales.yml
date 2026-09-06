@@ -143,6 +143,10 @@ jobs:
         if: steps.schedule_window.outputs.should_run == 'true' && (github.event_name == 'schedule' || inputs.purchaseStateOnly != true)
         run: npm run sync:ohlq-account-master -- --environment "$APP_ENV" --apply
 
+      - name: Download and import current OHLQ Brand Master
+        if: steps.schedule_window.outputs.should_run == 'true' && (github.event_name == 'schedule' || inputs.purchaseStateOnly != true)
+        run: npm run sync:ohlq-brand-master -- --environment "$APP_ENV" --apply
+
       - name: Run OHLQ annual sales import
         if: steps.schedule_window.outputs.should_run == 'true'
         shell: bash
