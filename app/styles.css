@@ -1878,14 +1878,48 @@ fieldset {
   min-width: 230px;
 }
 
+.data-status-table-compact {
+  font-size: 12px;
+}
+
+.data-status-table-compact th,
+.data-status-table-compact td {
+  min-width: 150px;
+  padding: 7px 8px;
+  vertical-align: top;
+}
+
+.data-status-table-compact th:first-child,
+.data-status-table-compact td:first-child {
+  min-width: 105px;
+  white-space: nowrap;
+}
+
 .data-status-cell {
   display: grid;
-  gap: 5px;
+  gap: 3px;
 }
 
 .data-status-cell strong {
   color: #f8fafc;
-  font-size: 17px;
+  font-size: 14px;
+}
+
+.data-status-table-compact .status-pill {
+  min-height: 22px;
+  padding: 2px 7px;
+  font-size: 10px;
+}
+
+.data-status-error summary {
+  font-size: 11px;
+}
+
+.data-status-error .data-error-text {
+  display: block;
+  margin-top: 4px;
+  max-width: 240px;
+  overflow-wrap: anywhere;
 }
 
 .status-pill {

@@ -139,6 +139,10 @@ jobs:
         if: steps.schedule_window.outputs.should_run == 'true'
         run: echo "environment=${APP_ENV} databaseTarget=${DATABASE_TARGET_ID:-unlabeled} runId=${GITHUB_RUN_ID}"
 
+      - name: Download and import current OHLQ Account Master
+        if: steps.schedule_window.outputs.should_run == 'true' && (github.event_name == 'schedule' || inputs.purchaseStateOnly != true)
+        run: npm run sync:ohlq-account-master -- --environment "$APP_ENV" --apply
+
       - name: Run OHLQ annual sales import
         if: steps.schedule_window.outputs.should_run == 'true'
         shell: bash
@@ -170,10 +174,6 @@ jobs:
           else
             npm run backfill:ohlq-annual-sales -- --days "$days"
           fi
-
-      - name: Download and import current OHLQ Account Master
-        if: always() && steps.schedule_window.outputs.should_run == 'true' && (github.event_name == 'schedule' || inputs.purchaseStateOnly != true)
-        run: npm run sync:ohlq-account-master -- --environment "$APP_ENV" --apply
 
       - name: Upload OHLQ debug artifacts
         if: always() && steps.schedule_window.outputs.should_run == 'true'

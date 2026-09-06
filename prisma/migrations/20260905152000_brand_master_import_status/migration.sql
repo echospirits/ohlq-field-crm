@@ -1,0 +1,1 @@
+ALTER TYPE "OhlqReportDataSource" ADD VALUE 'BRAND_MASTER';
