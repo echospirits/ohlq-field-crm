@@ -5,6 +5,7 @@ import {
   chromium as playwrightChromium,
   type Browser,
   type BrowserContext,
+  type Download,
   type Frame,
   type LaunchOptions,
   type Locator,
@@ -28,6 +29,7 @@ const OHLQ_REPORT_REDIRECT_TIMEOUT_MS = 120_000;
 const OHLQ_REPORT_REDIRECT_ATTEMPTS = 2;
 const OHLQ_NAVIGATION_RETRY_ATTEMPTS = 3;
 const OHLQ_NAVIGATION_RETRY_DELAY_MS = 5_000;
+const OHLQ_DOWNLOAD_SAVE_TIMEOUT_MS = 180_000;
 const OHLQ_ACCOUNT_MASTER_FEED_URL = 'https://ops.ohlq.com/partnerDataFeed';
 const OHLQ_INVALID_LOGIN_TEXT = /incorrect username or password|try resetting your password|further assistance/i;
 const OHLQ_REQUEST_BLOCKED_TEXT = /\bthe request is blocked\b/i;
@@ -975,6 +977,23 @@ async function closeBrowserPage(context: BrowserContext, browser: Browser | null
   await browser?.close().catch(() => undefined);
 }
 
+async function saveDownloadWithTimeout(download: Download, outputPath: string, displayName: string) {
+  let timeout: NodeJS.Timeout | undefined;
+  try {
+    await Promise.race([
+      download.saveAs(outputPath),
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(
+          () => reject(new Error(`${displayName} download did not finish saving within ${OHLQ_DOWNLOAD_SAVE_TIMEOUT_MS / 60_000} minutes.`)),
+          OHLQ_DOWNLOAD_SAVE_TIMEOUT_MS,
+        );
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
 async function signInToOhlqPartner(page: Page, credentials?: { password: string; username: string }) {
   const ohlqUsername = credentials?.username ?? requireEnv('OHLQ_OPS_USERNAME');
   const ohlqPassword = credentials?.password ?? requireEnv('OHLQ_OPS_PASSWORD');
@@ -1122,7 +1141,7 @@ async function downloadOhlqPowerBiReportFromPage(
   const download = await downloadPromise;
 
   const outputPath = path.join(downloadDir, filename);
-  await download.saveAs(outputPath);
+  await saveDownloadWithTimeout(download, outputPath, report.fileSlug);
 
   const sizeBytes = fs.statSync(outputPath).size;
   const csvBuffer = returnBuffer ? fs.readFileSync(outputPath) : undefined;
@@ -1219,7 +1238,7 @@ async function downloadOhlqPartnerMasterFromPage(
   await downloadLink.click();
   const download = await downloadPromise;
   const outputPath = path.join(runtime.downloadDir, filename);
-  await download.saveAs(outputPath);
+  await saveDownloadWithTimeout(download, outputPath, config.displayName);
   const sizeBytes = fs.statSync(outputPath).size;
   if (sizeBytes === 0) throw new Error(`The ${reportDate} ${config.displayName} download was empty.`);
   const csvBuffer = runtime.returnBuffer ? fs.readFileSync(outputPath) : undefined;

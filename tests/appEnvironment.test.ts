@@ -121,7 +121,21 @@ test('GitHub OHLQ workflow isolates production and test secrets with GitHub Envi
   assert.match(workflow, /OHLQ_TENANT_CREDENTIAL_ENCRYPTION_KEY: \$\{\{ secrets\.OHLQ_TENANT_CREDENTIAL_ENCRYPTION_KEY \}\}/);
   assert.match(workflow, /sync:ohlq-tenant-inventory -- --environment "\$APP_ENV"/);
   assert.match(workflow, /Run OHLQ annual sales import[\s\S]+Download and import tenant OHLQ inventory/);
+  assert.match(workflow, /Download and import current OHLQ Account Master[\s\S]+timeout-minutes: 20/);
+  assert.match(workflow, /Download and import current OHLQ Brand Master[\s\S]+timeout-minutes: 15/);
   assert.match(packageJson, /"sync:ohlq-account-master": "tsx scripts\/sync-ohlq-account-master\.ts"/);
   assert.match(packageJson, /"sync:ohlq-brand-master": "tsx scripts\/sync-ohlq-brand-master\.ts"/);
   assert.match(packageJson, /"sync:ohlq-tenant-inventory": "tsx scripts\/sync-ohlq-tenant-inventory\.ts"/);
+});
+
+test('master syncs record an observable run before starting the browser download', () => {
+  const accountMasterSync = readFileSync('scripts/sync-ohlq-account-master.ts', 'utf8');
+  const brandMasterSync = readFileSync('scripts/sync-ohlq-brand-master.ts', 'utf8');
+
+  for (const script of [accountMasterSync, brandMasterSync]) {
+    const startedAt = script.indexOf('recordOhlqReportRunStarted');
+    const downloadedAt = script.indexOf('await downloadOhlq');
+    assert.ok(startedAt >= 0 && downloadedAt > startedAt);
+    assert.match(script, /recordOhlqReportRunErrored/);
+  }
 });

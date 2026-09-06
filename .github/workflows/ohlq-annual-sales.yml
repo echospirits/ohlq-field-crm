@@ -142,14 +142,17 @@ jobs:
 
       - name: Download and import current OHLQ Account Master
         if: steps.schedule_window.outputs.should_run == 'true' && (github.event_name == 'schedule' || inputs.purchaseStateOnly != true)
+        timeout-minutes: 20
         run: npm run sync:ohlq-account-master -- --environment "$APP_ENV" --apply
 
       - name: Download and import current OHLQ Brand Master
         if: steps.schedule_window.outputs.should_run == 'true' && (github.event_name == 'schedule' || inputs.purchaseStateOnly != true)
+        timeout-minutes: 15
         run: npm run sync:ohlq-brand-master -- --environment "$APP_ENV" --apply
 
       - name: Run OHLQ annual sales import
         if: steps.schedule_window.outputs.should_run == 'true'
+        timeout-minutes: 40
         shell: bash
         run: |
           report_date="${{ github.event.inputs.reportDate || '' }}"
@@ -182,6 +185,7 @@ jobs:
 
       - name: Download and import tenant OHLQ inventory
         if: steps.schedule_window.outputs.should_run == 'true' && (github.event_name == 'schedule' || inputs.purchaseStateOnly != true)
+        timeout-minutes: 30
         run: npm run sync:ohlq-tenant-inventory -- --environment "$APP_ENV"
 
       - name: Upload OHLQ debug artifacts

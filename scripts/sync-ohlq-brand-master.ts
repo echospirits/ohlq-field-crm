@@ -3,7 +3,7 @@ import path from 'node:path';
 import { OhlqReportDataSource } from '@prisma/client';
 import { assertSideEffectEnabled, validateRuntimeEnvironment } from '../lib/appEnvironment';
 import { importOhlqBrandMasterCsv, parseOhlqBrandMasterCsv } from '../lib/ohlqBrandMasterImport';
-import { downloadOhlqBrandMaster } from '../lib/ohlqAnnualSalesReport';
+import { downloadOhlqBrandMaster, getOhlqBrandMasterDate } from '../lib/ohlqAnnualSalesReport';
 import {
   recordOhlqReportRunCompleted,
   recordOhlqReportRunErrored,
@@ -45,23 +45,24 @@ async function main() {
   }
   if (apply) assertSideEffectEnabled('ohlqImport');
 
-  const download = await downloadOhlqBrandMaster({
-    debugDir: path.join(process.cwd(), 'output', 'playwright'),
-    downloadDir: path.join(process.cwd(), 'output', 'ohlq-downloads'),
-    headless: true,
-    returnBuffer: false,
-    useServerlessChromium: false,
-  });
-  const csv = fs.readFileSync(download.outputPath);
-
-  if (!apply) {
-    const parsed = parseOhlqBrandMasterCsv(csv);
-    console.log(JSON.stringify({ brandMasterDownload: download, parsedRows: parsed.rows.length, skippedRows: parsed.skippedRows }, null, 2));
-    return;
-  }
-
-  await recordOhlqReportRunStarted({ reportDate: download.reportDate, source: OhlqReportDataSource.BRAND_MASTER });
+  const reportDate = getOhlqBrandMasterDate();
+  if (apply) await recordOhlqReportRunStarted({ reportDate, source: OhlqReportDataSource.BRAND_MASTER });
   try {
+    const download = await downloadOhlqBrandMaster({
+      debugDir: path.join(process.cwd(), 'output', 'playwright'),
+      downloadDir: path.join(process.cwd(), 'output', 'ohlq-downloads'),
+      headless: true,
+      returnBuffer: false,
+      useServerlessChromium: false,
+    });
+    const csv = fs.readFileSync(download.outputPath);
+
+    if (!apply) {
+      const parsed = parseOhlqBrandMasterCsv(csv);
+      console.log(JSON.stringify({ brandMasterDownload: download, parsedRows: parsed.rows.length, skippedRows: parsed.skippedRows }, null, 2));
+      return;
+    }
+
     const result = await importOhlqBrandMasterCsv({ csv });
     const diagnostics = {
       createdItems: result.createdItems,
@@ -80,7 +81,7 @@ async function main() {
   } catch (error) {
     await recordOhlqReportRunErrored({
       error,
-      reportDate: download.reportDate,
+      reportDate,
       source: OhlqReportDataSource.BRAND_MASTER,
     }).catch((statusError) => console.error('Unable to record Brand Master import error status:', statusError));
     throw error;

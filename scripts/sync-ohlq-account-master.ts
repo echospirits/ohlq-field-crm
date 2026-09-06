@@ -1,8 +1,11 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { OhlqReportDataSource } from '@prisma/client';
 import { assertSideEffectEnabled, validateRuntimeEnvironment } from '../lib/appEnvironment';
-import { downloadOhlqAccountMaster } from '../lib/ohlqAnnualSalesReport';
+import { downloadOhlqAccountMaster, getOhlqAccountMasterDate } from '../lib/ohlqAnnualSalesReport';
+import { recordOhlqReportRunErrored, recordOhlqReportRunStarted } from '../lib/ohlqDataStatus';
+import { prisma } from '../lib/prisma';
 
 function loadEnvFile(fileName: string) {
   const envPath = path.join(process.cwd(), fileName);
@@ -58,18 +61,35 @@ async function main() {
     throw new Error(`Requested ${environment}, but APP_ENV=${runtime.appEnvironment}.`);
   }
   if (apply) assertSideEffectEnabled('ohlqImport');
-  const download = await downloadOhlqAccountMaster({
-    debugDir: path.join(process.cwd(), 'output', 'playwright'),
-    downloadDir: path.join(process.cwd(), 'output', 'ohlq-downloads'),
-    headless: true,
-    returnBuffer: false,
-    useServerlessChromium: false,
-  });
-  console.log(JSON.stringify({ accountMasterDownload: download }, null, 2));
-  await runImporter(download.outputPath, environment, apply);
+  const reportDate = getOhlqAccountMasterDate();
+  if (apply) await recordOhlqReportRunStarted({ reportDate, source: OhlqReportDataSource.ACCOUNT_MASTER });
+  try {
+    const download = await downloadOhlqAccountMaster({
+      debugDir: path.join(process.cwd(), 'output', 'playwright'),
+      downloadDir: path.join(process.cwd(), 'output', 'ohlq-downloads'),
+      headless: true,
+      returnBuffer: false,
+      useServerlessChromium: false,
+    });
+    console.log(JSON.stringify({ accountMasterDownload: download }, null, 2));
+    await runImporter(download.outputPath, environment, apply);
+  } catch (error) {
+    if (apply) {
+      await recordOhlqReportRunErrored({
+        error,
+        reportDate,
+        source: OhlqReportDataSource.ACCOUNT_MASTER,
+      }).catch((statusError) => console.error('Unable to record Account Master sync error status:', statusError));
+    }
+    throw error;
+  }
 }
 
-main().catch((error) => {
-  console.error(error instanceof Error ? error.message : error);
-  process.exitCode = 1;
-});
+main()
+  .catch((error) => {
+    console.error(error instanceof Error ? error.message : error);
+    process.exitCode = 1;
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });
