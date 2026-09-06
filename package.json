@@ -20,6 +20,7 @@
     "import:ohlq-account-master": "tsx scripts/import-ohlq-account-master.ts",
     "sync:ohlq-account-master": "tsx scripts/sync-ohlq-account-master.ts",
     "sync:ohlq-brand-master": "tsx scripts/sync-ohlq-brand-master.ts",
+    "sync:ohlq-tenant-inventory": "tsx scripts/sync-ohlq-tenant-inventory.ts",
     "repair:wholesale-location-duplicates": "tsx scripts/repair-wholesale-location-duplicates.ts",
     "download:ohlq-annual-sales": "tsx scripts/download-ohlq-annual-sales.ts",
     "download:ohlq-annual-sales:wholesale": "tsx scripts/download-ohlq-annual-sales.ts wholesale",

@@ -32,6 +32,7 @@ describe('agency inventory business rules', () => {
 });
 
 describe('agency inventory query services', () => {
+  const organizationId = 'org_echo_spirits';
   it('uses the current-state table for current reads and latest-date lookup', async () => {
     const calls: Array<{ method: string; args: unknown }> = [];
     const latestDate = new Date('2026-08-18T00:00:00.000Z');
@@ -54,10 +55,10 @@ describe('agency inventory query services', () => {
       },
     } as unknown as PrismaClient;
 
-    await getCurrentAgencyInventory({ agencyNumber: ' 10509 ', db });
-    await getLatestInventorySnapshotDate({ db });
-    await getCurrentAgencyItemInventory({ agencyNumber: '10509', db, itemCode: ' 2847b ' });
-    await getAgenciesWithCurrentItem({ db, itemCode: '2847b' });
+    await getCurrentAgencyInventory({ agencyNumber: ' 10509 ', db, organizationId });
+    await getLatestInventorySnapshotDate({ db, organizationId });
+    await getCurrentAgencyItemInventory({ agencyNumber: '10509', db, itemCode: ' 2847b ', organizationId });
+    await getAgenciesWithCurrentItem({ db, itemCode: '2847b', organizationId });
 
     assert.equal(calls.filter((call) => call.method === 'current.findMany').length, 2);
     assert.equal(calls.filter((call) => call.method === 'current.findFirst').length, 2);
@@ -65,6 +66,10 @@ describe('agency inventory query services', () => {
     assert.deepEqual(
       (calls[0].args as { where: { agencyNumber: string } }).where.agencyNumber,
       '10509',
+    );
+    assert.deepEqual(
+      (calls[0].args as { where: { AND: unknown[] } }).where.AND[0],
+      { organizationId },
     );
     assert.deepEqual(
       (calls[2].args as { where: { itemCode: string } }).where.itemCode,
@@ -87,9 +92,10 @@ describe('agency inventory query services', () => {
       agencyNumber: '10509',
       db,
       itemCode: '2847B',
+      organizationId,
       range: { from: '2026-08-01', to: '2026-08-18' },
     });
-    await getAgencyInventorySnapshot({ agencyNumber: '10509', db, snapshotDate: '2026-08-18' });
+    await getAgencyInventorySnapshot({ agencyNumber: '10509', db, organizationId, snapshotDate: '2026-08-18' });
 
     const history = calls[0] as {
       orderBy: { snapshotDate: string };

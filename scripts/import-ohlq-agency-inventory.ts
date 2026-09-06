@@ -28,9 +28,11 @@ async function main() {
   loadEnvFile('.env');
   const inputPath = getArgValue('--file') ?? process.argv[2];
   if (!inputPath) throw new Error('Provide the CSV path with --file <path>.');
+  const organizationId = getArgValue('--organization');
+  if (!organizationId) throw new Error('Provide the tenant with --organization <organization-id>.');
   const reportDate = getArgValue('--date') ?? getOhlqAgencyInventoryObservationDate();
   const csv = fs.readFileSync(path.resolve(inputPath));
-  const result = await importOhlqAgencyInventoryCsv({ csv, reportDate });
+  const result = await importOhlqAgencyInventoryCsv({ csv, organizationId, reportDate });
   console.log(JSON.stringify(result, null, 2));
 }
 

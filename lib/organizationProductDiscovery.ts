@@ -53,7 +53,7 @@ export async function discoverOrganizationProducts({
       select: { brand: true },
     }),
     db.ohlqAgencyInventoryCurrent.findMany({
-      where: { vendorId: { in: vendorIds } },
+      where: { organizationId, vendorId: { in: vendorIds } },
       distinct: ['itemCode'],
       select: { itemCode: true, itemName: true },
     }),

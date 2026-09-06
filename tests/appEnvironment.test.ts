@@ -118,6 +118,10 @@ test('GitHub OHLQ workflow isolates production and test secrets with GitHub Envi
   assert.match(workflow, /sync:ohlq-account-master -- --environment "\$APP_ENV" --apply/);
   assert.match(workflow, /sync:ohlq-brand-master -- --environment "\$APP_ENV" --apply/);
   assert.match(workflow, /inputs\.purchaseStateOnly != true/);
+  assert.match(workflow, /OHLQ_TENANT_CREDENTIAL_ENCRYPTION_KEY: \$\{\{ secrets\.OHLQ_TENANT_CREDENTIAL_ENCRYPTION_KEY \}\}/);
+  assert.match(workflow, /sync:ohlq-tenant-inventory -- --environment "\$APP_ENV"/);
+  assert.match(workflow, /Run OHLQ annual sales import[\s\S]+Download and import tenant OHLQ inventory/);
   assert.match(packageJson, /"sync:ohlq-account-master": "tsx scripts\/sync-ohlq-account-master\.ts"/);
   assert.match(packageJson, /"sync:ohlq-brand-master": "tsx scripts\/sync-ohlq-brand-master\.ts"/);
+  assert.match(packageJson, /"sync:ohlq-tenant-inventory": "tsx scripts\/sync-ohlq-tenant-inventory\.ts"/);
 });

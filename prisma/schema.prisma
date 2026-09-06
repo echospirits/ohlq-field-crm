@@ -218,6 +218,7 @@ enum OrganizationAuditAction {
   INITIAL_ADMIN_CREATED
   SUPPORT_VIEW_STARTED
   SUPPORT_VIEW_ENDED
+  OHLQ_INVENTORY_CREDENTIALS_CHANGED
 }
 
 enum GeocodeStatus {
@@ -418,10 +419,25 @@ model Organization {
   accountSalesEvents  AccountSalesEvent[]
   salesOpportunities  SalesOpportunity[]
   opportunityEvents   OpportunityEvent[]
+  ohlqCredentials     OrganizationOhlqCredentials?
+  inventorySnapshots  OhlqAgencyInventorySnapshot[]
+  currentInventory    OhlqAgencyInventoryCurrent[]
+  inventoryImportRuns OhlqTenantInventoryImportStatus[]
 
   @@index([active, accountStatus])
   @@index([onboardingStatus])
   @@index([createdAt])
+}
+
+model OrganizationOhlqCredentials {
+  organizationId    String       @id
+  usernameEncrypted String
+  passwordEncrypted String
+  usernameHint      String
+  configuredAt      DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  updatedByUserId   String?
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 }
 
 model OrganizationProvisioningRun {
@@ -822,6 +838,7 @@ model OhlqAnnualSalesByWholesaleRow {
 }
 
 model OhlqAgencyInventorySnapshot {
+  organizationId       String
   snapshotDate          DateTime @db.Date
   agencyNumber          String
   itemCode              String
@@ -840,8 +857,10 @@ model OhlqAgencyInventorySnapshot {
   district              String?
   importedAt            DateTime @default(now())
   agency                Agency?  @relation("AgencyInventorySnapshots", fields: [agencyId], references: [id], onDelete: SetNull)
+  organization          Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  @@id([snapshotDate, agencyNumber, itemCode])
+  @@id([organizationId, snapshotDate, agencyNumber, itemCode])
+  @@index([organizationId, snapshotDate])
   @@index([agencyId, snapshotDate])
   @@index([agencyId, itemCode, snapshotDate])
   @@index([agencyNumber, snapshotDate])
@@ -854,6 +873,7 @@ model OhlqAgencyInventorySnapshot {
 }
 
 model OhlqAgencyInventoryCurrent {
+  organizationId       String
   agencyNumber          String
   itemCode              String
   agencyId              String?
@@ -873,13 +893,40 @@ model OhlqAgencyInventoryCurrent {
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
   agency                Agency?  @relation("AgencyInventoryCurrent", fields: [agencyId], references: [id], onDelete: SetNull)
+  organization          Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  @@id([agencyNumber, itemCode])
+  @@id([organizationId, agencyNumber, itemCode])
+  @@index([organizationId, snapshotDate])
   @@index([agencyId, itemCode])
   @@index([itemCode, onHand])
   @@index([snapshotDate])
   @@index([status])
   @@index([vendorId])
+}
+
+model OhlqTenantInventoryImportStatus {
+  id               String               @id @default(cuid())
+  organizationId   String
+  reportDate       DateTime             @db.Date
+  status           OhlqReportRunStatus
+  rowCount         Int                  @default(0)
+  parsedRows       Int                  @default(0)
+  skippedRows      Int                  @default(0)
+  replacedRows     Int                  @default(0)
+  sizeBytes        Int                  @default(0)
+  filename         String?
+  startedAt        DateTime             @default(now())
+  completedAt      DateTime?
+  lastSuccessfulAt DateTime?
+  errorMessage     String?
+  diagnostics      Json?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  organization     Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, reportDate])
+  @@index([organizationId, status])
+  @@index([lastSuccessfulAt])
 }
 
 model OhlqBrandMasterItem {

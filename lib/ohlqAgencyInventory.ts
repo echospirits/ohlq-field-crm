@@ -46,6 +46,7 @@ export function isTenantAgencyInventoryItem({
 
 export function getTenantAgencyInventoryWhere(
   config: TenantConfig = getTenantConfig(),
+  organizationId: string,
 ) {
   const productWhere =
     config.productFilter.mode === 'item-list'
@@ -60,6 +61,7 @@ export function getTenantAgencyInventoryWhere(
 
   return {
     AND: [
+      { organizationId },
       productWhere,
       {
         OR: [
@@ -88,9 +90,11 @@ const agencyRelation = {
 export async function getCurrentAgencyInventory({
   agencyNumber,
   db = prisma,
+  organizationId,
 }: {
   agencyNumber: string;
   db?: PrismaClient;
+  organizationId: string;
 }) {
   const normalizedAgencyNumber = normalizeOhlqId(agencyNumber);
   if (!normalizedAgencyNumber) return [];
@@ -98,7 +102,7 @@ export async function getCurrentAgencyInventory({
   return db.ohlqAgencyInventoryCurrent.findMany({
     where: {
       agencyNumber: normalizedAgencyNumber,
-      ...getTenantAgencyInventoryWhere(),
+      ...getTenantAgencyInventoryWhere(undefined, organizationId),
     },
     include: { agency: agencyRelation },
     orderBy: [{ itemName: 'asc' }, { itemCode: 'asc' }],
@@ -109,10 +113,12 @@ export async function getCurrentAgencyItemInventory({
   agencyNumber,
   db = prisma,
   itemCode,
+  organizationId,
 }: {
   agencyNumber: string;
   db?: PrismaClient;
   itemCode: string;
+  organizationId: string;
 }) {
   const normalizedAgencyNumber = normalizeOhlqId(agencyNumber);
   const normalizedItemCode = normalizeOhlqId(itemCode);
@@ -122,7 +128,7 @@ export async function getCurrentAgencyItemInventory({
     where: {
       agencyNumber: normalizedAgencyNumber,
       itemCode: normalizedItemCode,
-      ...getTenantAgencyInventoryWhere(),
+      ...getTenantAgencyInventoryWhere(undefined, organizationId),
     },
     include: { agency: agencyRelation },
   });
@@ -132,11 +138,13 @@ export async function getAgencyInventoryHistory({
   agencyNumber,
   db = prisma,
   itemCode,
+  organizationId,
   range,
 }: {
   agencyNumber: string;
   db?: PrismaClient;
   itemCode: string;
+  organizationId: string;
   range?: AgencyInventoryDateRange;
 }) {
   const normalizedAgencyNumber = normalizeOhlqId(agencyNumber);
@@ -155,7 +163,7 @@ export async function getAgencyInventoryHistory({
       agencyNumber: normalizedAgencyNumber,
       itemCode: normalizedItemCode,
       snapshotDate,
-      ...getTenantAgencyInventoryWhere(),
+      ...getTenantAgencyInventoryWhere(undefined, organizationId),
     },
     include: { agency: agencyRelation },
     orderBy: { snapshotDate: 'asc' },
@@ -165,9 +173,11 @@ export async function getAgencyInventoryHistory({
 export async function getAgenciesWithCurrentItem({
   db = prisma,
   itemCode,
+  organizationId,
 }: {
   db?: PrismaClient;
   itemCode: string;
+  organizationId: string;
 }) {
   const normalizedItemCode = normalizeOhlqId(itemCode);
   if (!normalizedItemCode) return [];
@@ -175,16 +185,16 @@ export async function getAgenciesWithCurrentItem({
   return db.ohlqAgencyInventoryCurrent.findMany({
     where: {
       itemCode: normalizedItemCode,
-      ...getTenantAgencyInventoryWhere(),
+      ...getTenantAgencyInventoryWhere(undefined, organizationId),
     },
     include: { agency: agencyRelation },
     orderBy: [{ agencyName: 'asc' }, { agencyNumber: 'asc' }],
   });
 }
 
-export async function getLatestInventorySnapshotDate({ db = prisma }: { db?: PrismaClient } = {}) {
+export async function getLatestInventorySnapshotDate({ db = prisma, organizationId }: { db?: PrismaClient; organizationId: string }) {
   const latest = await db.ohlqAgencyInventoryCurrent.findFirst({
-    where: getTenantAgencyInventoryWhere(),
+    where: getTenantAgencyInventoryWhere(undefined, organizationId),
     orderBy: { snapshotDate: 'desc' },
     select: { snapshotDate: true },
   });
@@ -195,10 +205,12 @@ export async function getAgencyInventorySnapshot({
   agencyNumber,
   db = prisma,
   snapshotDate,
+  organizationId,
 }: {
   agencyNumber: string;
   db?: PrismaClient;
   snapshotDate: Date | string;
+  organizationId: string;
 }) {
   const normalizedAgencyNumber = normalizeOhlqId(agencyNumber);
   if (!normalizedAgencyNumber) return [];
@@ -207,7 +219,7 @@ export async function getAgencyInventorySnapshot({
     where: {
       agencyNumber: normalizedAgencyNumber,
       snapshotDate: toDateOnlyUtc(snapshotDate),
-      ...getTenantAgencyInventoryWhere(),
+      ...getTenantAgencyInventoryWhere(undefined, organizationId),
     },
     include: { agency: agencyRelation },
     orderBy: [{ itemName: 'asc' }, { itemCode: 'asc' }],

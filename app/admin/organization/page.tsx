@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-import { OrganizationAuditAction } from '@prisma/client';
+import { OrganizationAuditAction, UserRole } from '@prisma/client';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { buildPageMetadata } from '../../../lib/appBrand';
@@ -13,6 +13,7 @@ import {
 } from '../../../lib/organizationConfiguration';
 import { discoverOrganizationProducts } from '../../../lib/organizationProductDiscovery';
 import { requireOrganizationContext, writeOrganizationAudit } from '../../../lib/organizations';
+import { saveOrganizationOhlqCredentials } from '../../../lib/ohlqTenantCredentials';
 import { prisma } from '../../../lib/prisma';
 import { PageHeader } from '../../components/PageChrome';
 import { ProductSelectionEditor } from '../../platform/organizations/[id]/ProductSelectionEditor';
@@ -70,8 +71,32 @@ async function saveProductSelection(formData: FormData) {
   redirect('/admin/organization?status=product-selection-saved');
 }
 
+async function saveOhlqCredentials(formData: FormData) {
+  'use server';
+  const { actor, organizationId } = await getAdminOrganization();
+  if (actor.role === UserRole.PLATFORM_ADMIN) redirect('/admin/organization?status=tenant-admin-required');
+  try {
+    await saveOrganizationOhlqCredentials({ organizationId, password: clean(formData.get('password')), updatedByUserId: actor.id, username: clean(formData.get('username')) });
+    await writeOrganizationAudit(actor.id, organizationId, OrganizationAuditAction.OHLQ_INVENTORY_CREDENTIALS_CHANGED, { configured: true });
+  } catch {
+    redirect('/admin/organization?status=invalid-ohlq-credentials');
+  }
+  revalidatePath('/admin/organization');
+  redirect('/admin/organization?status=ohlq-credentials-saved');
+}
+
+async function removeOhlqCredentials() {
+  'use server';
+  const { actor, organizationId } = await getAdminOrganization();
+  if (actor.role === UserRole.PLATFORM_ADMIN) redirect('/admin/organization?status=tenant-admin-required');
+  await prisma.organizationOhlqCredentials.deleteMany({ where: { organizationId } });
+  await writeOrganizationAudit(actor.id, organizationId, OrganizationAuditAction.OHLQ_INVENTORY_CREDENTIALS_CHANGED, { configured: false });
+  revalidatePath('/admin/organization');
+  redirect('/admin/organization?status=ohlq-credentials-removed');
+}
+
 export default async function OrganizationSetupPage({ searchParams }: { searchParams?: Promise<{ status?: string }> }) {
-  const { organizationId } = await getAdminOrganization();
+  const { actor, organizationId } = await getAdminOrganization();
   const status = (await searchParams)?.status;
   const organization = await prisma.organization.findUnique({
     where: { id: organizationId },
@@ -79,6 +104,7 @@ export default async function OrganizationSetupPage({ searchParams }: { searchPa
       a3aStoreIdentifiers: { where: { active: true }, orderBy: { storeId: 'asc' } },
       products: { orderBy: [{ status: 'asc' }, { externalItemCode: 'asc' }], take: 1000 },
       vendorIdentifiers: { where: { active: true }, orderBy: { vendorId: 'asc' } },
+      ohlqCredentials: { select: { configuredAt: true, usernameHint: true } },
     },
   });
   if (!organization) redirect('/');
@@ -96,6 +122,15 @@ export default async function OrganizationSetupPage({ searchParams }: { searchPa
         <p className="muted">These identifiers determine which products can be discovered. Only the Platform Admin can change them.</p>
         <div className="platform-list">{organization.vendorIdentifiers.map((vendor) => <div key={vendor.id}><strong>{vendor.vendorId}</strong><span className="pill">Managed by platform</span></div>)}</div>
       </article>
+    </section>
+    <section className="platform-grid">
+      {actor.role !== UserRole.PLATFORM_ADMIN ? <form action={saveOhlqCredentials} className="card">
+        <div className="section-heading"><div><span className="page-eyebrow">Tenant data connection</span><h2>OHLQ inventory login</h2><p className="muted">Used only for this organization's inventory download. Credentials are encrypted and never displayed after saving.</p></div><span className="pill">{organization.ohlqCredentials ? 'Configured' : 'Not configured'}</span></div>
+        {organization.ohlqCredentials ? <p className="muted">Current login: {organization.ohlqCredentials.usernameHint}</p> : null}
+        <div className="form-grid"><label>OHLQ username<input autoComplete="username" name="username" required /></label><label>OHLQ password<input autoComplete="new-password" name="password" type="password" required /></label></div>
+        <button type="submit">{organization.ohlqCredentials ? 'Replace credentials' : 'Save credentials'}</button>
+      </form> : <article className="card"><span className="page-eyebrow">Tenant data connection</span><h2>OHLQ inventory login</h2><p className="muted">{organization.ohlqCredentials ? `Configured as ${organization.ohlqCredentials.usernameHint}` : 'Not configured'}. Only an organization administrator can change this login.</p></article>}
+      <article className="card"><span className="page-eyebrow">Connection safety</span><h2>Inventory isolation</h2><p className="muted">The daily runner stores this tenant's current inventory and history separately. Missing credentials skip this tenant without using another organization's login.</p>{actor.role !== UserRole.PLATFORM_ADMIN && organization.ohlqCredentials ? <form action={removeOhlqCredentials}><button className="danger" type="submit">Remove inventory login</button></form> : null}</article>
     </section>
     <article className="card product-selection-card">
       <div className="section-heading"><div><span className="page-eyebrow">Catalog configuration</span><h2>Product selection</h2><p className="muted">Choose which discovered item codes your organization includes. Brand Master imports remain Platform Admin-only.</p></div><form action={refreshProductCandidates}><button className="compact-btn secondary" type="submit">Check for new products</button></form></div>

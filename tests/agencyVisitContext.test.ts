@@ -28,7 +28,7 @@ describe('Taster agency visit context', () => {
       },
     } as unknown as PrismaClient;
 
-    const context = await getAgencyVisitContext({ agencyId: 'agency-1', db });
+    const context = await getAgencyVisitContext({ agencyId: 'agency-1', db, organizationId: 'org-1' });
 
     assert.equal(context?.asOfDate, '2026-08-18T00:00:00.000Z');
     assert.deepEqual(context?.inventory[0], {
@@ -44,6 +44,7 @@ describe('Taster agency visit context', () => {
     assert.deepEqual(productQuery?.where, {
       agencyId: 'agency-1',
       inventorySnapshotDate: { not: null },
+      organizationId: 'org-1',
     });
   });
 
@@ -52,6 +53,6 @@ describe('Taster agency visit context', () => {
       agency: { findUnique: async () => null },
     } as unknown as PrismaClient;
 
-    assert.equal(await getAgencyVisitContext({ agencyId: 'missing', db }), null);
+    assert.equal(await getAgencyVisitContext({ agencyId: 'missing', db, organizationId: 'org-1' }), null);
   });
 });

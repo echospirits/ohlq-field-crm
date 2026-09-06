@@ -7,11 +7,14 @@ export interface MarketDataProvider {
 
 export class OhioOhlqProvider implements MarketDataProvider {
   readonly market = 'OH' as const;
-  constructor(private readonly database: Pick<typeof import('./prisma').prisma, 'ohlqAgencyInventoryCurrent'>) {}
+  constructor(
+    private readonly database: Pick<typeof import('./prisma').prisma, 'ohlqAgencyInventoryCurrent'>,
+    private readonly organizationId: string,
+  ) {}
 
   async discoverProducts(vendorIds: string[]) {
     const rows = await this.database.ohlqAgencyInventoryCurrent.findMany({
-      where: { vendorId: { in: vendorIds.map((value) => value.trim().toUpperCase()).filter(Boolean) } },
+      where: { organizationId: this.organizationId, vendorId: { in: vendorIds.map((value) => value.trim().toUpperCase()).filter(Boolean) } },
       distinct: ['itemCode'],
       orderBy: { itemCode: 'asc' },
       take: 500,

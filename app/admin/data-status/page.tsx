@@ -20,6 +20,7 @@ import {
 } from '../../../lib/ohlqDataStatus';
 import { getLatestManualOhlqReportDate } from '../../../lib/ohlqManualImport';
 import { prisma } from '../../../lib/prisma';
+import { requireOrganizationContext } from '../../../lib/organizations';
 import { PageHeader, SectionHeading } from '../../components/PageChrome';
 
 export const metadata = buildPageMetadata('Data Status');
@@ -264,7 +265,8 @@ export default async function DataStatusPage({
     wholesaleRows?: string;
   }>;
 }) {
-  await requirePlatformAdminSession();
+  const session = await requirePlatformAdminSession();
+  const { organizationId } = await requireOrganizationContext(session.user);
 
   const params = (await searchParams) ?? {};
   const dates = getReportDateRange();
@@ -288,6 +290,7 @@ export default async function DataStatusPage({
     latestAccountMasterSuccess,
     latestBrandMasterRun,
     latestBrandMasterSuccess,
+    tenantInventoryStatusRows,
   ] = await Promise.all([
     prisma.ohlqAnnualSalesRow.groupBy({
       by: ['reportDate'],
@@ -303,17 +306,17 @@ export default async function DataStatusPage({
     }),
     prisma.ohlqAgencyInventorySnapshot.groupBy({
       by: ['snapshotDate'],
-      where: { snapshotDate: { gte: startDate, lte: endDate } },
+      where: { organizationId, snapshotDate: { gte: startDate, lte: endDate } },
       _count: { _all: true },
       orderBy: { snapshotDate: 'asc' },
     }),
     prisma.ohlqReportImportStatus.findMany({
-      where: { reportDate: { gte: startDate, lte: endDate } },
+      where: { dataSource: { not: OhlqReportDataSource.AGENCY_INVENTORY_REPORT }, reportDate: { gte: startDate, lte: endDate } },
       orderBy: [{ reportDate: 'asc' }, { dataSource: 'asc' }],
     }),
     prisma.ohlqAnnualSalesRow.count(),
     prisma.ohlqAnnualSalesByWholesaleRow.count(),
-    prisma.ohlqAgencyInventorySnapshot.count(),
+    prisma.ohlqAgencyInventorySnapshot.count({ where: { organizationId } }),
     prisma.ohlqBrandMasterItem.count(),
     prisma.ohlqBrandMasterItem.findFirst({
       orderBy: { updatedAt: 'desc' },
@@ -341,7 +344,13 @@ export default async function DataStatusPage({
       },
       orderBy: { lastSuccessfulAt: 'desc' },
     }),
+    prisma.ohlqTenantInventoryImportStatus.findMany({ where: { organizationId, reportDate: { gte: startDate, lte: endDate } }, orderBy: { reportDate: 'asc' } }),
   ]);
+
+  const allStatusRows = [
+    ...statusRows,
+    ...tenantInventoryStatusRows.map((row) => ({ ...row, dataSource: OhlqReportDataSource.AGENCY_INVENTORY_REPORT })),
+  ];
 
   const accountMasterMetrics = getAccountMasterMetrics(latestAccountMasterSuccess?.diagnostics);
   const brandMasterMetrics = getBrandMasterMetrics(latestBrandMasterSuccess?.diagnostics);
@@ -367,10 +376,10 @@ export default async function DataStatusPage({
     [OhlqReportDataSource.ANNUAL_SALES_SUMMARY_BY_WHOLESALE]: wholesaleTotalRows,
     [OhlqReportDataSource.AGENCY_INVENTORY_REPORT]: inventoryTotalRows,
   };
-  const statusBySourceDate = new Map(statusRows.map((row) => [`${row.dataSource}:${formatOhlqDate(row.reportDate)}`, row]));
+  const statusBySourceDate = new Map(allStatusRows.map((row) => [`${row.dataSource}:${formatOhlqDate(row.reportDate)}`, row]));
   const lastSuccessBySource = new Map<OhlqReportDataSource, Date>();
 
-  statusRows.forEach((row) => {
+  allStatusRows.forEach((row) => {
     if (!row.lastSuccessfulAt) return;
     const existing = lastSuccessBySource.get(row.dataSource);
     if (!existing || existing.getTime() < row.lastSuccessfulAt.getTime()) {

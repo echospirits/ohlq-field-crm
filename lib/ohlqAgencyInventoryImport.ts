@@ -8,7 +8,9 @@ import { normalizeOhlqId } from './ohlqWholesaleMatching';
 import { prisma } from './prisma';
 import {
   DEFAULT_TENANT_EXCLUDED_ITEM_CODES,
+  getOrganizationTenantConfig,
   getTenantConfig,
+  type TenantConfig,
 } from './tenantConfig';
 
 const REQUIRED_HEADERS = [
@@ -105,7 +107,7 @@ export function getOhlqInventoryMinQualifyingRows(
 export function parseOhlqAgencyInventoryCsv(
   csv: string | Buffer,
   snapshotDateIso: string,
-  { minimumQualifyingRows = getOhlqInventoryMinQualifyingRows() }: { minimumQualifyingRows?: number } = {},
+  { config = getTenantConfig(), minimumQualifyingRows = getOhlqInventoryMinQualifyingRows() }: { config?: TenantConfig; minimumQualifyingRows?: number } = {},
 ) {
   const snapshotDate = toDateOnlyUtc(snapshotDateIso);
   const parsed = Papa.parse(csv.toString('utf8'), {
@@ -127,8 +129,7 @@ export function parseOhlqAgencyInventoryCsv(
     throw new Error(`OHLQ Agency Inventory CSV is missing required header(s): ${missingHeaders.join(', ')}`);
   }
 
-  const tenantConfig = getTenantConfig();
-  const rowsByKey = new Map<string, Prisma.OhlqAgencyInventorySnapshotCreateManyInput>();
+  const rowsByKey = new Map<string, Omit<Prisma.OhlqAgencyInventorySnapshotCreateManyInput, 'organizationId'>>();
   const stats = {
     duplicateAgencyItemRows: 0,
     excludedDistilleryOnlyRows: 0,
@@ -151,7 +152,7 @@ export function parseOhlqAgencyInventoryCsv(
       continue;
     }
 
-    const matchesConfiguredVendor = tenantConfig.productFilter.vendorIds.includes(vendorId);
+    const matchesConfiguredVendor = config.productFilter.vendorIds.includes(vendorId);
     if (matchesConfiguredVendor) stats.rowsMatchingVendor += 1;
     const excludedItemCode = DEFAULT_TENANT_EXCLUDED_ITEM_CODES.find((code) => code === itemCode);
     if (matchesConfiguredVendor && excludedItemCode) {
@@ -165,7 +166,7 @@ export function parseOhlqAgencyInventoryCsv(
 
     if (
       !isTenantAgencyInventoryItem({
-        config: tenantConfig,
+        config,
         detailCodeDescription,
         itemCode,
         vendorId,
@@ -228,15 +229,18 @@ export async function importOhlqAgencyInventoryCsv({
   csv,
   db = prisma,
   minimumQualifyingRows,
+  organizationId,
   reportDate,
 }: {
   csv: string | Buffer;
   db?: PrismaClient;
   minimumQualifyingRows?: number;
+  organizationId: string;
   reportDate: string;
 }) {
   const startedAt = Date.now();
-  const parsed = parseOhlqAgencyInventoryCsv(csv, reportDate, { minimumQualifyingRows });
+  const config = await getOrganizationTenantConfig(organizationId, db);
+  const parsed = parseOhlqAgencyInventoryCsv(csv, reportDate, { config, minimumQualifyingRows });
   const snapshotDate = toDateOnlyUtc(reportDate);
   const agencyNumbers = Array.from(new Set(parsed.rows.map((row) => row.agencyNumber)));
   const agencies = await db.agency.findMany({
@@ -248,8 +252,10 @@ export async function importOhlqAgencyInventoryCsv({
   const snapshotRows = parsed.rows.map((row) => ({
     ...row,
     agencyId: agencyIdByNumber.get(row.agencyNumber) ?? null,
+    organizationId,
   }));
   const existingCurrent = await db.ohlqAgencyInventoryCurrent.findMany({
+    where: { organizationId },
     select: { agencyNumber: true, itemCode: true },
   });
   const existingKeys = new Set(existingCurrent.map(keyFor));
@@ -261,7 +267,7 @@ export async function importOhlqAgencyInventoryCsv({
 
   const result = await db.$transaction(
     async (tx) => {
-      const deletedSnapshots = await tx.ohlqAgencyInventorySnapshot.deleteMany({ where: { snapshotDate } });
+      const deletedSnapshots = await tx.ohlqAgencyInventorySnapshot.deleteMany({ where: { organizationId, snapshotDate } });
       let snapshotRecordsInserted = 0;
       for (let index = 0; index < snapshotRows.length; index += chunkSize) {
         const created = await tx.ohlqAgencyInventorySnapshot.createMany({
@@ -271,7 +277,7 @@ export async function importOhlqAgencyInventoryCsv({
         snapshotRecordsInserted += created.count;
       }
 
-      await tx.ohlqAgencyInventoryCurrent.deleteMany({});
+      await tx.ohlqAgencyInventoryCurrent.deleteMany({ where: { organizationId } });
       for (let index = 0; index < snapshotRows.length; index += chunkSize) {
         await tx.ohlqAgencyInventoryCurrent.createMany({
           data: snapshotRows.slice(index, index + chunkSize),

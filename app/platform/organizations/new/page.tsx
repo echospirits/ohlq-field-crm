@@ -55,7 +55,7 @@ async function provisionOrganization(formData: FormData) {
     await tx.organizationVendorIdentifier.createMany({ data: vendorIds.map((vendorId) => ({ organizationId: organization.id, market: primaryState, vendorId })) });
     await tx.organizationA3aStoreIdentifier.createMany({ data: a3aStoreIds.map((storeId) => ({ organizationId: organization.id, market: primaryState, storeId })) });
     await tx.organizationFeature.createMany({ data: features.map((featureKey) => ({ organizationId: organization.id, featureKey, enabled: true, source: 'provisioning' })) });
-    const candidates = vendorIds.length ? await tx.ohlqAgencyInventoryCurrent.findMany({ where: { vendorId: { in: vendorIds } }, distinct: ['itemCode'], orderBy: { itemCode: 'asc' }, select: { itemCode: true, itemName: true } }) : [];
+    const candidates: Array<{ itemCode: string; itemName: string }> = [];
     await tx.organizationProduct.createMany({ skipDuplicates: true, data: candidates.map((candidate) => ({ organizationId: organization.id, market: primaryState, externalItemCode: candidate.itemCode, displayName: candidate.itemName, status: 'PENDING_REVIEW', active: true })) });
     const user = await tx.user.create({ data: { organizationId: organization.id, email: adminEmail, firstName: adminFirstName, lastName: adminLastName, name: `${adminFirstName} ${adminLastName}`, role: UserRole.ADMIN, isActive: false } });
     await tx.organization.update({ where: { id: organization.id }, data: { onboardingStatus: 'PROVISIONING', onboardingData: { identity: true, admin: true, ohioMarket: vendorIds.length > 0, a3aStoresConfigured: a3aStoreIds.length > 0, productsDiscovered: candidates.length, productsConfirmed: false, features: true, firstLogin: false } } });

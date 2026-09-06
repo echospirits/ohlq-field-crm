@@ -62,6 +62,7 @@ jobs:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       OHLQ_OPS_USERNAME: ${{ secrets.OHLQ_OPS_USERNAME }}
       OHLQ_OPS_PASSWORD: ${{ secrets.OHLQ_OPS_PASSWORD }}
+      OHLQ_TENANT_CREDENTIAL_ENCRYPTION_KEY: ${{ secrets.OHLQ_TENANT_CREDENTIAL_ENCRYPTION_KEY }}
       OHLQ_MICROSOFT_USERNAME: ${{ secrets.OHLQ_MICROSOFT_USERNAME }}
       OHLQ_MICROSOFT_PASSWORD: ${{ secrets.OHLQ_MICROSOFT_PASSWORD }}
       OHLQ_BROWSER_CHANNEL: ""
@@ -124,7 +125,7 @@ jobs:
         shell: bash
         run: |
           missing=()
-          for name in DATABASE_URL OHLQ_OPS_USERNAME OHLQ_OPS_PASSWORD OHLQ_MICROSOFT_USERNAME OHLQ_MICROSOFT_PASSWORD; do
+          for name in DATABASE_URL OHLQ_OPS_USERNAME OHLQ_OPS_PASSWORD OHLQ_MICROSOFT_USERNAME OHLQ_MICROSOFT_PASSWORD OHLQ_TENANT_CREDENTIAL_ENCRYPTION_KEY; do
             if [[ -z "${!name}" ]]; then
               missing+=("$name")
             fi
@@ -178,6 +179,10 @@ jobs:
           else
             npm run backfill:ohlq-annual-sales -- --days "$days"
           fi
+
+      - name: Download and import tenant OHLQ inventory
+        if: steps.schedule_window.outputs.should_run == 'true' && (github.event_name == 'schedule' || inputs.purchaseStateOnly != true)
+        run: npm run sync:ohlq-tenant-inventory -- --environment "$APP_ENV"
 
       - name: Upload OHLQ debug artifacts
         if: always() && steps.schedule_window.outputs.should_run == 'true'

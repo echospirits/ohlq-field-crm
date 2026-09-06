@@ -5,15 +5,12 @@ import {
   importOhlqAnnualSalesByWholesaleCsv,
   importOhlqAnnualSalesCsv,
 } from './ohlqAnnualSalesImport';
-import { importOhlqAgencyInventoryCsv } from './ohlqAgencyInventoryImport';
 import { pruneOhlqAnnualSalesRows } from './ohlqAnnualSalesRetention';
 import { runOpportunityIntelligenceAfterImport } from './opportunityEngine';
-import { refreshAgencyIntelligence } from './agencyIntelligenceService';
 import { prisma } from './prisma';
 import { toOhlqDateOnlyUtc } from './ohlqDataStatus';
 import {
-  downloadOhlqAnnualSalesReports,
-  getOhlqAgencyInventoryObservationDate,
+  downloadOhlqSharedSalesReports,
   getOhlqAnnualSalesReportDate,
   type OhlqAnnualSalesDownloadOptions,
 } from './ohlqAnnualSalesReport';
@@ -41,7 +38,9 @@ const defaultDownloadOptions = (): OhlqAnnualSalesDownloadOptions => ({
   useServerlessChromium: process.env.VERCEL === '1',
 });
 
-const sourceOrder = OHLQ_DATA_SOURCE_CONFIGS.map((config) => config.source);
+const sourceOrder = OHLQ_DATA_SOURCE_CONFIGS.map((config) => config.source).filter(
+  (source) => source !== OhlqReportDataSource.AGENCY_INVENTORY_REPORT,
+);
 
 const safeMarkErrored = async ({
   completedSources,
@@ -69,11 +68,9 @@ export async function runOhlqAnnualSalesWorkflow(options: OhlqAnnualSalesWorkflo
   const logger = options.logger ?? console;
   const tenantConfig = getTenantConfig();
   const reportDate = getOhlqAnnualSalesReportDate(options.reportDate).iso;
-  const inventoryObservationDate = getOhlqAgencyInventoryObservationDate();
   const reportDates = new Map<OhlqReportDataSource, string>([
     [OhlqReportDataSource.ANNUAL_SALES_SUMMARY, reportDate],
     [OhlqReportDataSource.ANNUAL_SALES_SUMMARY_BY_WHOLESALE, reportDate],
-    [OhlqReportDataSource.AGENCY_INVENTORY_REPORT, inventoryObservationDate],
   ]);
   const startedAt = Date.now();
   const completedSources = new Set<OhlqReportDataSource>();
@@ -84,11 +81,10 @@ export async function runOhlqAnnualSalesWorkflow(options: OhlqAnnualSalesWorkflo
 
   try {
     const {
-      agencyInventoryReport: inventoryDownload,
       annualSalesSummary: annualSalesDownload,
       annualSalesSummaryByWholesale: wholesaleDownload,
     } =
-      await downloadOhlqAnnualSalesReports({
+      await downloadOhlqSharedSalesReports({
         ...defaultDownloadOptions(),
         ...options.downloadOptions,
         logger,
@@ -134,26 +130,6 @@ export async function runOhlqAnnualSalesWorkflow(options: OhlqAnnualSalesWorkflo
     });
     completedSources.add(OhlqReportDataSource.ANNUAL_SALES_SUMMARY_BY_WHOLESALE);
 
-    if (!inventoryDownload.csvBuffer) {
-      throw new Error('Agency Inventory Report CSV download completed, but no CSV buffer was returned for import.');
-    }
-
-    const inventoryImport = await importOhlqAgencyInventoryCsv({
-      csv: inventoryDownload.csvBuffer,
-      reportDate: inventoryDownload.reportDate,
-    });
-    logger.log(
-      `OHLQ agency inventory captured ${inventoryImport.importedRows} current snapshot row(s) across ` +
-        `${inventoryImport.diagnostics.uniqueAgencies} agencies and ${inventoryImport.diagnostics.uniqueItems} items; ` +
-        `${inventoryImport.diagnostics.unmatchedAgencyNumbers.length} agency number(s) were not matched.`,
-    );
-    await recordOhlqReportRunCompleted({
-      downloadResult: inventoryDownload,
-      importResult: inventoryImport,
-      source: OhlqReportDataSource.AGENCY_INVENTORY_REPORT,
-    });
-    completedSources.add(OhlqReportDataSource.AGENCY_INVENTORY_REPORT);
-
     const opportunityIntelligence = await runOpportunityIntelligenceAfterImport({
       reportDate: toOhlqDateOnlyUtc(reportDate),
     });
@@ -161,25 +137,6 @@ export async function runOhlqAnnualSalesWorkflow(options: OhlqAnnualSalesWorkflo
       `Opportunity intelligence captured ${opportunityIntelligence.salesEvents.created} purchase event(s), ` +
         `detected ${opportunityIntelligence.intelligence.detected} opportunity instance(s), and ` +
         `converted ${opportunityIntelligence.intelligence.converted} opportunity instance(s).`,
-    );
-
-    const agencyOrganizations = await prisma.organization.findMany({
-      where: { active: true, features: { some: { enabled: true, featureKey: 'AGENCY_INTELLIGENCE' } } },
-      select: { id: true },
-    });
-    const agencyResults = [];
-    for (const organization of agencyOrganizations) {
-      agencyResults.push(await refreshAgencyIntelligence({ inventoryReportDate: toOhlqDateOnlyUtc(inventoryObservationDate), organizationId: organization.id, salesReportDate: toOhlqDateOnlyUtc(reportDate) }));
-    }
-    const agencyIntelligence = {
-      agenciesProcessed: agencyResults.reduce((total, result) => total + result.agenciesProcessed, 0),
-      eventsCreated: agencyResults.reduce((total, result) => total + result.eventsCreated, 0),
-      productsProcessed: agencyResults.reduce((total, result) => total + result.productsProcessed, 0),
-      organizationsProcessed: agencyResults.length,
-    };
-    logger.log(
-      `Agency intelligence refreshed ${agencyIntelligence.productsProcessed} Agency-product signal(s) across ` +
-        `${agencyIntelligence.agenciesProcessed} agencies and recorded ${agencyIntelligence.eventsCreated} meaningful change(s).`,
     );
 
     const retention = await pruneOhlqAnnualSalesRows({ reportDate });
@@ -191,21 +148,9 @@ export async function runOhlqAnnualSalesWorkflow(options: OhlqAnnualSalesWorkflo
     return {
       ok: true,
       durationMs: Date.now() - startedAt,
-      agencyIntelligence,
       retention,
       opportunityIntelligence,
       reports: {
-        agencyInventoryReport: {
-          diagnostics: inventoryImport.diagnostics,
-          filename: inventoryDownload.filename,
-          importedRows: inventoryImport.importedRows,
-          parsedRows: inventoryImport.parsedRows,
-          reportDate: inventoryDownload.reportDate,
-          replacedRows: inventoryImport.deletedRows,
-          runDate: inventoryDownload.runDate,
-          skippedRows: inventoryImport.skippedRows,
-          sizeBytes: inventoryDownload.sizeBytes,
-        },
         annualSalesSummary: {
           filename: annualSalesDownload.filename,
           importedRows: annualSalesImport.importedRows,

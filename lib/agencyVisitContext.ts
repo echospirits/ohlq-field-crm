@@ -22,9 +22,11 @@ const toIso = (value: Date | null | undefined) => value?.toISOString() ?? null;
 export async function getAgencyVisitContext({
   agencyId,
   db = prisma,
+  organizationId,
 }: {
   agencyId: string;
   db?: PrismaClient;
+  organizationId: string;
 }): Promise<AgencyVisitContext | null> {
   const agency = await db.agency.findUnique({
     where: { id: agencyId },
@@ -35,6 +37,7 @@ export async function getAgencyVisitContext({
   const products = await db.agencyProductIntelligence.findMany({
     where: {
       agencyId: agency.id,
+      organizationId,
       inventorySnapshotDate: { not: null },
     },
     orderBy: [{ retailSales30: 'desc' }, { onHand: 'desc' }, { itemName: 'asc' }],

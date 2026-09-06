@@ -171,26 +171,18 @@ const recommendedFocusForAgency = (products: ProductResult[], wholesale: Wholesa
 export async function assertAgencyIntelligenceInputsComplete({
   db,
   inventoryReportDate,
+  organizationId,
   salesReportDate,
-}: { db: PrismaClient; inventoryReportDate: Date; salesReportDate: Date }) {
-  const statuses = await db.ohlqReportImportStatus.findMany({
+}: { db: PrismaClient; inventoryReportDate: Date; organizationId: string; salesReportDate: Date }) {
+  const [statuses, inventoryStatus] = await Promise.all([db.ohlqReportImportStatus.findMany({
     where: {
-      OR: [
-        {
-          dataSource: {
-            in: [
-              OhlqReportDataSource.ANNUAL_SALES_SUMMARY,
-              OhlqReportDataSource.ANNUAL_SALES_SUMMARY_BY_WHOLESALE,
-            ],
-          },
-          reportDate: salesReportDate,
-        },
-        { dataSource: OhlqReportDataSource.AGENCY_INVENTORY_REPORT, reportDate: inventoryReportDate },
-      ],
+      dataSource: { in: [OhlqReportDataSource.ANNUAL_SALES_SUMMARY, OhlqReportDataSource.ANNUAL_SALES_SUMMARY_BY_WHOLESALE] },
+      reportDate: salesReportDate,
     },
     select: { dataSource: true, status: true },
-  });
-  if (!agencyIntelligenceInputsComplete(statuses)) {
+  }), db.ohlqTenantInventoryImportStatus.findUnique({ where: { organizationId_reportDate: { organizationId, reportDate: inventoryReportDate } }, select: { status: true } })]);
+  const complete = statuses.length === 2 && statuses.every((row) => row.status === OhlqReportRunStatus.COMPLETED) && inventoryStatus?.status === OhlqReportRunStatus.COMPLETED;
+  if (!complete) {
     throw new Error('Agency intelligence skipped because all required OHLQ inputs have not completed successfully.');
   }
 }
@@ -202,7 +194,7 @@ export async function refreshAgencyIntelligence({
   salesReportDate,
   tenantConfig: configuredTenant,
 }: RefreshOptions) {
-  await assertAgencyIntelligenceInputsComplete({ db, inventoryReportDate, salesReportDate });
+  await assertAgencyIntelligenceInputsComplete({ db, inventoryReportDate, organizationId, salesReportDate });
   const tenantConfig = configuredTenant ?? await getOrganizationTenantConfig(organizationId, db);
   const salesStart = addDays(salesReportDate, -29);
   const sales7Start = addDays(salesReportDate, -6);
@@ -214,7 +206,7 @@ export async function refreshAgencyIntelligence({
         select: { id: true, agencyId: true, name: true, county: true, d8Permit: true },
       }),
       db.ohlqAgencyInventoryCurrent.findMany({
-        where: getTenantAgencyInventoryWhere(tenantConfig),
+        where: getTenantAgencyInventoryWhere(tenantConfig, organizationId),
         select: {
           agencyNumber: true,
           itemCode: true,
@@ -242,7 +234,7 @@ export async function refreshAgencyIntelligence({
       }),
       db.ohlqAgencyInventorySnapshot.findMany({
         where: {
-          ...getTenantAgencyInventoryWhere(tenantConfig),
+          ...getTenantAgencyInventoryWhere(tenantConfig, organizationId),
           snapshotDate: { gte: placementHistoryStart, lt: inventoryReportDate },
         },
         distinct: ['agencyNumber', 'itemCode'],

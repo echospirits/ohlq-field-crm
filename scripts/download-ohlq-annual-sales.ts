@@ -6,6 +6,8 @@ import {
   downloadOhlqAnnualSalesSummary,
   downloadOhlqAnnualSalesSummaryByWholesale,
 } from '../lib/ohlqAnnualSalesReport';
+import { getOrganizationOhlqCredentials } from '../lib/ohlqTenantCredentials';
+import { prisma } from '../lib/prisma';
 
 function loadEnvFile(fileName: string) {
   const envPath = path.join(process.cwd(), fileName);
@@ -35,6 +37,10 @@ function loadEnvFile(fileName: string) {
 }
 
 const reportName = process.argv[2] ?? 'summary';
+const getArgValue = (name: string) => {
+  const index = process.argv.indexOf(name);
+  return index >= 0 ? process.argv[index + 1] ?? null : null;
+};
 const downloader =
   reportName === 'account-master'
     ? downloadOhlqAccountMaster
@@ -47,7 +53,20 @@ const downloader =
 loadEnvFile('.env.local');
 loadEnvFile('.env');
 
-downloader()
+async function main() {
+  const options = reportName === 'inventory'
+    ? await (async () => {
+        const organizationId = getArgValue('--organization');
+        if (!organizationId) throw new Error('Inventory downloads require --organization <organization-id>.');
+        const partnerCredentials = await getOrganizationOhlqCredentials(organizationId);
+        if (!partnerCredentials) throw new Error(`Organization ${organizationId} does not have an OHLQ inventory login.`);
+        return { partnerCredentials };
+      })()
+    : {};
+  return downloader(options);
+}
+
+main()
   .then((result) => {
     console.log(
       JSON.stringify(
@@ -65,4 +84,5 @@ downloader()
   .catch((error) => {
     console.error(error);
     process.exitCode = 1;
-  });
+  })
+  .finally(() => prisma.$disconnect());

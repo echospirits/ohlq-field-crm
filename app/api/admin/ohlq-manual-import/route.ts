@@ -69,6 +69,8 @@ export async function POST(request: Request) {
 
     const { runOhlqAnnualSalesWorkflow } = await import('../../../../lib/ohlqAnnualSalesWorkflow');
     const result = await runOhlqAnnualSalesWorkflow({ reportDate });
+    const { runOhlqTenantInventoryWorkflow } = await import('../../../../lib/ohlqTenantInventoryWorkflow');
+    const inventory = await runOhlqTenantInventoryWorkflow();
 
     revalidatePath('/');
     revalidatePath('/admin/data-status');
@@ -80,7 +82,7 @@ export async function POST(request: Request) {
     return redirectToDataStatus(request, 'ohlq-imported', {
       annualRows: result.reports.annualSalesSummary.importedRows,
       date: reportDate,
-      inventoryRows: result.reports.agencyInventoryReport.importedRows,
+      inventoryRows: inventory.importedRows,
       wholesaleRows: result.reports.annualSalesSummaryByWholesale.importedRows,
     });
   } catch (error) {
