@@ -51,7 +51,7 @@ jobs:
     name: Download and import OHLQ reports
     environment: ${{ github.event_name == 'schedule' && (github.repository == 'echospirits/neat-tst' && 'test' || 'production') || inputs.deploymentEnvironment }}
     runs-on: ubuntu-latest
-    timeout-minutes: 75
+    timeout-minutes: 150
 
     env:
       APP_ENV: ${{ github.event_name == 'schedule' && (github.repository == 'echospirits/neat-tst' && 'test' || 'production') || inputs.deploymentEnvironment }}
@@ -142,7 +142,7 @@ jobs:
 
       - name: Download and import current OHLQ Account Master
         if: steps.schedule_window.outputs.should_run == 'true' && (github.event_name == 'schedule' || inputs.purchaseStateOnly != true)
-        timeout-minutes: 20
+        timeout-minutes: 50
         run: npm run sync:ohlq-account-master -- --environment "$APP_ENV" --apply
 
       - name: Download and import current OHLQ Brand Master
