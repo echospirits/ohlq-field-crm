@@ -47,10 +47,14 @@ test('organization setup access separates tenant configuration from platform dat
   assert.equal(getNavigationItems('admin', ['ADVANCED_INTELLIGENCE'], false).some((item) => item.href === '/admin/account-research'), false);
   assert.equal(tenantAdminItems.some((item) => item.href === '/admin/opportunity-performance'), false);
   assert.equal(getNavigationItems('admin', ['WHOLESALE_OPPORTUNITIES'], false).some((item) => item.href === '/admin/opportunity-performance'), true);
-  assert.equal(getNavigationItems('admin', [], true).some((item) => item.href === '/admin/data-status'), true);
+  assert.equal(getNavigationItems('utility', [], false).some((item) => item.href === '/admin/data-status'), true);
   assert.equal(getNavigationItems('admin', ['ADVANCED_INTELLIGENCE'], true).some((item) => item.href === '/admin/account-research'), true);
 
   const organizationPage = readFileSync('app/admin/organization/page.tsx', 'utf8');
+  const credentialSave = organizationPage.slice(organizationPage.indexOf('async function saveOhlqCredentials'), organizationPage.indexOf('async function removeOhlqCredentials'));
+  assert.match(credentialSave, /getAdminOrganization\(\)/);
+  assert.doesNotMatch(credentialSave, /tenant-admin-required/);
+  assert.doesNotMatch(organizationPage, /actor\.role !== UserRole\.PLATFORM_ADMIN \? <form action=\{saveOhlqCredentials\}/);
   assert.match(organizationPage, /requireOrganizationContext/);
   assert.match(organizationPage, /A3A Store IDs/);
   assert.match(organizationPage, /ProductSelectionEditor/);
@@ -68,6 +72,9 @@ test('manual shared OHLQ data loads require Platform Admin', () => {
   const dataStatus = readFileSync('app/admin/data-status/page.tsx', 'utf8');
   const manualImport = readFileSync('app/api/admin/ohlq-manual-import/route.ts', 'utf8');
   assert.match(dataStatus, /requirePlatformAdminSession/);
+  assert.match(dataStatus, /requireUserSession\(\{ allowTaster: true \}\)/);
+  assert.match(dataStatus, /canRefresh = session.user.role === UserRole.PLATFORM_ADMIN/);
+  assert.equal((dataStatus.match(/\{canRefresh \? <details/g) ?? []).length, 2);
   assert.doesNotMatch(dataStatus, /requireAdminSession/);
   assert.match(manualImport, /session\.user\.role !== UserRole\.PLATFORM_ADMIN/);
   for (const path of ['app/admin/account-research/page.tsx', 'app/admin/account-research/actions.ts', 'app/api/admin/account-research/export/route.ts']) {

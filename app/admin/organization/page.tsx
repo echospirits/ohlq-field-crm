@@ -74,7 +74,6 @@ async function saveProductSelection(formData: FormData) {
 async function saveOhlqCredentials(formData: FormData) {
   'use server';
   const { actor, organizationId } = await getAdminOrganization();
-  if (actor.role === UserRole.PLATFORM_ADMIN) redirect('/admin/organization?status=tenant-admin-required');
   try {
     await saveOrganizationOhlqCredentials({ organizationId, password: clean(formData.get('password')), updatedByUserId: actor.id, username: clean(formData.get('username')) });
     await writeOrganizationAudit(actor.id, organizationId, OrganizationAuditAction.OHLQ_INVENTORY_CREDENTIALS_CHANGED, { configured: true });
@@ -124,12 +123,12 @@ export default async function OrganizationSetupPage({ searchParams }: { searchPa
       </article>
     </section>
     <section className="platform-grid">
-      {actor.role !== UserRole.PLATFORM_ADMIN ? <form action={saveOhlqCredentials} className="card">
+      <form action={saveOhlqCredentials} className="card">
         <div className="section-heading"><div><span className="page-eyebrow">Tenant data connection</span><h2>OHLQ inventory login</h2><p className="muted">Used only for this organization's inventory download. Credentials are encrypted and never displayed after saving.</p></div><span className="pill">{organization.ohlqCredentials ? 'Configured' : 'Not configured'}</span></div>
         {organization.ohlqCredentials ? <p className="muted">Current login: {organization.ohlqCredentials.usernameHint}</p> : null}
         <div className="form-grid"><label>OHLQ username<input autoComplete="username" name="username" required /></label><label>OHLQ password<input autoComplete="new-password" name="password" type="password" required /></label></div>
         <button type="submit">{organization.ohlqCredentials ? 'Replace credentials' : 'Save credentials'}</button>
-      </form> : <article className="card"><span className="page-eyebrow">Tenant data connection</span><h2>OHLQ inventory login</h2><p className="muted">{organization.ohlqCredentials ? `Configured as ${organization.ohlqCredentials.usernameHint}` : 'Not configured'}. Only an organization administrator can change this login.</p></article>}
+      </form>
       <article className="card"><span className="page-eyebrow">Connection safety</span><h2>Inventory isolation</h2><p className="muted">The daily runner stores this tenant's current inventory and history separately. Missing credentials skip this tenant without using another organization's login.</p>{actor.role !== UserRole.PLATFORM_ADMIN && organization.ohlqCredentials ? <form action={removeOhlqCredentials}><button className="danger" type="submit">Remove inventory login</button></form> : null}</article>
     </section>
     <article className="card product-selection-card">

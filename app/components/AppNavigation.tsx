@@ -72,6 +72,7 @@ export function AppSidebarNavigation({ enabledFeatures, isAdmin, isPlatformAdmin
         <Link aria-current="page" className="app-nav-link app-nav-primary" href="/visits/new">
           Log Visit
         </Link>
+        <NavLink item={{ href: '/admin/data-status', key: 'data-health', label: 'Data Status', section: 'utility' }} pathname={pathname} />
       </nav>
     );
   }
@@ -89,6 +90,7 @@ export function AppSidebarNavigation({ enabledFeatures, isAdmin, isPlatformAdmin
 
       <NavGroupLinks group={{ label: 'My work', items: workItems }} pathname={pathname} />
       <NavGroupLinks group={{ label: 'Accounts', items: accountItems }} pathname={pathname} />
+      <NavLink item={{ href: '/admin/data-status', key: 'data-health', label: 'Data Status', section: 'utility' }} pathname={pathname} />
 
       {isAdmin ? (
         <details

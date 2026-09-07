@@ -2,12 +2,12 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 export const maxDuration = 300;
 
-import { OhlqReportDataSource, OhlqReportRunStatus } from '@prisma/client';
+import { OhlqReportDataSource, OhlqReportRunStatus, UserRole } from '@prisma/client';
 import { revalidatePath } from 'next/cache';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { buildPageMetadata } from '../../../lib/appBrand';
-import { requirePlatformAdminSession } from '../../../lib/auth';
+import { requirePlatformAdminSession, requireUserSession } from '../../../lib/auth';
 import { EASTERN_TIME_ZONE, formatEasternDateInputValue, formatEasternDateTime } from '../../../lib/dateTime';
 import { importOhlqBrandMasterCsv } from '../../../lib/ohlqBrandMasterImport';
 import {
@@ -265,7 +265,8 @@ export default async function DataStatusPage({
     wholesaleRows?: string;
   }>;
 }) {
-  const session = await requirePlatformAdminSession();
+  const session = await requireUserSession({ allowTaster: true });
+  const canRefresh = session.user.role === UserRole.PLATFORM_ADMIN;
   const { organizationId } = await requireOrganizationContext(session.user);
 
   const params = (await searchParams) ?? {};
@@ -427,7 +428,7 @@ export default async function DataStatusPage({
         title="Data Status"
       />
       {brandMasterStatusMessage(params) ? <p className="toast-notice page-status">{brandMasterStatusMessage(params)}</p> : null}
-      <details className="card compact-details admin-panel" open>
+      {canRefresh ? <details className="card compact-details admin-panel" open>
         <summary>Run OHLQ Data Refresh</summary>
         <form action="/api/admin/ohlq-manual-import" method="post" className="data-status-action-form">
           <label>
@@ -449,7 +450,7 @@ export default async function DataStatusPage({
               : 'Queues the current Account Master and Brand Master first, then both dated OHLQ sales reports and the current Agency Inventory Report. Sales rows use the selected date; current files use their actual Eastern download date.'}
           </p>
         </form>
-      </details>
+      </details> : null}
 
       <section className="data-source-grid" aria-label="Data source summary">
         {OHLQ_DATA_SOURCE_CONFIGS.map((config) => (
@@ -529,7 +530,7 @@ export default async function DataStatusPage({
         </article>
       </section>
 
-      <details className="card compact-details admin-panel desktop-admin-panel">
+      {canRefresh ? <details className="card compact-details admin-panel desktop-admin-panel">
         <summary>Import OHLQ Brand Master CSV</summary>
         <form action={importBrandMaster} encType="multipart/form-data">
           <input type="file" name="brandMasterFile" accept=".csv,text/csv" required />
@@ -539,7 +540,7 @@ export default async function DataStatusPage({
             the uploaded CSV.
           </p>
         </form>
-      </details>
+      </details> : null}
 
       <section className="dashboard-section">
         <SectionHeading actions={<span className="pill">Last {visibleDays} report dates</span>} description="Row presence and run status by source and reporting day." title="Daily Row Counts" />
