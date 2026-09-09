@@ -52,7 +52,8 @@ export const CORE_PACKAGE_FEATURE_KEYS = FEATURE_KEYS.filter((key) =>
   !INTELLIGENCE_PACKAGE_FEATURE_KEYS.includes(key as (typeof INTELLIGENCE_PACKAGE_FEATURE_KEYS)[number]) &&
   !OPTIONAL_FEATURE_KEYS.includes(key as (typeof OPTIONAL_FEATURE_KEYS)[number]));
 export const DEFAULT_FEATURE_KEYS = [...CORE_PACKAGE_FEATURE_KEYS];
-export const ECHO_FEATURE_KEYS = [...FEATURE_KEYS];
+export const ECHO_FEATURE_KEYS = FEATURE_KEYS.filter(
+  (key) => !OPTIONAL_FEATURE_KEYS.includes(key as (typeof OPTIONAL_FEATURE_KEYS)[number]));
 
 export function getPackageFeatureKeys(intelligenceEnabled: boolean, directWholesaleOrdersEnabled = false): FeatureKey[] {
   return FEATURE_KEYS.filter((key) =>

@@ -10,6 +10,7 @@ test('feature registry has stable unique keys and explicit dependency metadata',
   assert.equal(Object.keys(FEATURE_REGISTRY).length, FEATURE_KEYS.length);
   assert.equal(DEFAULT_FEATURE_KEYS.includes('WHOLESALE_OPPORTUNITIES'), false);
   assert.equal(ECHO_FEATURE_KEYS.includes('WHOLESALE_OPPORTUNITIES'), true);
+  assert.equal(ECHO_FEATURE_KEYS.includes('OHIO_DIRECT_WHOLESALE_ORDERS'), false);
   assert.deepEqual(FEATURE_REGISTRY.WHOLESALE_OPPORTUNITIES.dependencies, ['WHOLESALE_ACCOUNTS', 'OHLQ_SALES_DATA']);
   assert.deepEqual(FEATURE_REGISTRY.OHIO_DIRECT_WHOLESALE_ORDERS.dependencies, ['WHOLESALE_ACCOUNTS', 'OHLQ_SALES_DATA']);
 });
