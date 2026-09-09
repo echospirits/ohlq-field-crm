@@ -2,6 +2,7 @@ import type { PrismaClient } from '@prisma/client';
 import { prisma } from '../prisma';
 import { formatWholesaleLicenseeIds } from '../wholesaleAccounts';
 import { getCoordinateBounds, getDistanceMiles, isValidCoordinates, type Coordinates } from './distance';
+import { NEARBY_ACCOUNT_LIMITS } from './nearbyLimits';
 
 export type NearbyAccount = {
   agencyId: string | null;
@@ -22,7 +23,7 @@ type NearbyParams = Coordinates & {
   radiusMiles?: number;
 };
 
-const clampLimit = (limit = 8) => Math.min(Math.max(Math.trunc(limit), 1), 10);
+const clampLimit = (limit: number) => Math.min(Math.max(Math.trunc(limit), 1), NEARBY_ACCOUNT_LIMITS.wholesale);
 const clampRadius = (radiusMiles = 10) => Math.min(Math.max(radiusMiles, 1), 50);
 const toIso = (value: Date | null | undefined) => value?.toISOString() ?? null;
 
@@ -34,7 +35,7 @@ export async function getNearbyAgencies({
   db = prisma,
   latitude,
   longitude,
-  limit = 8,
+  limit = NEARBY_ACCOUNT_LIMITS.agency,
   radiusMiles = 10,
 }: NearbyParams): Promise<NearbyAccount[]> {
   const center = { latitude, longitude };
@@ -105,7 +106,7 @@ export async function getNearbyWholesaleAccounts({
   db = prisma,
   latitude,
   longitude,
-  limit = 8,
+  limit = NEARBY_ACCOUNT_LIMITS.wholesale,
   radiusMiles = 10,
 }: NearbyParams): Promise<NearbyAccount[]> {
   const center = { latitude, longitude };

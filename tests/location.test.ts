@@ -7,7 +7,8 @@ import {
   getGeocodeResetForAddressChange,
   normalizeGeocodeAddress,
 } from '../lib/location/geocode';
-import { getNearbyWholesaleAccounts } from '../lib/location/nearbyAccounts';
+import { getNearbyAgencies, getNearbyWholesaleAccounts } from '../lib/location/nearbyAccounts';
+import { NEARBY_ACCOUNT_LIMITS } from '../lib/location/nearbyLimits';
 import { shouldAutomaticallyRequestLocation } from '../lib/location/locationPreference';
 import { rankVisitSearchOptions } from '../lib/visitPickerOptions';
 
@@ -71,6 +72,40 @@ describe('nearby account behavior', () => {
     assert.deepEqual(results.map((item) => item.id), ['near', 'far']);
     assert.equal(findManyWhere?.isActive, true);
     assert.equal(findManyWhere?.mergedIntoId, null);
+  });
+
+  it('returns four nearby agencies and fifteen nearby wholesale accounts by default', async () => {
+    const makeCoordinates = (index: number) => ({
+      latitude: 39.9612 + index * 0.001,
+      longitude: -82.9988,
+    });
+    const db = {
+      agency: {
+        findMany: async () => Array.from({ length: 20 }, (_, index) => ({
+          agencyId: String(index), city: 'Columbus', county: null, id: `agency-${index}`,
+          ...makeCoordinates(index), name: `Agency ${index}`, phone: null,
+        })),
+      },
+      wholesaleAccount: {
+        findMany: async () => Array.from({ length: 20 }, (_, index) => ({
+          agencyId: null, city: 'Columbus', county: null, id: `wholesale-${index}`,
+          licenseeId: String(index), licenseeIds: [], ...makeCoordinates(index),
+          name: `Wholesale ${index}`, phone: null,
+        })),
+      },
+      loggedVisit: { groupBy: async () => [] },
+    } as unknown as PrismaClient;
+
+    const coordinates = { latitude: 39.9612, longitude: -82.9988 };
+    const [agencies, wholesaleAccounts] = await Promise.all([
+      getNearbyAgencies({ db, ...coordinates }),
+      getNearbyWholesaleAccounts({ db, ...coordinates }),
+    ]);
+
+    assert.equal(agencies.length, NEARBY_ACCOUNT_LIMITS.agency);
+    assert.equal(wholesaleAccounts.length, NEARBY_ACCOUNT_LIMITS.wholesale);
+    assert.deepEqual(agencies.map(({ id }) => id), ['agency-0', 'agency-1', 'agency-2', 'agency-3']);
+    assert.equal(wholesaleAccounts.at(-1)?.id, 'wholesale-14');
   });
 
   it('keeps strong text relevance ahead of proximity', () => {
