@@ -125,6 +125,23 @@ export const getTenantWholesaleSalesWhere = (
   };
 };
 
+export const getTenantAccountSalesEventWhere = (
+  config: TenantConfig,
+): Prisma.AccountSalesEventWhereInput => {
+  if (config.productFilter.mode === 'item-list') {
+    return {
+      itemCode: { in: config.productFilter.itemCodes },
+    };
+  }
+
+  return {
+    vendor: { in: config.productFilter.vendorIds },
+    ...(config.productFilter.excludedItemCodes.length > 0
+      ? { itemCode: { notIn: config.productFilter.excludedItemCodes } }
+      : {}),
+  };
+};
+
 export const getOhlqWindowStartDate = (endDate: Date, days: number) => addUtcDays(endDate, -(days - 1));
 
 export function summarizeLinkedWholesaleAccountSales({

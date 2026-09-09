@@ -1,12 +1,13 @@
 import { OpportunityStatus, Prisma } from '@prisma/client';
 import Link from 'next/link';
 import { formatEasternDate } from '../../lib/dateTime';
-import { getOhlqWindowStartDate, summarizeLinkedWholesaleAccountSales } from '../../lib/ohlqSalesData';
+import { getOhlqWindowStartDate, getTenantAccountSalesEventWhere, summarizeLinkedWholesaleAccountSales } from '../../lib/ohlqSalesData';
 import { prisma } from '../../lib/prisma';
 import { ContextualActions } from '../components/ContextualActions';
 import type { ReactNode } from 'react';
 import { getCurrentUser } from '../../lib/auth';
 import { getOrganizationContext, hasFeature } from '../../lib/organizations';
+import { getOrganizationTenantConfig } from '../../lib/tenantConfig';
 
 const activeStatuses = [OpportunityStatus.OPEN, OpportunityStatus.ACTIONED, OpportunityStatus.SNOOZED];
 
@@ -59,6 +60,7 @@ export async function OpportunityAccountPanel({ agencyId, wholesaleAccountId, cu
   const context = user ? await getOrganizationContext(user) : null;
   if (!context || !(await hasFeature(context.organizationId, 'WHOLESALE_OPPORTUNITIES'))) return null;
   const organizationId = context.organizationId;
+  const tenantConfig = await getOrganizationTenantConfig(organizationId);
   const isAgencyRollup = Boolean(agencyId && !wholesaleAccountId);
   const opportunityWhere: Prisma.SalesOpportunityWhereInput = wholesaleAccountId
     ? { organizationId, wholesaleAccountId, status: { in: activeStatuses } }
@@ -103,7 +105,7 @@ export async function OpportunityAccountPanel({ agencyId, wholesaleAccountId, cu
         select: { brand: true, permitNumber: true, vendor: true, wholesaleBottlesSold: true },
       }) : Promise.resolve([]),
     ]);
-    const salesByAccount = summarizeLinkedWholesaleAccountSales({ accounts: linkedAccounts, rows: salesRows });
+    const salesByAccount = summarizeLinkedWholesaleAccountSales({ accounts: linkedAccounts, config: tenantConfig, rows: salesRows });
     const pursuing = opportunities.filter((item) => item.status === OpportunityStatus.ACTIONED).length;
     const highPriority = opportunities.filter((item) => item.priorityBand === 'HIGH').length;
     const accountSales = linkedAccounts.map((account) => ({
@@ -124,7 +126,7 @@ export async function OpportunityAccountPanel({ agencyId, wholesaleAccountId, cu
         { label: 'Follow-ups', value: openFollowUps },
         { label: 'Linked accounts', value: linkedAccounts.length },
         { label: 'Buying / 30d', value: buyingAccounts },
-        { label: 'Echo bottles / 30d', value: echoBottles30 },
+        { label: `${tenantConfig.productLabel} bottles / 30d`, value: echoBottles30 },
         { label: 'All bottles / 30d', value: allBottles30 },
       ]} />
       {accountSales.slice(0, 12).map(({ account, sales }) => {
@@ -158,7 +160,11 @@ export async function OpportunityAccountPanel({ agencyId, wholesaleAccountId, cu
       orderBy: [{ productionScore: 'desc' }, { lastDetectedAt: 'desc' }],
       take: 5,
     }),
-    prisma.accountSalesEvent.findMany({ where: { organizationId, wholesaleAccountId }, orderBy: { reportDate: 'desc' }, take: 30 }),
+    prisma.accountSalesEvent.findMany({
+      where: { organizationId, wholesaleAccountId, ...getTenantAccountSalesEventWhere(tenantConfig) },
+      orderBy: { reportDate: 'desc' },
+      take: 30,
+    }),
     prisma.loggedVisit.findMany({ where: { organizationId, wholesaleAccountId, locationType: 'wholesale' }, orderBy: { visitAt: 'desc' }, take: 20, select: { id: true, visitAt: true, summary: true, createdBy: true } }),
     prisma.worklistItem.findMany({ where: { organizationId, wholesaleAccountId, status: { in: ['OPEN', 'IN_PROGRESS'] } }, orderBy: { dueDate: 'asc' }, take: 10, select: { id: true, title: true, dueDate: true, salesOpportunityId: true } }),
   ]);
@@ -167,12 +173,12 @@ export async function OpportunityAccountPanel({ agencyId, wholesaleAccountId, cu
     ...visits.map((visit) => ({ at: visit.visitAt, kind: 'visit', title: `${visit.createdBy ?? 'Team member'} visited`, detail: visit.summary ?? 'Visit logged' })),
     ...opportunities.map((item) => ({ at: item.detectedAt, kind: 'opportunity', title: `${item.title} detected`, detail: item.recommendedAction })),
   ].sort((a, b) => b.at.getTime() - a.at.getTime()).slice(0, 40);
-  const echo90 = sales.filter((event) => event.isTenantProduct && event.reportDate >= new Date(Date.now() - 90 * 86_400_000)).reduce((sum, event) => sum + event.bottles, 0);
+  const tenantBottles90 = sales.filter((event) => event.reportDate >= new Date(Date.now() - 90 * 86_400_000)).reduce((sum, event) => sum + event.bottles, 0);
   return <>
     <section className="card account-opportunity-panel"><div className="section-heading account-opportunity-heading"><div><span className="page-eyebrow">Why care right now?</span><h2>Opportunity intelligence</h2></div><Link className="btn secondary compact-btn" href="/opportunities">View inbox</Link></div>
       <IntelligenceFacts facts={[
         { label: 'Active', value: opportunities.length },
-        { label: 'Echo bottles / 90d', value: echo90 },
+        { label: `${tenantConfig.productLabel} bottles / 90d`, value: tenantBottles90 },
         { label: 'Last visit', value: visits[0] ? formatEasternDate(visits[0].visitAt) : 'Never' },
         { label: 'Follow-ups', value: worklist.length },
       ]} />

@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 import type { PrismaClient } from '@prisma/client';
 import {
   ECHO_VENDOR_ID,
+  getTenantAccountSalesEventWhere,
   getWholesaleRecentPurchases,
   getOhlqWindowStartDate,
   isEchoItem,
@@ -17,6 +18,33 @@ describe('OHLQ Echo item filtering', () => {
     assert.equal(isEchoItem(ECHO_VENDOR_ID.toLowerCase(), '0100A'), true);
     assert.equal(isEchoItem(ECHO_VENDOR_ID, '3150B'), false);
     assert.equal(isEchoItem('000000932', '0100A'), false);
+  });
+
+  it('builds tenant-specific purchase timeline filters', () => {
+    assert.deepEqual(
+      getTenantAccountSalesEventWhere({
+        appName: 'Tenant',
+        digestName: 'Tenant',
+        entityName: 'Tenant Co.',
+        id: 'tenant',
+        productLabel: 'Tenant',
+        productPluralLabel: 'Tenant products',
+        productFilter: { excludedItemCodes: [], itemCodes: ['A', 'B'], mode: 'item-list', vendorIds: ['VENDOR'] },
+      }),
+      { itemCode: { in: ['A', 'B'] } },
+    );
+    assert.deepEqual(
+      getTenantAccountSalesEventWhere({
+        appName: 'Tenant',
+        digestName: 'Tenant',
+        entityName: 'Tenant Co.',
+        id: 'tenant',
+        productLabel: 'Tenant',
+        productPluralLabel: 'Tenant products',
+        productFilter: { excludedItemCodes: ['X'], itemCodes: [], mode: 'vendor-exclusions', vendorIds: ['VENDOR'] },
+      }),
+      { itemCode: { notIn: ['X'] }, vendor: { in: ['VENDOR'] } },
+    );
   });
 });
 

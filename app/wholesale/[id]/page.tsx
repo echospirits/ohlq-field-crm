@@ -100,7 +100,7 @@ export default async function WholesaleActivityPage({
 
   const accountLicenseeIds = getWholesaleLicenseeIdValues(account);
 
-  const [visits, tags, backingAccount, users, purchases] = await Promise.all([
+  const [visits, tags, backingAccount, linkedAgency, users, purchases] = await Promise.all([
     prisma.loggedVisit.findMany({
       where: {
         organizationId,
@@ -127,6 +127,12 @@ export default async function WholesaleActivityPage({
       },
       select: { id: true },
     }),
+    account.agencyId
+      ? prisma.agency.findFirst({
+          where: { agencyId: { equals: account.agencyId, mode: 'insensitive' } },
+          select: { id: true },
+        })
+      : null,
     prisma.user.findMany({ where: { organizationId }, orderBy: [{ name: 'asc' }, { email: 'asc' }] }),
     getWholesaleRecentPurchases({ account, config: tenantConfig }),
   ]);
@@ -259,7 +265,7 @@ export default async function WholesaleActivityPage({
           </p>
           <p>
             <strong>Agency ID</strong>
-            <span>{account.agencyId}</span>
+            <span>{linkedAgency ? <Link href={`/agencies/${linkedAgency.id}`}>{account.agencyId}</Link> : account.agencyId}</span>
           </p>
           <p>
             <strong>County</strong>
