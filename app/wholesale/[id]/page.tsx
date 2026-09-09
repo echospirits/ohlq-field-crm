@@ -69,6 +69,7 @@ export default async function WholesaleActivityPage({
   const { organizationId } = await requireOrganizationContext(user);
   const enabledFeatures = await getOrganizationFeatures(organizationId);
   const hasWholesaleOpportunities = enabledFeatures.has('WHOLESALE_OPPORTUNITIES');
+  const hasDirectWholesaleOrders = enabledFeatures.has('OHIO_DIRECT_WHOLESALE_ORDERS');
   const tenantConfig = await getOrganizationTenantConfig(organizationId);
   const { id } = await params;
   const query = (await searchParams) ?? {};
@@ -221,6 +222,7 @@ export default async function WholesaleActivityPage({
           <TagBadges tags={account.tags.map((assignment) => assignment.tag)} />
         </div>
         <div className="page-heading-actions">
+          {hasDirectWholesaleOrders ? <Link className="btn compact-btn" href={`/wholesale/${account.id}/direct-order`}>Create Direct Wholesale Order</Link> : null}
           <ContextualActions
             address={[account.address, account.city, account.state, account.zip].filter(Boolean).join(', ')}
             context={{ accountName: account.name, returnTo: `/wholesale/${account.id}`, sourceLabel: account.name, sourceType: 'WHOLESALE_DETAIL', wholesaleAccountId: account.id }}

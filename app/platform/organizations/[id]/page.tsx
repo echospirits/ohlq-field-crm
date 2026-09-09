@@ -8,11 +8,12 @@ import { notFound, redirect } from 'next/navigation';
 import { buildPageMetadata } from '../../../../lib/appBrand';
 import { getUserDisplayName, requirePlatformAdmin } from '../../../../lib/auth';
 import { FEATURE_KEYS, getPackageFeatureKeys, hasIntelligencePackage } from '../../../../lib/featureRegistry';
-import { normalizeOrganizationIdentifierList, replaceOrganizationA3aStoreIds, saveOrganizationProductSelection } from '../../../../lib/organizationConfiguration';
+import { saveOrganizationA3aLocation, saveOrganizationProductSelection } from '../../../../lib/organizationConfiguration';
 import { assertFeatureDependencies, writeOrganizationAudit } from '../../../../lib/organizations';
 import { discoverOrganizationProducts } from '../../../../lib/organizationProductDiscovery';
 import { prisma } from '../../../../lib/prisma';
 import { PageHeader } from '../../../components/PageChrome';
+import { A3aLocationForm } from '../../../components/A3aLocationForm';
 import { InvitationControls } from './InvitationControls';
 import { ProductSelectionEditor } from './ProductSelectionEditor';
 import { runProvisioningAction, startProvisioningAction } from './actions';
@@ -55,9 +56,10 @@ async function saveFeatures(formData: FormData) {
   const actor = await requirePlatformAdmin();
   const id = clean(formData.get('organizationId'));
   const intelligenceEnabled = formData.get('intelligence') === 'on';
-  const enabled = assertFeatureDependencies(getPackageFeatureKeys(intelligenceEnabled));
+  const directWholesaleOrdersEnabled = formData.get('directWholesaleOrders') === 'on';
+  const enabled = assertFeatureDependencies(getPackageFeatureKeys(intelligenceEnabled, directWholesaleOrdersEnabled));
   await prisma.$transaction(FEATURE_KEYS.map((featureKey) => prisma.organizationFeature.upsert({ where: { organizationId_featureKey: { organizationId: id, featureKey } }, create: { organizationId: id, featureKey, enabled: enabled.includes(featureKey), source: 'platform-admin' }, update: { enabled: enabled.includes(featureKey), source: 'platform-admin' } })));
-  await writeOrganizationAudit(actor.id, id, OrganizationAuditAction.FEATURE_CHANGED, { coreIncluded: true, intelligenceEnabled, enabled });
+  await writeOrganizationAudit(actor.id, id, OrganizationAuditAction.FEATURE_CHANGED, { coreIncluded: true, directWholesaleOrdersEnabled, intelligenceEnabled, enabled });
   revalidatePath(`/platform/organizations/${id}`);
   redirect(`/platform/organizations/${id}?status=feature-package-saved`);
 }
@@ -84,21 +86,27 @@ async function refreshProductCandidates(formData: FormData) {
   redirect(`/platform/organizations/${organizationId}?status=${discovery.created ? `products-discovered-${discovery.created}` : 'no-new-products'}`);
 }
 
-async function saveA3aStoreIds(formData: FormData) {
+async function saveA3aLocation(formData: FormData) {
   'use server';
   const actor = await requirePlatformAdmin();
   const organizationId = clean(formData.get('organizationId'));
   try {
-    const storeIds = await replaceOrganizationA3aStoreIds({
+    const location = await saveOrganizationA3aLocation({
       organizationId,
-      storeIds: normalizeOrganizationIdentifierList(clean(formData.get('a3aStoreIds'))),
+      input: {
+        active: formData.get('active') === 'on', addressLine1: clean(formData.get('addressLine1')), addressLine2: clean(formData.get('addressLine2')),
+        city: clean(formData.get('city')), dba: clean(formData.get('dba')), email: clean(formData.get('email')),
+        isDefault: formData.get('isDefault') === 'on', locationId: clean(formData.get('locationId')) || undefined,
+        name: clean(formData.get('name')), permitNumber: clean(formData.get('permitNumber')), phone: clean(formData.get('phone')),
+        postalCode: clean(formData.get('postalCode')), state: clean(formData.get('state')), storeId: clean(formData.get('storeId')),
+      },
     });
-    await writeOrganizationAudit(actor.id, organizationId, OrganizationAuditAction.A3A_STORE_CONFIGURATION_CHANGED, { storeIds });
+    await writeOrganizationAudit(actor.id, organizationId, OrganizationAuditAction.A3A_STORE_CONFIGURATION_CHANGED, { locationId: location.id, storeId: location.storeId });
   } catch {
-    redirect(`/platform/organizations/${organizationId}?status=invalid-a3a-store-ids`);
+    redirect(`/platform/organizations/${organizationId}?status=invalid-a3a-location`);
   }
   revalidatePath(`/platform/organizations/${organizationId}`);
-  redirect(`/platform/organizations/${organizationId}?status=a3a-store-ids-saved`);
+  redirect(`/platform/organizations/${organizationId}?status=a3a-location-saved`);
 }
 
 async function saveProductSelection(formData: FormData) {
@@ -121,11 +129,12 @@ export default async function OrganizationPage({ params, searchParams }: { param
   await requirePlatformAdmin();
   const { id } = await params;
   const status = (await searchParams)?.status;
-  const organization = await prisma.organization.findUnique({ where: { id }, include: { a3aStoreIdentifiers: { where: { active: true }, orderBy: { storeId: 'asc' } }, ohlqCredentials: { select: { configuredAt: true, usernameHint: true } }, vendorIdentifiers: { orderBy: { vendorId: 'asc' } }, products: { orderBy: [{ status: 'asc' }, { externalItemCode: 'asc' }], take: 1000 }, features: true, auditEvents: { orderBy: { occurredAt: 'desc' }, take: 20 }, provisioningRuns: { orderBy: { createdAt: 'desc' }, take: 1, include: { steps: { orderBy: { sequence: 'asc' } } } } } });
+  const organization = await prisma.organization.findUnique({ where: { id }, include: { a3aStoreIdentifiers: { orderBy: [{ active: 'desc' }, { isDefault: 'desc' }, { storeId: 'asc' }] }, ohlqCredentials: { select: { configuredAt: true, usernameHint: true } }, vendorIdentifiers: { orderBy: { vendorId: 'asc' } }, products: { orderBy: [{ status: 'asc' }, { externalItemCode: 'asc' }], take: 1000 }, features: true, auditEvents: { orderBy: { occurredAt: 'desc' }, take: 20 }, provisioningRuns: { orderBy: { createdAt: 'desc' }, take: 1, include: { steps: { orderBy: { sequence: 'asc' } } } } } });
   if (!organization) notFound();
   const users = await prisma.user.findMany({ where: { organizationId: id }, orderBy: [{ role: 'asc' }, { name: 'asc' }] });
   const enabled = new Set(organization.features.filter((feature) => feature.enabled).map((feature) => feature.featureKey));
   const intelligenceEnabled = hasIntelligencePackage(enabled);
+  const directWholesaleOrdersEnabled = enabled.has('OHIO_DIRECT_WHOLESALE_ORDERS');
   const onboarding = organization.onboardingData && typeof organization.onboardingData === 'object' && !Array.isArray(organization.onboardingData) ? organization.onboardingData as Record<string, unknown> : {};
   const checks = [['Organization created', true], ['Initial admin created', users.some((user) => user.role === 'ADMIN' || user.role === 'PLATFORM_ADMIN')], ['Ohio Vendor ID present', organization.vendorIdentifiers.some((vendor) => vendor.active)], ['A3A stores configured', organization.a3aStoreIdentifiers.length > 0], ['Products discovered', organization.products.length > 0], ['Product ownership confirmed', Boolean(onboarding.productsConfirmed)], ['Feature entitlements configured', organization.features.length > 0], ['First login completed', Boolean(onboarding.firstLogin)]] as const;
   const progress = Math.round(checks.filter(([, complete]) => complete).length / checks.length * 100);
@@ -139,11 +148,11 @@ export default async function OrganizationPage({ params, searchParams }: { param
       <article className="card"><div className="section-heading"><div><span className="page-eyebrow">Onboarding</span><h2>{progress}% complete</h2></div><span className="pill">{organization.onboardingStatus}</span></div><div className="onboarding-progress"><span style={{ width: `${progress}%` }} /></div><ul className="checklist">{checks.map(([label, complete]) => <li className={complete ? 'complete' : ''} key={label}>{complete ? '✓' : '○'} {label}</li>)}</ul></article>
     </section>
     {latestRun ? <article className="card"><div className="section-heading"><div><span className="page-eyebrow">Provisioning workflow</span><h2>{latestRun.status.replaceAll('_', ' ')}</h2><p className="muted">Persisted, retryable steps make onboarding safe to resume after configuration changes or failures.</p></div><form action={runProvisioningAction}><input name="organizationId" type="hidden" value={id} /><input name="runId" type="hidden" value={latestRun.id} /><button type="submit">Run or resume provisioning</button></form></div>{latestRun.lastError ? <p className="notice danger">{latestRun.lastError}</p> : null}<div className="provisioning-step-grid">{latestRun.steps.map((step) => <div className="provisioning-step" key={step.id}><span>{step.sequence + 1}</span><div><strong>{step.kind.replaceAll('_', ' ')}</strong><small>{step.status.replaceAll('_', ' ')}{step.lastError ? ` · ${step.lastError}` : ''}</small></div></div>)}</div><InvitationControls organizationId={id} /></article> : <article className="card"><span className="page-eyebrow">Provisioning workflow</span><h2>Not started</h2><p className="muted">Create a persisted workflow for this existing organization, discover its products, and continue through activation.</p><form action={startProvisioningAction}><input name="organizationId" type="hidden" value={id} /><button type="submit">Start provisioning workflow</button></form></article>}
-    <form action={saveFeatures} className="card feature-entitlements-form"><input name="organizationId" type="hidden" value={id} /><div className="section-heading"><div><span className="page-eyebrow">Product access</span><h2>Plan</h2><p className="muted">Core CRM is included for every organization. Intelligence is the only optional add-on.</p></div><button className="compact-btn" type="submit">Save plan</button></div><div className="package-entitlement-grid"><article className="package-entitlement"><span><strong>Core CRM</strong><small>Accounts, visits, worklists, users, Ohio data, integrations, and standard reporting.</small></span><span className="pill">Included</span></article><label className="package-entitlement selectable"><input defaultChecked={intelligenceEnabled} name="intelligence" type="checkbox" /><span><strong>Intelligence</strong><small>Agency Intelligence, Wholesale Opportunities, and Advanced Intelligence.</small></span><span className="pill">Add-on</span></label></div></form>
+    <form action={saveFeatures} className="card feature-entitlements-form"><input name="organizationId" type="hidden" value={id} /><div className="section-heading"><div><span className="page-eyebrow">Product access</span><h2>Plan</h2><p className="muted">Core CRM is included. Optional capabilities are enabled separately.</p></div><button className="compact-btn" type="submit">Save plan</button></div><div className="package-entitlement-grid"><article className="package-entitlement"><span><strong>Core CRM</strong><small>Accounts, visits, worklists, users, Ohio data, integrations, and standard reporting.</small></span><span className="pill">Included</span></article><label className="package-entitlement selectable"><input defaultChecked={intelligenceEnabled} name="intelligence" type="checkbox" /><span><strong>Intelligence</strong><small>Agency Intelligence, Wholesale Opportunities, and Advanced Intelligence.</small></span><span className="pill">Add-on</span></label><label className="package-entitlement selectable"><input defaultChecked={directWholesaleOrdersEnabled} name="directWholesaleOrders" type="checkbox" /><span><strong>Direct Wholesale Orders</strong><small>Prepare and download Ohio A-3a wholesale-order PDFs. Email sending is not included.</small></span><span className="pill">Pilot</span></label></div></form>
     <section className="platform-grid"><article className="card"><div className="section-heading"><div><span className="page-eyebrow">Ohio market</span><h2>Vendor IDs</h2><p className="muted">Platform Admin-only product discovery identifiers.</p></div></div><div className="platform-list">{organization.vendorIdentifiers.map((vendor) => <div key={vendor.id}><span><strong>{vendor.vendorId}</strong><small>{vendor.label || 'Ohio Vendor ID'}</small></span><span className="pill">{vendor.active ? 'Active' : 'Inactive'}</span></div>)}</div><form action={addVendor} className="inline-form"><input name="organizationId" type="hidden" value={id} /><label>Vendor ID<input name="vendorId" required /></label><label>Label<input name="label" /></label><button type="submit">Add and discover</button></form></article>
       <article className="card"><div className="section-heading"><div><span className="page-eyebrow">People</span><h2>Organization users</h2></div></div><div className="platform-list">{users.map((user) => <div key={user.id}><span><strong>{getUserDisplayName(user)}</strong><small>{user.email}</small></span><span className="pill">{user.role}</span></div>)}</div></article></section>
     <article className="card"><div className="section-heading"><div><span className="page-eyebrow">Tenant data connection</span><h2>OHLQ inventory login</h2><p className="muted">Platform administrators can verify configuration status, but only an organization administrator can set or replace the credential.</p></div><span className="pill">{organization.ohlqCredentials ? 'Configured' : 'Not configured'}</span></div>{organization.ohlqCredentials ? <p className="muted">Login: {organization.ohlqCredentials.usernameHint} · configured {organization.ohlqCredentials.configuredAt.toLocaleString('en-US', { timeZone: 'America/New_York' })}</p> : null}</article>
-    <form action={saveA3aStoreIds} className="card"><input name="organizationId" type="hidden" value={id} /><div className="section-heading"><div><span className="page-eyebrow">Organization locations</span><h2>A3A Store IDs</h2><p className="muted">Store numbers located in this organization's locations. Organization admins can also maintain this list.</p></div><button className="compact-btn" type="submit">Save store IDs</button></div><label>A3A Store IDs<textarea defaultValue={organization.a3aStoreIdentifiers.map((item) => item.storeId).join('\n')} name="a3aStoreIds" placeholder="One store number per line" rows={5} /></label></form>
+    <article className="card a3a-location-settings"><div className="section-heading"><div><span className="page-eyebrow">Organization locations</span><h2>A-3a selling locations</h2><p className="muted">Seller information used in downloaded wholesale-order PDFs.</p></div></div>{organization.a3aStoreIdentifiers.map((location) => <A3aLocationForm action={saveA3aLocation} key={location.id} location={location} organizationId={id} />)}<A3aLocationForm action={saveA3aLocation} organizationId={id} /></article>
     <article className="card product-selection-card"><div className="section-heading"><div><span className="page-eyebrow">Catalog configuration</span><h2>Product selection</h2><p className="muted">Move items between the two lists, then save once. New Brand Master matches appear on the excluded side for review.</p></div><form action={refreshProductCandidates}><input name="organizationId" type="hidden" value={id} /><button className="compact-btn secondary" type="submit">Scan Brand Master</button></form></div><ProductSelectionEditor action={saveProductSelection} organizationId={id} products={organization.products.map((product) => ({ id: product.id, itemCode: product.externalItemCode, name: product.displayName, status: product.status }))} /></article>
     <article className="card"><div className="section-heading"><div><span className="page-eyebrow">Auditability</span><h2>Recent platform activity</h2></div></div><div className="platform-list">{organization.auditEvents.map((event) => <div key={event.id}><span><strong>{event.action.replaceAll('_', ' ')}</strong><small>{event.occurredAt.toLocaleString('en-US', { timeZone: 'America/New_York' })}</small></span><code>{event.actorUserId.slice(-8)}</code></div>)}</div></article>
   </>;

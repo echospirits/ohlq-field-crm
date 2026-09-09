@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { CORE_PACKAGE_FEATURE_KEYS, DEFAULT_FEATURE_KEYS, ECHO_FEATURE_KEYS, FEATURE_KEYS, FEATURE_REGISTRY, getPackageFeatureKeys, hasIntelligencePackage, INTELLIGENCE_PACKAGE_FEATURE_KEYS, validateFeatureSelection } from '../lib/featureRegistry';
+import { CORE_PACKAGE_FEATURE_KEYS, DEFAULT_FEATURE_KEYS, ECHO_FEATURE_KEYS, FEATURE_KEYS, FEATURE_REGISTRY, getPackageFeatureKeys, hasIntelligencePackage, INTELLIGENCE_PACKAGE_FEATURE_KEYS, OPTIONAL_FEATURE_KEYS, validateFeatureSelection } from '../lib/featureRegistry';
 import { getNavigationItems, navigationItems } from '../app/components/navigationConfig';
 import { normalizeOrganizationIdentifierList } from '../lib/organizationConfiguration';
 
@@ -11,13 +11,16 @@ test('feature registry has stable unique keys and explicit dependency metadata',
   assert.equal(DEFAULT_FEATURE_KEYS.includes('WHOLESALE_OPPORTUNITIES'), false);
   assert.equal(ECHO_FEATURE_KEYS.includes('WHOLESALE_OPPORTUNITIES'), true);
   assert.deepEqual(FEATURE_REGISTRY.WHOLESALE_OPPORTUNITIES.dependencies, ['WHOLESALE_ACCOUNTS', 'OHLQ_SALES_DATA']);
+  assert.deepEqual(FEATURE_REGISTRY.OHIO_DIRECT_WHOLESALE_ORDERS.dependencies, ['WHOLESALE_ACCOUNTS', 'OHLQ_SALES_DATA']);
 });
 
 test('feature packages keep Core mandatory and group every intelligence capability', () => {
   assert.deepEqual(DEFAULT_FEATURE_KEYS, CORE_PACKAGE_FEATURE_KEYS);
   assert.deepEqual(INTELLIGENCE_PACKAGE_FEATURE_KEYS, ['AGENCY_INTELLIGENCE', 'WHOLESALE_OPPORTUNITIES', 'ADVANCED_INTELLIGENCE']);
+  assert.deepEqual(OPTIONAL_FEATURE_KEYS, ['OHIO_DIRECT_WHOLESALE_ORDERS']);
   assert.deepEqual(getPackageFeatureKeys(false), CORE_PACKAGE_FEATURE_KEYS);
-  assert.deepEqual(getPackageFeatureKeys(true), FEATURE_KEYS);
+  assert.deepEqual(getPackageFeatureKeys(true), FEATURE_KEYS.filter((key) => key !== 'OHIO_DIRECT_WHOLESALE_ORDERS'));
+  assert.deepEqual(getPackageFeatureKeys(true, true), FEATURE_KEYS);
   assert.equal(hasIntelligencePackage(['AGENCY_INTELLIGENCE']), true);
   assert.equal(hasIntelligencePackage(CORE_PACKAGE_FEATURE_KEYS), false);
 });
@@ -56,16 +59,28 @@ test('organization setup access separates tenant configuration from platform dat
   assert.doesNotMatch(credentialSave, /tenant-admin-required/);
   assert.doesNotMatch(organizationPage, /actor\.role !== UserRole\.PLATFORM_ADMIN \? <form action=\{saveOhlqCredentials\}/);
   assert.match(organizationPage, /requireOrganizationContext/);
-  assert.match(organizationPage, /A3A Store IDs/);
+  assert.match(organizationPage, /A-3a selling locations/);
   assert.match(organizationPage, /ProductSelectionEditor/);
   assert.doesNotMatch(organizationPage, /name="vendorId"/);
 });
 
-test('A3A store IDs are normalized and stored as organization-owned records', () => {
+test('A3A selling locations are normalized and stored as organization-owned records', () => {
   assert.deepEqual(normalizeOrganizationIdentifierList(' 10509, a-12\n10509; B7 '), ['10509', 'A-12', 'B7']);
   const schema = readFileSync('prisma/schema.prisma', 'utf8');
   assert.match(schema, /model OrganizationA3aStoreIdentifier/);
+  assert.match(schema, /addressLine1\s+String\?/);
+  assert.match(schema, /isDefault\s+Boolean/);
   assert.match(schema, /@@unique\(\[organizationId, market, storeId\]\)/);
+});
+
+test('direct wholesale PDF entry points are feature gated and contain no email send path', () => {
+  const accountPage = readFileSync('app/wholesale/[id]/page.tsx', 'utf8');
+  const orderPage = readFileSync('app/wholesale/[id]/direct-order/page.tsx', 'utf8');
+  const pdfRoute = readFileSync('app/api/wholesale-orders/pdf/route.ts', 'utf8');
+  assert.match(accountPage, /OHIO_DIRECT_WHOLESALE_ORDERS/);
+  assert.match(orderPage, /requireFeatureForUser\(user, 'OHIO_DIRECT_WHOLESALE_ORDERS'\)/);
+  assert.match(pdfRoute, /requireFeatureForUser\(user, 'OHIO_DIRECT_WHOLESALE_ORDERS'\)/);
+  assert.doesNotMatch(orderPage + pdfRoute, /sendEmail|RESEND|OHIO_DIRECT_WHOLESALE_ORDER_EMAIL/);
 });
 
 test('manual shared OHLQ data loads require Platform Admin', () => {

@@ -497,18 +497,30 @@ model OrganizationVendorIdentifier {
 }
 
 model OrganizationA3aStoreIdentifier {
-  id             String       @id @default(cuid())
-  organizationId String
-  market         String       @default("OH")
-  storeId        String
-  active         Boolean      @default(true)
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  id               String       @id @default(cuid())
+  organizationId   String
+  market           String       @default("OH")
+  storeId          String
+  name             String?
+  dba              String?
+  permitNumber     String?
+  addressLine1     String?
+  addressLine2     String?
+  city             String?
+  state            String       @default("OH")
+  postalCode       String?
+  phone            String?
+  email            String?
+  isDefault        Boolean      @default(false)
+  active           Boolean      @default(true)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@unique([organizationId, market, storeId])
   @@index([market, storeId])
   @@index([organizationId, active])
+  @@index([organizationId, isDefault, active])
 }
 
 model OrganizationProduct {

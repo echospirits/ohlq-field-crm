@@ -13,6 +13,104 @@ export const normalizeOrganizationIdentifierList = (value: string) =>
 
 export const isValidA3aStoreId = (value: string) => /^[A-Z0-9-]{1,32}$/.test(value);
 
+export type OrganizationA3aLocationInput = {
+  active: boolean;
+  addressLine1: string;
+  addressLine2?: string;
+  city: string;
+  dba?: string;
+  email?: string;
+  isDefault: boolean;
+  locationId?: string;
+  name: string;
+  permitNumber?: string;
+  phone?: string;
+  postalCode: string;
+  state: string;
+  storeId: string;
+};
+
+const optionalText = (value: string | undefined) => value?.trim() || null;
+
+export async function saveOrganizationA3aLocation({
+  input,
+  organizationId,
+  db = prisma,
+}: {
+  input: OrganizationA3aLocationInput;
+  organizationId: string;
+  db?: PrismaClient;
+}) {
+  const storeId = input.storeId.trim().toUpperCase();
+  const state = input.state.trim().toUpperCase();
+  const email = optionalText(input.email)?.toLowerCase() ?? null;
+  if (!isValidA3aStoreId(storeId)) throw new Error('Invalid A3A Store ID.');
+  if (!input.name.trim() || !input.addressLine1.trim() || !input.city.trim() || !input.postalCode.trim()) {
+    throw new Error('A3A location name and address are required.');
+  }
+  if (state !== 'OH') throw new Error('Ohio A3A locations must use OH as the state.');
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Invalid A3A location email.');
+
+  return db.$transaction(async (tx) => {
+    if (input.locationId) {
+      const existing = await tx.organizationA3aStoreIdentifier.findFirst({
+        where: { id: input.locationId, organizationId },
+        select: { id: true },
+      });
+      if (!existing) throw new Error('A3A location not found.');
+    }
+
+    const currentDefault = await tx.organizationA3aStoreIdentifier.findFirst({
+      where: { organizationId, active: true, isDefault: true },
+      select: { id: true },
+    });
+    const isDefault = input.active && (input.isDefault || !currentDefault || currentDefault.id === input.locationId);
+    if (isDefault) {
+      await tx.organizationA3aStoreIdentifier.updateMany({ where: { organizationId }, data: { isDefault: false } });
+    }
+
+    const data = {
+      active: input.active,
+      addressLine1: input.addressLine1.trim(),
+      addressLine2: optionalText(input.addressLine2),
+      city: input.city.trim(),
+      dba: optionalText(input.dba),
+      email,
+      isDefault,
+      name: input.name.trim(),
+      permitNumber: optionalText(input.permitNumber),
+      phone: optionalText(input.phone),
+      postalCode: input.postalCode.trim(),
+      state,
+      storeId,
+    };
+    const location = input.locationId
+      ? await tx.organizationA3aStoreIdentifier.update({ where: { id: input.locationId }, data })
+      : await tx.organizationA3aStoreIdentifier.upsert({
+          where: { organizationId_market_storeId: { organizationId, market: 'OH', storeId } },
+          create: { ...data, organizationId, market: 'OH' },
+          update: data,
+        });
+
+    if (!location.active) {
+      const remainingDefault = await tx.organizationA3aStoreIdentifier.findFirst({
+        where: { organizationId, active: true, isDefault: true },
+        select: { id: true },
+      });
+      if (!remainingDefault) {
+        const fallback = await tx.organizationA3aStoreIdentifier.findFirst({
+          where: { organizationId, active: true },
+          orderBy: { storeId: 'asc' },
+          select: { id: true },
+        });
+        if (fallback) await tx.organizationA3aStoreIdentifier.update({ where: { id: fallback.id }, data: { isDefault: true } });
+      }
+    }
+
+    return location;
+  });
+}
+
 export async function replaceOrganizationA3aStoreIds({
   organizationId,
   storeIds,

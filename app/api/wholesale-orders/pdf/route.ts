@@ -1,0 +1,117 @@
+import { OrganizationProductStatus } from '@prisma/client';
+import { z } from 'zod';
+import { requireUser } from '../../../../lib/auth';
+import { generateDirectWholesaleOrderPdf } from '../../../../lib/directWholesaleOrderPdf';
+import { MAX_DIRECT_WHOLESALE_ORDER_LINES } from '../../../../lib/directWholesaleOrders';
+import { requireFeatureForUser } from '../../../../lib/organizations';
+import { prisma } from '../../../../lib/prisma';
+
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
+const requiredText = z.string().trim().min(1).max(240);
+const optionalText = z.string().trim().max(240);
+const payloadSchema = z.object({
+  a3aSignature: optionalText,
+  customer: z.object({
+    address: requiredText,
+    city: requiredText,
+    dba: optionalText,
+    f2Permit: z.boolean(),
+    name: requiredText,
+    permitNumber: requiredText,
+    phone: optionalText,
+    postalCode: requiredText,
+    state: z.string().trim().transform((value) => value.toUpperCase()).pipe(z.literal('OH')),
+  }),
+  customerSignature: optionalText,
+  directSaleLocationId: requiredText,
+  lines: z.array(z.object({
+    itemCode: requiredText,
+    quantityBottles: z.number().int().min(1).max(10000),
+    wholesalePrice: z.number().finite().min(0).max(100000),
+  })).min(1).max(MAX_DIRECT_WHOLESALE_ORDER_LINES),
+  saleDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  sinTax: z.number().finite().min(0).max(100000),
+  wholesaleAccountId: requiredText,
+});
+
+const safeFilename = (value: string) => value.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').slice(0, 70) || 'wholesale-customer';
+
+export async function POST(request: Request) {
+  const fetchSite = request.headers.get('sec-fetch-site');
+  if (fetchSite && fetchSite !== 'same-origin') return new Response('Cross-site PDF requests are not allowed.', { status: 403 });
+
+  const user = await requireUser();
+  const { organizationId } = await requireFeatureForUser(user, 'OHIO_DIRECT_WHOLESALE_ORDERS');
+  const formData = await request.formData();
+  let rawPayload: unknown;
+  try {
+    rawPayload = JSON.parse(String(formData.get('payload') ?? ''));
+  } catch {
+    return new Response('The wholesale order could not be read.', { status: 400 });
+  }
+  const parsed = payloadSchema.safeParse(rawPayload);
+  if (!parsed.success) return new Response('Review the required wholesale-order fields and try again.', { status: 400 });
+  const payload = parsed.data;
+
+  const [account, location, organizationProducts] = await Promise.all([
+    prisma.wholesaleAccount.findFirst({ where: { id: payload.wholesaleAccountId, isActive: true, mergedIntoId: null } }),
+    prisma.organizationA3aStoreIdentifier.findFirst({
+      where: { id: payload.directSaleLocationId, organizationId, market: 'OH', active: true },
+    }),
+    prisma.organizationProduct.findMany({
+      where: {
+        organizationId,
+        market: 'OH',
+        active: true,
+        discontinued: false,
+        status: { in: [OrganizationProductStatus.OWNED, OrganizationProductStatus.REPRESENTED] },
+        externalItemCode: { in: payload.lines.map((line) => line.itemCode) },
+      },
+      select: { displayName: true, externalItemCode: true },
+    }),
+  ]);
+  if (!account || !location) return new Response('The account or A-3a location is no longer available.', { status: 404 });
+  if (!location.name || !location.addressLine1 || !location.city || !location.postalCode) {
+    return new Response('The selected A-3a location is missing required seller information.', { status: 400 });
+  }
+  const productByCode = new Map(organizationProducts.map((product) => [product.externalItemCode.toUpperCase(), product]));
+  if (productByCode.size !== new Set(payload.lines.map((line) => line.itemCode.toUpperCase())).size) {
+    return new Response('One or more products are not available to this organization.', { status: 403 });
+  }
+  const brandItems = await prisma.ohlqBrandMasterItem.findMany({
+    where: { itemCode: { in: [...productByCode.keys()] } },
+    select: { itemCode: true, name: true },
+  });
+  const brandNameByCode = new Map(brandItems.map((item) => [item.itemCode.toUpperCase(), item.name]));
+  const lines = payload.lines.map((line) => {
+    const itemCode = line.itemCode.toUpperCase();
+    const organizationProduct = productByCode.get(itemCode)!;
+    return { ...line, itemCode, itemName: brandNameByCode.get(itemCode) || organizationProduct.displayName || itemCode };
+  });
+
+  const pdf = await generateDirectWholesaleOrderPdf({
+    ...payload,
+    lines,
+    seller: {
+      addressLine1: [location.addressLine1, location.addressLine2].filter(Boolean).join(', '),
+      city: location.city,
+      email: location.email || '',
+      name: location.dba || location.name,
+      phone: location.phone || '',
+      postalCode: location.postalCode,
+      state: location.state,
+      storeId: location.storeId,
+    },
+  });
+  const customerLabel = payload.customer.dba || payload.customer.name;
+  const filename = `${payload.saleDate}-${safeFilename(customerLabel)}-A3a-Wholesale-Sale.pdf`;
+  return new Response(new Uint8Array(pdf), {
+    headers: {
+      'Cache-Control': 'private, no-store',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Type': 'application/pdf',
+    },
+  });
+}
