@@ -13,8 +13,13 @@ test('desktop navigation keeps work and account areas intentionally grouped', ()
   );
   assert.deepEqual(
     getNavigationItems('accounts').map((item) => item.key),
-    ['accounts', 'agencies', 'wholesale'],
+    ['accounts', 'agencies', 'wholesale', 'wholesale-orders'],
   );
+});
+
+test('wholesale orders navigation is feature gated', () => {
+  assert.equal(getNavigationItems('accounts', []).some((item) => item.key === 'wholesale-orders'), false);
+  assert.equal(getNavigationItems('accounts', ['OHIO_DIRECT_WHOLESALE_ORDERS']).some((item) => item.key === 'wholesale-orders'), true);
 });
 
 test('mobile navigation stays limited to four primary destinations', () => {

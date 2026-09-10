@@ -3,10 +3,10 @@ export const runtime = 'nodejs';
 
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
-import { MenuPlacementStatus, MenuPlacementType, Prisma, UserRole } from '@prisma/client';
+import { MenuPlacementStatus, MenuPlacementType, Prisma, UserRole, WholesaleOrderFiledSource, WholesaleOrderStatus } from '@prisma/client';
 import { buildPageMetadata } from '../../../lib/appBrand';
 import { getUserDisplayName, requireUser } from '../../../lib/auth';
-import { formatEasternDate } from '../../../lib/dateTime';
+import { formatDateOnly, formatEasternDate } from '../../../lib/dateTime';
 import { getWholesaleRecentPurchases } from '../../../lib/ohlqSalesData';
 import { prisma } from '../../../lib/prisma';
 import { getOrganizationFeatures, requireOrganizationContext } from '../../../lib/organizations';
@@ -21,8 +21,20 @@ import { WholesaleRecentPurchasesCard } from '../WholesaleRecentPurchasesCard';
 import { AccountWorkspaceNavigation } from '../../components/AccountWorkspaceNavigation';
 import { OpportunityAccountPanel } from '../OpportunityAccountPanel';
 import { ContextualActions } from '../../components/ContextualActions';
+import { listWholesaleOrders } from '../../../lib/wholesaleOrders';
+import { formatOrderCurrency } from '../../wholesale-orders/orderPresentation';
 
 const formatVisitDate = (date: Date | null | undefined) => formatEasternDate(date) || 'No visits yet';
+const getMergedWholesaleAccountIds = async (accountId: string) => {
+  const ids = new Set([accountId]);
+  let frontier = [accountId];
+  while (frontier.length) {
+    const sources = await prisma.wholesaleAccount.findMany({ where: { mergedIntoId: { in: frontier } }, select: { id: true } });
+    frontier = sources.map(({ id: sourceId }) => sourceId).filter((sourceId) => !ids.has(sourceId));
+    frontier.forEach((sourceId) => ids.add(sourceId));
+  }
+  return [...ids];
+};
 const tagStatusMessages: Record<string, string> = {
   added: 'Tag added.',
   removed: 'Tag removed.',
@@ -100,8 +112,9 @@ export default async function WholesaleActivityPage({
   }
 
   const accountLicenseeIds = getWholesaleLicenseeIdValues(account);
+  const mergedAccountIds = await getMergedWholesaleAccountIds(account.id);
 
-  const [visits, tags, backingAccount, linkedAgency, users, purchases] = await Promise.all([
+  const [visits, tags, backingAccount, linkedAgency, users, purchases, accountOrders] = await Promise.all([
     prisma.loggedVisit.findMany({
       where: {
         organizationId,
@@ -136,7 +149,9 @@ export default async function WholesaleActivityPage({
       : null,
     prisma.user.findMany({ where: { organizationId }, orderBy: [{ name: 'asc' }, { email: 'asc' }] }),
     getWholesaleRecentPurchases({ account, config: tenantConfig }),
+    hasDirectWholesaleOrders ? listWholesaleOrders({ organizationId, wholesaleAccountIds: mergedAccountIds, status: WholesaleOrderStatus.FILED, pageSize: 200 }) : { orders: [], totalCount: 0, page: 1, pageSize: 200 },
   ]);
+  const filedOrders = accountOrders.orders.filter((order) => order.status === WholesaleOrderStatus.FILED && order.filedAt);
   const placementQ = (query.placementQ ?? '').trim();
   const placementStatusFilter = Object.values(MenuPlacementStatus).includes(
     query.placementStatusFilter as MenuPlacementStatus,
@@ -317,10 +332,17 @@ export default async function WholesaleActivityPage({
 
       <section className="dashboard-section account-workspace-section" id="activity">
         <div className="section-heading">
-          <h2>Logged Visit Activity</h2>
-          <span className="pill">{visits.length}</span>
+          <h2>Activity</h2>
+          <span className="pill">{visits.length + filedOrders.length}</span>
         </div>
-        <VisitActivityTable contactMap={contactMap} visits={visits} />
+        <VisitActivityTable contactMap={contactMap} visits={visits} supplementalEvents={filedOrders.map((order) => ({
+          actor: order.filedSource === WholesaleOrderFiledSource.MANUAL ? order.filedBy?.displayName : 'OHLQ sales match',
+          at: order.filedAt!,
+          detail: `${formatDateOnly(order.saleDate)} · ${formatOrderCurrency(order.totalCents)} · ${order.lines.length} item${order.lines.length === 1 ? '' : 's'}`,
+          href: `/wholesale-orders/${order.id}`,
+          id: order.id,
+          title: 'Direct wholesale order filed',
+        }))} />
       </section>
     </>
   );

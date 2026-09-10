@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import { calculateDirectWholesaleOrderTotals, MAX_DIRECT_WHOLESALE_ORDER_LINES, type DirectWholesaleOrderPdfPayload } from '../../../../lib/directWholesaleOrders';
 
 type LocationOption = { id: string; label: string; storeId: string };
@@ -31,6 +32,10 @@ export function DirectWholesaleOrderForm({
   const [customerSignature, setCustomerSignature] = useState('');
   const [lines, setLines] = useState<OrderLine[]>([{ key: 1, itemCode: '', quantityBottles: 1, wholesalePrice: 0 }]);
   const [reviewing, setReviewing] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
+  const [completedOrder, setCompletedOrder] = useState<{ fingerprint: string; id: string } | null>(null);
+  const requestRef = useRef<{ fingerprint: string; id: string } | null>(null);
   const productByCode = useMemo(() => new Map(products.map((product) => [product.itemCode.toUpperCase(), product])), [products]);
   const totals = calculateDirectWholesaleOrderTotals(lines, sinTax);
   const updateCustomer = (key: keyof typeof customer, value: string | boolean) => setCustomer((current) => ({ ...current, [key]: value }));
@@ -43,7 +48,7 @@ export function DirectWholesaleOrderForm({
   const canReview = Boolean(
     directSaleLocationId && selectedSaleDate && customer.name.trim() && customer.address.trim() && customer.city.trim() &&
     customer.state === 'OH' && customer.postalCode.trim() && customer.permitNumber.trim() && Number.isFinite(sinTax) && sinTax >= 0 && lines.length > 0 &&
-    lines.every((line) => productByCode.has(line.itemCode.toUpperCase()) && Number.isInteger(line.quantityBottles) && line.quantityBottles > 0 && line.wholesalePrice >= 0),
+    sinTax <= 100000 && lines.every((line) => productByCode.has(line.itemCode.toUpperCase()) && Number.isInteger(line.quantityBottles) && line.quantityBottles > 0 && line.quantityBottles <= 10000 && Number.isFinite(line.wholesalePrice) && line.wholesalePrice >= 0 && line.wholesalePrice <= 100000),
   );
   const payload: DirectWholesaleOrderPdfPayload = {
     a3aSignature,
@@ -55,11 +60,66 @@ export function DirectWholesaleOrderForm({
     sinTax,
     wholesaleAccountId: account.id,
   };
+  const fingerprint = JSON.stringify(payload);
+
+  const downloadBlob = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const getDownloadFilename = (response: Response) => {
+    const disposition = response.headers.get('content-disposition') ?? '';
+    const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+    const plain = disposition.match(/filename="([^"]+)"/i)?.[1];
+    if (encoded) {
+      try { return decodeURIComponent(encoded); } catch { /* use the safe fallback below */ }
+    }
+    return plain || `${selectedSaleDate}-A3a-Wholesale-Sale.pdf`;
+  };
+
+  const createAndDownloadOrder = async () => {
+    if (submitting) return;
+    setSubmitting(true);
+    setSubmitError('');
+    try {
+      if (completedOrder?.fingerprint === fingerprint) {
+        const response = await fetch(`/api/wholesale-orders/${completedOrder.id}/pdf`, { cache: 'no-store' });
+        if (!response.ok) throw new Error(await response.text() || 'The saved PDF could not be downloaded.');
+        if (!response.headers.get('content-type')?.includes('application/pdf')) throw new Error('Your session may have expired. Refresh the page, sign in, and download the saved order again.');
+        downloadBlob(await response.blob(), getDownloadFilename(response));
+        return;
+      }
+      if (!requestRef.current || requestRef.current.fingerprint !== fingerprint) {
+        requestRef.current = { fingerprint, id: crypto.randomUUID() };
+      }
+      const response = await fetch('/api/wholesale-orders/pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...payload, clientRequestId: requestRef.current.id }),
+      });
+      if (!response.ok) throw new Error(await response.text() || 'The wholesale order could not be created.');
+      if (!response.headers.get('content-type')?.includes('application/pdf')) throw new Error('Your session may have expired. Refresh the page, sign in, and try again.');
+      const orderId = response.headers.get('x-wholesale-order-id');
+      if (!orderId) throw new Error('The order confirmation was incomplete. Open Wholesale Orders to check whether it was saved before retrying.');
+      downloadBlob(await response.blob(), getDownloadFilename(response));
+      setCompletedOrder({ fingerprint, id: orderId });
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : 'The wholesale order could not be created.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   if (reviewing) {
     const location = locations.find((item) => item.id === directSaleLocationId);
     return <section className="direct-order-shell">
-      <div className="notice direct-order-safety"><strong>Download only.</strong> Neat will not email or transmit this order.</div>
+      <div className="notice direct-order-safety"><strong>Save and download only.</strong> Neat will not email or transmit this order.</div>
       <article className="card direct-order-review">
         <div className="section-heading"><div><span className="page-eyebrow">Review</span><h2>A-3a direct wholesale sale</h2></div><span className="pill">PDF download</span></div>
         <dl className="direct-order-review-grid">
@@ -74,18 +134,17 @@ export function DirectWholesaleOrderForm({
         })}</div>
         <div className="direct-order-total"><span>Subtotal <strong>{currency.format(totals.subtotal)}</strong></span><span>SIN tax <strong>{currency.format(totals.sinTax)}</strong></span><span className="grand-total">Invoice total <strong>{currency.format(totals.total)}</strong></span></div>
         <div className="action-row direct-order-review-actions">
-          <button className="secondary" onClick={() => setReviewing(false)} type="button">Back to edit</button>
-          <form action="/api/wholesale-orders/pdf" method="post">
-            <input name="payload" type="hidden" value={JSON.stringify(payload)} />
-            <button type="submit">Download completed PDF</button>
-          </form>
+          <button className="secondary" disabled={submitting} onClick={() => setReviewing(false)} type="button">Back to edit</button>
+          <button disabled={submitting} onClick={createAndDownloadOrder} type="button">{submitting ? 'Preparing PDF…' : completedOrder?.fingerprint === fingerprint ? 'Download saved PDF again' : 'Save order and download PDF'}</button>
         </div>
+        {submitError ? <p className="notice direct-order-error" role="alert">{submitError}</p> : null}
+        {completedOrder?.fingerprint === fingerprint ? <div className="notice direct-order-success" role="status"><strong>Your order is saved.</strong> <Link href={`/wholesale-orders/${completedOrder.id}`}>View order</Link></div> : null}
       </article>
     </section>;
   }
 
   return <section className="direct-order-shell">
-    <div className="notice direct-order-safety"><strong>Safe pilot:</strong> this workflow only creates a local PDF download. It cannot send email to OHLQ.</div>
+    <div className="notice direct-order-safety"><strong>Safe pilot:</strong> this workflow saves the order in Neat and downloads its PDF. It cannot send email to OHLQ.</div>
     <article className="card direct-order-card">
       <div className="section-heading"><div><span className="page-eyebrow">1. Seller</span><h2>A-3a selling location</h2></div></div>
       <label>Selling location<select onChange={(event) => setDirectSaleLocationId(event.target.value)} value={directSaleLocationId}>{locations.map((location) => <option key={location.id} value={location.id}>{location.label} · Store {location.storeId}</option>)}</select></label>

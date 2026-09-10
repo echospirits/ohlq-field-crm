@@ -125,6 +125,7 @@ const getBreadcrumbs = (pathname: string): BreadcrumbItem[] => {
     { prefix: '/my-week', crumbs: [{ href: '/alerts', label: 'My Work' }, { href: '/my-week', label: 'My Week' }] },
     { prefix: '/agencies/', crumbs: [{ href: '/accounts', label: 'Accounts' }, { href: '/agencies', label: 'Agencies' }, { href: pathname, label: 'Agency' }] },
     { prefix: '/agencies', crumbs: [{ href: '/accounts', label: 'Accounts' }, { href: '/agencies', label: 'Agencies' }] },
+    { prefix: '/wholesale-orders', crumbs: [{ href: '/accounts', label: 'Accounts' }, { href: '/wholesale-orders', label: 'Wholesale Orders' }] },
     { prefix: '/wholesale/', crumbs: [{ href: '/accounts', label: 'Accounts' }, { href: '/wholesale', label: 'Wholesale' }, { href: pathname, label: 'Account' }] },
     { prefix: '/wholesale', crumbs: [{ href: '/accounts', label: 'Accounts' }, { href: '/wholesale', label: 'Wholesale' }] },
     { prefix: '/tags', crumbs: [{ href: '/accounts', label: 'Accounts' }, { href: '/tags', label: 'Tags' }] },

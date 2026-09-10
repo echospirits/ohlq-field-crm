@@ -293,6 +293,17 @@ enum OhlqReportRunStatus {
   ERRORED
 }
 
+enum WholesaleOrderStatus {
+  PDF_GENERATED
+  SENT
+  FILED
+}
+
+enum WholesaleOrderFiledSource {
+  AUTO_MATCH
+  MANUAL
+}
+
 enum TargetImportStatus {
   DRY_RUN
   COMPLETED
@@ -361,6 +372,9 @@ model User {
   calendarConnections         CalendarConnection[]
   calendarOAuthStates         CalendarOAuthState[]
   followUpAssignedVisits      LoggedVisit[]          @relation("LoggedVisitFollowUpAssignedTo")
+  createdWholesaleOrders      WholesaleOrder[]       @relation("WholesaleOrderCreatedBy")
+  sentWholesaleOrders         WholesaleOrder[]       @relation("WholesaleOrderSentBy")
+  filedWholesaleOrders        WholesaleOrder[]       @relation("WholesaleOrderFiledBy")
 
   @@index([role])
   @@index([organizationId])
@@ -368,32 +382,32 @@ model User {
 }
 
 model Organization {
-  id                  String                           @id @default(cuid())
+  id                  String                            @id @default(cuid())
   name                String
   displayName         String
-  slug                String                           @unique
-  active              Boolean                          @default(true)
-  primaryState        String                           @default("OH")
-  timezone            String                           @default("America/New_York")
+  slug                String                            @unique
+  active              Boolean                           @default(true)
+  primaryState        String                            @default("OH")
+  timezone            String                            @default("America/New_York")
   website             String?
   logoUrl             String?
-  appName             String                           @default("Neat")
-  digestName          String                           @default("Neat")
-  productLabel        String                           @default("product")
-  productPluralLabel  String                           @default("products")
-  brandPrimaryColor   String                           @default("#2458ff")
-  brandAccentColor    String                           @default("#6d28d9")
+  appName             String                            @default("Neat")
+  digestName          String                            @default("Neat")
+  productLabel        String                            @default("product")
+  productPluralLabel  String                            @default("products")
+  brandPrimaryColor   String                            @default("#2458ff")
+  brandAccentColor    String                            @default("#6d28d9")
   contactName         String?
   contactEmail        String?
   contactPhone        String?
   supportEmail        String?
-  settings            Json                             @default("{}")
-  accountStatus       OrganizationStatus               @default(TRIAL)
-  onboardingStatus    OrganizationOnboardingStatus     @default(PROVISIONING)
-  onboardingData      Json                             @default("{}")
+  settings            Json                              @default("{}")
+  accountStatus       OrganizationStatus                @default(TRIAL)
+  onboardingStatus    OrganizationOnboardingStatus      @default(PROVISIONING)
+  onboardingData      Json                              @default("{}")
   notes               String?
-  createdAt           DateTime                         @default(now())
-  updatedAt           DateTime                         @updatedAt
+  createdAt           DateTime                          @default(now())
+  updatedAt           DateTime                          @updatedAt
   vendorIdentifiers   OrganizationVendorIdentifier[]
   a3aStoreIdentifiers OrganizationA3aStoreIdentifier[]
   products            OrganizationProduct[]
@@ -423,6 +437,7 @@ model Organization {
   inventorySnapshots  OhlqAgencyInventorySnapshot[]
   currentInventory    OhlqAgencyInventoryCurrent[]
   inventoryImportRuns OhlqTenantInventoryImportStatus[]
+  wholesaleOrders     WholesaleOrder[]
 
   @@index([active, accountStatus])
   @@index([onboardingStatus])
@@ -497,25 +512,26 @@ model OrganizationVendorIdentifier {
 }
 
 model OrganizationA3aStoreIdentifier {
-  id               String       @id @default(cuid())
-  organizationId   String
-  market           String       @default("OH")
-  storeId          String
-  name             String?
-  dba              String?
-  permitNumber     String?
-  addressLine1     String?
-  addressLine2     String?
-  city             String?
-  state            String       @default("OH")
-  postalCode       String?
-  phone            String?
-  email            String?
-  isDefault        Boolean      @default(false)
-  active           Boolean      @default(true)
-  createdAt        DateTime     @default(now())
-  updatedAt        DateTime     @updatedAt
-  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  id              String           @id @default(cuid())
+  organizationId  String
+  market          String           @default("OH")
+  storeId         String
+  name            String?
+  dba             String?
+  permitNumber    String?
+  addressLine1    String?
+  addressLine2    String?
+  city            String?
+  state           String           @default("OH")
+  postalCode      String?
+  phone           String?
+  email           String?
+  isDefault       Boolean          @default(false)
+  active          Boolean          @default(true)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  wholesaleOrders WholesaleOrder[]
 
   @@unique([organizationId, market, storeId])
   @@index([market, storeId])
@@ -1267,6 +1283,7 @@ model WholesaleAccount {
   opportunities                 SalesOpportunity[]
   opportunitySignals            OpportunityAccountSignal[]
   salesEvents                   AccountSalesEvent[]
+  wholesaleOrders               WholesaleOrder[]
 
   @@index([createdByUserId])
   @@index([mergedByUserId])
@@ -1276,6 +1293,51 @@ model WholesaleAccount {
   @@index([ohlqLastEchoPurchaseDate])
   @@index([latitude, longitude])
   @@index([geocodeStatus])
+}
+
+model WholesaleOrder {
+  id                     String                          @id @default(cuid())
+  organizationId         String
+  wholesaleAccountId     String
+  directSaleLocationId   String?
+  createdByUserId        String
+  clientRequestId        String
+  requestHash            String
+  saleDate               DateTime                        @db.Date
+  customerName           String
+  customerDba            String?
+  customerPermitNumber   String
+  sellerName             String
+  sellerStoreNumber      String
+  subtotalCents          Int
+  sinTaxCents            Int
+  totalCents             Int
+  inputSnapshot          Json
+  pdfBytes               Bytes
+  pdfFilename            String
+  status                 WholesaleOrderStatus            @default(PDF_GENERATED)
+  sentAt                 DateTime?
+  sentByUserId           String?
+  filedAt                DateTime?
+  filedByUserId          String?
+  filedSource            WholesaleOrderFiledSource?
+  matchedReportDate      DateTime?                       @db.Date
+  reconciliationEvidence Json?
+  automaticMatchKey      String?                         @unique
+  createdAt              DateTime                        @default(now())
+  updatedAt              DateTime                        @updatedAt
+  organization           Organization                    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  wholesaleAccount       WholesaleAccount                @relation(fields: [wholesaleAccountId], references: [id], onDelete: Restrict)
+  directSaleLocation     OrganizationA3aStoreIdentifier? @relation(fields: [directSaleLocationId], references: [id], onDelete: SetNull)
+  createdByUser          User                            @relation("WholesaleOrderCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  sentByUser             User?                           @relation("WholesaleOrderSentBy", fields: [sentByUserId], references: [id], onDelete: SetNull)
+  filedByUser            User?                           @relation("WholesaleOrderFiledBy", fields: [filedByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, clientRequestId])
+  @@index([organizationId, saleDate, createdAt])
+  @@index([organizationId, status, saleDate])
+  @@index([wholesaleAccountId, saleDate])
+  @@index([customerPermitNumber, sellerStoreNumber, saleDate], map: "WholesaleOrder_customer_store_date_idx")
 }
 
 model TargetModelImport {

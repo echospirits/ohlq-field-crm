@@ -119,6 +119,12 @@ export async function runOhlqAnnualSalesWorkflow(options: OhlqAnnualSalesWorkflo
       reportDate: wholesaleDownload.reportDate,
     });
     logger.log(
+      `Wholesale order reconciliation checked ${wholesaleImport.wholesaleOrderReconciliation.checkedOrders} outstanding order(s); ` +
+        `auto-filed ${wholesaleImport.wholesaleOrderReconciliation.filedOrders}, ` +
+        `flagged ${wholesaleImport.wholesaleOrderReconciliation.ambiguousOrderIds.length} ambiguous, and ` +
+        `left ${wholesaleImport.wholesaleOrderReconciliation.stillOutstandingOrders} outstanding.`,
+    );
+    logger.log(
       `OHLQ ${tenantConfig.productLabel} purchase state updated ${wholesaleImport.echoPurchaseState.updatedAccounts} wholesale account(s); ` +
         `${wholesaleImport.echoPurchaseState.unmatchedPermitNumbers.length} permit number(s) were not matched.`,
     );
@@ -175,6 +181,7 @@ export async function runOhlqAnnualSalesWorkflow(options: OhlqAnnualSalesWorkflo
       },
     };
   } catch (error) {
+    logger.error('OHLQ annual sales workflow failed, including any wholesale order reconciliation:', error);
     await safeMarkErrored({ completedSources, error, logger, reportDates });
     throw error;
   }

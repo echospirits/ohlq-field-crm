@@ -2,6 +2,12 @@ import { Prisma, type PrismaClient } from '@prisma/client';
 import Papa from 'papaparse';
 import { syncWholesaleAccountEchoPurchaseState, type OhlqWholesalePurchaseStateSyncResult } from './ohlqWholesalePurchaseState';
 import { prisma } from './prisma';
+import {
+  reconcileWholesaleOrdersAfterOhlqImport,
+  type WholesaleOrderReconciliationResult,
+  type WholesaleOrderReconciliationRow,
+} from './wholesaleOrderReconciliation';
+import { lockWholesaleOrderLifecycle } from './wholesaleOrders';
 
 const REQUIRED_HEADERS = [
   'Agency_Id',
@@ -37,6 +43,7 @@ export type OhlqAnnualSalesImportResult = {
 
 export type OhlqAnnualSalesByWholesaleImportResult = OhlqAnnualSalesImportResult & {
   echoPurchaseState: OhlqWholesalePurchaseStateSyncResult;
+  wholesaleOrderReconciliation: WholesaleOrderReconciliationResult;
 };
 
 export type OhlqAnnualSalesByWholesalePurchaseStateSyncResult = {
@@ -44,6 +51,7 @@ export type OhlqAnnualSalesByWholesalePurchaseStateSyncResult = {
   parsedRows: number;
   reportDate: string;
   skippedRows: number;
+  wholesaleOrderReconciliation: WholesaleOrderReconciliationResult;
 };
 
 const toDateOnlyUtc = (isoDate: string) => {
@@ -64,6 +72,19 @@ const toInt = (value: string | null | undefined) => {
   if (!normalized) return 0;
   const parsed = Number.parseInt(normalized, 10);
   if (Number.isNaN(parsed)) throw new Error(`Invalid integer value in OHLQ CSV: ${value}`);
+  return parsed;
+};
+
+const toStrictWholesaleInt = (value: string | null | undefined) => {
+  const normalized = clean(value)?.replace(/,/g, '');
+  if (!normalized) return 0;
+  if (!/^-?\d+$/.test(normalized)) {
+    throw new Error(`Invalid wholesale bottle quantity in OHLQ CSV: ${value}`);
+  }
+  const parsed = Number(normalized);
+  if (!Number.isSafeInteger(parsed)) {
+    throw new Error(`Invalid wholesale bottle quantity in OHLQ CSV: ${value}`);
+  }
   return parsed;
 };
 
@@ -148,13 +169,21 @@ export function parseOhlqAnnualSalesByWholesaleCsv(csv: string | Buffer, reportD
       continue;
     }
 
-    data.set(`${reportDateIso}:${agencyId}:${vendor}:${brand}:${permitNumber}`, {
+    const key = `${reportDateIso}:${agencyId}:${vendor}:${brand}:${permitNumber}`;
+    const wholesaleBottlesSold = toStrictWholesaleInt(row.Wholesale_Bottles_Sold);
+    const existing = data.get(key);
+    if (existing && existing.wholesaleBottlesSold !== wholesaleBottlesSold) {
+      throw new Error(
+        `OHLQ wholesale CSV contains conflicting duplicate rows for agency ${agencyId}, vendor ${vendor}, item ${brand}, and permit ${permitNumber}.`,
+      );
+    }
+    data.set(key, {
       agencyId,
       brand,
       permitNumber,
       reportDate,
       vendor,
-      wholesaleBottlesSold: toInt(row.Wholesale_Bottles_Sold),
+      wholesaleBottlesSold,
     });
   }
 
@@ -173,16 +202,42 @@ const toWholesalePurchaseStateRows = (rows: Prisma.OhlqAnnualSalesByWholesaleRow
     wholesaleBottlesSold: row.wholesaleBottlesSold ?? 0,
   }));
 
+const toWholesaleOrderReconciliationRows = (
+  rows: Prisma.OhlqAnnualSalesByWholesaleRowCreateManyInput[],
+): WholesaleOrderReconciliationRow[] => rows.map((row) => ({
+  agencyId: row.agencyId,
+  itemCode: row.brand,
+  permitNumber: row.permitNumber,
+  reportDate: row.reportDate instanceof Date ? row.reportDate : new Date(row.reportDate),
+  vendor: row.vendor,
+  wholesaleBottlesSold: row.wholesaleBottlesSold ?? 0,
+}));
+
+type ReconcileWholesaleOrders = typeof reconcileWholesaleOrdersAfterOhlqImport;
+
 export async function syncOhlqAnnualSalesByWholesalePurchaseStateCsv({
   csv,
   db = prisma,
+  reconcileWholesaleOrders = reconcileWholesaleOrdersAfterOhlqImport,
   reportDate,
 }: {
   csv: string | Buffer;
   db?: PrismaClient;
+  reconcileWholesaleOrders?: ReconcileWholesaleOrders;
   reportDate: string;
 }) {
   const parsed = parseOhlqAnnualSalesByWholesaleCsv(csv, reportDate);
+  if (parsed.skippedRows > 0) {
+    throw new Error(
+      `OHLQ wholesale CSV is incomplete: ${parsed.skippedRows} row(s) are missing agency, vendor, item, or permit identity.`,
+    );
+  }
+  const reportDateValue = toDateOnlyUtc(reportDate);
+  const wholesaleOrderReconciliation = await reconcileWholesaleOrders({
+    db,
+    incomingReportDate: reportDateValue,
+    incomingRows: toWholesaleOrderReconciliationRows(parsed.rows),
+  });
   const echoPurchaseState = await syncWholesaleAccountEchoPurchaseState({
     db,
     rows: toWholesalePurchaseStateRows(parsed.rows),
@@ -193,6 +248,7 @@ export async function syncOhlqAnnualSalesByWholesalePurchaseStateCsv({
     parsedRows: parsed.rows.length,
     reportDate,
     skippedRows: parsed.skippedRows,
+    wholesaleOrderReconciliation,
   } satisfies OhlqAnnualSalesByWholesalePurchaseStateSyncResult;
 }
 
@@ -245,18 +301,26 @@ export async function importOhlqAnnualSalesCsv({
 export async function importOhlqAnnualSalesByWholesaleCsv({
   csv,
   db = prisma,
+  reconcileWholesaleOrders = reconcileWholesaleOrdersAfterOhlqImport,
   reportDate,
 }: {
   csv: string | Buffer;
   db?: PrismaClient;
+  reconcileWholesaleOrders?: ReconcileWholesaleOrders;
   reportDate: string;
 }) {
   const parsed = parseOhlqAnnualSalesByWholesaleCsv(csv, reportDate);
+  if (parsed.skippedRows > 0) {
+    throw new Error(
+      `OHLQ wholesale CSV is incomplete: ${parsed.skippedRows} row(s) are missing agency, vendor, item, or permit identity.`,
+    );
+  }
   const reportDateValue = toDateOnlyUtc(reportDate);
   const chunkSize = 1_000;
 
   const result = await db.$transaction(
     async (tx) => {
+      await lockWholesaleOrderLifecycle(tx);
       const deleted = await tx.ohlqAnnualSalesByWholesaleRow.deleteMany({
         where: { reportDate: reportDateValue },
       });
@@ -276,8 +340,9 @@ export async function importOhlqAnnualSalesByWholesaleCsv({
         importedRows,
       };
     },
-    { timeout: 120_000 },
+    { maxWait: 10_000, timeout: 120_000 },
   );
+  const wholesaleOrderReconciliation = await reconcileWholesaleOrders({ db });
   const echoPurchaseState = await syncWholesaleAccountEchoPurchaseState({
     db,
     rows: toWholesalePurchaseStateRows(parsed.rows),
@@ -290,5 +355,6 @@ export async function importOhlqAnnualSalesByWholesaleCsv({
     parsedRows: parsed.rows.length,
     reportDate,
     skippedRows: parsed.skippedRows,
+    wholesaleOrderReconciliation,
   } satisfies OhlqAnnualSalesByWholesaleImportResult;
 }

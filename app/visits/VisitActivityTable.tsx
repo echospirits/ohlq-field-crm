@@ -27,6 +27,7 @@ export type VisitActivity = {
 type VisitActivityTableProps = {
   visits: VisitActivity[];
   contactMap: Record<string, string>;
+  supplementalEvents?: Array<{ actor?: string | null; at: Date; detail: string; href: string; id: string; title: string }>;
 };
 
 const followUpLabel = (visit: VisitActivity) => {
@@ -38,12 +39,23 @@ const followUpLabel = (visit: VisitActivity) => {
   return null;
 };
 
-export function VisitActivityTable({ visits, contactMap }: VisitActivityTableProps) {
-  if (visits.length === 0) return <p className="muted activity-empty">No visits have been logged yet.</p>;
+export function VisitActivityTable({ visits, contactMap, supplementalEvents }: VisitActivityTableProps) {
+  const extraEvents = supplementalEvents ?? [];
+  if (visits.length === 0 && extraEvents.length === 0) return <p className="muted activity-empty">{supplementalEvents ? 'No activity has been logged yet.' : 'No visits have been logged yet.'}</p>;
+  const events = [
+    ...visits.map((visit) => ({ at: visit.visitAt, kind: 'visit' as const, visit })),
+    ...extraEvents.map((event) => ({ at: event.at, event, kind: 'supplemental' as const })),
+  ].sort((left, right) => right.at.getTime() - left.at.getTime());
 
   return (
     <div className="visit-activity-list">
-      {visits.map((visit) => {
+      {events.map((activity) => {
+        if (activity.kind === 'supplemental') return <article className="visit-activity-card" key={`supplemental-${activity.event.id}`}>
+          <header><div><time dateTime={activity.event.at.toISOString()}>{formatEasternDateTime(activity.event.at)}</time><strong>{activity.event.title}</strong></div>{activity.event.actor ? <span>{activity.event.actor}</span> : null}</header>
+          <p className="visit-note">{activity.event.detail}</p>
+          <div className="visit-card-meta"><Link href={activity.event.href}>View order</Link></div>
+        </article>;
+        const visit = activity.visit;
         const outcomeLabels = getVisitOutcomeDisplay({
           locationType: visit.locationType,
           outcomeCodes: visit.outcomeCodes,
@@ -53,7 +65,7 @@ export function VisitActivityTable({ visits, contactMap }: VisitActivityTablePro
         const rep = visit.createdByUser ? getUserDisplayName(visit.createdByUser) : visit.createdBy;
 
         return (
-          <article className="visit-activity-card" key={visit.id}>
+            <article className="visit-activity-card" key={`visit-${visit.id}`}>
             <header>
               <div>
                 <time dateTime={visit.visitAt.toISOString()}>{formatEasternDateTime(visit.visitAt)}</time>
