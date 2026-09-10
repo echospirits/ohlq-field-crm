@@ -108,7 +108,23 @@ export const areOhlqAddressesSame = (left: AddressIdentity, right: AddressIdenti
   const leftAddress = normalizeOhlqAddressPart(left.address);
   const rightAddress = normalizeOhlqAddressPart(right.address);
 
-  if (!leftAddress || !rightAddress || leftAddress !== rightAddress) return false;
+  if (!leftAddress || !rightAddress) return false;
+
+  const addressesMatch = (() => {
+    if (leftAddress === rightAddress) return true;
+
+    const leftTokens = leftAddress.split(' ');
+    const rightTokens = rightAddress.split(' ');
+    const leftStreetNumbers = new Set(leftTokens.filter((token) => /^\d+$/.test(token)));
+    const rightStreetNumbers = new Set(rightTokens.filter((token) => /^\d+$/.test(token)));
+    const sharesStreetNumber = Array.from(leftStreetNumbers).some((number) => rightStreetNumbers.has(number));
+    const leftStreetName = leftTokens.filter((token) => !/^\d+$/.test(token)).join(' ');
+    const rightStreetName = rightTokens.filter((token) => !/^\d+$/.test(token)).join(' ');
+
+    return Boolean(sharesStreetNumber && leftStreetName && leftStreetName === rightStreetName);
+  })();
+
+  if (!addressesMatch) return false;
 
   const leftZip = normalizeZip(left.zip);
   const rightZip = normalizeZip(right.zip);
@@ -122,7 +138,40 @@ export const areOhlqAddressesSame = (left: AddressIdentity, right: AddressIdenti
   return Boolean(leftCity && rightCity && leftCity === rightCity && leftState === rightState);
 };
 
-const getAddressStreetNumber = (address: string | null | undefined) => address?.match(/\d+/)?.[0] ?? null;
+const getAddressStreetNumbers = (address: string | null | undefined) =>
+  Array.from(new Set(String(address ?? '').match(/\d+/g) ?? []));
+
+type OhlqLicenseeIdentity = {
+  family: string;
+  location: string | null;
+};
+
+const getOhlqLicenseeIdentity = (value: string | null | undefined): OhlqLicenseeIdentity | null => {
+  const normalized = normalizeOhlqId(value);
+  if (!normalized) return null;
+
+  const hyphenated = normalized.match(/^(\d+)-(\d+)$/);
+  if (hyphenated) {
+    return {
+      family: hyphenated[1].replace(/^0+/, '') || '0',
+      location: hyphenated[2].replace(/^0+/, '') || '0',
+    };
+  }
+
+  const compact = normalized.replace(/[^A-Z0-9]/g, '');
+  if (/^\d{10,}$/.test(compact) && /^00\d{2}$/.test(compact.slice(-4))) {
+    return {
+      family: compact.slice(0, -4).replace(/^0+/, '') || '0',
+      location: compact.slice(-4).replace(/^0+/, '') || '0',
+    };
+  }
+
+  if (/^\d+$/.test(compact)) {
+    return { family: compact.replace(/^0+/, '') || '0', location: null };
+  }
+
+  return { family: compact, location: null };
+};
 
 export const normalizeOhlqLicenseeMatchKey = (value: string | null | undefined) => {
   const normalized = normalizeOhlqId(value);
@@ -148,8 +197,39 @@ export const getOhlqLicenseeMatchKeys = (value: string | null | undefined) => {
 };
 
 export const licenseeIdsMatch = (left: string | null | undefined, right: string | null | undefined) => {
-  const leftKeys = new Set(getOhlqLicenseeMatchKeys(left));
-  return getOhlqLicenseeMatchKeys(right).some((key) => leftKeys.has(key));
+  const normalizedLeft = normalizeOhlqId(left);
+  const normalizedRight = normalizeOhlqId(right);
+  if (!normalizedLeft || !normalizedRight) return false;
+  if (normalizedLeft === normalizedRight) return true;
+
+  const leftIdentity = getOhlqLicenseeIdentity(left);
+  const rightIdentity = getOhlqLicenseeIdentity(right);
+  if (!leftIdentity || !rightIdentity || leftIdentity.family !== rightIdentity.family) return false;
+
+  return (
+    leftIdentity.location === null ||
+    rightIdentity.location === null ||
+    leftIdentity.location === rightIdentity.location
+  );
+};
+
+const licenseeIdsIdentifySameLocation = (
+  left: string | null | undefined,
+  right: string | null | undefined,
+) => {
+  const normalizedLeft = normalizeOhlqId(left);
+  const normalizedRight = normalizeOhlqId(right);
+  if (!normalizedLeft || !normalizedRight) return false;
+  if (normalizedLeft === normalizedRight) return true;
+
+  const leftIdentity = getOhlqLicenseeIdentity(left);
+  const rightIdentity = getOhlqLicenseeIdentity(right);
+  return Boolean(
+    leftIdentity &&
+      rightIdentity &&
+      leftIdentity.family === rightIdentity.family &&
+      leftIdentity.location === rightIdentity.location,
+  );
 };
 
 export const salesPermitMatchesLookup = (
@@ -159,7 +239,9 @@ export const salesPermitMatchesLookup = (
   const normalizedPermitNumber = normalizeOhlqId(permitNumber);
 
   if (normalizedPermitNumber && lookup.permitNumbers.has(normalizedPermitNumber)) return true;
-  return getOhlqLicenseeMatchKeys(permitNumber).some((key) => lookup.licenseeMatchKeys.has(key));
+  return Array.from(lookup.permitNumbers).some((lookupPermitNumber) =>
+    licenseeIdsMatch(permitNumber, lookupPermitNumber),
+  );
 };
 
 const addLicenseeIdToLookup = (lookup: OhlqWholesaleSalesLookup, value: string | null | undefined) => {
@@ -188,7 +270,7 @@ const getOfficialAccountCandidates = async ({
 }) => {
   const ors: Prisma.AccountWhereInput[] = [];
   const normalizedLicenseeIds = getLookupAccountLicenseeIds(account);
-  const streetNumber = getAddressStreetNumber(account.address);
+  const streetNumbers = getAddressStreetNumbers(account.address);
   const zip = normalizeZip(account.zip);
   const city = normalizeOhlqAddressPart(account.city);
 
@@ -200,7 +282,7 @@ const getOfficialAccountCandidates = async ({
     ors.push({ licenseeId: { equals: licenseeId, mode: 'insensitive' } });
   });
 
-  if (streetNumber) {
+  streetNumbers.forEach((streetNumber) => {
     ors.push({
       address: { contains: streetNumber, mode: 'insensitive' },
       ...(zip
@@ -209,7 +291,7 @@ const getOfficialAccountCandidates = async ({
           ? { city: { equals: city, mode: 'insensitive' } }
           : {}),
     });
-  }
+  });
 
   if (ors.length === 0) return [] satisfies OfficialAccountCandidate[];
 
@@ -238,7 +320,6 @@ export async function resolveOhlqWholesaleSalesLookup({
   db: PrismaClient;
 }) {
   const accountLicenseeIds = getLookupAccountLicenseeIds(account);
-  const accountLicenseeMatchKeys = new Set(accountLicenseeIds.flatMap(getOhlqLicenseeMatchKeys));
   const lookup: OhlqWholesaleSalesLookup = {
     licenseeMatchKeys: new Set(),
     permitNumbers: new Set(),
@@ -253,8 +334,8 @@ export async function resolveOhlqWholesaleSalesLookup({
     addressMatchedCandidates.length > 0 && addressMatchedCandidates.length <= maximumAddressAliasCandidates;
 
   officialCandidates.forEach((candidate) => {
-    const candidateMatchesLicensee = getOhlqLicenseeMatchKeys(candidate.licenseeId).some((key) =>
-      accountLicenseeMatchKeys.has(key),
+    const candidateMatchesLicensee = accountLicenseeIds.some((licenseeId) =>
+      licenseeIdsIdentifySameLocation(candidate.licenseeId, licenseeId),
     );
 
     if (

@@ -4,6 +4,7 @@ import type { PrismaClient } from '@prisma/client';
 import {
   areOhlqAddressesSame,
   getOhlqLicenseeMatchKeys,
+  licenseeIdsMatch,
   normalizeOhlqLicenseeMatchKey,
   resolveOhlqWholesaleSalesLookup,
   salesPermitMatchesLookup,
@@ -15,6 +16,20 @@ describe('OHLQ wholesale licensee matching', () => {
     assert.equal(normalizeOhlqLicenseeMatchKey('72045'), '72045');
     assert.deepEqual(getOhlqLicenseeMatchKeys('00072045-2'), ['00072045-2', '72045']);
     assert.deepEqual(getOhlqLicenseeMatchKeys('98185250010'), ['98185250010', '9818525']);
+    assert.equal(licenseeIdsMatch('98185250010', '9818525-0010'), true);
+    assert.equal(licenseeIdsMatch('72045', '00072045-2'), true);
+    assert.equal(licenseeIdsMatch('7643214-0010', '7643214-0020'), false);
+    assert.equal(licenseeIdsMatch('7643214-0010', '07643214-1'), false);
+  });
+
+  it('matches one address within a multi-address licensed location', () => {
+    assert.equal(
+      areOhlqAddressesSame(
+        { address: '4850 & 5350 W Powell Rd', city: 'Powell', state: 'OH', zip: '43065' },
+        { address: '5350 West Powell Road', city: 'Powell', state: 'Ohio', zip: '43065-9001' },
+      ),
+      true,
+    );
   });
 
   it('normalizes common address spelling differences for official account matching', () => {
@@ -114,5 +129,61 @@ describe('OHLQ wholesale licensee matching', () => {
     assert.equal(lookup.primaryLicenseeId, '72045');
     assert.equal(salesPermitMatchesLookup('00072045-2', lookup), true);
     assert.equal(salesPermitMatchesLookup('t40949003', lookup), true);
+  });
+
+  it('does not attribute sibling location-family sales to Cincinnati Zoo', async () => {
+    const db = {
+      account: {
+        findMany: async () => [
+          {
+            address: '3400 VINE ST', city: 'CINCINNATI', id: 'cincinnati-location',
+            licenseeId: '7643214-0020', state: 'OH', zip: '45220',
+          },
+          {
+            address: '5350 W POWELL RD', city: 'POWELL', id: 'columbus-family',
+            licenseeId: '7643214', state: 'OH', zip: '43065',
+          },
+        ],
+      },
+    } as unknown as PrismaClient;
+
+    const lookup = await resolveOhlqWholesaleSalesLookup({
+      account: {
+        address: '3400 VINE ST', city: 'CINCINNATI', licenseeId: '7643214-0020',
+        licenseeIds: [{ licenseeId: '7990815' }], state: 'OH', zip: '45220',
+      },
+      db,
+    });
+
+    assert.equal(lookup.permitNumbers.has('7643214'), false);
+    assert.equal(salesPermitMatchesLookup('07643214-3', lookup), false);
+  });
+
+  it('retains family-format sales for the corroborated Columbus Zoo location', async () => {
+    const db = {
+      account: {
+        findMany: async () => [
+          {
+            address: '4850 & 5350 W POWELL RD', city: 'POWELL', id: 'columbus-location',
+            licenseeId: '7643214-0010', state: 'OH', zip: '43065',
+          },
+          {
+            address: '5350 W POWELL RD', city: 'POWELL', id: 'columbus-family',
+            licenseeId: '7643214', state: 'OH', zip: '43065',
+          },
+        ],
+      },
+    } as unknown as PrismaClient;
+
+    const lookup = await resolveOhlqWholesaleSalesLookup({
+      account: {
+        address: '4850 & 5350 W POWELL RD', city: 'POWELL', licenseeId: '7643214-0010',
+        state: 'OH', zip: '43065',
+      },
+      db,
+    });
+
+    assert.equal(lookup.permitNumbers.has('7643214'), true);
+    assert.equal(salesPermitMatchesLookup('07643214-3', lookup), true);
   });
 });
