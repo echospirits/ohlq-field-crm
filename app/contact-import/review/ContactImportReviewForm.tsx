@@ -74,13 +74,13 @@ export function ContactImportReviewForm({ accountId, accountType, installUrl, re
       <input name="importSessionToken" type="hidden" value={state} />
       <label>Name<input autoComplete="name" name="name" onChange={update('name')} required value={contact.name} /></label>
       <label>Role / title<input autoComplete="organization-title" name="role" onChange={update('jobTitle')} value={contact.jobTitle} /></label>
-      <label>Email
+      <label>Email (optional)
         <input autoComplete="email" inputMode="email" name="email" onChange={(event) => setEmail(event.target.value)} type="email" value={email} />
         {contact.emails.length > 1 ? <span className="contact-import-options" aria-label="Imported email choices">
           {contact.emails.map((value) => <button className="btn secondary" key={value} onClick={() => setEmail(value)} type="button">{value}</button>)}
         </span> : null}
       </label>
-      <label>Phone
+      <label>Phone (optional)
         <input autoComplete="tel" inputMode="tel" name="phone" onChange={(event) => setPhone(event.target.value)} type="tel" value={phone} />
         {contact.phones.length > 1 ? <span className="contact-import-options" aria-label="Imported phone choices">
           {contact.phones.map((value) => <button className="btn secondary" key={value} onClick={() => setPhone(value)} type="button">{value}</button>)}

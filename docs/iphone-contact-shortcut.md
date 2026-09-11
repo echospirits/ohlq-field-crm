@@ -21,17 +21,21 @@ Create a Shortcut named exactly **Send to Neat** with these actions:
    - phone numbers
    - email addresses
    - job title
-5. Build a Dictionary with exactly:
+5. Build a Dictionary with:
    - `schemaVersion`: number `1`
    - `shortcutVersion`: text `1`
    - `name`: selected contact full name
-   - `phones`: selected contact phone-number list
-   - `emails`: selected contact email-address list
    - `jobTitle`: selected contact job title, or an empty string
-6. Convert that Dictionary to JSON text.
-7. **URL Encode** the JSON text.
-8. Build Text as: `[reviewUrl]#contact=[URL-encoded JSON]`.
-9. **Open URLs** using that text.
+6. Add the optional contact details without allowing an empty list to stop the Shortcut:
+   - Add an **If** action using the phone-number result and choose **has any value**.
+   - Inside that **If**, use **Set Dictionary Value** to set `phones` to the selected contact phone-number list.
+   - After **End If**, add another **If** using the email-address result and choose **has any value**.
+   - Inside that **If**, use **Set Dictionary Value** to set `emails` to the selected contact email-address list.
+   - Leave either key out when its list is empty. Neat treats a missing `phones` or `emails` key as an empty list.
+7. Convert the final Dictionary to JSON text.
+8. **URL Encode** the JSON text.
+9. Build Text as: `[reviewUrl]#contact=[URL-encoded JSON]`.
+10. **Open URLs** using that text.
 
 The fragment after `#` is processed in the browser and removed from the address bar after Neat stores it in session storage. The Contact is not created until the user presses **Save contact** on the authenticated review page.
 

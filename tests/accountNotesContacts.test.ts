@@ -215,12 +215,27 @@ describe('iPhone Shortcut contact import', () => {
     assert.equal(parseContactImportPayload('malformed'), null);
   });
 
+  it('accepts contacts with either, both, or neither optional contact method', () => {
+    const base = { schemaVersion: 1, shortcutVersion: '1', name: 'Sarah Smith' };
+    assert.deepEqual(parseContactImportPayload({ ...base, phones: ['614-555-0100'] }), {
+      ...base, phones: ['614-555-0100'], emails: [], jobTitle: '',
+    });
+    assert.deepEqual(parseContactImportPayload({ ...base, emails: ['buyer@example.com'] }), {
+      ...base, phones: [], emails: ['buyer@example.com'], jobTitle: '',
+    });
+    assert.deepEqual(parseContactImportPayload(base), {
+      ...base, phones: [], emails: [], jobTitle: '',
+    });
+  });
+
   it('detects obsolete Shortcut versions and renders the imported values into the review form', () => {
     assert.equal(isShortcutUpdateRequired('1', '1'), false);
     assert.equal(isShortcutUpdateRequired('1', '2'), true);
     const review = read('app/contact-import/review/ContactImportReviewForm.tsx');
     assert.match(review, /setPhone\(parsed\.phones\[0\]/);
     assert.match(review, /setEmail\(parsed\.emails\[0\]/);
+    assert.match(review, /Email \(optional\)/);
+    assert.match(review, /Phone \(optional\)/);
     assert.match(review, />Update Shortcut<\/a>/);
     assert.match(review, /action=\{createAccountContact\}/);
   });

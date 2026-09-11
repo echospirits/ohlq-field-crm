@@ -93,8 +93,8 @@ export function ContactImportForm({ accountId, accountType, installUrl, returnTo
         <input name="externalSourceId" type="hidden" value={contact.externalSourceId} />
         <label>Name<input name="name" onChange={update('name')} required value={contact.name} /></label>
         <label>Role / title<input name="role" onChange={update('role')} value={contact.role} /></label>
-        <label>Email<input inputMode="email" name="email" onChange={update('email')} type="email" value={contact.email} /></label>
-        <label>Phone<input inputMode="tel" name="phone" onChange={update('phone')} type="tel" value={contact.phone} /></label>
+        <label>Email (optional)<input inputMode="email" name="email" onChange={update('email')} type="email" value={contact.email} /></label>
+        <label>Phone (optional)<input inputMode="tel" name="phone" onChange={update('phone')} type="tel" value={contact.phone} /></label>
         <label className="contact-form-wide">Contact notes<textarea name="notes" onChange={update('notes')} rows={3} value={contact.notes} /></label>
         <label className="checkbox-label"><input name="isPrimary" type="checkbox" value="true" /> Primary contact</label>
         <button type="submit">Add contact</button>
