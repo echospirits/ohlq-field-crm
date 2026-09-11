@@ -52,6 +52,8 @@ export type VisitFormContactOption = {
   email: string | null;
   agencyId: string | null;
   wholesaleAccountId: string | null;
+  active: boolean;
+  isPrimary: boolean;
 };
 
 export type VisitFormTagOption = {
@@ -72,6 +74,7 @@ type VisitFormInitialValues = {
   agencyId?: string | null;
   wholesaleAccountId?: string | null;
   contactId?: string | null;
+  contactIds?: string[];
   summary?: string | null;
   outcomeCodes?: string[];
   outcomes?: string | null;
@@ -119,9 +122,6 @@ const getAgencyMeta = (agency: VisitFormAgencyOption) =>
   [agency.agencyId, agency.city, agency.phone].filter(Boolean).join(' / ');
 const getWholesaleMeta = (account: VisitFormWholesaleOption) =>
   [account.licenseeId, account.city, account.phone].filter(Boolean).join(' / ');
-const getContactMeta = (contact: VisitFormContactOption) =>
-  [contact.role, contact.phone, contact.email].filter(Boolean).join(' / ');
-
 const lastVisitFormatter = new Intl.DateTimeFormat('en-US', {
   day: 'numeric',
   month: 'short',
@@ -150,9 +150,12 @@ export function LogVisitForm({
   const [agencyId, setAgencyId] = useState(initialValues?.agencyId ?? '');
   const [wholesaleAccountId, setWholesaleAccountId] = useState(initialValues?.wholesaleAccountId ?? '');
   const [isChangingLocation, setIsChangingLocation] = useState(!initialValues?.locationLocked);
-  const [contactId, setContactId] = useState(initialValues?.contactId ?? '');
+  const [contactIds, setContactIds] = useState<string[]>(initialValues?.contactIds ?? (initialValues?.contactId ? [initialValues.contactId] : []));
   const [locationSearch, setLocationSearch] = useState('');
   const [contactSearch, setContactSearch] = useState('');
+  const [contactOptions, setContactOptions] = useState(contacts);
+  const [newContact, setNewContact] = useState({ name: '', role: '', email: '', phone: '' });
+  const [contactCreateStatus, setContactCreateStatus] = useState<'idle' | 'saving' | 'error'>('idle');
   const [summary, setSummary] = useState(initialValues?.summary ?? '');
   const [selectedOutcomes, setSelectedOutcomes] = useState(initialValues?.outcomeCodes ?? []);
   const [legacyOutcomes, setLegacyOutcomes] = useState(initialValues?.outcomes ?? '');
@@ -277,7 +280,7 @@ export function LogVisitForm({
       ? { id: wholesaleAccountId, licenseeId: '', lastVisitAt: null, name: initialValues.locationName, agencyId: null, city: null, county: null, phone: null }
       : undefined);
   const selectedLocation = locationType === 'agency' ? selectedAgency : selectedWholesaleAccount;
-  const selectedContact = contacts.find((contact) => contact.id === contactId);
+  const selectedContacts = contactOptions.filter((contact) => contactIds.includes(contact.id));
   const locationSearchKey = `${locationType}:${searchText}`;
   const hasResolvedLocationSearch = resolvedLocationSearch === locationSearchKey;
   const visibleLocations = useMemo(() => {
@@ -312,23 +315,45 @@ export function LogVisitForm({
   const selectLocation = (location: VisitFormAgencyOption | VisitFormWholesaleOption) => {
     if (locationType === 'agency') setAgencyId(location.id);
     else setWholesaleAccountId(location.id);
-    setContactId('');
+    setContactIds([]);
     setIsChangingLocation(false);
   };
   const visibleContacts = useMemo(() => {
     const agencyKeys = new Set([selectedAgency?.id, selectedAgency?.agencyId, agencyId].filter(Boolean));
-    const scopedContacts = contacts.filter((contact) =>
+    const scopedContacts = contactOptions.filter((contact) =>
       locationType === 'agency'
         ? !!contact.agencyId && agencyKeys.has(contact.agencyId)
         : !!wholesaleAccountId && contact.wholesaleAccountId === wholesaleAccountId,
     );
-    return withSelected(
-      scopedContacts
+    return scopedContacts
+        .filter((contact) => contact.active || contactIds.includes(contact.id))
         .filter((contact) => includesSearch(contactSearchText, contact.name, contact.role, contact.phone, contact.email))
-        .slice(0, 6),
-      selectedContact,
-    );
-  }, [agencyId, contactSearchText, contacts, locationType, selectedAgency, selectedContact, wholesaleAccountId]);
+        .sort((left, right) => Number(right.isPrimary) - Number(left.isPrimary) || left.name.localeCompare(right.name))
+        .slice(0, 10);
+  }, [agencyId, contactIds, contactOptions, contactSearchText, locationType, selectedAgency, wholesaleAccountId]);
+
+  const addContactDuringVisit = async () => {
+    if (!newContact.name.trim() || !hasLocation) return;
+    setContactCreateStatus('saving');
+    try {
+      const response = await fetch('/api/contacts', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accountId: locationType === 'agency' ? agencyId : wholesaleAccountId,
+          accountType: locationType === 'agency' ? 'AGENCY' : 'WHOLESALE',
+          ...newContact,
+        }),
+      });
+      if (!response.ok) throw new Error('Contact could not be saved');
+      const created = await response.json() as VisitFormContactOption;
+      setContactOptions((current) => [...current, created]);
+      setContactIds((current) => [...current.filter((id) => id !== created.id), created.id]);
+      setNewContact({ name: '', role: '', email: '', phone: '' });
+      setContactCreateStatus('idle');
+    } catch {
+      setContactCreateStatus('error');
+    }
+  };
 
   const outcomeOptions = getVisitOutcomes(locationType);
   const voiceAccountContext = selectedLocation
@@ -355,7 +380,7 @@ export function LogVisitForm({
     setLocationType(nextType);
     setAgencyId('');
     setWholesaleAccountId('');
-    setContactId('');
+    setContactIds([]);
     setLocationSearch('');
     setResolvedLocationSearch('');
     setLocationSearchError(null);
@@ -378,7 +403,7 @@ export function LogVisitForm({
       <input name="locationType" readOnly type="hidden" value={locationType} />
       <input name="agencyId" readOnly type="hidden" value={locationType === 'agency' ? agencyId : ''} />
       <input name="wholesaleAccountId" readOnly type="hidden" value={locationType === 'wholesale' ? wholesaleAccountId : ''} />
-      <input name="contactId" readOnly type="hidden" value={contactId} />
+      {contactIds.map((contactId) => <input key={contactId} name="contactId" readOnly type="hidden" value={contactId} />)}
       <input name="outcomes" readOnly type="hidden" value={legacyOutcomes} />
       <input name="submissionKey" readOnly type="hidden" value={submissionKey} />
       {worklistItemId ? <input name="worklistItemId" readOnly type="hidden" value={worklistItemId} /> : null}
@@ -511,6 +536,32 @@ export function LogVisitForm({
         </fieldset>
       ) : null}
 
+      {hasLocation ? <fieldset className="visit-step visit-contact-step">
+        <legend>Who did you meet? <span className="optional-label">Optional</span></legend>
+        {visibleContacts.length > 0 ? <div className="visit-contact-chips">
+          {visibleContacts.map((contact) => <button
+            aria-pressed={contactIds.includes(contact.id)}
+            className={contactIds.includes(contact.id) ? 'visit-contact-chip is-selected' : 'visit-contact-chip'}
+            key={contact.id}
+            type="button"
+            onClick={() => setContactIds((current) => current.includes(contact.id) ? current.filter((id) => id !== contact.id) : [...current, contact.id])}
+          ><strong>{contact.name}</strong>{contact.role ? <small>{contact.role}</small> : null}{contact.isPrimary ? <span>Primary</span> : null}</button>)}
+        </div> : <p className="field-note">No active contacts for this account.</p>}
+        <details className="compact-details nested-details">
+          <summary>{selectedContacts.length ? `Selected: ${selectedContacts.map((contact) => contact.name).join(', ')}` : 'Find or add contact'}</summary>
+          <label htmlFor="visit-contact-search">Search saved contacts</label>
+          <input id="visit-contact-search" placeholder="Name, role, email, or phone" type="search" value={contactSearch} onChange={(event) => setContactSearch(event.target.value)} />
+          {mode === 'create' ? <div className="form-grid inline-contact-create">
+            <input aria-label="New contact name" placeholder="New contact name" value={newContact.name} onChange={(event) => setNewContact((current) => ({ ...current, name: event.target.value }))} />
+            <input aria-label="New contact role" placeholder="Role / title (optional)" value={newContact.role} onChange={(event) => setNewContact((current) => ({ ...current, role: event.target.value }))} />
+            <input aria-label="New contact email" placeholder="Email (optional)" type="email" value={newContact.email} onChange={(event) => setNewContact((current) => ({ ...current, email: event.target.value }))} />
+            <input aria-label="New contact phone" placeholder="Phone (optional)" type="tel" value={newContact.phone} onChange={(event) => setNewContact((current) => ({ ...current, phone: event.target.value }))} />
+            <button disabled={!newContact.name.trim() || contactCreateStatus === 'saving'} type="button" onClick={addContactDuringVisit}>{contactCreateStatus === 'saving' ? 'Saving…' : 'Add and select contact'}</button>
+            {contactCreateStatus === 'error' ? <p className="field-note form-error">Contact could not be saved. Try again.</p> : <p className="field-note">Saves to this account and selects the contact without leaving Log Visit.</p>}
+          </div> : null}
+        </details>
+      </fieldset> : null}
+
       <fieldset className="visit-step visit-outcome-step">
         <legend>What happened?</legend>
         <div className="visit-outcome-grid">
@@ -626,25 +677,6 @@ export function LogVisitForm({
               visitType={locationType}
             />
           </details> : null}
-
-          <details className="compact-details nested-details">
-            <summary>{selectedContact ? `Contact: ${selectedContact.name}` : 'Add a contact'}</summary>
-            <label htmlFor="visit-contact-search">Saved contacts</label>
-            <input id="visit-contact-search" placeholder="Search contacts" type="search" value={contactSearch} onChange={(event) => setContactSearch(event.target.value)} />
-            {visibleContacts.length > 0 ? (
-              <div className="quick-picker-list">
-                {visibleContacts.map((contact) => (
-                  <button className={contact.id === contactId ? 'quick-picker is-selected' : 'quick-picker'} key={contact.id} type="button" onClick={() => setContactId(contact.id)}>
-                    <strong>{contact.name}</strong><span>{getContactMeta(contact) || 'Contact'}</span>
-                  </button>
-                ))}
-              </div>
-            ) : <p className="field-note">Choose an account to see its contacts.</p>}
-            {mode === 'create' ? <div className="form-grid">
-              <input aria-label="New contact name" name="newContactName" placeholder="Or enter a new contact name" />
-              <input aria-label="New contact phone" name="newContactPhone" placeholder="Phone (optional)" />
-            </div> : null}
-          </details>
 
           {mode === 'create' && locationType === 'wholesale' && !wholesaleAccountId ? (
             <details className="compact-details nested-details">

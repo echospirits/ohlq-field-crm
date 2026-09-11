@@ -23,6 +23,8 @@ import { OpportunityAccountPanel } from '../OpportunityAccountPanel';
 import { ContextualActions } from '../../components/ContextualActions';
 import { listWholesaleOrders } from '../../../lib/wholesaleOrders';
 import { formatOrderCurrency } from '../../wholesale-orders/orderPresentation';
+import { AccountMemoryPanel } from '../../account-memory/AccountMemoryPanel';
+import { getCommunicationTitle } from '../../../lib/accountMemory';
 
 const formatVisitDate = (date: Date | null | undefined) => formatEasternDate(date) || 'No visits yet';
 const getMergedWholesaleAccountIds = async (accountId: string) => {
@@ -75,6 +77,7 @@ export default async function WholesaleActivityPage({
     placementQ?: string;
     placementStatusFilter?: string;
     placementTypeFilter?: string;
+    memoryStatus?: string;
   }>;
 }) {
   const user = await requireUser();
@@ -114,7 +117,7 @@ export default async function WholesaleActivityPage({
   const accountLicenseeIds = getWholesaleLicenseeIdValues(account);
   const mergedAccountIds = await getMergedWholesaleAccountIds(account.id);
 
-  const [visits, tags, backingAccount, linkedAgency, users, purchases, accountOrders] = await Promise.all([
+  const [visits, tags, backingAccount, linkedAgency, users, purchases, accountOrders, overlay, accountContacts, communicationActivities] = await Promise.all([
     prisma.loggedVisit.findMany({
       where: {
         organizationId,
@@ -123,6 +126,7 @@ export default async function WholesaleActivityPage({
       },
       include: {
         createdByUser: true,
+        contacts: { include: { contact: { select: { id: true, name: true } } } },
         photos: {
           orderBy: { createdAt: 'asc' },
         },
@@ -150,6 +154,19 @@ export default async function WholesaleActivityPage({
     prisma.user.findMany({ where: { organizationId }, orderBy: [{ name: 'asc' }, { email: 'asc' }] }),
     getWholesaleRecentPurchases({ account, config: tenantConfig }),
     hasDirectWholesaleOrders ? listWholesaleOrders({ organizationId, wholesaleAccountIds: mergedAccountIds, status: WholesaleOrderStatus.FILED, pageSize: 200 }) : { orders: [], totalCount: 0, page: 1, pageSize: 200 },
+    prisma.organizationAccountOverlay.findUnique({
+      where: { organizationId_accountType_externalAccountId: { organizationId, accountType: 'WHOLESALE', externalAccountId: id } },
+      select: { notes: true },
+    }),
+    prisma.locationContact.findMany({
+      where: { organizationId, wholesaleAccountId: id },
+      orderBy: [{ active: 'desc' }, { isPrimary: 'desc' }, { name: 'asc' }],
+    }),
+    prisma.accountActivity.findMany({
+      where: { organizationId, wholesaleAccountId: id },
+      include: { contact: { select: { name: true } }, createdByUser: { select: { email: true, name: true } } },
+      orderBy: { occurredAt: 'desc' }, take: 50,
+    }),
   ]);
   const filedOrders = accountOrders.orders.filter((order) => order.status === WholesaleOrderStatus.FILED && order.filedAt);
   const placementQ = (query.placementQ ?? '').trim();
@@ -254,16 +271,20 @@ export default async function WholesaleActivityPage({
       </header>
       {query.status ? <p className="toast-notice" role="status">{statusMessages[query.status] ?? query.status}</p> : null}
       {query.tagStatus ? <p className="pill">{tagStatusMessages[query.tagStatus] ?? query.tagStatus}</p> : null}
+      {query.memoryStatus ? <p className="toast-notice" role="status">{query.memoryStatus === 'notes-saved' ? 'Account notes saved.' : query.memoryStatus === 'contact-saved' ? 'Contact saved.' : 'Unable to save that account information.'}</p> : null}
       {query.placementStatus ? (
         <p className="pill">{menuPlacementStatusMessages[query.placementStatus] ?? query.placementStatus}</p>
       ) : null}
       <AccountWorkspaceNavigation sections={[
         { href: '#overview', label: 'Overview' },
+        { href: '#account-memory', label: 'Notes + contacts' },
         { href: '#placements', label: 'Placements' },
         { href: '#purchases', label: 'Purchases' },
         ...(hasWholesaleOpportunities ? [{ href: '#intelligence', label: 'Intelligence' }] : []),
         { href: '#activity', label: 'Activity' },
       ]} />
+
+      <AccountMemoryPanel accountId={account.id} accountType="WHOLESALE" contacts={accountContacts} notes={overlay?.notes ?? null} returnTo={`/wholesale/${account.id}`} />
 
       <div className="grid account-summary-grid account-workspace-section" id="overview">
         <div className="card metric-card">
@@ -333,7 +354,7 @@ export default async function WholesaleActivityPage({
       <section className="dashboard-section account-workspace-section" id="activity">
         <div className="section-heading">
           <h2>Activity</h2>
-          <span className="pill">{visits.length + filedOrders.length}</span>
+          <span className="pill">{visits.length + filedOrders.length + communicationActivities.length}</span>
         </div>
         <VisitActivityTable contactMap={contactMap} visits={visits} supplementalEvents={filedOrders.map((order) => ({
           actor: order.filedSource === WholesaleOrderFiledSource.MANUAL ? order.filedBy?.displayName : 'OHLQ sales match',
@@ -342,7 +363,12 @@ export default async function WholesaleActivityPage({
           href: `/wholesale-orders/${order.id}`,
           id: order.id,
           title: 'Direct wholesale order filed',
-        }))} />
+        })).concat(communicationActivities.map((activity) => ({
+          actor: getUserDisplayName(activity.createdByUser), at: activity.occurredAt,
+          detail: getCommunicationTitle(activity.activityType, activity.contact.name), id: activity.id,
+          href: '',
+          title: activity.activityType === 'EMAIL_INITIATED' ? 'Email initiated' : 'Call initiated',
+        })))} />
       </section>
     </>
   );

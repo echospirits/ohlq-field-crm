@@ -17,6 +17,7 @@ import {
 import { createVisit } from '../actions';
 import { LogVisitForm } from '../LogVisitForm';
 import { TasterVisitForm } from '../TasterVisitForm';
+import { requireOrganizationContext } from '../../../lib/organizations';
 
 export const metadata = buildPageMetadata('Log Visit');
 
@@ -57,9 +58,10 @@ export default async function NewVisitPage({
   }>;
 }) {
   const [params, user] = await Promise.all([(await searchParams) ?? {}, requireUser({ allowTaster: true })]);
+  const { organizationId } = await requireOrganizationContext(user);
 
   if (user.role === UserRole.TASTER) {
-    const agencies = await getAgenciesForVisitPicker({ take: 8 });
+    const agencies = await getAgenciesForVisitPicker({ take: 8, organizationId });
 
     return (
       <>
@@ -78,9 +80,10 @@ export default async function NewVisitPage({
   }
 
   const [agencyOptions, wholesaleAccountOptions, contacts, tags, activeUsers, assignedWorklistItems] = await Promise.all([
-    getAgenciesForVisitPicker(),
-    getWholesaleAccountsForVisitPicker(),
+    getAgenciesForVisitPicker({ organizationId }),
+    getWholesaleAccountsForVisitPicker({ organizationId }),
     prisma.locationContact.findMany({
+      where: { organizationId, active: true },
       orderBy: { name: 'asc' },
       take: 1000,
       select: {
@@ -91,9 +94,12 @@ export default async function NewVisitPage({
         email: true,
         agencyId: true,
         wholesaleAccountId: true,
+        active: true,
+        isPrimary: true,
       },
     }),
     prisma.tag.findMany({
+      where: { organizationId },
       orderBy: { name: 'asc' },
       select: {
         id: true,
@@ -102,12 +108,13 @@ export default async function NewVisitPage({
       },
     }),
     prisma.user.findMany({
-      where: { isActive: true, role: { not: UserRole.TASTER } },
+      where: { organizationId, isActive: true, role: { not: UserRole.TASTER } },
       orderBy: [{ name: 'asc' }, { email: 'asc' }],
       select: { id: true, email: true, firstName: true, lastName: true, name: true },
     }),
     prisma.worklistItem.findMany({
       where: {
+        organizationId,
         assignedToUserId: user.id,
         status: { in: [WorklistStatus.OPEN, WorklistStatus.IN_PROGRESS] },
         OR: [{ agencyId: { not: null } }, { wholesaleAccountId: { not: null } }],
@@ -119,11 +126,11 @@ export default async function NewVisitPage({
   const initialLocationType = getInitialVisitLocationType(params);
   const [selectedAgency, selectedWholesaleAccount] = await Promise.all([
     params.agencyId && !agencyOptions.some((agency) => agency.id === params.agencyId)
-      ? getAgencyVisitPickerOptionById({ id: params.agencyId })
+      ? getAgencyVisitPickerOptionById({ id: params.agencyId, organizationId })
       : null,
     params.wholesaleAccountId &&
         !wholesaleAccountOptions.some((account) => account.id === params.wholesaleAccountId)
-      ? getWholesaleVisitPickerOptionById({ id: params.wholesaleAccountId })
+      ? getWholesaleVisitPickerOptionById({ id: params.wholesaleAccountId, organizationId })
       : null,
   ]);
   const agencies = sortVisitPickerOptions(

@@ -9,10 +9,12 @@ import {
   searchAgenciesForVisitPicker,
   searchWholesaleAccountsForVisitPicker,
 } from '../../../../lib/visitPickerOptions';
+import { requireOrganizationContext } from '../../../../lib/organizations';
 
 export async function GET(request: NextRequest) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: 'Authentication required.' }, { status: 401 });
+  const { organizationId } = await requireOrganizationContext(user);
 
   const locationType = request.nextUrl.searchParams.get('type') === 'agency' ? 'agency' : 'wholesale';
   if (user.role === UserRole.TASTER && locationType !== 'agency') {
@@ -29,8 +31,8 @@ export async function GET(request: NextRequest) {
 
   const results =
     locationType === 'agency'
-      ? await searchAgenciesForVisitPicker({ query, coordinates })
-      : await searchWholesaleAccountsForVisitPicker({ query, coordinates });
+      ? await searchAgenciesForVisitPicker({ query, coordinates, organizationId })
+      : await searchWholesaleAccountsForVisitPicker({ query, coordinates, organizationId });
 
   return NextResponse.json(
     { results },

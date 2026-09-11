@@ -106,11 +106,13 @@ async function getLastVisitByLocationId({
   ids,
   locationType,
   locationField,
+  organizationId,
 }: {
   db: PrismaClient;
   ids: string[];
   locationField: 'agencyId' | 'wholesaleAccountId';
   locationType: VisitLocationType;
+  organizationId?: string;
 }) {
   const uniqueIds = Array.from(new Set(ids.filter(Boolean)));
   if (uniqueIds.length === 0) return new Map<string, Date>();
@@ -119,6 +121,7 @@ async function getLastVisitByLocationId({
     by: [locationField],
     where: {
       locationType,
+      ...(organizationId ? { organizationId } : {}),
       [locationField]: { in: uniqueIds },
     },
     _max: { visitAt: true },
@@ -156,9 +159,11 @@ const toWholesaleOption = (
 export async function getAgenciesForVisitPicker({
   db = prisma,
   take = defaultTake,
+  organizationId,
 }: {
   db?: PrismaClient;
   take?: number;
+  organizationId?: string;
 } = {}) {
   const agencies = await db.agency.findMany({
     orderBy: { name: 'asc' },
@@ -177,6 +182,7 @@ export async function getAgenciesForVisitPicker({
     ids: agencies.flatMap((agency) => [agency.id, agency.agencyId]),
     locationField: 'agencyId',
     locationType: 'agency',
+    organizationId,
   });
 
   return sortVisitPickerOptions(agencies.map((agency) => toAgencyOption(agency, lastVisitByAgencyKey)));
@@ -185,9 +191,11 @@ export async function getAgenciesForVisitPicker({
 export async function getAgencyVisitPickerOptionById({
   db = prisma,
   id,
+  organizationId,
 }: {
   db?: PrismaClient;
   id: string;
+  organizationId?: string;
 }) {
   const agency = await db.agency.findUnique({
     where: { id },
@@ -208,6 +216,7 @@ export async function getAgencyVisitPickerOptionById({
     ids: [agency.id, agency.agencyId],
     locationField: 'agencyId',
     locationType: 'agency',
+    organizationId,
   });
 
   return toAgencyOption(agency, lastVisitByAgencyKey);
@@ -218,11 +227,13 @@ export async function searchAgenciesForVisitPicker({
   query,
   take = defaultSearchTake,
   coordinates,
+  organizationId,
 }: {
   db?: PrismaClient;
   query: string;
   take?: number;
   coordinates?: Coordinates | null;
+  organizationId?: string;
 }) {
   const search = query.trim();
   if (search.length < 2) return [];
@@ -256,6 +267,7 @@ export async function searchAgenciesForVisitPicker({
     ids: agencies.flatMap((agency) => [agency.id, agency.agencyId]),
     locationField: 'agencyId',
     locationType: 'agency',
+    organizationId,
   });
 
   return rankVisitSearchOptions(
@@ -268,9 +280,11 @@ export async function searchAgenciesForVisitPicker({
 export async function getWholesaleAccountsForVisitPicker({
   db = prisma,
   take = defaultTake,
+  organizationId,
 }: {
   db?: PrismaClient;
   take?: number;
+  organizationId?: string;
 } = {}) {
   const accounts = await db.wholesaleAccount.findMany({
     orderBy: { name: 'asc' },
@@ -292,6 +306,7 @@ export async function getWholesaleAccountsForVisitPicker({
     ids: accounts.map((account) => account.id),
     locationField: 'wholesaleAccountId',
     locationType: 'wholesale',
+    organizationId,
   });
 
   return sortVisitPickerOptions(accounts.map((account) => toWholesaleOption(account, lastVisitByAccountId)));
@@ -300,9 +315,11 @@ export async function getWholesaleAccountsForVisitPicker({
 export async function getWholesaleVisitPickerOptionById({
   db = prisma,
   id,
+  organizationId,
 }: {
   db?: PrismaClient;
   id: string;
+  organizationId?: string;
 }) {
   const account = await db.wholesaleAccount.findUnique({
     where: { id },
@@ -325,6 +342,7 @@ export async function getWholesaleVisitPickerOptionById({
     ids: [account.id],
     locationField: 'wholesaleAccountId',
     locationType: 'wholesale',
+    organizationId,
   });
 
   return toWholesaleOption(account, lastVisitByAccountId);
@@ -335,11 +353,13 @@ export async function searchWholesaleAccountsForVisitPicker({
   query,
   take = defaultSearchTake,
   coordinates,
+  organizationId,
 }: {
   db?: PrismaClient;
   query: string;
   take?: number;
   coordinates?: Coordinates | null;
+  organizationId?: string;
 }) {
   const search = query.trim();
   if (search.length < 2) return [];
@@ -378,6 +398,7 @@ export async function searchWholesaleAccountsForVisitPicker({
     ids: accounts.map((account) => account.id),
     locationField: 'wholesaleAccountId',
     locationType: 'wholesale',
+    organizationId,
   });
 
   return rankVisitSearchOptions(

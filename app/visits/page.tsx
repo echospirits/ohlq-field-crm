@@ -42,6 +42,7 @@ export default async function VisitsPage({
     },
     include: {
       createdByUser: true,
+      contacts: { include: { contact: { select: { id: true, name: true } } } },
       photos: {
         orderBy: { createdAt: 'asc' },
       },

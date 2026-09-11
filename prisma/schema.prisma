@@ -221,6 +221,11 @@ enum OrganizationAuditAction {
   OHLQ_INVENTORY_CREDENTIALS_CHANGED
 }
 
+enum AccountActivityType {
+  EMAIL_INITIATED
+  CALL_INITIATED
+}
+
 enum GeocodeStatus {
   PENDING
   SUCCESS
@@ -352,6 +357,7 @@ model User {
   createdWholesaleAccounts    WholesaleAccount[]     @relation("WholesaleAccountCreatedBy")
   mergedWholesaleAccounts     WholesaleAccount[]     @relation("WholesaleAccountMergedBy")
   createdLocationContacts     LocationContact[]      @relation("LocationContactCreatedBy")
+  createdAccountActivities    AccountActivity[]      @relation("AccountActivityCreatedBy")
   createdLoggedVisits         LoggedVisit[]          @relation("LoggedVisitCreatedBy")
   createdVisitPhotos          VisitPhoto[]           @relation("VisitPhotoCreatedBy")
   createdWorklistItems        WorklistItem[]         @relation("WorklistItemCreatedBy")
@@ -423,6 +429,8 @@ model Organization {
   targetProfiles      TargetAccountProfile[]
   locationTags        LocationTag[]
   locationContacts    LocationContact[]
+  accountActivities   AccountActivity[]
+  loggedVisitContacts LoggedVisitContact[]
   loggedVisits        LoggedVisit[]
   visitPhotos         VisitPhoto[]
   worklistItems       WorklistItem[]
@@ -866,8 +874,8 @@ model OhlqAnnualSalesByWholesaleRow {
 }
 
 model OhlqAgencyInventorySnapshot {
-  organizationId       String
-  snapshotDate          DateTime @db.Date
+  organizationId        String
+  snapshotDate          DateTime     @db.Date
   agencyNumber          String
   itemCode              String
   agencyId              String?
@@ -883,8 +891,8 @@ model OhlqAgencyInventorySnapshot {
   brokerId              String?
   brokerName            String?
   district              String?
-  importedAt            DateTime @default(now())
-  agency                Agency?  @relation("AgencyInventorySnapshots", fields: [agencyId], references: [id], onDelete: SetNull)
+  importedAt            DateTime     @default(now())
+  agency                Agency?      @relation("AgencyInventorySnapshots", fields: [agencyId], references: [id], onDelete: SetNull)
   organization          Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@id([organizationId, snapshotDate, agencyNumber, itemCode])
@@ -901,7 +909,7 @@ model OhlqAgencyInventorySnapshot {
 }
 
 model OhlqAgencyInventoryCurrent {
-  organizationId       String
+  organizationId        String
   agencyNumber          String
   itemCode              String
   agencyId              String?
@@ -917,10 +925,10 @@ model OhlqAgencyInventoryCurrent {
   brokerId              String?
   brokerName            String?
   district              String?
-  snapshotDate          DateTime @db.Date
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
-  agency                Agency?  @relation("AgencyInventoryCurrent", fields: [agencyId], references: [id], onDelete: SetNull)
+  snapshotDate          DateTime     @db.Date
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+  agency                Agency?      @relation("AgencyInventoryCurrent", fields: [agencyId], references: [id], onDelete: SetNull)
   organization          Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@id([organizationId, agencyNumber, itemCode])
@@ -933,24 +941,24 @@ model OhlqAgencyInventoryCurrent {
 }
 
 model OhlqTenantInventoryImportStatus {
-  id               String               @id @default(cuid())
+  id               String              @id @default(cuid())
   organizationId   String
-  reportDate       DateTime             @db.Date
+  reportDate       DateTime            @db.Date
   status           OhlqReportRunStatus
-  rowCount         Int                  @default(0)
-  parsedRows       Int                  @default(0)
-  skippedRows      Int                  @default(0)
-  replacedRows     Int                  @default(0)
-  sizeBytes        Int                  @default(0)
+  rowCount         Int                 @default(0)
+  parsedRows       Int                 @default(0)
+  skippedRows      Int                 @default(0)
+  replacedRows     Int                 @default(0)
+  sizeBytes        Int                 @default(0)
   filename         String?
-  startedAt        DateTime             @default(now())
+  startedAt        DateTime            @default(now())
   completedAt      DateTime?
   lastSuccessfulAt DateTime?
   errorMessage     String?
   diagnostics      Json?
-  createdAt        DateTime             @default(now())
-  updatedAt        DateTime             @updatedAt
-  organization     Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  organization     Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@unique([organizationId, reportDate])
   @@index([organizationId, status])
@@ -1671,7 +1679,7 @@ model LocationTag {
 }
 
 model LocationContact {
-  id                 String       @id @default(cuid())
+  id                 String               @id @default(cuid())
   organizationId     String
   name               String
   role               String?
@@ -1680,12 +1688,21 @@ model LocationContact {
   agencyId           String?
   wholesaleAccountId String?
   notes              String?
+  isPrimary          Boolean              @default(false)
+  active             Boolean              @default(true)
+  source             String?
+  externalSourceId   String?
   createdByUserId    String?
-  createdAt          DateTime     @default(now())
-  updatedAt          DateTime     @updatedAt
-  createdByUser      User?        @relation("LocationContactCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
-  organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  createdByUser      User?                @relation("LocationContactCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  organization       Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  visitLinks         LoggedVisitContact[]
+  activities         AccountActivity[]
 
+  @@index([organizationId, agencyId, active])
+  @@index([organizationId, wholesaleAccountId, active])
+  @@index([organizationId, source, externalSourceId])
   @@index([createdByUserId])
 }
 
@@ -1722,6 +1739,7 @@ model LoggedVisit {
   agencyProductIntelligence   AgencyProductIntelligence? @relation(fields: [agencyProductIntelligenceId], references: [id], onDelete: SetNull)
   originatingWorklistItem     WorklistItem?              @relation("OriginatingWorklistItem", fields: [originatingWorklistItemId], references: [id], onDelete: SetNull)
   organization                Organization               @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contacts                    LoggedVisitContact[]
 
   @@unique([organizationId, submissionKey])
   @@index([createdByUserId])
@@ -1731,6 +1749,39 @@ model LoggedVisit {
   @@index([salesOpportunityId])
   @@index([agencyProductIntelligenceId])
   @@index([originatingWorklistItemId])
+}
+
+model LoggedVisitContact {
+  id             String          @id @default(cuid())
+  organizationId String
+  loggedVisitId  String
+  contactId      String
+  createdAt      DateTime        @default(now())
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  loggedVisit    LoggedVisit     @relation(fields: [loggedVisitId], references: [id], onDelete: Cascade)
+  contact        LocationContact @relation(fields: [contactId], references: [id], onDelete: Restrict)
+
+  @@unique([loggedVisitId, contactId])
+  @@index([organizationId, loggedVisitId])
+  @@index([organizationId, contactId])
+}
+
+model AccountActivity {
+  id                 String              @id @default(cuid())
+  organizationId     String
+  activityType       AccountActivityType
+  contactId          String
+  agencyId           String?
+  wholesaleAccountId String?
+  createdByUserId    String
+  occurredAt         DateTime            @default(now())
+  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contact            LocationContact     @relation(fields: [contactId], references: [id], onDelete: Restrict)
+  createdByUser      User                @relation("AccountActivityCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, agencyId, occurredAt])
+  @@index([organizationId, wholesaleAccountId, occurredAt])
+  @@index([organizationId, contactId, occurredAt])
 }
 
 model VisitPhoto {

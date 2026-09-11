@@ -24,17 +24,20 @@ export const metadata = buildPageMetadata('Edit Visit');
 export default async function EditVisitPage({ params }: { params: Promise<{ id: string }> }) {
   const [{ id }, user] = await Promise.all([params, requireUser()]);
   const { organizationId } = await requireOrganizationContext(user);
-  const visit = await prisma.loggedVisit.findFirst({ where: { id, organizationId } });
+  const visit = await prisma.loggedVisit.findFirst({
+    where: { id, organizationId },
+    include: { contacts: { select: { contactId: true } } },
+  });
   if (!visit) notFound();
 
   const [agencyOptions, wholesaleOptions, contacts, activeUsers] = await Promise.all([
-    getAgenciesForVisitPicker(),
-    getWholesaleAccountsForVisitPicker(),
+    getAgenciesForVisitPicker({ organizationId }),
+    getWholesaleAccountsForVisitPicker({ organizationId }),
     prisma.locationContact.findMany({
-      where: { organizationId },
+      where: { organizationId, OR: [{ active: true }, { id: { in: visit.contacts.map((link) => link.contactId) } }] },
       orderBy: { name: 'asc' },
       take: 1000,
-      select: { id: true, name: true, role: true, phone: true, email: true, agencyId: true, wholesaleAccountId: true },
+      select: { id: true, name: true, role: true, phone: true, email: true, agencyId: true, wholesaleAccountId: true, active: true, isPrimary: true },
     }),
     prisma.user.findMany({
       where: { organizationId, isActive: true, role: { notIn: ['TASTER', 'PLATFORM_ADMIN'] } },
@@ -44,10 +47,10 @@ export default async function EditVisitPage({ params }: { params: Promise<{ id: 
   ]);
   const [selectedAgency, selectedWholesale] = await Promise.all([
     visit.agencyId && !agencyOptions.some((agency) => agency.id === visit.agencyId)
-      ? getAgencyVisitPickerOptionById({ id: visit.agencyId })
+      ? getAgencyVisitPickerOptionById({ id: visit.agencyId, organizationId })
       : null,
     visit.wholesaleAccountId && !wholesaleOptions.some((account) => account.id === visit.wholesaleAccountId)
-      ? getWholesaleVisitPickerOptionById({ id: visit.wholesaleAccountId })
+      ? getWholesaleVisitPickerOptionById({ id: visit.wholesaleAccountId, organizationId })
       : null,
   ]);
   const agencies = sortVisitPickerOptions(selectedAgency ? [selectedAgency, ...agencyOptions] : agencyOptions);
@@ -75,6 +78,7 @@ export default async function EditVisitPage({ params }: { params: Promise<{ id: 
           initialValues={{
             agencyId: visit.agencyId,
             contactId: visit.contactId,
+            contactIds: visit.contacts.length ? visit.contacts.map((link) => link.contactId) : (visit.contactId ? [visit.contactId] : []),
             followUpDate: visit.followUpDate?.toISOString().slice(0, 10),
             followUpMode: normalizeFollowUpMode(visit.followUpMode),
             followUpTime: formatTimeMinutesInput(visit.followUpTimeMinutes),

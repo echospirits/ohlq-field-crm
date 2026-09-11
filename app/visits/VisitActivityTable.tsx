@@ -11,6 +11,7 @@ export type VisitActivity = {
   locationName?: string | null;
   locationHref?: string | null;
   contactId: string | null;
+  contacts?: Array<{ contact: { id: string; name: string } }>;
   summary: string | null;
   outcomes: string | null;
   outcomeCodes: string[];
@@ -27,7 +28,7 @@ export type VisitActivity = {
 type VisitActivityTableProps = {
   visits: VisitActivity[];
   contactMap: Record<string, string>;
-  supplementalEvents?: Array<{ actor?: string | null; at: Date; detail: string; href: string; id: string; title: string }>;
+  supplementalEvents?: Array<{ actor?: string | null; at: Date; detail: string; href?: string; id: string; title: string }>;
 };
 
 const followUpLabel = (visit: VisitActivity) => {
@@ -53,7 +54,7 @@ export function VisitActivityTable({ visits, contactMap, supplementalEvents }: V
         if (activity.kind === 'supplemental') return <article className="visit-activity-card" key={`supplemental-${activity.event.id}`}>
           <header><div><time dateTime={activity.event.at.toISOString()}>{formatEasternDateTime(activity.event.at)}</time><strong>{activity.event.title}</strong></div>{activity.event.actor ? <span>{activity.event.actor}</span> : null}</header>
           <p className="visit-note">{activity.event.detail}</p>
-          <div className="visit-card-meta"><Link href={activity.event.href}>View order</Link></div>
+          {activity.event.href ? <div className="visit-card-meta"><Link href={activity.event.href}>View order</Link></div> : null}
         </article>;
         const visit = activity.visit;
         const outcomeLabels = getVisitOutcomeDisplay({
@@ -63,6 +64,7 @@ export function VisitActivityTable({ visits, contactMap, supplementalEvents }: V
         });
         const followUp = followUpLabel(visit);
         const rep = visit.createdByUser ? getUserDisplayName(visit.createdByUser) : visit.createdBy;
+        const contactNames = visit.contacts?.map((link) => link.contact.name) ?? (contactMap[visit.contactId ?? ''] ? [contactMap[visit.contactId ?? '']] : []);
 
         return (
             <article className="visit-activity-card" key={`visit-${visit.id}`}>
@@ -82,7 +84,7 @@ export function VisitActivityTable({ visits, contactMap, supplementalEvents }: V
             ) : null}
             {visit.summary ? <p className="visit-note preserve-lines">{visit.summary}</p> : null}
             <div className="visit-card-meta">
-              {contactMap[visit.contactId ?? ''] ? <span>Contact: {contactMap[visit.contactId ?? '']}</span> : null}
+              {contactNames.length ? <span>Met with {contactNames.join(' and ')}</span> : null}
               {followUp ? <span className="visit-follow-up-status">Next: {followUp}</span> : null}
               {visit.photos.length > 0 ? <span>{visit.photos.length} {visit.photos.length === 1 ? 'photo' : 'photos'}</span> : null}
               <Link href={`/visits/${visit.id}/edit`}>Edit visit</Link>

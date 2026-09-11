@@ -200,6 +200,8 @@ export async function createVisit(formData: FormData) {
   const newWholesaleLicenseeId = isTaster ? null : toOptional(formData.get('newWholesaleLicenseeId'));
   const newWholesaleName = isTaster ? null : toOptional(formData.get('newWholesaleName'));
   const newContactName = isTaster ? null : toOptional(formData.get('newContactName'));
+  const newContactRole = isTaster ? null : toOptional(formData.get('newContactRole'));
+  const newContactEmail = isTaster ? null : toOptional(formData.get('newContactEmail'));
   const newContactPhone = isTaster ? null : toOptional(formData.get('newContactPhone'));
   const summary = toOptional(formData.get('summary'));
   const outcomeCodes = isTaster ? [] : sanitizeOutcomeCodes(locationType, getOutcomeCodes(formData));
@@ -426,20 +428,17 @@ export async function createVisit(formData: FormData) {
       });
     }
 
-    let contactId = isTaster ? null : toOptional(formData.get('contactId'));
+    const requestedContactIds = isTaster ? [] : Array.from(new Set(formData.getAll('contactId').map(toOptional).filter(Boolean) as string[]));
+    const selectedContacts = requestedContactIds.length ? await tx.locationContact.findMany({
+      where: { id: { in: requestedContactIds }, organizationId, active: true },
+      select: { id: true, agencyId: true, wholesaleAccountId: true },
+    }) : [];
+    let contactIds = selectedContacts.map((contact) => contact.id);
 
-    if (contactId) {
-      const contact = await tx.locationContact.findUnique({
-        where: { id: contactId },
-        select: { agencyId: true, wholesaleAccountId: true },
-      });
-
-      if (!contact) {
+    if (contactIds.length !== requestedContactIds.length) {
         redirectVisitWithStatus(formOrigin, 'invalid-contact', locationType);
-      }
-
-      const selectedContact = contact!;
-
+    }
+    for (const selectedContact of selectedContacts) {
       if (locationType === 'agency') {
         const selectedAgency = agencyId
           ? await tx.agency.findUnique({ where: { id: agencyId }, select: { agencyId: true } })
@@ -461,13 +460,15 @@ export async function createVisit(formData: FormData) {
         data: {
           organizationId,
           name: newContactName,
+          role: newContactRole,
+          email: newContactEmail,
           phone: newContactPhone,
           agencyId: locationType === 'agency' ? agencyId : null,
           wholesaleAccountId: locationType === 'wholesale' ? wholesaleAccountId : null,
           createdByUserId: user.id,
         },
       });
-      contactId = createdContact.id;
+      contactIds = [...contactIds, createdContact.id];
     }
 
     const loggedVisit = await tx.loggedVisit.create({
@@ -480,7 +481,7 @@ export async function createVisit(formData: FormData) {
         agencyProductIntelligenceId: agencyProductIntelligence?.id ?? null,
         originatingWorklistItemId: originatingWorklistItem?.id ?? null,
         actionReturnTo: (() => { const value = toOptional(formData.get('returnTo')); return value?.startsWith('/') && !value.startsWith('//') ? value : null; })(),
-        contactId,
+        contactId: contactIds[0] ?? null,
         summary,
         outcomes,
         outcomeCodes,
@@ -493,6 +494,10 @@ export async function createVisit(formData: FormData) {
         followUpTimeMinutes,
         followUpAssignedToUserId: followUpAssignee?.id ?? null,
       },
+    });
+    if (contactIds.length) await tx.loggedVisitContact.createMany({
+      data: contactIds.map((contactId) => ({ organizationId, loggedVisitId: loggedVisit.id, contactId })),
+      skipDuplicates: true,
     });
 
     const taskCategory = locationType === 'agency' ? WorklistCategory.AGENCY : WorklistCategory.WHOLESALE;
@@ -760,8 +765,8 @@ export async function updateVisit(visitId: string, formData: FormData) {
       : await prisma.wholesaleAccount.findUnique({ where: { id: wholesaleAccountId! }, select: { id: true } });
   if (!locationExists) redirect('/visits?status=invalid-location');
 
-  const contactId = toOptional(formData.get('contactId'));
-  if (contactId) {
+  const contactIds = Array.from(new Set(formData.getAll('contactId').map(toOptional).filter(Boolean) as string[]));
+  for (const contactId of contactIds) {
     const contact = await prisma.locationContact.findFirst({ where: { id: contactId, organizationId } });
     const agencyKeys = new Set([agencyId, locationType === 'agency' && agencyId ? (await prisma.agency.findUnique({ where: { id: agencyId }, select: { agencyId: true } }))?.agencyId : null].filter(Boolean));
     const contactMatches =
@@ -800,8 +805,10 @@ export async function updateVisit(visitId: string, formData: FormData) {
   await prisma.$transaction(async (tx) => {
     await tx.loggedVisit.update({
       where: { id: visitId },
-      data: { locationType, agencyId, wholesaleAccountId, contactId, summary, outcomes, outcomeCodes, nextStep, followUpMode, followUpDate, followUpTimeMinutes, followUpAssignedToUserId: followUpAssignee?.id ?? null },
+      data: { locationType, agencyId, wholesaleAccountId, contactId: contactIds[0] ?? null, summary, outcomes, outcomeCodes, nextStep, followUpMode, followUpDate, followUpTimeMinutes, followUpAssignedToUserId: followUpAssignee?.id ?? null },
     });
+    await tx.loggedVisitContact.deleteMany({ where: { loggedVisitId: visitId, organizationId } });
+    if (contactIds.length) await tx.loggedVisitContact.createMany({ data: contactIds.map((contactId) => ({ organizationId, loggedVisitId: visitId, contactId })) });
 
     if (taskPlan === 'create' || taskPlan === 'update') {
       const taskData = {

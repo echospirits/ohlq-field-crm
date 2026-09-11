@@ -293,10 +293,10 @@ export default async function Alerts({
       },
       orderBy: [{ dueDate: 'asc' }, { createdAt: 'desc' }],
     }),
-    getAgenciesForVisitPicker(),
-    getWholesaleAccountsForVisitPicker(),
+    getAgenciesForVisitPicker({ organizationId }),
+    getWholesaleAccountsForVisitPicker({ organizationId }),
     prisma.locationContact.findMany({
-      where: { organizationId },
+      where: { organizationId, active: true },
       orderBy: { name: 'asc' },
       take: 1000,
       select: {
@@ -307,6 +307,8 @@ export default async function Alerts({
         email: true,
         agencyId: true,
         wholesaleAccountId: true,
+        active: true,
+        isPrimary: true,
       },
     }),
     prisma.user.findMany({ where: { organizationId, isActive: true, role: { notIn: ['TASTER', 'PLATFORM_ADMIN'] } }, orderBy: [{ name: 'asc' }, { email: 'asc' }] }),

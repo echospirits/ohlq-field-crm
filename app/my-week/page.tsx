@@ -258,10 +258,10 @@ export default async function MyWeekPage() {
       },
       orderBy: [{ dueDate: 'asc' }, { createdAt: 'desc' }],
     }),
-    getAgenciesForVisitPicker(),
-    getWholesaleAccountsForVisitPicker(),
+    getAgenciesForVisitPicker({ organizationId }),
+    getWholesaleAccountsForVisitPicker({ organizationId }),
     prisma.locationContact.findMany({
-      where: { organizationId },
+      where: { organizationId, active: true },
       orderBy: { name: 'asc' },
       take: 1000,
       select: {
@@ -272,6 +272,8 @@ export default async function MyWeekPage() {
         email: true,
         agencyId: true,
         wholesaleAccountId: true,
+        active: true,
+        isPrimary: true,
       },
     }),
     prisma.tag.findMany({

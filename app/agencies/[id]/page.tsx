@@ -17,6 +17,8 @@ import { VisitActivityTable } from '../../visits/VisitActivityTable';
 import { AccountWorkspaceNavigation } from '../../components/AccountWorkspaceNavigation';
 import { OpportunityAccountPanel } from '../../wholesale/OpportunityAccountPanel';
 import { ContextualActions } from '../../components/ContextualActions';
+import { AccountMemoryPanel } from '../../account-memory/AccountMemoryPanel';
+import { getCommunicationTitle } from '../../../lib/accountMemory';
 
 const formatVisitDate = (date: Date | null | undefined) => formatEasternDate(date) || 'No visits yet';
 const tagStatusMessages: Record<string, string> = {
@@ -41,7 +43,7 @@ export default async function AgencyActivityPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams?: Promise<{ status?: string; tagStatus?: string }>;
+  searchParams?: Promise<{ status?: string; tagStatus?: string; memoryStatus?: string }>;
 }) {
   const currentUser = await requireUser();
   const { organizationId } = await requireOrganizationContext(currentUser);
@@ -68,7 +70,7 @@ export default async function AgencyActivityPage({
     notFound();
   }
 
-  const [visits, tags, salesWindows, users] = await Promise.all([
+  const [visits, tags, salesWindows, users, overlay, accountContacts, communicationActivities] = await Promise.all([
     prisma.loggedVisit.findMany({
       where: {
         agencyId: id,
@@ -77,6 +79,7 @@ export default async function AgencyActivityPage({
       },
       include: {
         createdByUser: true,
+        contacts: { include: { contact: { select: { id: true, name: true } } } },
         photos: {
           orderBy: { createdAt: 'asc' },
         },
@@ -89,6 +92,20 @@ export default async function AgencyActivityPage({
     prisma.tag.findMany({ where: { organizationId }, orderBy: [{ name: 'asc' }] }),
     getAgencyRecentItemSales({ agencyId: agency.agencyId }),
     prisma.user.findMany({ where: { organizationId, isActive: true, role: { not: 'TASTER' } }, orderBy: [{ name: 'asc' }, { email: 'asc' }] }),
+    prisma.organizationAccountOverlay.findUnique({
+      where: { organizationId_accountType_externalAccountId: { organizationId, accountType: 'AGENCY', externalAccountId: id } },
+      select: { notes: true },
+    }),
+    prisma.locationContact.findMany({
+      where: { organizationId, agencyId: id },
+      orderBy: [{ active: 'desc' }, { isPrimary: 'desc' }, { name: 'asc' }],
+    }),
+    prisma.accountActivity.findMany({
+      where: { organizationId, agencyId: id },
+      include: { contact: { select: { name: true } }, createdByUser: { select: { email: true, name: true } } },
+      orderBy: { occurredAt: 'desc' },
+      take: 50,
+    }),
   ]);
   const actionUsers = users.map((user) => ({ id: user.id, name: getUserDisplayName(user) }));
 
@@ -119,14 +136,18 @@ export default async function AgencyActivityPage({
       </header>
       {query.status ? <p className="toast-notice" role="status">{statusMessages[query.status] ?? query.status}</p> : null}
       {query.tagStatus ? <p className="pill">{tagStatusMessages[query.tagStatus] ?? query.tagStatus}</p> : null}
+      {query.memoryStatus ? <p className="toast-notice" role="status">{query.memoryStatus === 'notes-saved' ? 'Account notes saved.' : query.memoryStatus === 'contact-saved' ? 'Contact saved.' : 'Unable to save that account information.'}</p> : null}
       <AccountWorkspaceNavigation sections={[
         { href: '#overview', label: 'Overview' },
+        { href: '#account-memory', label: 'Notes + contacts' },
         ...(hasAgencyIntelligence || hasWholesaleOpportunities ? [{ href: '#intelligence', label: 'Intelligence' }] : []),
         { href: '#current-inventory', label: 'Inventory' },
         { href: '#sales', label: 'Sales' },
         { href: '#wholesale-influence', label: 'Wholesale' },
         { href: '#activity', label: 'Activity' },
       ]} />
+
+      <AccountMemoryPanel accountId={agency.id} accountType="AGENCY" contacts={accountContacts} notes={overlay?.notes ?? null} returnTo={`/agencies/${agency.id}`} />
 
       <div className="grid account-summary-grid account-workspace-section" id="overview">
         <div className="card metric-card">
@@ -179,10 +200,16 @@ export default async function AgencyActivityPage({
 
       <section className="dashboard-section account-workspace-section" id="activity">
         <div className="section-heading">
-          <h2>Logged Visit Activity</h2>
-          <span className="pill">{visits.length}</span>
+          <h2>Activity</h2>
+          <span className="pill">{visits.length + communicationActivities.length}</span>
         </div>
-        <VisitActivityTable contactMap={contactMap} visits={visits} />
+        <VisitActivityTable contactMap={contactMap} visits={visits} supplementalEvents={communicationActivities.map((activity) => ({
+          actor: getUserDisplayName(activity.createdByUser),
+          at: activity.occurredAt,
+          detail: getCommunicationTitle(activity.activityType, activity.contact.name),
+          id: activity.id,
+          title: activity.activityType === 'EMAIL_INITIATED' ? 'Email initiated' : 'Call initiated',
+        }))} />
       </section>
     </>
   );
