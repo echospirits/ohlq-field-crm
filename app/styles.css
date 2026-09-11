@@ -4450,7 +4450,14 @@ legend {
 .contact-import-heading { align-items:center; display:flex; gap:.75rem; justify-content:space-between; }
 .contact-import-heading > div { display:grid; gap:.15rem; }
 .contact-import-heading small { color:var(--muted-2); }
+.contact-import-buttons,.contact-import-review-actions { align-items:center; display:flex; flex-wrap:wrap; gap:.5rem; }
+.contact-shortcut-help { color:var(--muted-2); font-size:.78rem; margin:.65rem 0 0; }
 .contact-import-message { color:var(--muted-2); font-size:.8rem; margin:.65rem 0 0; }
+.contact-import-review-form { margin-top:0; }
+.contact-import-review-form label small { color:var(--muted-2); font-size:.72rem; }
+.contact-import-options { display:flex; flex-wrap:wrap; gap:.35rem; }
+.contact-import-options .btn { font-size:.74rem; min-height:40px; overflow-wrap:anywhere; padding:.4rem .55rem; }
+.contact-import-error { display:grid; gap:.75rem; }
 .visually-hidden { clip:rect(0 0 0 0); clip-path:inset(50%); height:1px; margin:-1px; overflow:hidden; padding:0; position:absolute; white-space:nowrap; width:1px; }
 .contact-action { align-items:center; background:#12204a; border:1px solid #7da0ff66; border-radius:.5rem; display:inline-flex; min-height:44px; overflow-wrap:anywhere; padding:.55rem .7rem; text-decoration:none; }
 .contact-form { display:grid; gap:.65rem; grid-template-columns:repeat(2,minmax(0,1fr)); margin-top:.65rem; max-width:none; }
@@ -4478,6 +4485,8 @@ legend {
   .account-notes-card,.account-contacts-card { padding:.85rem; }
   .contact-actions,.contact-action,.contact-transfer-button,.account-notes-card button,.contact-form button { width:100%; }
   .contact-import-heading { align-items:stretch; flex-direction:column; }
+  .contact-import-buttons,.contact-import-review-actions { align-items:stretch; flex-direction:column; }
+  .contact-import-buttons > *,.contact-import-review-actions > * { width:100%; }
   .visit-contact-chips { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); }
   .platform-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); }
   .platform-search,.provisioning-review,.support-view-banner { align-items:stretch; flex-direction:column; }

@@ -9,6 +9,7 @@ import { hashPassword, verifyPassword } from '../../lib/password';
 import { prisma } from '../../lib/prisma';
 import { PageHeader } from '../components/PageChrome';
 import Link from 'next/link';
+import { getIPhoneShortcutConfig, IPHONE_SHORTCUT_NAME } from '../../lib/contactImport';
 
 export const metadata = buildPageMetadata('Profile');
 
@@ -74,6 +75,7 @@ export default async function ProfilePage({
 }) {
   const { user } = await requireUserSession();
   const params = (await searchParams) ?? {};
+  const shortcutConfig = getIPhoneShortcutConfig();
 
   return (
     <>
@@ -123,6 +125,14 @@ export default async function ProfilePage({
           <h2>Calendar</h2>
           <p className="muted">Connect your own Google Calendar for dated worklist follow-ups.</p>
           <Link className="button-link secondary" href="/settings/calendar">Calendar settings</Link>
+        </div>
+        <div className="profile-integration-link">
+          <h2>{IPHONE_SHORTCUT_NAME} — iPhone Shortcut</h2>
+          <p className="muted">Select an Apple Contact from an account in Neat, then review it before saving.</p>
+          {shortcutConfig.installUrl
+            ? <a className="button-link secondary" href={shortcutConfig.installUrl}>Install or update Shortcut</a>
+            : <p className="muted">The installation link has not been configured yet.</p>}
+          <small>Recommended version: {shortcutConfig.version}</small>
         </div>
       </div></div>
     </>

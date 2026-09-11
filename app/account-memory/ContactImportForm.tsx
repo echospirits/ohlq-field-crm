@@ -4,19 +4,21 @@ import { useRef, useState, type ChangeEvent } from 'react';
 import { parseVCard, type ImportedContact } from '../../lib/vCard';
 import { createAccountContact } from './actions';
 
-type Props = { accountId: string; accountType: 'AGENCY' | 'WHOLESALE'; returnTo: string };
-type PhoneContact = { email?: string[]; name?: string[]; tel?: string[] };
-type ContactsManager = {
-  getProperties: () => Promise<string[]>;
-  select: (properties: string[], options: { multiple: boolean }) => Promise<PhoneContact[]>;
+type Props = {
+  accountId: string;
+  accountType: 'AGENCY' | 'WHOLESALE';
+  installUrl: string | null;
+  returnTo: string;
+  shortcutVersion: string;
 };
 
 const emptyContact: ImportedContact = { email: '', externalSourceId: '', name: '', notes: '', phone: '', role: '' };
 
-export function ContactImportForm({ accountId, accountType, returnTo }: Props) {
+export function ContactImportForm({ accountId, accountType, installUrl, returnTo, shortcutVersion }: Props) {
   const [contact, setContact] = useState(emptyContact);
   const [message, setMessage] = useState('');
   const [source, setSource] = useState('');
+  const [startingShortcut, setStartingShortcut] = useState(false);
   const detailsRef = useRef<HTMLDetailsElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -44,29 +46,23 @@ export function ContactImportForm({ accountId, accountType, returnTo }: Props) {
     }
   };
 
-  const choosePhoneContact = async () => {
-    const contacts = (navigator as Navigator & { contacts?: ContactsManager }).contacts;
-    if (!contacts?.select) {
-      fileRef.current?.click();
-      return;
-    }
+  const importFromIPhone = async () => {
+    setStartingShortcut(true);
+    setMessage('Opening Send to Neat…');
     try {
-      const supported = await contacts.getProperties();
-      const properties = ['name', 'email', 'tel'].filter((property) => supported.includes(property));
-      const picked = (await contacts.select(properties, { multiple: false }))[0];
-      if (!picked) return;
-      const next = {
-        ...emptyContact,
-        name: picked.name?.[0]?.trim() ?? '',
-        email: picked.email?.[0]?.trim() ?? '',
-        phone: picked.tel?.[0]?.trim() ?? '',
-      };
-      if (!next.name) throw new Error('missing-name');
-      revealForm(next, 'PHONE_CONTACT_PICKER', 'Contact selected. Review the details, then add it to Neat.');
-    } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') return;
-      setMessage('The phone contact picker was unavailable. Choose an exported .vcf file instead.');
-      fileRef.current?.click();
+      const response = await fetch('/api/contact-import/iphone/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accountId, accountType }),
+      });
+      const result = await response.json() as { launchUrl?: string };
+      if (!response.ok || !result.launchUrl) throw new Error('shortcut-start-failed');
+      window.location.assign(result.launchUrl);
+      setMessage('If Shortcuts did not open, install or update Send to Neat below.');
+    } catch {
+      setMessage('Neat could not start the iPhone import. You can still upload an exported .vcf file.');
+    } finally {
+      setStartingShortcut(false);
     }
   };
 
@@ -75,10 +71,17 @@ export function ContactImportForm({ accountId, accountType, returnTo }: Props) {
 
   return <div className="contact-import-tile">
     <div className="contact-import-heading">
-      <div><strong>Add a contact</strong><small>Uses your phone’s contact picker when available; otherwise choose an exported .vcf file.</small></div>
-      <button className="btn contact-transfer-button" onClick={choosePhoneContact} type="button">Import from phone</button>
+      <div><strong>Add a contact</strong><small>Use the iPhone Shortcut or upload an exported .vcf contact card.</small></div>
+      <div className="contact-import-buttons">
+        <button className="btn contact-transfer-button" disabled={startingShortcut} onClick={importFromIPhone} type="button">{startingShortcut ? 'Opening…' : 'Import from iPhone'}</button>
+        <button className="btn secondary contact-transfer-button" onClick={() => fileRef.current?.click()} type="button">Upload .vcf</button>
+      </div>
       <input accept=".vcf,text/vcard,text/x-vcard" aria-label="Upload a vCard contact" className="visually-hidden" onChange={importFile} ref={fileRef} type="file" />
     </div>
+    <p className="contact-shortcut-help">
+      Send to Neat version {shortcutVersion} is recommended.
+      {installUrl ? <> <a href={installUrl}>Install or update the Shortcut</a>.</> : <> Ask your administrator for the installation link.</>}
+    </p>
     {message ? <p aria-live="polite" className="contact-import-message">{message}</p> : null}
     <details className="nested-details add-contact" ref={detailsRef}>
       <summary>Enter or review contact</summary>

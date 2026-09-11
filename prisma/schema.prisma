@@ -377,6 +377,7 @@ model User {
   ownedTargetSkuOpportunities TargetSkuOpportunity[] @relation("TargetSkuOpportunityOwner")
   calendarConnections         CalendarConnection[]
   calendarOAuthStates         CalendarOAuthState[]
+  contactImports              ContactImportSession[]
   followUpAssignedVisits      LoggedVisit[]          @relation("LoggedVisitFollowUpAssignedTo")
   createdWholesaleOrders      WholesaleOrder[]       @relation("WholesaleOrderCreatedBy")
   sentWholesaleOrders         WholesaleOrder[]       @relation("WholesaleOrderSentBy")
@@ -429,6 +430,7 @@ model Organization {
   targetProfiles      TargetAccountProfile[]
   locationTags        LocationTag[]
   locationContacts    LocationContact[]
+  contactImports      ContactImportSession[]
   accountActivities   AccountActivity[]
   loggedVisitContacts LoggedVisitContact[]
   loggedVisits        LoggedVisit[]
@@ -659,6 +661,26 @@ model CalendarOAuthState {
   user       User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, provider])
+  @@index([expiresAt])
+}
+
+model ContactImportSession {
+  id             String       @id @default(cuid())
+  tokenHash      String       @unique
+  userId         String
+  organizationId String
+  source         String
+  accountType    String
+  accountId      String
+  returnPath     String
+  expiresAt      DateTime
+  consumedAt     DateTime?
+  createdAt      DateTime     @default(now())
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@index([organizationId, expiresAt])
   @@index([expiresAt])
 }
 
