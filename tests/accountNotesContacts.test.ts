@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 import { getAccountContactWhere, getAccountLocation, getCommunicationHref, getCommunicationTitle } from '../lib/accountMemory';
+import { buildVCard, getVCardFilename, parseVCard } from '../lib/vCard';
 
 const read = (path: string) => readFileSync(path, 'utf8');
 
@@ -82,5 +83,65 @@ describe('native communication activity', () => {
     assert.match(link, /keepalive: true/);
     assert.match(link, /href=\{href\}/);
     assert.doesNotMatch(route, /Email sent|Call completed/);
+  });
+});
+
+describe('phone contact transfer', () => {
+  it('imports common phone vCards and prefers the selected mobile details', () => {
+    const imported = parseVCard([
+      'BEGIN:VCARD',
+      'VERSION:3.0',
+      'N:Smith;Sarah;;;',
+      'FN:Sarah Smith',
+      'TITLE:Buyer',
+      'TEL;TYPE=WORK:614-555-0100',
+      'item1.TEL;TYPE=CELL,PREF:+1 (614) 555-0123',
+      'EMAIL;TYPE=INTERNET,PREF:sarah@example.com',
+      'NOTE:Prefers text\\nAvailable afternoons',
+      'UID:phone-contact-123',
+      'END:VCARD',
+    ].join('\r\n'));
+    assert.deepEqual(imported, {
+      name: 'Sarah Smith', role: 'Buyer', phone: '+1 (614) 555-0123', email: 'sarah@example.com',
+      notes: 'Prefers text\nAvailable afternoons', externalSourceId: 'phone-contact-123',
+    });
+  });
+
+  it('decodes folded quoted-printable names from older phone exports', () => {
+    const imported = parseVCard([
+      'BEGIN:VCARD',
+      'VERSION:2.1',
+      'FN;CHARSET=UTF-8;ENCODING=QUOTED-PRINTABLE:Jos=C3=A9=20=',
+      'Corbin',
+      'TEL;CELL:4196355440',
+      'END:VCARD',
+    ].join('\r\n'));
+    assert.equal(imported.name, 'José Corbin');
+    assert.equal(imported.phone, '4196355440');
+  });
+
+  it('exports a phone-ready vCard with account and contact details', () => {
+    const card = buildVCard({
+      accountName: 'Ethyl & Tank',
+      contact: { id: 'contact-1', name: 'Corbin Smith', role: 'Buyer', phone: '14196355440', email: 'corbin@example.com', notes: 'Text first', updatedAt: new Date('2026-09-11T12:00:00Z') },
+    });
+    assert.match(card, /^BEGIN:VCARD\r\nVERSION:3\.0\r\n/);
+    assert.match(card, /FN:Corbin Smith\r\nN:Smith;Corbin;;;/);
+    assert.match(card, /ORG:Ethyl & Tank/);
+    assert.match(card, /TEL;TYPE=VOICE:14196355440/);
+    assert.match(card, /UID:neat-contact-contact-1/);
+    assert.equal(getVCardFilename('Corbin Smith'), 'corbin-smith.vcf');
+  });
+
+  it('keeps downloads tenant-scoped and import controls mobile-accessible', () => {
+    const route = read('app/api/contacts/[id]/vcard/route.ts');
+    const panel = read('app/account-memory/AccountMemoryPanel.tsx');
+    const importer = read('app/account-memory/ContactImportForm.tsx');
+    assert.match(route, /where: \{ id, organizationId \}/);
+    assert.match(route, /Content-Disposition.*attachment/);
+    assert.match(route, /Content-Type.*text\/vcard/);
+    assert.match(panel, />Save to phone<\/a>/);
+    assert.match(importer, />Import from phone<\/button>/);
+    assert.match(importer, /accept="\.vcf,text\/vcard,text\/x-vcard"/);
   });
 });

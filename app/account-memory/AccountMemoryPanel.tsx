@@ -1,6 +1,7 @@
 import { getCommunicationHref } from '../../lib/accountMemory';
 import { CommunicationLink } from './CommunicationLink';
-import { createAccountContact, saveAccountNotes, updateAccountContact } from './actions';
+import { ContactImportForm } from './ContactImportForm';
+import { saveAccountNotes, updateAccountContact } from './actions';
 
 export type AccountMemoryContact = {
   id: string; name: string; role: string | null; email: string | null; phone: string | null;
@@ -24,15 +25,16 @@ const LocationFields = ({ accountId, accountType, returnTo }: Pick<Props, 'accou
 export function AccountMemoryPanel({ accountId, accountType, contacts, notes, returnTo }: Props) {
   const active = contacts.filter((contact) => contact.active);
   const inactive = contacts.filter((contact) => !contact.active);
-  const renderContact = (contact: AccountMemoryContact) => <details className={`contact-card${contact.active ? '' : ' is-inactive'}`} key={contact.id}>
-    <summary>
+  const renderContact = (contact: AccountMemoryContact) => <article className={`contact-card${contact.active ? '' : ' is-inactive'}`} key={contact.id}>
+    <div className="contact-card-heading">
       <span><strong>{contact.name}</strong>{contact.role ? <small>{contact.role}</small> : null}</span>
-      <span>{contact.isPrimary ? <span className="pill">Primary</span> : null}<small>{contact.active ? 'Details' : 'Inactive'}</small></span>
-    </summary>
+      <span>{contact.isPrimary ? <span className="pill">Primary</span> : null}{!contact.active ? <small>Inactive</small> : null}</span>
+    </div>
     <div className="contact-card-body">
       <div className="contact-actions">
         {contact.email ? <CommunicationLink accountId={accountId} accountType={accountType} contactId={contact.id} href={getCommunicationHref('email', contact.email)} label={contact.email} /> : null}
         {contact.phone ? <CommunicationLink accountId={accountId} accountType={accountType} contactId={contact.id} href={getCommunicationHref('phone', contact.phone)} label={contact.phone} /> : null}
+        <a className="btn contact-transfer-button" download href={`/api/contacts/${contact.id}/vcard`}>Save to phone</a>
       </div>
       {contact.notes ? <p className="preserve-lines contact-notes">{contact.notes}</p> : null}
       <details className="nested-details"><summary>Edit contact</summary>
@@ -50,7 +52,7 @@ export function AccountMemoryPanel({ accountId, accountType, contacts, notes, re
         </form>
       </details>
     </div>
-  </details>;
+  </article>;
 
   return <section className="account-memory-grid account-workspace-section" id="account-memory">
     <article className="card account-notes-card">
@@ -68,18 +70,7 @@ export function AccountMemoryPanel({ accountId, accountType, contacts, notes, re
       <div className="section-heading"><h2>Contacts</h2><span className="pill">{active.length}</span></div>
       <div className="contact-list">{active.length ? active.map(renderContact) : <p className="muted">No contacts yet.</p>}</div>
       {inactive.length ? <details className="inactive-contacts"><summary>{inactive.length} inactive</summary><div className="contact-list">{inactive.map(renderContact)}</div></details> : null}
-      <details className="nested-details add-contact"><summary>Add contact</summary>
-        <form action={createAccountContact} className="contact-form">
-          <LocationFields accountId={accountId} accountType={accountType} returnTo={returnTo} />
-          <label>Name<input name="name" required /></label>
-          <label>Role / title<input name="role" /></label>
-          <label>Email<input inputMode="email" name="email" type="email" /></label>
-          <label>Phone<input inputMode="tel" name="phone" type="tel" /></label>
-          <label className="contact-form-wide">Contact notes<textarea name="notes" rows={3} /></label>
-          <label className="checkbox-label"><input name="isPrimary" type="checkbox" value="true" /> Primary contact</label>
-          <button type="submit">Add contact</button>
-        </form>
-      </details>
+      <ContactImportForm accountId={accountId} accountType={accountType} returnTo={returnTo} />
     </article>
   </section>;
 }

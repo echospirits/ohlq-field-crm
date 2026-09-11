@@ -4439,13 +4439,19 @@ legend {
 .contact-list { display:grid; gap:.5rem; }
 .contact-card { background:var(--panel-2); border:1px solid var(--line); border-radius:.6rem; }
 .contact-card.is-inactive { opacity:.72; }
-.contact-card > summary { align-items:center; cursor:pointer; display:flex; gap:.75rem; justify-content:space-between; list-style:none; min-height:48px; padding:.65rem .75rem; }
-.contact-card > summary::-webkit-details-marker { display:none; }
-.contact-card > summary > span { align-items:center; display:flex; flex-wrap:wrap; gap:.25rem .5rem; min-width:0; }
-.contact-card > summary > span:first-child { align-items:flex-start; display:grid; gap:.05rem; }
-.contact-card summary small { color:var(--muted-2); font-size:.72rem; }
+.contact-card-heading { align-items:center; display:flex; gap:.75rem; justify-content:space-between; min-height:48px; padding:.65rem .75rem; }
+.contact-card-heading > span { align-items:center; display:flex; flex-wrap:wrap; gap:.25rem .5rem; min-width:0; }
+.contact-card-heading > span:first-child { align-items:flex-start; display:grid; gap:.05rem; }
+.contact-card summary small,.contact-card-heading small { color:var(--muted-2); font-size:.72rem; }
 .contact-card-body { border-top:1px solid var(--line); display:grid; gap:.7rem; padding:.75rem; }
 .contact-actions { display:flex; flex-wrap:wrap; gap:.5rem; }
+.contact-transfer-button { align-items:center; display:inline-flex; justify-content:center; min-height:44px; }
+.contact-import-tile { background:var(--panel-2); border:1px dashed var(--line); border-radius:.6rem; margin-top:.75rem; padding:.75rem; }
+.contact-import-heading { align-items:center; display:flex; gap:.75rem; justify-content:space-between; }
+.contact-import-heading > div { display:grid; gap:.15rem; }
+.contact-import-heading small { color:var(--muted-2); }
+.contact-import-message { color:var(--muted-2); font-size:.8rem; margin:.65rem 0 0; }
+.visually-hidden { clip:rect(0 0 0 0); clip-path:inset(50%); height:1px; margin:-1px; overflow:hidden; padding:0; position:absolute; white-space:nowrap; width:1px; }
 .contact-action { align-items:center; background:#12204a; border:1px solid #7da0ff66; border-radius:.5rem; display:inline-flex; min-height:44px; overflow-wrap:anywhere; padding:.55rem .7rem; text-decoration:none; }
 .contact-form { display:grid; gap:.65rem; grid-template-columns:repeat(2,minmax(0,1fr)); margin-top:.65rem; max-width:none; }
 .contact-form label { display:grid; gap:.25rem; max-width:none; }
@@ -4470,7 +4476,8 @@ legend {
   .account-memory-grid,.contact-form { grid-template-columns:1fr; }
   .contact-form .contact-form-wide { grid-column:auto; }
   .account-notes-card,.account-contacts-card { padding:.85rem; }
-  .contact-actions,.contact-action,.account-notes-card button,.contact-form button { width:100%; }
+  .contact-actions,.contact-action,.contact-transfer-button,.account-notes-card button,.contact-form button { width:100%; }
+  .contact-import-heading { align-items:stretch; flex-direction:column; }
   .visit-contact-chips { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); }
   .platform-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); }
   .platform-search,.provisioning-review,.support-view-banner { align-items:stretch; flex-direction:column; }

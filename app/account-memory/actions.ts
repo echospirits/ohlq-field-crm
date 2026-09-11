@@ -48,6 +48,9 @@ export async function createAccountContact(formData: FormData) {
   const name = value(formData, 'name');
   if (!name || !(await accountExists(prisma, location))) redirect(`${path}?memoryStatus=invalid`);
   const isPrimary = formData.get('isPrimary') === 'true';
+  const requestedSource = value(formData, 'source');
+  const source = requestedSource === 'VCARD_IMPORT' || requestedSource === 'PHONE_CONTACT_PICKER' ? requestedSource : null;
+  const externalSourceId = source === 'VCARD_IMPORT' ? value(formData, 'externalSourceId')?.slice(0, 255) ?? null : null;
 
   await prisma.$transaction(async (tx) => {
     if (isPrimary) await tx.locationContact.updateMany({ where: getAccountContactWhere(organizationId, location), data: { isPrimary: false } });
@@ -61,6 +64,8 @@ export async function createAccountContact(formData: FormData) {
         notes: value(formData, 'notes'),
         isPrimary,
         active: true,
+        source,
+        externalSourceId,
         createdByUserId: user.id,
         ...(location.accountType === 'AGENCY' ? { agencyId: location.agencyId } : { wholesaleAccountId: location.wholesaleAccountId }),
       },
