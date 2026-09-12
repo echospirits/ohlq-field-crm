@@ -196,8 +196,6 @@ async function updateWholesaleAccount(formData: FormData) {
     state: toOptional(formData.get('state')) ?? 'OH',
     zip: toOptional(formData.get('zip')),
   };
-  const normalizedExistingLicenseeId = normalizeWholesaleLicenseeId(existingAccount.licenseeId);
-  const licenseeIdChanged = normalizedExistingLicenseeId !== licenseeId;
   const officialAccountChanged = Boolean(officialAccount && officialAccount.id !== existingAccount.officialAccountId);
 
   if (officialAccount?.officialWholesale && officialAccount.officialWholesale.id !== id) {

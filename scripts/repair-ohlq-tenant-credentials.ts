@@ -1,21 +1,8 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import { assertSideEffectEnabled, validateRuntimeEnvironment } from '../lib/appEnvironment';
+import { loadLocalEnvironmentFile } from '../lib/environmentFile';
 import { requireEnv } from '../lib/ohlqAnnualSalesReport';
 import { saveOrganizationOhlqCredentials } from '../lib/ohlqTenantCredentials';
 import { prisma } from '../lib/prisma';
-
-function loadEnvFile(fileName: string) {
-  const file = path.join(process.cwd(), fileName);
-  if (!fs.existsSync(file)) return;
-  for (const line of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
-    const match = line.trim().match(/^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/);
-    if (!match || line.trim().startsWith('#') || process.env[match[1]] !== undefined) continue;
-    let value = match[2].trim();
-    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) value = value.slice(1, -1);
-    process.env[match[1]] = value;
-  }
-}
 
 const arg = (name: string) => {
   const index = process.argv.indexOf(name);
@@ -23,8 +10,8 @@ const arg = (name: string) => {
 };
 
 async function main() {
-  loadEnvFile('.env.local');
-  loadEnvFile('.env');
+  loadLocalEnvironmentFile('.env.local');
+  loadLocalEnvironmentFile('.env');
   const environment = arg('--environment');
   const organizationId = arg('--organization');
   if (!['test', 'production'].includes(environment)) throw new Error('Pass --environment test or --environment production.');

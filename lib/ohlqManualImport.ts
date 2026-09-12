@@ -1,27 +1,9 @@
 import { formatOhlqDate, toOhlqDateOnlyUtc } from './ohlqDataStatus';
+import { getZonedDateTimeParts } from './dateTime';
 
 const manualImportTimeZone = 'America/New_York';
 
-function todayInEastern(now = new Date()) {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    day: '2-digit',
-    month: '2-digit',
-    timeZone: manualImportTimeZone,
-    year: 'numeric',
-  }).formatToParts(now);
-
-  const value = (type: Intl.DateTimeFormatPartTypes) => {
-    const part = parts.find((item) => item.type === type)?.value;
-    if (!part) throw new Error(`Unable to resolve Eastern date part: ${type}`);
-    return Number(part);
-  };
-
-  return {
-    day: value('day'),
-    month: value('month'),
-    year: value('year'),
-  };
-}
+const todayInEastern = (now = new Date()) => getZonedDateTimeParts(now, manualImportTimeZone);
 
 export function getLatestManualOhlqReportDate(now = new Date()) {
   const today = todayInEastern(now);

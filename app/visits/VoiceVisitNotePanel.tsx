@@ -34,12 +34,6 @@ type VoiceVisitNotePanelProps = {
   setNextStep: (value: string) => void;
 };
 
-const blankAccountUpdates: SuggestedAccountUpdates = {
-  buyerName: null,
-  preferences: null,
-  preferredContactTime: null,
-};
-
 const splitLines = (value: string) =>
   value
     .split(/\n+/)

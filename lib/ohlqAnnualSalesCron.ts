@@ -5,6 +5,7 @@ import {
   type PrismaClient,
 } from '@prisma/client';
 import { prisma } from './prisma';
+import { formatDateInputValue } from './dateTime';
 import {
   formatOhlqDate,
   toOhlqDateOnlyUtc,
@@ -43,22 +44,7 @@ export function getOhlqCronRefreshDays(rawValue: string | null | undefined = pro
   return parsePositiveInteger(rawValue, DEFAULT_OHLQ_CRON_REFRESH_DAYS, { max: 5 });
 }
 
-function getEasternDateIso(now: Date) {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    day: '2-digit',
-    month: '2-digit',
-    timeZone: OHLQ_CRON_TIME_ZONE,
-    year: 'numeric',
-  }).formatToParts(now);
-
-  const value = (type: Intl.DateTimeFormatPartTypes) => {
-    const part = parts.find((item) => item.type === type)?.value;
-    if (!part) throw new Error(`Unable to resolve Eastern date part: ${type}`);
-    return part;
-  };
-
-  return `${value('year')}-${value('month')}-${value('day')}`;
-}
+const getEasternDateIso = (now: Date) => formatDateInputValue(now, OHLQ_CRON_TIME_ZONE);
 
 function addDays(isoDate: string, days: number) {
   const [year, month, day] = isoDate.split('-').map(Number);

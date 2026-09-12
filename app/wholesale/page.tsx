@@ -17,7 +17,6 @@ import {
   getWholesaleLicenseeIdConflictWhere,
   getWholesaleLicenseeIdCreateData,
   getWholesaleLicenseeIdTextSearchWhere,
-  normalizeWholesaleLicenseeId,
   parseWholesaleLicenseeIds,
   syncWholesaleAccountLicenseeIds,
 } from '../../lib/wholesaleAccounts';

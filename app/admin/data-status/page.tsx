@@ -4,11 +4,10 @@ export const maxDuration = 300;
 
 import { OhlqReportDataSource, OhlqReportRunStatus, UserRole } from '@prisma/client';
 import { revalidatePath } from 'next/cache';
-import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { buildPageMetadata } from '../../../lib/appBrand';
 import { requirePlatformAdminSession, requireUserSession } from '../../../lib/auth';
-import { EASTERN_TIME_ZONE, formatEasternDateInputValue, formatEasternDateTime } from '../../../lib/dateTime';
+import { EASTERN_TIME_ZONE, formatEasternDateInputValue, formatEasternDateTime, getZonedDateTimeParts } from '../../../lib/dateTime';
 import { importOhlqBrandMasterCsv } from '../../../lib/ohlqBrandMasterImport';
 import {
   formatOhlqDate,
@@ -57,26 +56,7 @@ const reportDateFormatter = new Intl.DateTimeFormat('en-US', {
 
 const formatRunTime = (date: Date | null | undefined) => formatEasternDateTime(date) || 'No success yet';
 
-const todayInEastern = () => {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    day: '2-digit',
-    month: '2-digit',
-    timeZone: statusTimeZone,
-    year: 'numeric',
-  }).formatToParts(new Date());
-
-  const value = (type: Intl.DateTimeFormatPartTypes) => {
-    const part = parts.find((item) => item.type === type)?.value;
-    if (!part) throw new Error(`Unable to resolve Eastern date part: ${type}`);
-    return Number(part);
-  };
-
-  return {
-    day: value('day'),
-    month: value('month'),
-    year: value('year'),
-  };
-};
+const todayInEastern = () => getZonedDateTimeParts(new Date(), statusTimeZone);
 
 const getReportDateRange = () => {
   const today = todayInEastern();
@@ -189,16 +169,6 @@ const brandMasterStatusMessage = (params: {
   }
 
   return null;
-};
-
-const redirectWithDataStatus = (status: string, params?: Record<string, string | number>): never => {
-  const query = new URLSearchParams({ status });
-
-  for (const [key, value] of Object.entries(params ?? {})) {
-    query.set(key, String(value));
-  }
-
-  redirect(`/admin/data-status?${query.toString()}`);
 };
 
 async function importBrandMaster(formData: FormData) {

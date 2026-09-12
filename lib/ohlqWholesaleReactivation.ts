@@ -169,11 +169,6 @@ const getAccountLicenseeIds = (account: {
   return Array.from(new Set(ids));
 };
 
-const accountHasAnyLicenseeKey = (account: WholesaleReactivationAccount, keys: string[]) =>
-  getAccountLicenseeIds(account).some((licenseeId) =>
-    getOhlqLicenseeMatchKeys(licenseeId).some((key) => keys.includes(key)),
-  );
-
 const setLatestDate = (dates: Map<string, Date>, key: string, date: Date) => {
   const existing = dates.get(key);
   if (!existing || date.getTime() > existing.getTime()) {
@@ -448,67 +443,6 @@ export function planWholesaleReactivationWorklistSync({
     updateItems,
   };
 }
-
-const getItemNameLookup = async (db: PrismaClient, itemCodes: string[]) => {
-  if (itemCodes.length === 0) return new Map<string, string>();
-
-  const skus = await db.ohlqBrandMasterItem.findMany({
-    where: { itemCode: { in: Array.from(new Set(itemCodes)) } },
-    select: { itemCode: true, name: true },
-  });
-
-  return new Map(skus.map((sku) => [sku.itemCode, sku.name]));
-};
-
-const findActiveWholesaleAccounts = async (db: PrismaClient, licenseeIds: string[]) => {
-  const uniqueLicenseeIds = Array.from(new Set(licenseeIds.map(normalizeOhlqId).filter(Boolean) as string[]));
-  const targetKeys = new Set(uniqueLicenseeIds.flatMap(getOhlqLicenseeMatchKeys));
-  const accounts = new Map<string, WholesaleReactivationAccount>();
-  const chunkSize = 100;
-
-  for (let index = 0; index < uniqueLicenseeIds.length; index += chunkSize) {
-    const chunk = uniqueLicenseeIds.slice(index, index + chunkSize);
-    const chunkKeys = Array.from(new Set(chunk.flatMap(getOhlqLicenseeMatchKeys)));
-    const chunkAccounts = await db.wholesaleAccount.findMany({
-      where: {
-        mergedIntoId: null,
-        OR: [
-          ...chunk.map((licenseeId) => ({
-            licenseeId: { equals: licenseeId, mode: 'insensitive' as const },
-          })),
-          ...chunk.map((licenseeId) => ({
-            licenseeIds: {
-              some: { licenseeId: { equals: licenseeId, mode: 'insensitive' as const } },
-            },
-          })),
-          ...chunkKeys
-            .filter((key) => key.length >= 4)
-            .map((key) => ({
-              licenseeId: { contains: key, mode: 'insensitive' as const },
-            })),
-          ...chunkKeys
-            .filter((key) => key.length >= 4)
-            .map((key) => ({
-              licenseeIds: {
-                some: { licenseeId: { contains: key, mode: 'insensitive' as const } },
-              },
-            })),
-        ],
-      },
-      select: {
-        id: true,
-        licenseeId: true,
-        licenseeIds: { select: { licenseeId: true } },
-        name: true,
-      },
-    });
-    chunkAccounts
-      .filter((account) => accountHasAnyLicenseeKey(account, Array.from(targetKeys)))
-      .forEach((account) => accounts.set(account.id, account));
-  }
-
-  return Array.from(accounts.values());
-};
 
 export async function findOhlqWholesaleReactivationCandidates({
   db = prisma,

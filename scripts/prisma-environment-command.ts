@@ -1,23 +1,13 @@
-import { existsSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
-
-function loadEnvironmentFile(filePath: string) {
-  if (!existsSync(filePath)) return;
-  for (const line of readFileSync(filePath, 'utf8').split(/\r?\n/)) {
-    const match = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/);
-    if (!match || process.env[match[1]] !== undefined) continue;
-    const value = match[2].replace(/^(['"])(.*)\1$/, '$2');
-    process.env[match[1]] = value;
-  }
-}
+import { loadEnvironmentFile } from '../lib/environmentFile';
 
 const root = path.resolve(__dirname, '..');
 loadEnvironmentFile(path.join(root, '.env'));
 loadEnvironmentFile(path.join(root, '.env.local'));
 
 async function main() {
-  const { assertDestructiveDatabaseOperationAllowed, getAppEnvironment, logEnvironmentEvent, parseBooleanEnvironmentValue, validateRuntimeEnvironment } = await import('../lib/appEnvironment');
+  const { assertDestructiveDatabaseOperationAllowed, logEnvironmentEvent, parseBooleanEnvironmentValue, validateRuntimeEnvironment } = await import('../lib/appEnvironment');
   const command = process.argv[2];
   const expectedEnvironment = process.argv[3];
   const runtime = validateRuntimeEnvironment();

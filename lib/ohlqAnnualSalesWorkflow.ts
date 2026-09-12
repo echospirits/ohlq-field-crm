@@ -7,7 +7,6 @@ import {
 } from './ohlqAnnualSalesImport';
 import { pruneOhlqAnnualSalesRows } from './ohlqAnnualSalesRetention';
 import { runOpportunityIntelligenceAfterImport } from './opportunityEngine';
-import { prisma } from './prisma';
 import { toOhlqDateOnlyUtc } from './ohlqDataStatus';
 import {
   downloadOhlqSharedSalesReports,

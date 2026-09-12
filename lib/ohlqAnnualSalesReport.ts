@@ -1,6 +1,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { EASTERN_TIME_ZONE, getZonedDateTimeParts } from './dateTime';
 import {
   chromium as playwrightChromium,
   type Browser,
@@ -195,26 +196,7 @@ function formatDateParts(year: number, month: number, day: number): ReportDate {
   };
 }
 
-function todayInEastern(now = new Date()) {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    day: '2-digit',
-    month: '2-digit',
-    timeZone: 'America/New_York',
-    year: 'numeric',
-  }).formatToParts(now);
-
-  const value = (type: Intl.DateTimeFormatPartTypes) => {
-    const part = parts.find((item) => item.type === type)?.value;
-    if (!part) throw new Error(`Unable to resolve Eastern date part: ${type}`);
-    return Number(part);
-  };
-
-  return {
-    day: value('day'),
-    month: value('month'),
-    year: value('year'),
-  };
-}
+const todayInEastern = (now = new Date()) => getZonedDateTimeParts(now, EASTERN_TIME_ZONE);
 
 function defaultReportDate() {
   const today = todayInEastern();

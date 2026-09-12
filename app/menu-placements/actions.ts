@@ -3,7 +3,7 @@
 import { MenuPlacementSource, MenuPlacementStatus, MenuPlacementType, PhotoType } from '@prisma/client';
 import { revalidatePath } from 'next/cache';
 import { notFound, redirect } from 'next/navigation';
-import { getUserDisplayName, requireUser } from '../../lib/auth';
+import { requireUser } from '../../lib/auth';
 import {
   deleteStoredPhoto,
   uploadMenuPlacementProof,

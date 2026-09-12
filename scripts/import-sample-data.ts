@@ -38,7 +38,6 @@ async function seedRecipes(){
 
 async function generateLapsedBuyerAlerts(){
  // Placeholder rule: accounts with historical inventory coverage but no open alert yet.
- const tag = await prisma.tag.findUnique({where:{organizationId_name:{organizationId,name:'Lapsed Buyer'}}});
  const facts = await prisma.inventoryFact.findMany({take:25,include:{account:true,sku:true}});
  for (const f of facts) await prisma.alert.create({data:{accountId:f.accountId,skuId:f.skuId,type:'LAPSED_BUYER_REVIEW',title:`Review ${f.account.name}`,detail:`Check recent orders for ${f.sku.itemCode}; dismiss, snooze, or add a note after review.`}}).catch(()=>{});
 }

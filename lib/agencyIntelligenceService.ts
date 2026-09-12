@@ -17,7 +17,6 @@ import {
   type IntelligenceBand,
   type WholesaleInfluenceAnalysis,
 } from './agencyIntelligence';
-import { agencyIntelligenceConfig } from './agencyIntelligenceConfig';
 import { getTenantAgencyInventoryWhere } from './ohlqAgencyInventory';
 import { getTenantSalesWhere, getTenantWholesaleSalesWhere } from './ohlqSalesData';
 import { getOhlqLicenseeMatchKeys, normalizeOhlqId } from './ohlqWholesaleMatching';

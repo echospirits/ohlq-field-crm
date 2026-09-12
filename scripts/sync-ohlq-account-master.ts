@@ -1,25 +1,11 @@
 import { spawn } from 'node:child_process';
-import fs from 'node:fs';
 import path from 'node:path';
 import { OhlqReportDataSource } from '@prisma/client';
 import { assertSideEffectEnabled, validateRuntimeEnvironment } from '../lib/appEnvironment';
+import { loadLocalEnvironmentFile } from '../lib/environmentFile';
 import { downloadOhlqAccountMaster, getOhlqAccountMasterDate } from '../lib/ohlqAnnualSalesReport';
 import { recordOhlqReportRunErrored, recordOhlqReportRunStarted } from '../lib/ohlqDataStatus';
 import { prisma } from '../lib/prisma';
-
-function loadEnvFile(fileName: string) {
-  const envPath = path.join(process.cwd(), fileName);
-  if (!fs.existsSync(envPath)) return;
-  for (const line of fs.readFileSync(envPath, 'utf8').split(/\r?\n/)) {
-    const match = line.trim().match(/^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/);
-    if (!match || line.trim().startsWith('#') || process.env[match[1]] !== undefined) continue;
-    let value = match[2].trim();
-    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-      value = value.slice(1, -1);
-    }
-    process.env[match[1]] = value;
-  }
-}
 
 const getArgValue = (name: string) => {
   const index = process.argv.indexOf(name);
@@ -49,8 +35,8 @@ async function runImporter(file: string, environment: string, apply: boolean) {
 }
 
 async function main() {
-  loadEnvFile('.env.local');
-  loadEnvFile('.env');
+  loadLocalEnvironmentFile('.env.local');
+  loadLocalEnvironmentFile('.env');
   const environment = getArgValue('--environment');
   if (!['test', 'production'].includes(environment)) {
     throw new Error('Pass --environment test or --environment production.');
