@@ -1,27 +1,38 @@
 'use client';
 
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { type FormEvent, type ReactNode, useRef, useTransition } from 'react';
+import { type FormEvent, type ReactNode, useEffect, useRef, useTransition } from 'react';
 
 type LiveFilterFormProps = {
+  action?: string;
   children: ReactNode;
   className?: string;
   debounceMs?: number;
   label?: string;
+  role?: 'search';
 };
 
 const shouldDebounce = (target: EventTarget | null) =>
   target instanceof HTMLInputElement && ['search', 'text'].includes(target.type);
 
-export function LiveFilterForm({ children, className, debounceMs = 250, label }: LiveFilterFormProps) {
+export function LiveFilterForm({ action, children, className, debounceMs = 250, label, role }: LiveFilterFormProps) {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
   const timeoutRef = useRef<number | null>(null);
   const [isPending, startTransition] = useTransition();
 
+  useEffect(() => () => {
+    if (timeoutRef.current) {
+      window.clearTimeout(timeoutRef.current);
+    }
+  }, []);
+
   const syncFilters = (form: HTMLFormElement) => {
-    const params = new URLSearchParams(searchParams.toString());
+    const destinationPathname = action ?? pathname;
+    const params = destinationPathname === pathname
+      ? new URLSearchParams(searchParams.toString())
+      : new URLSearchParams();
     const fieldNames = Array.from(form.elements)
       .map((element) => (element instanceof HTMLInputElement || element instanceof HTMLSelectElement ? element.name : ''))
       .filter(Boolean);
@@ -39,7 +50,7 @@ export function LiveFilterForm({ children, className, debounceMs = 250, label }:
     const query = params.toString();
 
     startTransition(() => {
-      router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+      router.replace(query ? `${destinationPathname}?${query}` : destinationPathname, { scroll: false });
     });
   };
 
@@ -67,6 +78,7 @@ export function LiveFilterForm({ children, className, debounceMs = 250, label }:
 
   return (
     <form
+      action={action}
       aria-label={label}
       aria-busy={isPending}
       className={[className, isPending ? 'is-filtering' : null].filter(Boolean).join(' ')}
@@ -74,6 +86,7 @@ export function LiveFilterForm({ children, className, debounceMs = 250, label }:
       onChange={handleInput}
       onInput={handleInput}
       onSubmit={handleSubmit}
+      role={role}
     >
       {children}
       <span aria-live="polite" className="live-filter-status">

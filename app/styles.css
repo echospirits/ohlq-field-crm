@@ -782,6 +782,18 @@ textarea:focus-visible {
   box-shadow: none;
 }
 
+.global-search-compact .live-filter-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .search-heading {
   margin-bottom: 14px;
 }
@@ -1600,7 +1612,9 @@ form {
 }
 
 .filter-form.is-filtering input,
-.filter-form.is-filtering select {
+.filter-form.is-filtering select,
+.global-search.is-filtering input,
+.wholesale-order-customer-search.is-filtering input {
   border-color: #7da0ff;
 }
 

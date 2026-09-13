@@ -1,6 +1,13 @@
+import { LiveFilterForm } from './LiveFilterForm';
+
 export function GlobalSearchForm({ compact = false, defaultValue = '' }: { compact?: boolean; defaultValue?: string }) {
   return (
-    <form action="/search" className={compact ? 'global-search global-search-compact' : 'global-search'} method="get" role="search">
+    <LiveFilterForm
+      action="/search"
+      className={compact ? 'global-search global-search-compact' : 'global-search'}
+      label="Search accounts and work"
+      role="search"
+    >
       <label className="sr-only" htmlFor={compact ? 'global-search-sidebar' : 'global-search-page'}>
         Search accounts and work
       </label>
@@ -13,6 +20,6 @@ export function GlobalSearchForm({ compact = false, defaultValue = '' }: { compa
         type="search"
       />
       <button aria-label="Search" className="secondary" type="submit">Search</button>
-    </form>
+    </LiveFilterForm>
   );
 }

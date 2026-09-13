@@ -7,6 +7,7 @@ import { requireUser } from '../../../lib/auth';
 import { requireFeatureForUser } from '../../../lib/organizations';
 import { prisma } from '../../../lib/prisma';
 import { formatWholesaleLicenseeIds } from '../../../lib/wholesaleAccounts';
+import { LiveFilterForm } from '../../components/LiveFilterForm';
 import { PageHeader } from '../../components/PageChrome';
 
 export const metadata = buildPageMetadata('Choose Wholesale Customer');
@@ -40,14 +41,14 @@ export default async function NewWholesaleOrderPage({ searchParams }: { searchPa
 
   return <>
     <PageHeader eyebrow="Wholesale orders" title="Choose a wholesale customer" description="Search active Ohio accounts by name, DBA, permit, address, or city." actions={<Link className="btn secondary" href="/wholesale-orders">Back to orders</Link>} />
-    <form className="card wholesale-order-customer-search" method="get" role="search">
+    <LiveFilterForm className="card wholesale-order-customer-search" label="Find a wholesale customer" role="search">
       <label htmlFor="wholesale-order-customer-q">Customer search</label>
       <div className="search-row">
         <input autoFocus id="wholesale-order-customer-q" name="q" placeholder="Name, permit, address, or city" type="search" defaultValue={q} />
         <button type="submit">Search</button>
       </div>
       <p className="muted">Search runs across every eligible customer before showing the first {RESULT_LIMIT} matches.</p>
-    </form>
+    </LiveFilterForm>
     {!q ? <article className="card empty-state"><h2>Find the customer for this order</h2><p>Enter at least part of a customer name, permit number, street, or city.</p></article> : accounts.length ? <section className="wholesale-order-customer-results" aria-label="Customer search results">
       {accounts.map((account) => <Link className="card wholesale-order-customer-card" href={`/wholesale/${account.id}/direct-order`} key={account.id}>
         <span><strong>{account.name}</strong><small>{formatWholesaleLicenseeIds(account)}</small></span>
