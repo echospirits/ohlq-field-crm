@@ -1622,11 +1622,29 @@ form {
   border-color: #7da0ff;
 }
 
-.worklist-tools {
+.worklist-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(260px, .8fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   align-items: start;
+}
+
+.worklist-layout .quick-task-card {
+  scroll-margin-top: 16px;
+}
+
+.dashboard-worklist-card {
+  color: inherit;
+  text-decoration: none;
+}
+
+.dashboard-worklist-card:hover,
+.dashboard-worklist-card:focus-visible {
+  border-color: #4972ff;
+}
+
+.dashboard-quick-actions {
+  margin-top: 18px;
 }
 
 .quick-task-card h2 {
@@ -3648,7 +3666,7 @@ legend {
   .visit-filter,
   .placement-filter,
   .quick-task-form,
-  .worklist-tools,
+  .worklist-layout,
   .inline-suggestion-form,
   .digest-control-form,
   .target-filter-form,

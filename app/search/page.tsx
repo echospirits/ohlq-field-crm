@@ -7,7 +7,8 @@ import { buildPageMetadata } from '../../lib/appBrand';
 import { requireUser } from '../../lib/auth';
 import { formatWorklistDue } from '../../lib/dateTime';
 import { prisma } from '../../lib/prisma';
-import { requireOrganizationContext } from '../../lib/organizations';
+import { getOrganizationFeatures, requireOrganizationContext } from '../../lib/organizations';
+import { AccountViewNavigation } from '../components/AccountViewNavigation';
 import { GlobalSearchForm } from '../components/GlobalSearchForm';
 
 export const metadata = buildPageMetadata('Search');
@@ -18,6 +19,7 @@ const inactiveWorkStatuses = [WorklistStatus.COMPLETED, WorklistStatus.CANCELLED
 export default async function SearchPage({ searchParams }: { searchParams?: Promise<{ q?: string }> }) {
   const user = await requireUser();
   const { organizationId } = await requireOrganizationContext(user);
+  const hasWholesaleOpportunities = (await getOrganizationFeatures(organizationId)).has('WHOLESALE_OPPORTUNITIES');
   const params = (await searchParams) ?? {};
   const query = (params.q ?? '').trim();
   const canSearch = query.length >= 2;
@@ -51,9 +53,11 @@ export default async function SearchPage({ searchParams }: { searchParams?: Prom
               { city: { contains: query, mode: 'insensitive' } },
               { ownership: { contains: query, mode: 'insensitive' } },
               { licenseeIds: { some: { licenseeId: { contains: query, mode: 'insensitive' } } } },
-              { opportunities: { some: { organizationId, title: { contains: query, mode: 'insensitive' } } } },
-              { opportunities: { some: { organizationId, recommendedAction: { contains: query, mode: 'insensitive' } } } },
-              { opportunities: { some: { organizationId, targetCategory: { contains: query, mode: 'insensitive' } } } },
+              ...(hasWholesaleOpportunities ? [
+                { opportunities: { some: { organizationId, title: { contains: query, mode: 'insensitive' as const } } } },
+                { opportunities: { some: { organizationId, recommendedAction: { contains: query, mode: 'insensitive' as const } } } },
+                { opportunities: { some: { organizationId, targetCategory: { contains: query, mode: 'insensitive' as const } } } },
+              ] : []),
             ],
           },
           orderBy: [{ name: 'asc' }],
@@ -101,6 +105,8 @@ export default async function SearchPage({ searchParams }: { searchParams?: Prom
         </div>
       </header>
 
+      <AccountViewNavigation active="overview" />
+
       <GlobalSearchForm defaultValue={query} />
 
       {!canSearch ? (
@@ -142,7 +148,7 @@ export default async function SearchPage({ searchParams }: { searchParams?: Prom
                   <Link className="search-result-row" href={`/wholesale/${account.id}`} key={account.id}>
                     <span><strong>{account.name}</strong><small>{[account.address, account.city].filter(Boolean).join(', ') || 'No address'}</small></span>
                     <span>
-                      {account.opportunities[0] ? <small>{account.opportunities[0].priorityBand} opportunity · {account.opportunities[0].recommendedAction}</small> : <small>Wholesale</small>}
+                      {hasWholesaleOpportunities && account.opportunities[0] ? <small>{account.opportunities[0].priorityBand} opportunity · {account.opportunities[0].recommendedAction}</small> : <small>Wholesale</small>}
                       <strong>{account.licenseeId}</strong>
                     </span>
                   </Link>

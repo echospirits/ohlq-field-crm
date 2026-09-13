@@ -271,25 +271,6 @@ export default async function Dashboard() {
         <Link className="btn secondary" href="/my-week">View My Week</Link>
       </header>
 
-      <section className="quick-action-panel">
-        <Link className="quick-action-card quick-action-primary" href="/visits/new">
-          <strong>Log visit</strong>
-          <span>Start with account search</span>
-        </Link>
-        <Link className="quick-action-card" href="/alerts">
-          <strong>Worklist</strong>
-          <span>{activeWorklistItems} active</span>
-        </Link>
-        <Link className="quick-action-card" href="/accounts">
-          <strong>Find account</strong>
-          <span>{enabledFeatures.has('WHOLESALE_OPPORTUNITIES') ? 'Agency, wholesale, or opportunity' : 'Agency or wholesale'}</span>
-        </Link>
-        <Link className="quick-action-card" href="/my-week">
-          <strong>My Week</strong>
-          <span>{scheduledVisitTotal} scheduled in 7 days</span>
-        </Link>
-      </section>
-
       <div className="section-heading dashboard-attention-heading">
         <div>
           <span className="page-eyebrow">My work</span>
@@ -303,13 +284,37 @@ export default async function Dashboard() {
       {enabledFeatures.has('AGENCY_INTELLIGENCE') ? <DashboardAgencyIntelligence organizationId={organizationId} /> : null}
 
       <div className="grid">
-        <div className="card metric-card">
+        <Link className="card metric-card dashboard-worklist-card" href="/alerts">
           <h3>Active worklist</h3>
           <p className="metric-value">{activeWorklistItems}</p>
           <p className="muted metric-caption">Open and in-progress items</p>
-        </div>
+        </Link>
 
       </div>
+
+      <section className="dashboard-quick-actions" aria-labelledby="quick-actions-title">
+        <div className="section-heading">
+          <h2 id="quick-actions-title">Quick actions</h2>
+        </div>
+        <div className="quick-action-panel">
+          <Link className="quick-action-card quick-action-primary" href="/visits/new">
+            <strong>Log visit</strong>
+            <span>Start with account search</span>
+          </Link>
+          <Link className="quick-action-card" href="/alerts">
+            <strong>Worklist</strong>
+            <span>{activeWorklistItems} active</span>
+          </Link>
+          <Link className="quick-action-card" href="/search">
+            <strong>Find account</strong>
+            <span>{enabledFeatures.has('WHOLESALE_OPPORTUNITIES') ? 'Agency, wholesale, or opportunity' : 'Agency or wholesale'}</span>
+          </Link>
+          <Link className="quick-action-card" href="/my-week">
+            <strong>My Week</strong>
+            <span>{scheduledVisitTotal} scheduled in 7 days</span>
+          </Link>
+        </div>
+      </section>
 
       <details className="dashboard-section dashboard-details">
         <summary>

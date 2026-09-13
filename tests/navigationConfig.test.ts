@@ -23,10 +23,12 @@ test('wholesale orders navigation is feature gated', () => {
 });
 
 test('mobile navigation stays limited to four primary destinations', () => {
+  const items = getMobileNavigationItems();
   assert.deepEqual(
-    getMobileNavigationItems().map((item) => item.key),
+    items.map((item) => item.key),
     ['home', 'worklist', 'accounts', 'visits'],
   );
+  assert.equal(items.find((item) => item.key === 'accounts')?.href, '/search');
 });
 
 test('administration stays out of the standard More menu', () => {

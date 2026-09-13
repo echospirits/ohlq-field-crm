@@ -99,7 +99,7 @@ test('manual shared OHLQ data loads require Platform Admin', () => {
 });
 
 test('intelligence sections are omitted from core-only dashboards and account pages', () => {
-  for (const path of ['app/page.tsx', 'app/accounts/page.tsx', 'app/agencies/[id]/page.tsx', 'app/wholesale/page.tsx', 'app/wholesale/[id]/page.tsx']) {
+  for (const path of ['app/page.tsx', 'app/search/page.tsx', 'app/agencies/[id]/page.tsx', 'app/wholesale/page.tsx', 'app/wholesale/[id]/page.tsx']) {
     const source = readFileSync(path, 'utf8');
     assert.match(source, /getOrganizationFeatures/);
     assert.match(source, /WHOLESALE_OPPORTUNITIES/);

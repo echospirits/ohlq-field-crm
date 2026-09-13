@@ -341,6 +341,7 @@ export default async function Alerts({
             Follow-ups from visits, data signals, and manually assigned tasks. Completed and cancelled items are hidden by default.
           </p>
         </div>
+        <a className="btn secondary" href="#quick-task">Add task</a>
       </header>
       <WorkViewNavigation active={pursuingView ? 'pursuing' : 'all'} showPursuing={enabledFeatures.has('WHOLESALE_OPPORTUNITIES')} />
 
@@ -348,58 +349,7 @@ export default async function Alerts({
       {params.created === 'invalid' ? <p className="pill">A title is required.</p> : null}
       {params.notice ? <p className="pill">{noticeMessages[params.notice] ?? params.notice}</p> : null}
 
-      <div className="worklist-tools">
-        <div className="card quick-task-card">
-          <h2>Quick task</h2>
-          <form action={createWorklistItem} className="quick-task-form">
-            <input name="title" placeholder="What needs to happen?" required />
-            <DatePickerField name="dueDate" aria-label="Due date" pickerLabel="Choose due date" />
-            <input aria-label="Due time (optional)" name="dueTime" type="time" />
-            <select name="category" defaultValue={WorklistCategory.GENERAL} aria-label="Category">
-              <option value={WorklistCategory.AGENCY}>Agency</option>
-              <option value={WorklistCategory.WHOLESALE}>Wholesale</option>
-              <option value={WorklistCategory.GENERAL}>General</option>
-            </select>
-            <button type="submit">Create task</button>
-
-            <details className="compact-details nested-details quick-task-more">
-              <summary>Add account, owner, or details</summary>
-              <label>Agency</label>
-              <select name="agencyId">
-                <option value="">-- Optional agency --</option>
-                {agencyOptions.map((agency) => (
-                  <option key={agency.id} value={agency.id}>
-                    {agency.name} ({agency.agencyId})
-                  </option>
-                ))}
-              </select>
-
-              <label>Wholesale account</label>
-              <select name="wholesaleAccountId">
-                <option value="">-- Optional wholesale account --</option>
-                {wholesaleOptions.map((account) => (
-                  <option key={account.id} value={account.id}>
-                    {account.name} ({account.licenseeId})
-                  </option>
-                ))}
-              </select>
-
-              <label>Assigned to</label>
-              <select name="assignedToUserId">
-                <option value="">-- Unassigned --</option>
-                {users.map((user) => (
-                  <option key={user.id} value={user.id}>
-                    {getUserDisplayName(user)}
-                  </option>
-                ))}
-              </select>
-
-              <label>Details</label>
-              <textarea name="detail" rows={3} placeholder="Context, instructions, or notes" />
-            </details>
-          </form>
-        </div>
-
+      <div className="worklist-layout">
         <details className="card compact-details filter-panel">
           <summary>Filters</summary>
           <LiveFilterForm label="Filter worklist items">
@@ -438,10 +388,9 @@ export default async function Alerts({
             <input name="q" defaultValue={q} placeholder="Search title, detail, owner, creator" />
           </LiveFilterForm>
         </details>
-      </div>
 
-      {groups.map((group) => (
-        <section className="worklist-section" key={group.category}>
+        {groups.map((group) => (
+          <section className="worklist-section" key={group.category}>
           <div className="section-heading">
             <h2>{group.title}</h2>
             <span className="pill">{group.items.length}</span>
@@ -532,8 +481,60 @@ export default async function Alerts({
               </tbody>
             </table>
           )}
-        </section>
-      ))}
+          </section>
+        ))}
+
+        <div className="card quick-task-card" id="quick-task">
+          <h2>Add a task</h2>
+          <form action={createWorklistItem} className="quick-task-form">
+            <input name="title" placeholder="What needs to happen?" required />
+            <DatePickerField name="dueDate" aria-label="Due date" pickerLabel="Choose due date" />
+            <input aria-label="Due time (optional)" name="dueTime" type="time" />
+            <select name="category" defaultValue={WorklistCategory.GENERAL} aria-label="Category">
+              <option value={WorklistCategory.AGENCY}>Agency</option>
+              <option value={WorklistCategory.WHOLESALE}>Wholesale</option>
+              <option value={WorklistCategory.GENERAL}>General</option>
+            </select>
+            <button type="submit">Create task</button>
+
+            <details className="compact-details nested-details quick-task-more">
+              <summary>Add account, owner, or details</summary>
+              <label>Agency</label>
+              <select name="agencyId">
+                <option value="">-- Optional agency --</option>
+                {agencyOptions.map((agency) => (
+                  <option key={agency.id} value={agency.id}>
+                    {agency.name} ({agency.agencyId})
+                  </option>
+                ))}
+              </select>
+
+              <label>Wholesale account</label>
+              <select name="wholesaleAccountId">
+                <option value="">-- Optional wholesale account --</option>
+                {wholesaleOptions.map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {account.name} ({account.licenseeId})
+                  </option>
+                ))}
+              </select>
+
+              <label>Assigned to</label>
+              <select name="assignedToUserId">
+                <option value="">-- Unassigned --</option>
+                {users.map((user) => (
+                  <option key={user.id} value={user.id}>
+                    {getUserDisplayName(user)}
+                  </option>
+                ))}
+              </select>
+
+              <label>Details</label>
+              <textarea name="detail" rows={3} placeholder="Context, instructions, or notes" />
+            </details>
+          </form>
+        </div>
+      </div>
     </>
   );
 }
