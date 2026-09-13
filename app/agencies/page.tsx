@@ -7,6 +7,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { buildPageMetadata } from '../../lib/appBrand';
 import { requireUser } from '../../lib/auth';
+import { getDirectionsHref } from '../../lib/crmActionContext';
 import { formatEasternDate } from '../../lib/dateTime';
 import { getGeocodeResetForAddressChange } from '../../lib/location/geocode';
 import { prisma } from '../../lib/prisma';
@@ -210,12 +211,11 @@ export default async function AgenciesPage({
         </form>
       </details>
 
-      <div className="table-scroll"><table className="responsive-table">
+      <div className="table-scroll"><table className="responsive-table account-directory-table">
         <thead>
           <tr>
-            <th>Actions</th>
-            <th>Agency ID</th>
             <th>Name</th>
+            <th>Agency ID</th>
             <th>Address</th>
             <th>City</th>
             <th>Primary Contact</th>
@@ -224,35 +224,48 @@ export default async function AgenciesPage({
             <th>Tags</th>
             <th>Logged Visits</th>
             <th>Most Recent Visit</th>
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody>
           {agencies.map((agency) => {
             const stats = visitStatMap[agency.id] ?? { count: 0, lastVisitAt: null };
+            const address = [agency.address, agency.city, agency.state, agency.zip].filter(Boolean).join(', ');
+            const directionsHref = getDirectionsHref(address);
+            const phone = agency.primaryContactPhone ?? agency.phone;
 
             return (
-              <tr key={agency.id}>
-                <td data-label="Actions">
+              <tr className="account-directory-row" key={agency.id}>
+                <td className="account-directory-name-cell" data-label="Name">
+                  <Link className="table-link account-directory-name-link" href={`/agencies/${agency.id}`}>
+                    {agency.name}
+                  </Link>
+                  <span className="account-directory-mobile-only account-directory-location">
+                    {address || `Agency ${agency.agencyId}`}
+                  </span>
+                  <span className="account-directory-mobile-only account-directory-context">
+                    {stats.lastVisitAt ? `Last visit ${formatEasternDate(stats.lastVisitAt)}` : 'Not visited yet'}
+                    {agency.primaryContact ? ` · ${agency.primaryContact}` : ''}
+                  </span>
+                </td>
+                <td className="account-directory-secondary-cell" data-label="Agency ID">{agency.agencyId}</td>
+                <td className="account-directory-secondary-cell" data-label="Address">{agency.address}</td>
+                <td className="account-directory-secondary-cell" data-label="City">{agency.city}</td>
+                <td className="account-directory-secondary-cell" data-label="Primary Contact">{agency.primaryContact}</td>
+                <td className="account-directory-secondary-cell" data-label="Contact Phone">{agency.primaryContactPhone}</td>
+                <td className="account-directory-secondary-cell" data-label="Agency Phone">{agency.phone}</td>
+                <td className="account-directory-secondary-cell" data-label="Tags">
+                  <TagBadges tags={agency.tags.map((assignment) => assignment.tag)} />
+                </td>
+                <td className="account-directory-secondary-cell" data-label="Logged Visits">{stats.count}</td>
+                <td className="account-directory-secondary-cell" data-label="Most Recent Visit">{formatEasternDate(stats.lastVisitAt)}</td>
+                <td className="account-directory-actions-cell" data-label="Actions">
                   <Link className="btn compact-btn" href={`/visits/new?type=agency&agencyId=${agency.id}`}>
                     Log visit
                   </Link>
+                  {phone ? <a aria-label={`Call ${agency.name}`} className="btn secondary compact-btn account-directory-mobile-only" href={`tel:${phone}`}>Call</a> : null}
+                  {directionsHref ? <a aria-label={`Directions to ${agency.name}`} className="btn secondary compact-btn account-directory-mobile-only" href={directionsHref} rel="noreferrer" target="_blank">Directions</a> : null}
                 </td>
-                <td data-label="Agency ID">{agency.agencyId}</td>
-                <td data-label="Name">
-                  <Link className="table-link" href={`/agencies/${agency.id}`}>
-                    {agency.name}
-                  </Link>
-                </td>
-                <td data-label="Address">{agency.address}</td>
-                <td data-label="City">{agency.city}</td>
-                <td data-label="Primary Contact">{agency.primaryContact}</td>
-                <td data-label="Contact Phone">{agency.primaryContactPhone}</td>
-                <td data-label="Agency Phone">{agency.phone}</td>
-                <td data-label="Tags">
-                  <TagBadges tags={agency.tags.map((assignment) => assignment.tag)} />
-                </td>
-                <td data-label="Logged Visits">{stats.count}</td>
-                <td data-label="Most Recent Visit">{formatEasternDate(stats.lastVisitAt)}</td>
               </tr>
             );
           })}

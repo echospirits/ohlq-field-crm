@@ -7,6 +7,7 @@ import { redirect } from 'next/navigation';
 import { AccountType, OpportunityStatus, Prisma } from '@prisma/client';
 import { buildPageMetadata } from '../../lib/appBrand';
 import { requireUser } from '../../lib/auth';
+import { getDirectionsHref } from '../../lib/crmActionContext';
 import { formatEasternDate } from '../../lib/dateTime';
 import { getGeocodeResetForAddressChange } from '../../lib/location/geocode';
 import { prisma } from '../../lib/prisma';
@@ -62,22 +63,25 @@ type WholesaleTableRow = {
   nextAction: string | null;
   opportunityPriority: string | null;
   opportunityScore: number | null;
+  phone: string | null;
+  directionsHref: string | null;
+  locationText: string | null;
 };
 
 const MAX_WHOLESALE_ACCOUNT_ROWS = 25000;
 const WHOLESALE_PAGE_SIZE = 300;
 
 const wholesaleSortColumns: Array<{ key: WholesaleSortKey; label: string }> = [
-  { key: 'actions', label: 'Actions' },
-  { key: 'licenseeIds', label: 'Licensee IDs' },
   { key: 'name', label: 'Name' },
-  { key: 'agencyId', label: 'Agency ID' },
+  { key: 'licenseeIds', label: 'Licensee IDs' },
   { key: 'address', label: 'Address' },
   { key: 'city', label: 'City' },
+  { key: 'agencyId', label: 'Agency ID' },
   { key: 'mostRecentVisit', label: 'Most Recent Visit' },
   { key: 'opportunityPriority', label: 'Opportunity Priority' },
   { key: 'opportunityScore', label: 'Opportunity Score' },
   { key: 'nextAction', label: 'Next Action' },
+  { key: 'actions', label: 'Actions' },
 ];
 
 const numericSortKeys = new Set<WholesaleSortKey>([
@@ -486,6 +490,7 @@ export default async function WholesalePage({
   const activeRows: WholesaleTableRow[] = accounts.map((account) => {
     const lastVisitAt = visitStatMap[account.id] ?? null;
     const opportunity = opportunityMap.get(account.id) ?? null;
+    const locationText = [account.address, account.city, account.state, account.zip].filter(Boolean).join(', ');
 
     return {
       actionHref: `/visits/new?type=wholesale&wholesaleAccountId=${account.id}`,
@@ -501,6 +506,9 @@ export default async function WholesalePage({
       nextAction: opportunity?.recommendedAction ?? null,
       opportunityPriority: opportunity?.priorityBand ?? null,
       opportunityScore: opportunity?.productionScore ?? null,
+      phone: account.phone,
+      directionsHref: getDirectionsHref(locationText),
+      locationText: locationText || null,
     };
   });
   const sortedRows = sortWholesaleRows(activeRows, sortKey, sortDirection);
@@ -594,7 +602,7 @@ export default async function WholesalePage({
       </div>
 
       <div className="table-scroll wholesale-table-scroll">
-        <table className="responsive-table">
+        <table className="responsive-table account-directory-table">
           <thead>
             <tr>
               {visibleSortColumns.map((column) => (
@@ -611,28 +619,37 @@ export default async function WholesalePage({
           </thead>
           <tbody>
             {tableRows.map((row) => (
-              <tr key={row.id}>
-                <td data-label="Actions">
+              <tr className="account-directory-row" key={row.id}>
+                <td className="account-directory-name-cell" data-label="Name">
+                  <Link className="table-link account-directory-name-link" href={row.nameHref ?? '/wholesale'}>
+                    {row.name}
+                  </Link>
+                  <span className="account-directory-mobile-only account-directory-location">
+                    {row.locationText || (row.licenseeIdsText ? `Licensee ${row.licenseeIdsText}` : 'Location unavailable')}
+                  </span>
+                  <span className="account-directory-mobile-only account-directory-context">
+                    {row.opportunityPriority ? <span className={`priority priority-${row.opportunityPriority.toLowerCase()}`}>{row.opportunityPriority}</span> : null}
+                    <span>{row.nextAction ?? (row.mostRecentVisit ? `Last visit ${formatEasternDate(row.mostRecentVisit)}` : 'Not visited yet')}</span>
+                  </span>
+                </td>
+                <td className="account-directory-secondary-cell" data-label="Licensee IDs">{row.licenseeIdsText}</td>
+                <td className="account-directory-secondary-cell" data-label="Address">{row.address}</td>
+                <td className="account-directory-secondary-cell" data-label="City">{row.city}</td>
+                <td className="account-directory-secondary-cell" data-label="Agency ID">{row.agencyId}</td>
+                <td className="account-directory-secondary-cell" data-label="Most Recent Visit">{formatEasternDate(row.mostRecentVisit)}</td>
+                {hasWholesaleOpportunities ? <><td className="account-directory-secondary-cell" data-label="Opportunity Priority">
+                  {row.opportunityPriority ? <span className={`priority priority-${row.opportunityPriority.toLowerCase()}`}>{row.opportunityPriority}</span> : <span className="muted">None active</span>}
+                </td>
+                <td className="account-directory-secondary-cell" data-label="Opportunity Score">{formatMetric(row.opportunityScore)}</td>
+                <td className="account-directory-secondary-cell" data-label="Next Action">{row.nextAction ?? '—'}</td>
+                </> : null}
+                <td className="account-directory-actions-cell" data-label="Actions">
                   <Link className="btn compact-btn" href={row.actionHref ?? '/wholesale'}>
                     {row.actionLabel}
                   </Link>
+                  {row.phone ? <a aria-label={`Call ${row.name}`} className="btn secondary compact-btn account-directory-mobile-only" href={`tel:${row.phone}`}>Call</a> : null}
+                  {row.directionsHref ? <a aria-label={`Directions to ${row.name}`} className="btn secondary compact-btn account-directory-mobile-only" href={row.directionsHref} rel="noreferrer" target="_blank">Directions</a> : null}
                 </td>
-                <td data-label="Licensee IDs">{row.licenseeIdsText}</td>
-                <td data-label="Name">
-                  <Link className="table-link" href={row.nameHref ?? '/wholesale'}>
-                    {row.name}
-                  </Link>
-                </td>
-                <td data-label="Agency ID">{row.agencyId}</td>
-                <td data-label="Address">{row.address}</td>
-                <td data-label="City">{row.city}</td>
-                <td data-label="Most Recent Visit">{formatEasternDate(row.mostRecentVisit)}</td>
-                {hasWholesaleOpportunities ? <><td data-label="Opportunity Priority">
-                  {row.opportunityPriority ? <span className={`priority priority-${row.opportunityPriority.toLowerCase()}`}>{row.opportunityPriority}</span> : <span className="muted">None active</span>}
-                </td>
-                <td data-label="Opportunity Score">{formatMetric(row.opportunityScore)}</td>
-                <td data-label="Next Action">{row.nextAction ?? '—'}</td>
-                </> : null}
               </tr>
             ))}
           </tbody>
