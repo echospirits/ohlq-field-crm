@@ -1283,7 +1283,7 @@ tbody tr:last-child td {
   font-size: 10px;
 }
 
-.account-directory-mobile-only {
+.account-directory-table .account-directory-mobile-only {
   display: none;
 }
 
