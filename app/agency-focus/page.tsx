@@ -59,6 +59,8 @@ export default async function AgencyFocusPage({
       agency: { select: { id: true, agencyId: true, city: true, name: true } },
       worklistItems: {
         where: { status: { in: ['OPEN', 'IN_PROGRESS'] } },
+        orderBy: [{ dueDate: 'asc' }, { createdAt: 'asc' }],
+        take: 1,
         select: { id: true },
       },
     },
@@ -96,7 +98,7 @@ export default async function AgencyFocusPage({
           <ContextualActions
             context={{ accountName: item.agency.name, agencyId: item.agency.id, agencyProductIntelligenceId: item.id, productItemCode: item.itemCode, productName: item.itemName, reason: stringList(item.reasons).join(' '), returnTo: '/agency-focus', sourceLabel: `${stateLabels[item.opportunityState]} - ${item.itemName}`, sourceType: item.opportunityState }}
             currentUserId={currentUser.id}
-            hasExistingFollowUp={item.worklistItems.length > 0}
+            existingFollowUpId={item.worklistItems[0]?.id}
             users={actionUsers}
           />
           <form action={updateAgencyOpportunity}><input name="id" type="hidden" value={item.id}/><button className="secondary compact-btn" name="action" value="snooze">Snooze 14d</button></form>

@@ -191,7 +191,7 @@ export async function OpportunityAccountPanel({ agencyId, wholesaleAccountId, cu
         actions={<ContextualActions
           context={{ accountName: item.wholesaleAccount.name, opportunityId: item.id, reason: firstExplanation(item.explanation), returnTo: `/wholesale/${wholesaleAccountId}`, sourceLabel: item.title, sourceType: item.type, wholesaleAccountId }}
           currentUserId={currentUserId}
-          hasExistingFollowUp={worklist.some((task) => task.salesOpportunityId === item.id)}
+          existingFollowUpId={worklist.find((task) => task.salesOpportunityId === item.id)?.id}
           users={users}
         />}
       />)}

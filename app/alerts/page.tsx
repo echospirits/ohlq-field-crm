@@ -414,7 +414,7 @@ export default async function Alerts({
                   const location = worklistLocations.get(item.id);
 
                   return (
-                    <tr key={item.id}>
+                    <tr id={`worklist-${item.id}`} key={item.id}>
                       <td data-label="Item">
                         <strong>{item.title}</strong>
                         <div className="inline-meta">

@@ -260,6 +260,7 @@ describe('iPhone Shortcut contact import', () => {
     assert.match(actions, /if \(importSessionToken\)/);
     assert.match(importer, /name="source" type="hidden" value=\{source\}/);
     assert.match(importer, />Upload \.vcf<\/button>/);
-    assert.match(importer, /<summary>Enter or review contact<\/summary>/);
+    assert.match(importer, /<strong>Add contact<\/strong>/);
+    assert.match(importer, /<summary>Import a contact from your phone<\/summary>/);
   });
 });

@@ -42,7 +42,7 @@ export async function AgencyIntelligencePanel({ agencyId, agencyName, currentUse
     prisma.agencyIntelligenceSummary.findUnique({ where: { organizationId_agencyId: { organizationId, agencyId } } }),
     prisma.agencyProductIntelligence.findMany({
       where: { agencyId, organizationId },
-      include: { worklistItems: { where: { organizationId, status: { in: ['OPEN', 'IN_PROGRESS'] } }, select: { id: true } } },
+      include: { worklistItems: { where: { organizationId, status: { in: ['OPEN', 'IN_PROGRESS'] } }, orderBy: [{ dueDate: 'asc' }, { createdAt: 'asc' }], take: 1, select: { id: true } } },
       orderBy: [{ priorityScore: 'desc' }, { itemName: 'asc' }],
     }),
   ]);
@@ -104,7 +104,7 @@ export async function AgencyIntelligencePanel({ agencyId, agencyName, currentUse
             <ContextualActions
               context={{ accountName: agencyName, agencyId, agencyProductIntelligenceId: product.id, productItemCode: product.itemCode, productName: product.itemName, reason: stringList(product.reasons).join(' '), returnTo: `/agencies/${agencyId}`, sourceLabel: `${titleCase(product.opportunityState)} - ${product.itemName}`, sourceType: product.opportunityState }}
               currentUserId={currentUserId}
-              hasExistingFollowUp={product.worklistItems.length > 0}
+              existingFollowUpId={product.worklistItems[0]?.id}
               users={users}
             />
           </div>

@@ -69,22 +69,10 @@ export function ContactImportForm({ accountId, accountType, installUrl, returnTo
   const update = (field: keyof ImportedContact) => (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setContact((current) => ({ ...current, [field]: event.target.value }));
 
-  return <div className="contact-import-tile">
-    <div className="contact-import-heading">
-      <div><strong>Add a contact</strong><small>Use the iPhone Shortcut or upload an exported .vcf contact card.</small></div>
-      <div className="contact-import-buttons">
-        <button className="btn contact-transfer-button" disabled={startingShortcut} onClick={importFromIPhone} type="button">{startingShortcut ? 'Opening…' : 'Import from iPhone'}</button>
-        <button className="btn secondary contact-transfer-button" onClick={() => fileRef.current?.click()} type="button">Upload .vcf</button>
-      </div>
-      <input accept=".vcf,text/vcard,text/x-vcard" aria-label="Upload a vCard contact" className="visually-hidden" onChange={importFile} ref={fileRef} type="file" />
-    </div>
-    <p className="contact-shortcut-help">
-      Send to Neat version {shortcutVersion} is recommended.
-      {installUrl ? <> <a href={installUrl}>Install or update the Shortcut</a>.</> : <> Ask your administrator for the installation link.</>}
-    </p>
+  return <div className="contact-add-panel">
     {message ? <p aria-live="polite" className="contact-import-message">{message}</p> : null}
-    <details className="nested-details add-contact" ref={detailsRef}>
-      <summary>Enter or review contact</summary>
+    <details className="add-contact" ref={detailsRef}>
+      <summary className="contact-add-summary"><span><strong>Add contact</strong><small>Enter a name and any details you have</small></span></summary>
       <form action={createAccountContact} className="contact-form">
         <input name="accountId" type="hidden" value={accountId} />
         <input name="accountType" type="hidden" value={accountType} />
@@ -99,6 +87,21 @@ export function ContactImportForm({ accountId, accountType, installUrl, returnTo
         <label className="checkbox-label"><input name="isPrimary" type="checkbox" value="true" /> Primary contact</label>
         <button type="submit">Add contact</button>
       </form>
+    </details>
+    <details className="compact-details nested-details contact-import-setup">
+      <summary>Import a contact from your phone</summary>
+      <div className="contact-import-heading">
+        <p className="muted">Use the iPhone Shortcut or upload an exported .vcf contact card.</p>
+        <div className="contact-import-buttons">
+          <button className="btn contact-transfer-button" disabled={startingShortcut} onClick={importFromIPhone} type="button">{startingShortcut ? 'Opening…' : 'Import from iPhone'}</button>
+          <button className="btn secondary contact-transfer-button" onClick={() => fileRef.current?.click()} type="button">Upload .vcf</button>
+        </div>
+        <input accept=".vcf,text/vcard,text/x-vcard" aria-label="Upload a vCard contact" className="visually-hidden" onChange={importFile} ref={fileRef} type="file" />
+        <p className="contact-shortcut-help">
+          Send to Neat version {shortcutVersion} is recommended.
+          {installUrl ? <> <a href={installUrl}>Install or update the Shortcut</a>.</> : <> Ask your administrator for the installation link.</>}
+        </p>
+      </div>
     </details>
   </div>;
 }

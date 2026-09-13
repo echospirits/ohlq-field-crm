@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { getContextualVisitHref, getDirectionsHref, getSuggestedFollowUpTitle, normalizeCRMActionContext } from '../lib/crmActionContext';
 
@@ -42,4 +43,12 @@ test('follow-up titles and directions use context without requiring re-entry', (
   assert.equal(getSuggestedFollowUpTitle({ sourceLabel: 'Echo Bourbon stockout' }), 'Follow up on Echo Bourbon stockout');
   assert.equal(getSuggestedFollowUpTitle({ accountName: 'Grandview Cafe' }), 'Follow up with Grandview Cafe');
   assert.match(getDirectionsHref('123 High St, Columbus, OH') ?? '', /destination=123%20High%20St%2C%20Columbus%2C%20OH/);
+});
+
+test('existing contextual follow-ups link directly to their worklist item', () => {
+  const actions = readFileSync('app/components/ContextualActions.tsx', 'utf8');
+  const worklist = readFileSync('app/alerts/page.tsx', 'utf8');
+  assert.match(actions, /href=\{`\/alerts#worklist-\$\{encodeURIComponent\(existingFollowUpId\)\}`\}>View task/);
+  assert.match(worklist, /id=\{`worklist-\$\{item\.id\}`\}/);
+  assert.doesNotMatch(actions, /On worklist/);
 });

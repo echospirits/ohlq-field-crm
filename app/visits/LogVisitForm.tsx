@@ -593,7 +593,7 @@ export function LogVisitForm({
         <textarea
           id="visit-notes"
           name="summary"
-          rows={3}
+          rows={mode === 'create' ? 2 : 3}
           placeholder="Key conversation, product interest, or anything worth remembering"
           value={summary}
           onChange={(event) => setSummary(event.target.value)}

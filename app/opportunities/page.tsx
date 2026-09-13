@@ -23,7 +23,7 @@ export default async function OpportunityInbox({ searchParams }: { searchParams?
   const [opportunities, assignees] = await Promise.all([
     prisma.salesOpportunity.findMany({
       where: { organizationId, status: OpportunityStatus.OPEN, ...(type ? { type } : {}), ...(query.priority ? { priorityBand: query.priority.toUpperCase() } : {}) },
-      include: { wholesaleAccount: { select: { name: true, city: true } }, worklistItems: { where: { status: { in: ['OPEN', 'IN_PROGRESS'] } }, select: { id: true } } },
+      include: { wholesaleAccount: { select: { name: true, city: true } }, worklistItems: { where: { status: { in: ['OPEN', 'IN_PROGRESS'] } }, orderBy: [{ dueDate: 'asc' }, { createdAt: 'asc' }], take: 1, select: { id: true } } },
       orderBy: [{ productionScore: 'desc' }, { detectedAt: 'desc' }], take: 250,
     }),
     prisma.user.findMany({ where: { organizationId, isActive: true, role: { notIn: ['TASTER', 'PLATFORM_ADMIN'] } }, orderBy: [{ name: 'asc' }, { email: 'asc' }] }),
@@ -40,7 +40,7 @@ export default async function OpportunityInbox({ searchParams }: { searchParams?
       <ContextualActions
         context={{ accountName: item.wholesaleAccount.name, opportunityId: item.id, reason: (item.explanation as string[]).join(' '), returnTo: '/opportunities', sourceLabel: item.title, sourceType: item.type, wholesaleAccountId: item.wholesaleAccountId }}
         currentUserId={currentUser.id}
-        hasExistingFollowUp={item.worklistItems.length > 0}
+        existingFollowUpId={item.worklistItems[0]?.id}
         followUpLabel="Create Follow-up"
         users={actionUsers}
       />

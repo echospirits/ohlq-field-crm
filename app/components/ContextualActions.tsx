@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useState, useTransition } from 'react';
 import type { CRMActionContext } from '../../lib/crmActionContext';
 import { getContextualVisitHref, getDirectionsHref, getSuggestedFollowUpTitle } from '../../lib/crmActionContext';
@@ -15,7 +16,7 @@ export function ContextualActions({
   email,
   address,
   followUpLabel = 'Create Follow-up',
-  hasExistingFollowUp = false,
+  existingFollowUpId,
   showFollowUp = true,
   showLogVisit = true,
 }: {
@@ -26,7 +27,7 @@ export function ContextualActions({
   email?: string | null;
   address?: string | null;
   followUpLabel?: string;
-  hasExistingFollowUp?: boolean;
+  existingFollowUpId?: string | null;
   showFollowUp?: boolean;
   showLogVisit?: boolean;
 }) {
@@ -56,10 +57,10 @@ export function ContextualActions({
   };
 
   return <div className="contextual-actions">
-    {showFollowUp ? (
-      <button className="compact-btn" disabled={hasExistingFollowUp} type="button" onClick={() => setIsOpen(true)}>
-        {hasExistingFollowUp ? 'On worklist' : followUpLabel}
-      </button>
+    {showFollowUp ? existingFollowUpId ? (
+      <Link className="btn compact-btn" href={`/alerts#worklist-${encodeURIComponent(existingFollowUpId)}`}>View task</Link>
+    ) : (
+      <button className="compact-btn" type="button" onClick={() => setIsOpen(true)}>{followUpLabel}</button>
     ) : null}
     {showLogVisit ? <a className="btn secondary compact-btn" href={getContextualVisitHref(context)}>Log Visit</a> : null}
     {phone || email || directionsHref ? <details className="contextual-overflow">
