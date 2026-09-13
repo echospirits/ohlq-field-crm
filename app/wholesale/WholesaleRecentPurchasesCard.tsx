@@ -95,7 +95,7 @@ export function WholesaleRecentPurchasesCard({
       </div>
 
       <div className="card ohlq-window-card">
-        <div className="section-heading ohlq-window-heading">
+        <div className="section-heading ohlq-purchase-window-heading">
           <h3>{productLabel} · 30 days</h3>
           <PurchaseSummary list={purchases.tracked} />
         </div>
