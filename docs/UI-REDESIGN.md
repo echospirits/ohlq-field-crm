@@ -26,3 +26,7 @@ No schema, order calculation, import, email-delivery, tenant authorization, or p
 - Small status labels keep text as well as color. Reduced-motion preferences disable animation.
 
 Follow `UI-UX-GUIDELINES.md` when extending these patterns. Mobile presentation should remain useful with actual records and long names, not just demonstration data.
+
+## Validation
+
+All 339 automated tests and TypeScript checks pass. Vercel built the redesign successfully. Live staging checks cover mobile and desktop layouts, search, task navigation, rescheduling dialog keyboard behavior, account disclosures, order empty/setup states, and administration. A clearly labeled synthetic visit was saved with account context preserved and its existing task left open. No customer outreach was performed. Full order/PDF creation could not be exercised because staging lacks the required seller location setup; existing order regression tests pass.

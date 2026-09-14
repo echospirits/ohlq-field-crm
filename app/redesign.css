@@ -253,6 +253,7 @@ summary { cursor: pointer; min-height: 44px; padding-block: 10px; }
   .mobile-tabbar > a[aria-current="page"] { background: var(--sage); color: var(--action); border-radius: 13px; }
   .mobile-tabbar a:hover, .mobile-more[open] > summary { background: var(--sage); color: var(--text); }
   .mobile-more-menu { max-height: min(65dvh,560px); overflow-y: auto; bottom: calc(100% + 16px); }
+  .mobile-tabbar:has(.mobile-more[open]) { z-index: 2000; }
   .mobile-more-menu a { min-height: 44px; font-weight: 550; }
   .fab { bottom: calc(84px + env(safe-area-inset-bottom)); right: 20px; }
   body:has(.dashboard-heading) .fab { display: none; }
