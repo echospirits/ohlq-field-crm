@@ -13,6 +13,8 @@ import { EASTERN_TIME_ZONE } from '../lib/dateTime';
 import { prisma } from '../lib/prisma';
 import { getOrganizationFeatures, requireOrganizationContext } from '../lib/organizations';
 import { DashboardOpportunitySummary } from './components/DashboardOpportunitySummary';
+import { GlobalSearchForm } from './components/GlobalSearchForm';
+import { DashboardNextWork } from './components/DashboardNextWork';
 import { DashboardAgencyIntelligence } from './components/DashboardAgencyIntelligence';
 
 export const metadata = buildPageMetadata('Dashboard');
@@ -264,33 +266,15 @@ export default async function Dashboard() {
     <>
       <header className="page-heading page-header dashboard-heading">
         <div>
-          <span className="page-eyebrow">Daily workspace</span>
-          <h1>What needs attention today?</h1>
-          <p className="muted">Start a visit, work the next follow-up, or find the right account without hunting through the app.</p>
+          <span className="page-eyebrow">{new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: dashboardTimeZone }).format(ranges.now)}</span>
+          <h1>My day</h1>
+          <p className="muted">A clear next step. A little more time in the field.</p>
         </div>
         <Link className="btn secondary" href="/my-week">View My Week</Link>
       </header>
 
-      <div className="section-heading dashboard-attention-heading">
-        <div>
-          <span className="page-eyebrow">My work</span>
-          <h2>Current priorities</h2>
-        </div>
-        <Link className="btn secondary compact-btn" href="/alerts">Open full worklist</Link>
-      </div>
-
-      {enabledFeatures.has('WHOLESALE_OPPORTUNITIES') ? <DashboardOpportunitySummary organizationId={organizationId} /> : null}
-
-      {enabledFeatures.has('AGENCY_INTELLIGENCE') ? <DashboardAgencyIntelligence organizationId={organizationId} /> : null}
-
-      <div className="grid">
-        <Link className="card metric-card dashboard-worklist-card" href="/alerts">
-          <h3>Active worklist</h3>
-          <p className="metric-value">{activeWorklistItems}</p>
-          <p className="muted metric-caption">Open and in-progress items</p>
-        </Link>
-
-      </div>
+      <div className="day-search"><GlobalSearchForm /></div>
+      <DashboardNextWork organizationId={organizationId} userId={user.id} enabledFeatures={enabledFeatures} />
 
       <section className="dashboard-quick-actions" aria-labelledby="quick-actions-title">
         <div className="section-heading">
@@ -315,6 +299,15 @@ export default async function Dashboard() {
           </Link>
         </div>
       </section>
+
+      <details className="dashboard-section dashboard-details">
+        <summary><span><strong>Explore opportunities</strong><small>Wholesale recommendations and retail signals</small></span></summary>
+        <div className="dashboard-details-content">
+          {enabledFeatures.has('WHOLESALE_OPPORTUNITIES') ? <DashboardOpportunitySummary organizationId={organizationId} /> : null}
+          {enabledFeatures.has('AGENCY_INTELLIGENCE') ? <DashboardAgencyIntelligence organizationId={organizationId} /> : null}
+          {!enabledFeatures.has('WHOLESALE_OPPORTUNITIES') && !enabledFeatures.has('AGENCY_INTELLIGENCE') ? <p className="muted">Opportunity intelligence is not enabled for this organization.</p> : null}
+        </div>
+      </details>
 
       <details className="dashboard-section dashboard-details">
         <summary>

@@ -1,7 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState, useTransition } from 'react';
+import { useCallback, useEffect, useRef, useState, useTransition } from 'react';
+import { useDialogFocus } from './useDialogFocus';
 import type { CRMActionContext } from '../../lib/crmActionContext';
 import { getContextualVisitHref, getDirectionsHref, getSuggestedFollowUpTitle } from '../../lib/crmActionContext';
 import { createContextualFollowUp } from '../contextual-actions/actions';
@@ -35,6 +36,9 @@ export function ContextualActions({
   const [isPending, startTransition] = useTransition();
   const [feedback, setFeedback] = useState<string | null>(null);
   const [submissionKey, setSubmissionKey] = useState('');
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const closeDialog = useCallback(() => setIsOpen(false), []);
+  useDialogFocus(dialogRef, isOpen, closeDialog);
   const directionsHref = getDirectionsHref(address);
 
   useEffect(() => {
@@ -75,7 +79,7 @@ export function ContextualActions({
 
     {isOpen ? <div aria-labelledby="create-follow-up-title" aria-modal="true" className="app-modal contextual-action-modal" role="dialog">
       <button aria-label="Close create follow-up" className="app-modal-backdrop" type="button" onClick={() => setIsOpen(false)} />
-      <div className="app-modal-panel contextual-action-sheet">
+      <div ref={dialogRef} className="app-modal-panel contextual-action-sheet">
         <div className="app-modal-header">
           <div><span className="page-eyebrow">In context</span><h2 id="create-follow-up-title">Create Follow-up</h2></div>
           <button className="app-modal-close secondary" type="button" onClick={() => setIsOpen(false)}>Close</button>

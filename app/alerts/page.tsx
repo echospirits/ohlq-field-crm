@@ -19,11 +19,13 @@ import {
   getWorklistLocationFallbackLabel,
   getWorklistLocations,
 } from '../../lib/worklistLocations';
+import { RecordPicker } from '../components/RecordPicker';
 import { DatePickerField } from '../components/DatePickerField';
 import { LiveFilterForm } from '../components/LiveFilterForm';
 import { WorkViewNavigation } from '../components/WorkViewNavigation';
 import { createVisit } from '../visits/actions';
 import { WorklistActions } from './WorklistActions';
+import { getWorklistGroup, worklistGroups } from '../../lib/worklistPresentation';
 import { WorklistDetail } from './WorklistDetail';
 
 export const metadata = buildPageMetadata('Worklist');
@@ -225,6 +227,7 @@ export default async function Alerts({
     source?: string;
     status?: string;
     view?: string;
+    owner?: string;
   }>;
 }) {
   const currentUser = await requireUser();
@@ -243,6 +246,9 @@ export default async function Alerts({
   const sourceFilter = params.source ?? 'ALL';
   const pursuingView = params.view === 'pursuing';
   const where: Prisma.WorklistItemWhereInput = { organizationId, ...(excludedIntelligenceSources.length ? { source: { notIn: excludedIntelligenceSources } } : {}) };
+
+  if (params.owner === 'mine') where.assignedToUserId = currentUser.id;
+  if (params.owner === 'unassigned') where.assignedToUserId = null;
 
   if (statusFilter === 'ACTIVE') {
     where.status = { notIn: [WorklistStatus.COMPLETED, WorklistStatus.CANCELLED] };
@@ -325,11 +331,15 @@ export default async function Alerts({
 
   const worklistLocations = await getWorklistLocations(items);
 
-  const groups = Object.values(WorklistCategory).map((category) => ({
-    category,
-    title: categoryLabels[category],
-    items: items.filter((item) => item.category === category),
-  }));
+  const groups = worklistGroups.map((title) => ({
+    title,
+    items: items.filter((item) => getWorklistGroup(item) === title),
+  })).filter((group) => group.items.length > 0);
+  const ownerHref = (owner: string) => {
+    const query = new URLSearchParams(Object.entries(params).filter((entry): entry is [string, string] => typeof entry[1] === 'string'));
+    query.set('owner', owner);
+    return '/alerts?' + query.toString();
+  };
 
   return (
     <>
@@ -338,7 +348,7 @@ export default async function Alerts({
           <span className="page-eyebrow">My work</span>
           <h1>Worklist</h1>
           <p className="muted">
-            Follow-ups from visits, data signals, and manually assigned tasks. Completed and cancelled items are hidden by default.
+            Your follow-ups, organized by what needs attention first.
           </p>
         </div>
         <a className="btn secondary" href="#quick-task">Add task</a>
@@ -349,9 +359,16 @@ export default async function Alerts({
       {params.created === 'invalid' ? <p className="pill">A title is required.</p> : null}
       {params.notice ? <p className="pill">{noticeMessages[params.notice] ?? params.notice}</p> : null}
 
+      <nav className="scope-tabs" aria-label="Task owner">
+        <Link aria-current={!params.owner || params.owner === 'all' ? 'page' : undefined} href={ownerHref('all')}>Team work</Link>
+        <Link aria-current={params.owner === 'mine' ? 'page' : undefined} href={ownerHref('mine')}>My work</Link>
+        <Link aria-current={params.owner === 'unassigned' ? 'page' : undefined} href={ownerHref('unassigned')}>Unassigned</Link>
+      </nav>
+      {items.length === 300 ? <p className="field-note">Showing the first 300 matches. Narrow the filters to find more specific work.</p> : null}
+      {items.length === 0 ? <p className="empty-state">No tasks match this view. Adjust the filters or add a task below.</p> : null}
       <div className="worklist-layout">
         <details className="card compact-details filter-panel">
-          <summary>Filters</summary>
+          <summary>Filters · status, category, source, search</summary>
           <LiveFilterForm label="Filter worklist items">
             <label>Status</label>
             <select name="status" defaultValue={statusFilter}>
@@ -390,7 +407,7 @@ export default async function Alerts({
         </details>
 
         {groups.map((group) => (
-          <section className="worklist-section" key={group.category}>
+          <section className="worklist-section" key={group.title}>
           <div className="section-heading">
             <h2>{group.title}</h2>
             <span className="pill">{group.items.length}</span>
@@ -399,7 +416,7 @@ export default async function Alerts({
           {group.items.length === 0 ? (
             <p className="muted">No matching items.</p>
           ) : (
-            <table className="responsive-table">
+            <table className="responsive-table worklist-table">
               <thead>
                 <tr>
                   <th>Item</th>
@@ -417,8 +434,8 @@ export default async function Alerts({
                     <tr id={`worklist-${item.id}`} key={item.id}>
                       <td data-label="Item">
                         <strong>{item.title}</strong>
-                        <div className="inline-meta">
-                          <span className="pill">{sourceLabels[item.source]}</span>
+                        <details className="task-context"><summary>Task details</summary><div className="inline-meta">
+                          <span className="pill">{categoryLabels[item.category]}</span><span className="pill">{sourceLabels[item.source]}</span>
                           <span className="pill">{statusLabels[item.status]}</span>
                         </div>
                         <WorklistDetail detail={item.detail} />
@@ -427,6 +444,7 @@ export default async function Alerts({
                           {item.completedByUser ? `; completed by ${getUserDisplayName(item.completedByUser)}` : ''}
                           {item.cancelledByUser ? `; cancelled by ${getUserDisplayName(item.cancelledByUser)}` : ''}
                         </div>
+                        </details>
                       </td>
                       <td data-label="Location / Due">
                         {location ? (
@@ -438,7 +456,7 @@ export default async function Alerts({
                         )}
                         <div className="muted">{formatWorklistDue(item.dueDate, item.dueTimeMinutes) || 'No due date'}</div>
                       </td>
-                      <td data-label="Owner">{item.assignedToUser ? getUserDisplayName(item.assignedToUser) : item.assignedTo}</td>
+                      <td data-label="Owner">{item.assignedToUser ? getUserDisplayName(item.assignedToUser) : item.assignedTo || 'Unassigned'}</td>
                       <td data-label="Actions">
                         <WorklistActions
                           actorName={getUserDisplayName(currentUser)}
@@ -487,7 +505,7 @@ export default async function Alerts({
         <div className="card quick-task-card" id="quick-task">
           <h2>Add a task</h2>
           <form action={createWorklistItem} className="quick-task-form">
-            <input name="title" placeholder="What needs to happen?" required />
+            <label>Task<input name="title" placeholder="What needs to happen?" required /></label>
             <DatePickerField name="dueDate" aria-label="Due date" pickerLabel="Choose due date" />
             <input aria-label="Due time (optional)" name="dueTime" type="time" />
             <select name="category" defaultValue={WorklistCategory.GENERAL} aria-label="Category">
@@ -499,25 +517,8 @@ export default async function Alerts({
 
             <details className="compact-details nested-details quick-task-more">
               <summary>Add account, owner, or details</summary>
-              <label>Agency</label>
-              <select name="agencyId">
-                <option value="">-- Optional agency --</option>
-                {agencyOptions.map((agency) => (
-                  <option key={agency.id} value={agency.id}>
-                    {agency.name} ({agency.agencyId})
-                  </option>
-                ))}
-              </select>
-
-              <label>Wholesale account</label>
-              <select name="wholesaleAccountId">
-                <option value="">-- Optional wholesale account --</option>
-                {wholesaleOptions.map((account) => (
-                  <option key={account.id} value={account.id}>
-                    {account.name} ({account.licenseeId})
-                  </option>
-                ))}
-              </select>
+              <RecordPicker label="Agency" name="agencyId" options={agencyOptions.map((agency) => ({ value: agency.id, label: agency.name + ' (' + agency.agencyId + ')' }))} />
+              <RecordPicker label="Wholesale account" name="wholesaleAccountId" options={wholesaleOptions.map((account) => ({ value: account.id, label: account.name + ' (' + account.licenseeId + ')' }))} />
 
               <label>Assigned to</label>
               <select name="assignedToUserId">

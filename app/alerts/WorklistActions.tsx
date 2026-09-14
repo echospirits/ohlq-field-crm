@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
+import { useDialogFocus } from '../components/useDialogFocus';
 import {
   LogVisitForm,
   type VisitFormAgencyOption,
@@ -78,10 +79,13 @@ export function WorklistActions({
   users,
 }: WorklistActionsProps) {
   const [openAction, setOpenAction] = useState<'log-visit' | 'reschedule' | 'reassign' | null>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const closeDialog = useCallback(() => setOpenAction(null), []);
+  useDialogFocus(dialogRef, openAction !== null, closeDialog);
   const initialSummary = [item.title, item.detail].filter(Boolean).join('\n\n');
 
   return (
-    <div className="action-row">
+    <div className="action-row task-actions">
       <button className="secondary" type="button" onClick={() => setOpenAction('log-visit')}>
         Log Visit
       </button>
@@ -95,10 +99,11 @@ export function WorklistActions({
       </form>
 
       <button className="secondary" type="button" onClick={() => setOpenAction('reschedule')}>Reschedule</button>
-      <button className="secondary" type="button" onClick={() => setOpenAction('reassign')}>Reassign</button>
+
 
       <details className="compact-details worklist-edit-details">
-        <summary>More</summary>
+        <summary>Edit, reassign, or cancel</summary>
+      <button className="secondary" type="button" onClick={() => setOpenAction('reassign')}>Reassign</button>
         <form action={updateItemAction} className="worklist-edit-form">
           <input name="id" type="hidden" value={item.id} />
           <label>Task<input name="title" defaultValue={item.title} required /></label>
@@ -111,19 +116,20 @@ export function WorklistActions({
           {item.calendarSyncStatus ? <p className="field-note">Calendar: {item.calendarSyncStatus.toLowerCase().replaceAll('_', ' ')}{item.calendarSyncError ? ` - ${item.calendarSyncError}` : ''}</p> : null}
           <button type="submit">Save task</button>
         </form>
-      </details>
-
       <form action={updateStatusAction}>
         <input name="id" type="hidden" value={item.id} />
         <input name="status" type="hidden" value="CANCELLED" />
         <button className="secondary" disabled={item.status === 'CANCELLED'} type="submit">
-          Cancel
+          Cancel task
         </button>
       </form>
+      </details>
+
+
 
       {openAction === 'reschedule' ? <div aria-labelledby={`reschedule-${item.id}`} aria-modal="true" className="app-modal contextual-action-modal" role="dialog">
         <button aria-label="Close reschedule" className="app-modal-backdrop" type="button" onClick={() => setOpenAction(null)} />
-        <div className="app-modal-panel contextual-action-sheet">
+        <div ref={dialogRef} className="app-modal-panel contextual-action-sheet">
           <div className="app-modal-header"><h2 id={`reschedule-${item.id}`}>Reschedule</h2><button className="app-modal-close secondary" type="button" onClick={() => setOpenAction(null)}>Close</button></div>
           <form action={async (formData) => { await updateItemAction(formData); setOpenAction(null); }} className="contextual-action-form">
             <input name="id" type="hidden" value={item.id} /><input name="title" type="hidden" value={item.title} /><input name="detail" type="hidden" value={item.editDetail ?? ''} /><input name="assignedToUserId" type="hidden" value={item.assignedToUserId ?? ''} />
@@ -136,7 +142,7 @@ export function WorklistActions({
 
       {openAction === 'reassign' ? <div aria-labelledby={`reassign-${item.id}`} aria-modal="true" className="app-modal contextual-action-modal" role="dialog">
         <button aria-label="Close reassign" className="app-modal-backdrop" type="button" onClick={() => setOpenAction(null)} />
-        <div className="app-modal-panel contextual-action-sheet">
+        <div ref={dialogRef} className="app-modal-panel contextual-action-sheet">
           <div className="app-modal-header"><h2 id={`reassign-${item.id}`}>Reassign</h2><button className="app-modal-close secondary" type="button" onClick={() => setOpenAction(null)}>Close</button></div>
           <form action={async (formData) => { await updateItemAction(formData); setOpenAction(null); }} className="contextual-action-form">
             <input name="id" type="hidden" value={item.id} /><input name="title" type="hidden" value={item.title} /><input name="detail" type="hidden" value={item.editDetail ?? ''} /><input name="dueDate" type="hidden" value={item.dueDate} /><input name="dueTime" type="hidden" value={item.dueTime} />
@@ -154,7 +160,7 @@ export function WorklistActions({
             type="button"
             onClick={() => setOpenAction(null)}
           />
-          <div className="app-modal-panel">
+          <div ref={dialogRef} className="app-modal-panel">
             <div className="app-modal-header">
               <h2 id={`log-visit-${item.id}`}>Log Visit</h2>
               <button className="app-modal-close secondary" type="button" onClick={() => setOpenAction(null)}>

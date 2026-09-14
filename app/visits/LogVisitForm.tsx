@@ -564,6 +564,16 @@ export function LogVisitForm({
 
       <fieldset className="visit-step visit-outcome-step">
         <legend>What happened?</legend>
+        <label htmlFor="visit-notes">Visit notes <span className="optional-label">Optional</span></label>
+        <textarea
+          id="visit-notes"
+          name="summary"
+          rows={mode === 'create' ? 2 : 3}
+          placeholder="Key conversation, product interest, or anything worth remembering"
+          value={summary}
+          onChange={(event) => setSummary(event.target.value)}
+        />
+        <details className="visit-outcomes-details"><summary>Visit outcomes{selectedOutcomes.length ? ` · ${selectedOutcomes.length} selected` : ' (optional)'}</summary>
         <div className="visit-outcome-grid">
           {outcomeOptions.map((outcome) => (
             <label className="visit-outcome-chip" key={outcome.code}>
@@ -589,15 +599,8 @@ export function LogVisitForm({
             </label>
           ))}
         </div>
-        <label htmlFor="visit-notes">Visit notes <span className="optional-label">Optional</span></label>
-        <textarea
-          id="visit-notes"
-          name="summary"
-          rows={mode === 'create' ? 2 : 3}
-          placeholder="Key conversation, product interest, or anything worth remembering"
-          value={summary}
-          onChange={(event) => setSummary(event.target.value)}
-        />
+
+        </details>
       </fieldset>
 
       <fieldset className="visit-step visit-follow-up-step">

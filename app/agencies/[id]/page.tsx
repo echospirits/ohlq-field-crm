@@ -131,7 +131,9 @@ export default async function AgencyActivityPage({
             phone={agency.primaryContactPhone ?? agency.phone}
             users={actionUsers}
           />
+          <details className="account-secondary-actions"><summary>More actions</summary><div>
           <Link className="btn compact-btn secondary" href={`/visits/new?type=agency&agencyId=${agency.id}&voice=1`}>Voice note</Link>
+          </div></details>
         </div>
       </header>
       {query.status ? <p className="toast-notice" role="status">{statusMessages[query.status] ?? query.status}</p> : null}
@@ -149,7 +151,9 @@ export default async function AgencyActivityPage({
 
       <AccountMemoryPanel accountId={agency.id} accountType="AGENCY" contacts={accountContacts} notes={overlay?.notes ?? null} returnTo={`/agencies/${agency.id}`} />
 
-      <div className="grid account-summary-grid account-workspace-section" id="overview">
+      <details className="account-overview-details account-workspace-section" id="overview">
+        <summary>Account details, visit totals & tags</summary>
+      <div className="grid account-summary-grid account-workspace-section">
         <div className="card metric-card">
           <h3>Logged visits</h3>
           <p className="metric-value">{visits.length}</p>
@@ -185,6 +189,7 @@ export default async function AgencyActivityPage({
           tags={tags}
         />
       </div>
+      </details>
 
       {hasAgencyIntelligence ? <div className="account-workspace-section" id="intelligence">
         <AgencyIntelligencePanel agencyId={agency.id} agencyName={agency.name} currentUserId={currentUser.id} organizationId={organizationId} users={actionUsers} />

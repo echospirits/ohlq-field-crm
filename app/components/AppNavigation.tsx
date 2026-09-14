@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { NavigationIcon } from './NavigationIcon';
 import { usePathname } from 'next/navigation';
 import {
   getAdministrationNavigationGroups,
@@ -45,7 +46,7 @@ function NavLink({
       className={isActive ? 'app-nav-link is-active' : 'app-nav-link'}
       href={item.href}
     >
-      {useSectionMatch ? item.mobileLabel ?? item.label : item.label}
+      {useSectionMatch ? <NavigationIcon name={item.key} /> : null}<span>{useSectionMatch ? item.mobileLabel ?? item.label : item.label}</span>
     </Link>
   );
 }
@@ -182,8 +183,8 @@ export function MobileTabbar({ enabledFeatures, isAdmin, isPlatformAdmin, isTast
       {mobileItems.map((item) => (
         <NavLink item={item} key={item.href} pathname={pathname} useSectionMatch />
       ))}
-      <details className="mobile-more">
-        <summary>More</summary>
+      <details className="mobile-more" key={pathname} onClick={(event) => { if ((event.target as HTMLElement).closest("a")) event.currentTarget.open = false; }}>
+        <summary><NavigationIcon name="more" /><span>More</span></summary>
         <div className="mobile-more-menu">
           {moreItems.map((item) => (
             <NavLink item={item} key={item.key} pathname={pathname} />

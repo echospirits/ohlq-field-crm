@@ -262,11 +262,13 @@ export default async function WholesaleActivityPage({
             phone={account.phone}
             users={actionUsers}
           />
+          <details className="account-secondary-actions"><summary>More actions</summary><div>
           <Link className="btn compact-btn secondary" href={`/visits/new?type=wholesale&wholesaleAccountId=${account.id}&voice=1`}>Voice note</Link>
           <Link className="btn compact-btn secondary" href={`/wholesale/${account.id}/edit`}>Edit</Link>
           {isAdminRole(user.role) && !account.officialAccountId ? (
             <Link className="btn compact-btn secondary" href={`/wholesale/${account.id}/merge`}>Merge account</Link>
           ) : null}
+          </div></details>
         </div>
       </header>
       {query.status ? <p className="toast-notice" role="status">{statusMessages[query.status] ?? query.status}</p> : null}
@@ -286,7 +288,9 @@ export default async function WholesaleActivityPage({
 
       <AccountMemoryPanel accountId={account.id} accountType="WHOLESALE" contacts={accountContacts} notes={overlay?.notes ?? null} returnTo={`/wholesale/${account.id}`} />
 
-      <div className="grid account-summary-grid account-workspace-section" id="overview">
+      <details className="account-overview-details account-workspace-section" id="overview">
+        <summary>Account details, visit totals & tags</summary>
+      <div className="grid account-summary-grid account-workspace-section">
         <div className="card metric-card">
           <h3>Logged visits</h3>
           <p className="metric-value">{visits.length}</p>
@@ -326,6 +330,7 @@ export default async function WholesaleActivityPage({
           tags={tags}
         />
       </div>
+      </details>
 
       <div className="account-workspace-section" id="placements">
         <MenuPlacementPanel

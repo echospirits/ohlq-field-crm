@@ -8,6 +8,7 @@ import Link from 'next/link';
 import { AppBreadcrumbs, AppSidebarNavigation, MobileTabbar } from './components/AppNavigation';
 import { GlobalSearchForm } from './components/GlobalSearchForm';
 import './styles.css';
+import './redesign.css';
 import { getAppEnvironment, getEnvironmentLabel } from '../lib/appEnvironment';
 
 export const metadata: Metadata = {
@@ -55,6 +56,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             {APP_NAME} — {getEnvironmentLabel().toUpperCase()} ENVIRONMENT
           </div>
         ) : null}
+        <a className="skip-link" href="#main-content">Skip to content</a>
         {user ? (
           <>
             <aside>
@@ -77,7 +79,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 </form>
               </div>
             </aside>
-            <main>
+            <main id="main-content">
               {organizationContext?.isSupportView ? <div className="support-view-banner"><strong>Viewing Neat as {organizationContext.organization.displayName}</strong><form action="/platform/support-view/exit" method="post"><button className="secondary" type="submit">Exit Support View</button></form></div> : null}
               <AppBreadcrumbs isTaster={isTaster} />
               {children}
@@ -88,7 +90,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             <MobileTabbar enabledFeatures={enabledFeatures} isAdmin={isAdmin} isPlatformAdmin={isPlatformAdmin} isTaster={isTaster} />
           </>
         ) : (
-          <main className="public-main">{children}</main>
+          <main className="public-main" id="main-content">{children}</main>
         )}
       </body>
     </html>
