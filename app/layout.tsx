@@ -85,7 +85,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               {children}
             </main>
             <Link className="fab" href="/visits/new" aria-label="Log Visit">
-              +
+              <span aria-hidden="true">＋</span> Log visit
             </Link>
             <MobileTabbar enabledFeatures={enabledFeatures} isAdmin={isAdmin} isPlatformAdmin={isPlatformAdmin} isTaster={isTaster} />
           </>

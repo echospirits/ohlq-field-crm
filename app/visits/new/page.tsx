@@ -147,7 +147,7 @@ export default async function NewVisitPage({
   return (
     <>
       <PageHeader
-        description="Pick the account, tap what happened, and save. Add detail only when it helps."
+        description="Capture the conversation and choose the next step."
         eyebrow="Field activity"
         title="Log Visit"
       />

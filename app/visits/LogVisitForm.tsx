@@ -417,12 +417,12 @@ export function LogVisitForm({
       {initialValues?.returnTo ? <input name="returnTo" readOnly type="hidden" value={initialValues.returnTo} /> : null}
       {photoUploadError ? <p className="toast-notice page-status" role="alert">{photoUploadError}</p> : null}
 
-      {initialValues?.sourceLabel || initialValues?.productName ? <div className="action-context-summary visit-action-context">
+      {(initialValues?.sourceLabel && initialValues.sourceLabel !== selectedLocation?.name) || initialValues?.productName || initialValues?.reason ? <details className="action-context-summary visit-action-context"><summary>Task &amp; recommendation context</summary>
         <span className="page-eyebrow">Started from context</span>
         <strong>{initialValues.sourceLabel ?? initialValues.productName}</strong>
         {initialValues.productItemCode && initialValues.productName ? <span>{initialValues.productItemCode} - {initialValues.productName}</span> : null}
         {initialValues.reason ? <small>{initialValues.reason}</small> : null}
-      </div> : null}
+      </details> : null}
 
       <fieldset className="visit-step visit-account-step">
         <legend>Account</legend>
@@ -512,56 +512,6 @@ export function LogVisitForm({
         )}
       </fieldset>
 
-      {matchingWorklistItems.length > 0 ? (
-        <fieldset className="visit-step visit-worklist-prompt">
-          <legend>Complete existing follow-up?</legend>
-          <p className="field-note">This account already has follow-up assigned to you. Choose what should happen when this visit is saved.</p>
-          <div className="worklist-completion-list">
-            {matchingWorklistItems.map((item) => (
-              <div className="worklist-completion-item" key={item.id}>
-                <strong>{item.title}</strong>
-                <div className="worklist-completion-choice-grid">
-                  <label className="follow-up-choice">
-                    <input name={`worklistCompletion:${item.id}`} required type="radio" value="complete" />
-                    <span>Yes, complete</span>
-                  </label>
-                  <label className="follow-up-choice">
-                    <input name={`worklistCompletion:${item.id}`} required type="radio" value="leave-open" />
-                    <span>No, leave open</span>
-                  </label>
-                </div>
-              </div>
-            ))}
-          </div>
-        </fieldset>
-      ) : null}
-
-      {hasLocation ? <fieldset className="visit-step visit-contact-step">
-        <legend>Who did you meet? <span className="optional-label">Optional</span></legend>
-        {visibleContacts.length > 0 ? <div className="visit-contact-chips">
-          {visibleContacts.map((contact) => <button
-            aria-pressed={contactIds.includes(contact.id)}
-            className={contactIds.includes(contact.id) ? 'visit-contact-chip is-selected' : 'visit-contact-chip'}
-            key={contact.id}
-            type="button"
-            onClick={() => setContactIds((current) => current.includes(contact.id) ? current.filter((id) => id !== contact.id) : [...current, contact.id])}
-          ><strong>{contact.name}</strong>{contact.role ? <small>{contact.role}</small> : null}{contact.isPrimary ? <span>Primary</span> : null}</button>)}
-        </div> : <p className="field-note">No active contacts for this account.</p>}
-        <details className="compact-details nested-details">
-          <summary>{selectedContacts.length ? `Selected: ${selectedContacts.map((contact) => contact.name).join(', ')}` : 'Find or add contact'}</summary>
-          <label htmlFor="visit-contact-search">Search saved contacts</label>
-          <input id="visit-contact-search" placeholder="Name, role, email, or phone" type="search" value={contactSearch} onChange={(event) => setContactSearch(event.target.value)} />
-          {mode === 'create' ? <div className="form-grid inline-contact-create">
-            <input aria-label="New contact name" placeholder="New contact name" value={newContact.name} onChange={(event) => setNewContact((current) => ({ ...current, name: event.target.value }))} />
-            <input aria-label="New contact role" placeholder="Role / title (optional)" value={newContact.role} onChange={(event) => setNewContact((current) => ({ ...current, role: event.target.value }))} />
-            <input aria-label="New contact email" placeholder="Email (optional)" type="email" value={newContact.email} onChange={(event) => setNewContact((current) => ({ ...current, email: event.target.value }))} />
-            <input aria-label="New contact phone" placeholder="Phone (optional)" type="tel" value={newContact.phone} onChange={(event) => setNewContact((current) => ({ ...current, phone: event.target.value }))} />
-            <button disabled={!newContact.name.trim() || contactCreateStatus === 'saving'} type="button" onClick={addContactDuringVisit}>{contactCreateStatus === 'saving' ? 'Saving…' : 'Add and select contact'}</button>
-            {contactCreateStatus === 'error' ? <p className="field-note form-error">Contact could not be saved. Try again.</p> : <p className="field-note">Saves to this account and selects the contact without leaving Log Visit.</p>}
-          </div> : null}
-        </details>
-      </fieldset> : null}
-
       <fieldset className="visit-step visit-outcome-step">
         <legend>What happened?</legend>
         <label htmlFor="visit-notes">Visit notes <span className="optional-label">Optional</span></label>
@@ -602,6 +552,32 @@ export function LogVisitForm({
 
         </details>
       </fieldset>
+
+      {hasLocation ? <fieldset className="visit-step visit-contact-step">
+        <legend>Who did you meet? <span className="optional-label">Optional</span></legend>
+        {visibleContacts.length > 0 ? <div className="visit-contact-chips">
+          {visibleContacts.map((contact) => <button
+            aria-pressed={contactIds.includes(contact.id)}
+            className={contactIds.includes(contact.id) ? 'visit-contact-chip is-selected' : 'visit-contact-chip'}
+            key={contact.id}
+            type="button"
+            onClick={() => setContactIds((current) => current.includes(contact.id) ? current.filter((id) => id !== contact.id) : [...current, contact.id])}
+          ><strong>{contact.name}</strong>{contact.role ? <small>{contact.role}</small> : null}{contact.isPrimary ? <span>Primary</span> : null}</button>)}
+        </div> : <p className="field-note">No active contacts for this account.</p>}
+        <details className="compact-details nested-details">
+          <summary>{selectedContacts.length ? `Selected: ${selectedContacts.map((contact) => contact.name).join(', ')}` : 'Find or add contact'}</summary>
+          <label htmlFor="visit-contact-search">Search saved contacts</label>
+          <input id="visit-contact-search" placeholder="Name, role, email, or phone" type="search" value={contactSearch} onChange={(event) => setContactSearch(event.target.value)} />
+          {mode === 'create' ? <div className="form-grid inline-contact-create">
+            <input aria-label="New contact name" placeholder="New contact name" value={newContact.name} onChange={(event) => setNewContact((current) => ({ ...current, name: event.target.value }))} />
+            <input aria-label="New contact role" placeholder="Role / title (optional)" value={newContact.role} onChange={(event) => setNewContact((current) => ({ ...current, role: event.target.value }))} />
+            <input aria-label="New contact email" placeholder="Email (optional)" type="email" value={newContact.email} onChange={(event) => setNewContact((current) => ({ ...current, email: event.target.value }))} />
+            <input aria-label="New contact phone" placeholder="Phone (optional)" type="tel" value={newContact.phone} onChange={(event) => setNewContact((current) => ({ ...current, phone: event.target.value }))} />
+            <button disabled={!newContact.name.trim() || contactCreateStatus === 'saving'} type="button" onClick={addContactDuringVisit}>{contactCreateStatus === 'saving' ? 'Saving…' : 'Add and select contact'}</button>
+            {contactCreateStatus === 'error' ? <p className="field-note form-error">Contact could not be saved. Try again.</p> : <p className="field-note">Saves to this account and selects the contact without leaving Log Visit.</p>}
+          </div> : null}
+        </details>
+      </fieldset> : null}
 
       <fieldset className="visit-step visit-follow-up-step">
         <legend>Next step</legend>
@@ -656,6 +632,30 @@ export function LogVisitForm({
           </div>
         ) : null}
       </fieldset>
+
+      {matchingWorklistItems.length > 0 ? (
+        <fieldset className="visit-step visit-worklist-prompt">
+          <legend>Complete existing follow-up?</legend>
+          <p className="field-note">This account already has follow-up assigned to you. Choose what should happen when this visit is saved.</p>
+          <div className="worklist-completion-list">
+            {matchingWorklistItems.map((item) => (
+              <div className="worklist-completion-item" key={item.id}>
+                <strong>{item.title}</strong>
+                <div className="worklist-completion-choice-grid">
+                  <label className="follow-up-choice">
+                    <input name={`worklistCompletion:${item.id}`} required type="radio" value="complete" />
+                    <span>Yes, complete</span>
+                  </label>
+                  <label className="follow-up-choice">
+                    <input name={`worklistCompletion:${item.id}`} required type="radio" value="leave-open" />
+                    <span>No, leave open</span>
+                  </label>
+                </div>
+              </div>
+            ))}
+          </div>
+        </fieldset>
+      ) : null}
 
       <details className="visit-details">
         <summary>Add details <span>Contact, voice note, photo, or new account</span></summary>

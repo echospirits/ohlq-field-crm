@@ -1,3 +1,4 @@
+import { AnchoredDetails } from '../../components/AnchoredDetails';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
@@ -119,9 +120,9 @@ export default async function AgencyActivityPage({
     <>
       <header className="page-heading page-header account-workspace-heading">
         <div>
-          <span className="page-eyebrow">Agency {agency.agencyId}</span>
+          <span className="page-eyebrow">Agency · {agency.city || 'Location not set'}</span>
           <h1>{agency.name}</h1>
-          <TagBadges tags={agency.tags.map((assignment) => assignment.tag)} />
+          {agency.tags.length ? <TagBadges tags={agency.tags.map((assignment) => assignment.tag)} /> : null}
         </div>
         <div className="page-heading-actions">
           <ContextualActions
@@ -143,16 +144,13 @@ export default async function AgencyActivityPage({
         { href: '#overview', label: 'Overview' },
         { href: '#account-memory', label: 'Notes + contacts' },
         ...(hasAgencyIntelligence || hasWholesaleOpportunities ? [{ href: '#intelligence', label: 'Intelligence' }] : []),
-        { href: '#current-inventory', label: 'Inventory' },
         { href: '#sales', label: 'Sales' },
-        { href: '#wholesale-influence', label: 'Wholesale' },
         { href: '#activity', label: 'Activity' },
       ]} />
 
       <AccountMemoryPanel accountId={agency.id} accountType="AGENCY" contacts={accountContacts} notes={overlay?.notes ?? null} returnTo={`/agencies/${agency.id}`} />
 
-      <details className="account-overview-details account-workspace-section" id="overview">
-        <summary>Account details, visit totals & tags</summary>
+      <AnchoredDetails className="account-overview-details account-workspace-section" id="overview" summary="Account details, visit totals & tags">
       <div className="grid account-summary-grid account-workspace-section">
         <div className="card metric-card">
           <h3>Logged visits</h3>
@@ -164,6 +162,7 @@ export default async function AgencyActivityPage({
         </div>
         <div className="card account-detail-list">
           <h3>Account details</h3>
+          <p><strong>Agency ID</strong><span>{agency.agencyId}</span></p>
           <p>
             <strong>Address</strong>
             <span>{[agency.address, agency.city, agency.state, agency.zip].filter(Boolean).join(', ')}</span>
@@ -189,19 +188,19 @@ export default async function AgencyActivityPage({
           tags={tags}
         />
       </div>
-      </details>
+      </AnchoredDetails>
 
-      {hasAgencyIntelligence ? <div className="account-workspace-section" id="intelligence">
+      {hasAgencyIntelligence ? <AnchoredDetails className="account-overview-details account-workspace-section" id="intelligence" summary="Retail intelligence">
         <AgencyIntelligencePanel agencyId={agency.id} agencyName={agency.name} currentUserId={currentUser.id} organizationId={organizationId} users={actionUsers} />
-      </div> : null}
+      </AnchoredDetails> : null}
 
       {hasWholesaleOpportunities ? <div className="account-workspace-section" id={hasAgencyIntelligence ? undefined : 'intelligence'}>
         <OpportunityAccountPanel agencyId={agency.agencyId} currentUserId={currentUser.id} returnTo={`/agencies/${agency.id}`} users={actionUsers} />
       </div> : null}
 
-      <div className="account-workspace-section" id="sales">
+      <AnchoredDetails className="account-overview-details account-workspace-section" id="sales" summary="Recent item sales">
         <AgencyRecentSalesCard salesWindows={salesWindows} />
-      </div>
+      </AnchoredDetails>
 
       <section className="dashboard-section account-workspace-section" id="activity">
         <div className="section-heading">

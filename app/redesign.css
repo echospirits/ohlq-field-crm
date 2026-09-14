@@ -75,6 +75,7 @@ summary { cursor: pointer; min-height: 44px; padding-block: 10px; }
 .quick-action-panel { gap: 10px; }
 .quick-action-card { min-height: 88px; background: #eeeee8; border: 0; border-radius: 15px; box-shadow: none; }
 .quick-action-card strong { color: var(--text); font-weight: 600; }
+.quick-action-card > strong, .quick-action-card > span { grid-column: 1; }
 .quick-action-card::after { content: '→'; color: var(--action); }
 .quick-action-primary { background: var(--action); }
 .quick-action-primary strong, .quick-action-primary span, .quick-action-primary::after { color: white; }
@@ -84,6 +85,11 @@ summary { cursor: pointer; min-height: 44px; padding-block: 10px; }
 .scope-tabs { display: flex; flex-wrap: wrap; gap: 5px; margin: 12px 0 20px; }
 .scope-tabs a { display: inline-flex; min-height: 44px; align-items: center; padding: 8px 16px; border-radius: 999px; text-decoration: none; color: var(--muted); }
 .scope-tabs a[aria-current="page"] { background: var(--action); color: white; }
+.view-switcher a { min-height: 44px; display: inline-flex; align-items: center; font-weight: 550; }
+.view-switcher a[aria-current="page"] { background: var(--action); color: white; border-color: transparent; }
+.segmented-control button.is-active, .segmented-control button[aria-pressed="true"] { background: var(--action); color: white; border-color: var(--action); }
+.quick-date.is-selected { background: var(--action); color: white; }
+.status-running { background: #fbf0db; color: #795a21; border-color: #d8c48e; }
 .worklist-layout { display: block; }
 .worklist-section { margin-bottom: 28px; }
 .worklist-section .section-heading { border-bottom: 1px solid var(--line); padding-bottom: 10px; }
@@ -123,6 +129,9 @@ summary { cursor: pointer; min-height: 44px; padding-block: 10px; }
 .account-overview-details:target { outline: 2px solid var(--action); }
 .contact-card { border: 0; border-top: 1px solid var(--line); border-radius: 0; background: transparent; padding: 14px 0; }
 .contact-card-body { padding-top: 8px; }
+.account-memory-grid .section-heading { margin: 0 0 10px; }
+.account-notes-card > p { margin: 0 0 8px; }
+.account-workspace-heading .page-heading-actions { justify-content: flex-start; }
 .contact-transfer-button { background: #eeeee8; color: var(--text); border-color: transparent; }
 .contact-action { background: var(--sage); color: var(--action); border: 0; }
 .visit-step { background: transparent; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: 16px 0 20px; }
@@ -179,8 +188,12 @@ summary { cursor: pointer; min-height: 44px; padding-block: 10px; }
   .card { padding: 18px; }
   .dashboard-heading { margin-bottom: 16px; }
   .dashboard-heading .btn { min-height: 36px; padding: 6px 10px; font-size: 12px; }
+  .dashboard-heading > .btn { width: auto; align-self: center; }
+  .dashboard-heading { justify-content: space-between; }
   .dashboard-heading p { display: none; }
   .day-search { margin-bottom: 20px; }
+  .day-search .global-search { grid-template-columns: minmax(0,1fr) auto; gap: 6px; }
+  .global-search { grid-template-columns: minmax(0,1fr) auto; }
   .day-work .section-heading { display: flex; align-items: center; }
   .day-work .section-heading h2 { font-size: 18px; }
   .next-work-card { padding: 20px; }
@@ -188,6 +201,7 @@ summary { cursor: pointer; min-height: 44px; padding-block: 10px; }
   .next-work-card .btn { width: 100%; }
   .quick-action-panel { grid-template-columns: repeat(2,minmax(0,1fr)); }
   .quick-action-card { min-height: 80px; padding: 14px; }
+  .quick-action-card { grid-template-columns: minmax(0,1fr); align-content: start; }
   .quick-action-card span { font-size: 12px; }
   .quick-action-card::after { display: none; }
   .dashboard-details-content { padding: 14px; }
@@ -210,6 +224,9 @@ summary { cursor: pointer; min-height: 44px; padding-block: 10px; }
   .task-context { margin-bottom: 0; }
   .task-context > summary { min-height: 36px; padding-block: 6px; }
   .task-actions { display: flex; width: 100%; margin-top: 6px; }
+  .task-actions button, .task-actions .btn, .contextual-actions button, .contextual-actions .btn, .app-modal-panel button { min-height: 44px; }
+  .quick-task-card > summary { font-size: 18px; font-weight: 600; }
+  .quick-task-card { scroll-margin-top: 50px; }
   .task-actions > button, .task-actions > form { flex: 1 1 auto; width: auto; }
   .task-actions > .worklist-edit-details { flex: 0 0 100%; }
   .task-actions .worklist-edit-form { width: 100%; }

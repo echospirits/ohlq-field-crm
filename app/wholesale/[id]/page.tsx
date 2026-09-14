@@ -1,3 +1,4 @@
+import { AnchoredDetails } from '../../components/AnchoredDetails';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
@@ -249,12 +250,12 @@ export default async function WholesaleActivityPage({
     <>
       <header className="page-heading page-header account-workspace-heading">
         <div>
-          <span className="page-eyebrow">Licensee IDs {formatWholesaleLicenseeIds(account)}</span>
+          <span className="page-eyebrow">Wholesale · {account.city || 'Location not set'}</span>
           <h1>{account.name}</h1>
-          <TagBadges tags={account.tags.map((assignment) => assignment.tag)} />
+          {account.tags.length ? <TagBadges tags={account.tags.map((assignment) => assignment.tag)} /> : null}
         </div>
         <div className="page-heading-actions">
-          {hasDirectWholesaleOrders ? <Link className="btn compact-btn" href={`/wholesale/${account.id}/direct-order`}>Create Direct Wholesale Order</Link> : null}
+          {hasDirectWholesaleOrders ? <Link className="btn compact-btn secondary" href={`/wholesale/${account.id}/direct-order`}>Create order</Link> : null}
           <ContextualActions
             address={[account.address, account.city, account.state, account.zip].filter(Boolean).join(', ')}
             context={{ accountName: account.name, returnTo: `/wholesale/${account.id}`, sourceLabel: account.name, sourceType: 'WHOLESALE_DETAIL', wholesaleAccountId: account.id }}
@@ -288,8 +289,7 @@ export default async function WholesaleActivityPage({
 
       <AccountMemoryPanel accountId={account.id} accountType="WHOLESALE" contacts={accountContacts} notes={overlay?.notes ?? null} returnTo={`/wholesale/${account.id}`} />
 
-      <details className="account-overview-details account-workspace-section" id="overview">
-        <summary>Account details, visit totals & tags</summary>
+      <AnchoredDetails className="account-overview-details account-workspace-section" id="overview" summary="Account details, visit totals & tags">
       <div className="grid account-summary-grid account-workspace-section">
         <div className="card metric-card">
           <h3>Logged visits</h3>
@@ -301,6 +301,7 @@ export default async function WholesaleActivityPage({
         </div>
         <div className="card account-detail-list">
           <h3>Account details</h3>
+          <p><strong>Licensee IDs</strong><span>{formatWholesaleLicenseeIds(account)}</span></p>
           <p>
             <strong>Address</strong>
             <span>{[account.address, account.city, account.state, account.zip].filter(Boolean).join(', ')}</span>
@@ -330,9 +331,9 @@ export default async function WholesaleActivityPage({
           tags={tags}
         />
       </div>
-      </details>
+      </AnchoredDetails>
 
-      <div className="account-workspace-section" id="placements">
+      <AnchoredDetails className="account-overview-details account-workspace-section" id="placements" summary="Menu placements">
         <MenuPlacementPanel
           accountId={backingAccount?.id ?? null}
           filters={{
@@ -346,15 +347,15 @@ export default async function WholesaleActivityPage({
           visits={legacyVisits}
           wholesaleAccountId={account.id}
         />
-      </div>
+      </AnchoredDetails>
 
-      <div className="account-workspace-section" id="purchases">
+      <AnchoredDetails className="account-overview-details account-workspace-section" id="purchases" summary="Recent purchases">
         <WholesaleRecentPurchasesCard purchases={purchases} />
-      </div>
+      </AnchoredDetails>
 
-      {hasWholesaleOpportunities ? <div className="account-workspace-section" id="intelligence">
+      {hasWholesaleOpportunities ? <AnchoredDetails className="account-overview-details account-workspace-section" id="intelligence" summary="Opportunity intelligence">
         <OpportunityAccountPanel wholesaleAccountId={account.id} currentUserId={user.id} returnTo={`/wholesale/${account.id}`} users={actionUsers} />
-      </div> : null}
+      </AnchoredDetails> : null}
 
       <section className="dashboard-section account-workspace-section" id="activity">
         <div className="section-heading">

@@ -19,6 +19,7 @@ import {
   getWorklistLocationFallbackLabel,
   getWorklistLocations,
 } from '../../lib/worklistLocations';
+import { AnchoredDetails } from '../components/AnchoredDetails';
 import { RecordPicker } from '../components/RecordPicker';
 import { DatePickerField } from '../components/DatePickerField';
 import { LiveFilterForm } from '../components/LiveFilterForm';
@@ -502,8 +503,7 @@ export default async function Alerts({
           </section>
         ))}
 
-        <div className="card quick-task-card" id="quick-task">
-          <h2>Add a task</h2>
+        <AnchoredDetails className="card quick-task-card" id="quick-task" summary="Add a task" initialOpen={params.created === 'invalid'}>
           <form action={createWorklistItem} className="quick-task-form">
             <label>Task<input name="title" placeholder="What needs to happen?" required /></label>
             <DatePickerField name="dueDate" aria-label="Due date" pickerLabel="Choose due date" />
@@ -534,7 +534,7 @@ export default async function Alerts({
               <textarea name="detail" rows={3} placeholder="Context, instructions, or notes" />
             </details>
           </form>
-        </div>
+        </AnchoredDetails>
       </div>
     </>
   );

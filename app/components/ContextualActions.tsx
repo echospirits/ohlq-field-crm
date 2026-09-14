@@ -68,7 +68,7 @@ export function ContextualActions({
     ) : null}
     {showLogVisit ? <a className="btn secondary compact-btn" href={getContextualVisitHref(context)}>Log Visit</a> : null}
     {phone || email || directionsHref ? <details className="contextual-overflow">
-      <summary aria-label="More account actions">More</summary>
+      <summary aria-label="Contact and directions">Contact</summary>
       <div className="contextual-overflow-menu">
         {phone ? <a href={`tel:${phone}`}>Call</a> : null}
         {phone ? <a href={`sms:${phone}`}>Text</a> : null}
