@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
+  getAdministrationNavigationGroups,
   getMobileNavigationItems,
   getMoreNavigationItems,
   getNavigationItems,
@@ -60,11 +61,28 @@ function NavGroupLinks({ group, pathname }: { group: NavGroup; pathname: string 
   );
 }
 
+function AdministrationMenu({ enabledFeatures, hasOrganizationAdminAccess, isPlatformAdmin, pathname }: { enabledFeatures: string[]; hasOrganizationAdminAccess: boolean; isPlatformAdmin: boolean; pathname: string }) {
+  const groups = getAdministrationNavigationGroups(enabledFeatures, isPlatformAdmin, hasOrganizationAdminAccess);
+  const isActive = pathname === '/users' || pathname === '/platform' || pathname.startsWith('/admin/') || pathname.startsWith('/platform/');
+
+  return <details className={`app-nav-disclosure${isActive ? ' is-active' : ''}`}>
+    <summary><span>Administration</span><span aria-hidden="true" className="app-nav-disclosure-arrow">›</span></summary>
+    <div className="app-admin-menu">
+      <div className="app-admin-menu-heading"><strong>Administration</strong><span>Manage Neat outside daily field work.</span></div>
+      <div className="app-admin-menu-groups">
+        {groups.map((group) => <section className="app-admin-menu-group" key={group.label}>
+          <p className="app-nav-label">{group.label}</p>
+          {group.items.map((item) => <NavLink item={item} key={item.href} pathname={pathname} />)}
+        </section>)}
+      </div>
+    </div>
+  </details>;
+}
+
 export function AppSidebarNavigation({ enabledFeatures, isAdmin, isPlatformAdmin, isTaster }: { enabledFeatures: string[]; isAdmin: boolean; isPlatformAdmin: boolean; isTaster: boolean }) {
   const pathname = usePathname();
   const workItems = getNavigationItems('work', enabledFeatures);
   const accountItems = getNavigationItems('accounts', enabledFeatures);
-  const adminItems = getNavigationItems('admin', enabledFeatures, isPlatformAdmin);
 
   if (isTaster) {
     return (
@@ -90,22 +108,9 @@ export function AppSidebarNavigation({ enabledFeatures, isAdmin, isPlatformAdmin
 
       <NavGroupLinks group={{ label: 'My work', items: workItems }} pathname={pathname} />
       <NavGroupLinks group={{ label: 'Accounts', items: accountItems }} pathname={pathname} />
-      <NavLink item={{ href: '/admin/data-status', key: 'data-health', label: 'Data Status', section: 'utility' }} pathname={pathname} />
+      {!isAdmin && !isPlatformAdmin ? <NavLink item={{ href: '/admin/data-status', key: 'data-health', label: 'Data Status', section: 'utility' }} pathname={pathname} /> : null}
 
-      {isAdmin ? (
-        <details
-          className="app-nav-disclosure"
-          open={pathname === '/users' || pathname.startsWith('/admin/') ? true : undefined}
-        >
-          <summary>Administration</summary>
-          <div className="app-nav-disclosure-links">
-            {adminItems.map((item) => (
-              <NavLink item={item} key={item.href} pathname={pathname} />
-            ))}
-          </div>
-        </details>
-      ) : null}
-      {isPlatformAdmin ? <Link className="app-nav-link" href="/platform">Platform administration</Link> : null}
+      {isAdmin || isPlatformAdmin ? <AdministrationMenu enabledFeatures={enabledFeatures} hasOrganizationAdminAccess={isAdmin} isPlatformAdmin={isPlatformAdmin} pathname={pathname} /> : null}
     </nav>
   );
 }
