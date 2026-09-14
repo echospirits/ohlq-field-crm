@@ -4,6 +4,13 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { getUserDisplayName, requirePlatformAdmin } from '../../../lib/auth';
 import { importAccountResearchCsv } from '../../../lib/accountResearch';
+import {
+  approveAccountResearchJob,
+  createAccountResearchPilot,
+  pollAccountResearchPilot,
+  rejectAccountResearchJob,
+  submitQueuedPilotJobs,
+} from '../../../lib/accountResearchPilotService';
 import { requireFeatureForUser, requireOrganizationContext } from '../../../lib/organizations';
 
 const returnWith = (values: Record<string, string | number>): never => {
@@ -43,4 +50,76 @@ export async function uploadAccountResearchCsv(formData: FormData) {
     redirectValues = { status: 'failed', detail: (error instanceof Error ? error.message : String(error)).slice(0, 1_500) };
   }
   returnWith(redirectValues);
+}
+
+const getPilotActor = async () => {
+  const user = await requirePlatformAdmin();
+  const { organizationId } = await requireOrganizationContext(user);
+  await requireFeatureForUser(user, 'ADVANCED_INTELLIGENCE');
+  return { user, organizationId };
+};
+
+export async function startAccountResearchPilot() {
+  const { user, organizationId } = await getPilotActor();
+  try {
+    const pilot = await createAccountResearchPilot({ organizationId, startedByUserId: user.id });
+    const submission = await submitQueuedPilotJobs({ pilotId: pilot.id, organizationId });
+    revalidatePath('/admin/account-research');
+    returnWith({
+      status: submission.paused ? 'pilot-paused' : 'pilot-started',
+      pilot: pilot.id,
+      submitted: submission.submitted,
+      failed: submission.failed,
+      remaining: submission.remaining,
+    });
+  } catch (error) {
+    returnWith({ status: 'pilot-failed', detail: (error instanceof Error ? error.message : String(error)).slice(0, 1_500) });
+  }
+}
+
+export async function continueAccountResearchPilot(formData: FormData) {
+  const { organizationId } = await getPilotActor();
+  const pilotId = String(formData.get('pilotId') ?? '');
+  try {
+    const submission = await submitQueuedPilotJobs({ pilotId, organizationId });
+    revalidatePath('/admin/account-research');
+    returnWith({ status: submission.paused ? 'pilot-paused' : 'pilot-continued', submitted: submission.submitted, failed: submission.failed, remaining: submission.remaining });
+  } catch (error) {
+    returnWith({ status: 'pilot-failed', detail: (error instanceof Error ? error.message : String(error)).slice(0, 1_500) });
+  }
+}
+
+export async function checkAccountResearchPilot(formData: FormData) {
+  const { organizationId } = await getPilotActor();
+  const pilotId = String(formData.get('pilotId') ?? '');
+  try {
+    const result = await pollAccountResearchPilot({ pilotId, organizationId });
+    revalidatePath('/admin/account-research');
+    returnWith({ status: 'pilot-checked', checked: result.checked, completed: result.completed, pending: result.pending, failed: result.failedChecks });
+  } catch (error) {
+    returnWith({ status: 'pilot-failed', detail: (error instanceof Error ? error.message : String(error)).slice(0, 1_500) });
+  }
+}
+
+export async function reviewAccountResearchJob(formData: FormData) {
+  const { user, organizationId } = await getPilotActor();
+  const jobId = String(formData.get('jobId') ?? '');
+  const decision = String(formData.get('decision') ?? '');
+  const reviewNote = String(formData.get('reviewNote') ?? '');
+  try {
+    if (decision === 'approve') {
+      await approveAccountResearchJob({ jobId, organizationId, reviewedByUserId: user.id, reviewNote });
+    } else if (decision === 'reject') {
+      await rejectAccountResearchJob({ jobId, organizationId, reviewedByUserId: user.id, reviewNote });
+    } else {
+      throw new Error('Choose Approve or Reject.');
+    }
+    revalidatePath('/admin/account-research');
+    revalidatePath('/opportunities');
+    revalidatePath('/alerts');
+    revalidatePath('/');
+    returnWith({ status: decision === 'approve' ? 'pilot-approved' : 'pilot-rejected' });
+  } catch (error) {
+    returnWith({ status: 'pilot-failed', detail: (error instanceof Error ? error.message : String(error)).slice(0, 1_500) });
+  }
 }

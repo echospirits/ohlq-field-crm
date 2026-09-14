@@ -7,12 +7,12 @@ import { requireFeatureForUser, requireOrganizationContext } from '../../../../.
 
 export async function GET(request: Request) {
   const session = await requirePlatformAdminSession();
-  await requireOrganizationContext(session.user);
+  const { organizationId } = await requireOrganizationContext(session.user);
   await requireFeatureForUser(session.user, 'ADVANCED_INTELLIGENCE');
   const url = new URL(request.url);
   const limit = normalizeResearchExportLimit(url.searchParams.get('limit'));
   const includeFresh = url.searchParams.get('scope') === 'all';
-  const rows = await getAccountResearchQueue({ limit, includeFresh });
+  const rows = await getAccountResearchQueue({ limit, includeFresh, organizationId });
   const date = new Date().toISOString().slice(0, 10);
   return new Response(`\uFEFF${createAccountResearchCsv(rows)}`, {
     headers: {

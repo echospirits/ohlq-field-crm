@@ -146,23 +146,24 @@ export const normalizeResearchExportLimit = (value: string | number | null | und
   return Number.isFinite(parsed) ? Math.max(1, Math.min(MAX_RESEARCH_EXPORT_LIMIT, parsed)) : DEFAULT_RESEARCH_EXPORT_LIMIT;
 };
 
-export async function getAccountResearchQueue({ db = prisma, now = new Date(), limit = DEFAULT_RESEARCH_EXPORT_LIMIT, includeFresh = false }: { db?: PrismaClient; now?: Date; limit?: number | null; includeFresh?: boolean } = {}) {
+export async function getAccountResearchQueue({ db = prisma, now = new Date(), limit = DEFAULT_RESEARCH_EXPORT_LIMIT, includeFresh = false, organizationId }: { db?: PrismaClient; now?: Date; limit?: number | null; includeFresh?: boolean; organizationId?: string } = {}) {
   const pursuedCutoff = new Date(now.getTime() - PURSUED_RESEARCH_DAYS * DAY);
   const standardCutoff = new Date(now.getTime() - STANDARD_RESEARCH_DAYS * DAY);
+  const opportunityScope = organizationId ? { organizationId } : {};
   const candidates = await db.wholesaleAccount.findMany({
     where: {
       isActive: true,
       mergedIntoId: null,
-      opportunities: { some: { status: { in: activeStatuses } } },
+      opportunities: { some: { ...opportunityScope, status: { in: activeStatuses } } },
       ...(!includeFresh ? { AND: [{ OR: [
         { targetPublicResearch: { is: null } },
         { targetPublicResearch: { is: { lastRefreshedAt: null } } },
         { AND: [
-          { opportunities: { some: { status: OpportunityStatus.ACTIONED } } },
+          { opportunities: { some: { ...opportunityScope, status: OpportunityStatus.ACTIONED } } },
           { targetPublicResearch: { is: { lastRefreshedAt: { lt: pursuedCutoff } } } },
         ] },
         { AND: [
-          { opportunities: { none: { status: OpportunityStatus.ACTIONED } } },
+          { opportunities: { none: { ...opportunityScope, status: OpportunityStatus.ACTIONED } } },
           { targetPublicResearch: { is: { lastRefreshedAt: { lt: standardCutoff } } } },
         ] },
       ] }] } : {}),
@@ -170,7 +171,7 @@ export async function getAccountResearchQueue({ db = prisma, now = new Date(), l
     select: {
       id: true, name: true, address: true, city: true, state: true, zip: true, licenseeId: true,
       targetPublicResearch: { select: { lastRefreshedAt: true } },
-      opportunities: { where: { status: { in: activeStatuses } }, select: { productionScore: true, status: true } },
+      opportunities: { where: { ...opportunityScope, status: { in: activeStatuses } }, select: { productionScore: true, status: true } },
     },
   });
   candidates.sort(compareResearchCandidates);

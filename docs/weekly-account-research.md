@@ -1,26 +1,40 @@
-# Weekly account research
+# Account Research waterfall
 
-The CRM uses a reviewed CSV handoff so public research can be completed with a ChatGPT subscription rather than the OpenAI API.
+Account Research has two paths: a guarded automated pilot in the dedicated test environment and the existing reviewed CSV fallback.
 
-## Weekly workflow
+## Guarded 50-account pilot
 
-1. An administrator opens **Administration → Account Research**.
-2. Download the next 100 or 200 due accounts. Pursued accounts refresh every 30 days and all other tracked accounts every 90 days. Never-researched accounts come first, followed by the earliest due date; workflow status and target rank break ties.
-3. Attach the CSV to a normal ChatGPT conversation and use the prompt shown on the page.
-4. Download ChatGPT's completed CSV without editing the identity columns.
-5. Upload it to the same page and run **Validate only**.
-6. If validation passes, re-upload the same file and choose **Import research**.
+The pilot is intentionally constrained:
 
-The import is all-or-nothing. It verifies the CRM account ID, account name, Licensee ID, enums, ratings, dates, URLs, duplicate rows, notes, and citations. A successful import upserts one public-research record per account and immediately recalculates affected opportunity scores. Existing pursued opportunities are updated rather than duplicated.
+- It is available only when `APP_ENV=test`, the branch is `tst`, `ACCOUNT_RESEARCH_PILOT_ENABLED=true`, and a test-environment `OPENAI_API_KEY` is configured.
+- Production rejects every submit, poll, approve, and reject operation even if the feature flag is set accidentally.
+- An administrator must start it manually. There is no cron or scheduled research route.
+- It selects at most 50 due accounts with complete street, city, and ZIP identity from the current tenant's opportunities; incomplete locations stay in the manual CSV queue.
+- Each account reserves $0.40 before submission, so the pilot can never reserve more than the $20 application ceiling.
+- Fatal authorization, quota, or rate-limit errors pause submission and leave unsent accounts queued.
+- Each account is a separate background Responses API job using `gpt-5.6-luna`, at most three web-search tool calls, and at most 2,500 output tokens.
+- Retrieved usage records input tokens, output tokens, web-search calls, and an estimated per-account cost. The OpenAI project budget remains the final billing backstop because application estimates are not invoices.
 
-Successful imports update `lastRefreshedAt`, moving those accounts to the back of later exports. Repeated download/research/import cycles therefore work through the full due queue without repeatedly selecting the same accounts.
+The waterfall assigns pursued accounts and provisional scores of 70 or more to the deep tier. Other due opportunities receive a lightweight identity and public-fit pass. This pilot measures the quality and cost of both tiers before broader automation is considered.
 
-## CSV conventions
+## Evidence and exact-location review
 
-- Do not edit `wholesale_account_id`, `licensee_id`, `account_name`, `address`, `city`, `state`, or `zip`.
-- Separate multiple local brands and source URLs with `|`.
-- Use `YYYY-MM-DD` for `researched_at`.
-- Every row needs concise notes and at least one public source URL.
-- Unknown facts must be blank or use the allowed `Unknown`/`Unclear` value; they must not be guessed.
+The model must return strict structured JSON with field-level claims, source URLs, and an explicit exact-location marker. The server independently requires:
 
-The CRM intentionally does not use an OpenAI API key or a Vercel research cron for this workflow.
+1. An `EXACT` identity verdict.
+2. The same street number.
+3. The same city.
+4. The same five-digit ZIP.
+5. At least one source explicitly supporting that location.
+
+Every completed result enters the manual review queue. Nothing is automatically imported. Results that fail exact-location validation cannot be approved. Approval upserts the account's shared public facts and immediately recalculates that tenant's affected opportunity; rejection records a required reason and changes no account or opportunity data.
+
+## Manual CSV fallback
+
+1. Open **Administration → Account Research**.
+2. Download the next 100 or 200 due accounts. Pursued accounts refresh after 30 days and other tracked opportunities after 90 days.
+3. Research the file using the disclosed prompt or another reviewed source.
+4. Upload it and choose **Validate only**.
+5. If validation passes, upload the same file and choose **Import research**.
+
+The import remains all-or-nothing. It verifies CRM account ID, account name, Licensee ID, enums, ratings, dates, URLs, duplicates, notes, and citations. Successful imports update `lastRefreshedAt`, move accounts behind older work, and recalculate affected opportunities.

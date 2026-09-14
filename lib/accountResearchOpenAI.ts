@@ -1,0 +1,170 @@
+import {
+  ACCOUNT_RESEARCH_JSON_SCHEMA,
+  ACCOUNT_RESEARCH_MAX_OUTPUT_TOKENS,
+  ACCOUNT_RESEARCH_MAX_TOOL_CALLS,
+  ACCOUNT_RESEARCH_PILOT_MODEL,
+  buildAccountResearchPrompt,
+  parseAccountResearchResult,
+  type AccountResearchInputSnapshot,
+} from './accountResearchPilot';
+import { getAppEnvironment, parseBooleanEnvironmentValue, validateRuntimeEnvironment } from './appEnvironment';
+
+type ResearchFetch = typeof fetch;
+
+type OpenAIResponse = {
+  id?: string;
+  status?: string;
+  error?: { message?: string } | null;
+  incomplete_details?: { reason?: string } | null;
+  output?: Array<{
+    type?: string;
+    action?: { sources?: Array<{ url?: string }> };
+    content?: Array<{ type?: string; text?: string }>;
+  }>;
+  usage?: { input_tokens?: number; output_tokens?: number } | null;
+};
+
+export type RetrievedResearchResponse = {
+  responseId: string;
+  status: 'queued' | 'in_progress' | 'completed' | 'failed' | 'cancelled' | 'incomplete' | string;
+  result: ReturnType<typeof parseAccountResearchResult> | null;
+  inputTokens: number;
+  outputTokens: number;
+  webSearchCalls: number;
+  sourceUrls: string[];
+  error: string | null;
+};
+
+export function getAccountResearchPilotAvailability(env: NodeJS.ProcessEnv = process.env) {
+  const appEnvironment = getAppEnvironment(env);
+  let enabled = false;
+  let configurationError: string | null = null;
+  try {
+    enabled = parseBooleanEnvironmentValue(env.ACCOUNT_RESEARCH_PILOT_ENABLED, 'ACCOUNT_RESEARCH_PILOT_ENABLED') === true;
+  } catch (error) {
+    configurationError = error instanceof Error ? error.message : String(error);
+  }
+  const hasKey = Boolean(env.OPENAI_API_KEY?.trim());
+  return {
+    available: appEnvironment === 'test' && enabled && hasKey && !configurationError,
+    appEnvironment,
+    enabled,
+    hasKey,
+    configurationError,
+  };
+}
+
+export function assertAccountResearchPilotEnabled(env: NodeJS.ProcessEnv = process.env) {
+  if (getAppEnvironment(env) !== 'test') throw new Error('Automated account research is restricted to APP_ENV=test.');
+  const runtime = validateRuntimeEnvironment(env);
+  if (parseBooleanEnvironmentValue(env.ACCOUNT_RESEARCH_PILOT_ENABLED, 'ACCOUNT_RESEARCH_PILOT_ENABLED') !== true) {
+    throw new Error('The account research pilot is disabled.');
+  }
+  if (!env.OPENAI_API_KEY?.trim()) throw new Error('OPENAI_API_KEY is not configured for the test environment.');
+  return { apiKey: env.OPENAI_API_KEY.trim(), runtime };
+}
+
+async function requestOpenAI(path: string, init: RequestInit, fetchImpl: ResearchFetch = fetch, env: NodeJS.ProcessEnv = process.env) {
+  const { apiKey } = assertAccountResearchPilotEnabled(env);
+  const response = await fetchImpl(`https://api.openai.com/v1${path}`, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+      ...(init.headers ?? {}),
+    },
+    signal: AbortSignal.timeout(30_000),
+  });
+  const payload = await response.json().catch(() => ({})) as OpenAIResponse & { error?: { message?: string } };
+  if (!response.ok) {
+    const message = payload.error?.message || `OpenAI request failed with HTTP ${response.status}.`;
+    const error = new Error(message) as Error & { status?: number };
+    error.status = response.status;
+    throw error;
+  }
+  return payload;
+}
+
+export async function submitAccountResearch({
+  input,
+  tier,
+  pilotId,
+  jobId,
+  fetchImpl,
+  env,
+}: {
+  input: AccountResearchInputSnapshot;
+  tier: 'LIGHTWEIGHT' | 'DEEP';
+  pilotId: string;
+  jobId: string;
+  fetchImpl?: ResearchFetch;
+  env?: NodeJS.ProcessEnv;
+}) {
+  const response = await requestOpenAI('/responses', {
+    method: 'POST',
+    body: JSON.stringify({
+      model: ACCOUNT_RESEARCH_PILOT_MODEL,
+      background: true,
+      store: true,
+      input: buildAccountResearchPrompt(input, tier),
+      tools: [{ type: 'web_search', search_context_size: 'low' }],
+      max_tool_calls: ACCOUNT_RESEARCH_MAX_TOOL_CALLS,
+      max_output_tokens: ACCOUNT_RESEARCH_MAX_OUTPUT_TOKENS,
+      reasoning: { effort: 'low' },
+      text: {
+        verbosity: 'low',
+        format: {
+          type: 'json_schema',
+          name: 'account_research_result',
+          strict: true,
+          schema: ACCOUNT_RESEARCH_JSON_SCHEMA,
+        },
+      },
+      include: ['web_search_call.action.sources'],
+      metadata: { pilot_id: pilotId, research_job_id: jobId, wholesale_account_id: input.wholesaleAccountId },
+    }),
+  }, fetchImpl, env);
+  if (!response.id) throw new Error('OpenAI did not return a response ID.');
+  return { responseId: response.id, status: response.status ?? 'queued' };
+}
+
+const extractOutputText = (response: OpenAIResponse) => response.output
+  ?.flatMap((item) => item.content ?? [])
+  .find((content) => content.type === 'output_text' && content.text)?.text ?? null;
+
+export async function retrieveAccountResearch({
+  responseId,
+  fetchImpl,
+  env,
+}: {
+  responseId: string;
+  fetchImpl?: ResearchFetch;
+  env?: NodeJS.ProcessEnv;
+}): Promise<RetrievedResearchResponse> {
+  const response = await requestOpenAI(`/responses/${encodeURIComponent(responseId)}`, { method: 'GET' }, fetchImpl, env);
+  const status = response.status ?? 'failed';
+  const outputText = status === 'completed' ? extractOutputText(response) : null;
+  let result = null;
+  let parseError: string | null = null;
+  if (outputText) {
+    try {
+      result = parseAccountResearchResult(JSON.parse(outputText));
+    } catch (error) {
+      parseError = `Structured output validation failed: ${error instanceof Error ? error.message : String(error)}`;
+    }
+  } else if (status === 'completed') {
+    parseError = 'The completed response did not contain structured output.';
+  }
+  const webSearchItems = (response.output ?? []).filter((item) => item.type === 'web_search_call');
+  const sourceUrls = [...new Set(webSearchItems.flatMap((item) => item.action?.sources ?? []).map((source) => source.url).filter((url): url is string => Boolean(url)))];
+  return {
+    responseId,
+    status,
+    result,
+    inputTokens: response.usage?.input_tokens ?? 0,
+    outputTokens: response.usage?.output_tokens ?? 0,
+    webSearchCalls: webSearchItems.length,
+    sourceUrls,
+    error: parseError || response.error?.message || response.incomplete_details?.reason || null,
+  };
+}

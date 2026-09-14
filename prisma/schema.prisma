@@ -93,6 +93,31 @@ enum OpportunityRankingMode {
   SHADOW
 }
 
+enum AccountResearchPilotStatus {
+  RUNNING
+  PAUSED
+  READY_FOR_REVIEW
+  COMPLETE
+  CANCELLED
+  FAILED
+}
+
+enum AccountResearchJobStatus {
+  QUEUED
+  SUBMITTED
+  RUNNING
+  NEEDS_REVIEW
+  APPROVED
+  REJECTED
+  FAILED
+  BLOCKED_BUDGET
+}
+
+enum AccountResearchTier {
+  LIGHTWEIGHT
+  DEEP
+}
+
 enum AgencyInventoryState {
   HEALTHY
   STOCKOUT
@@ -389,65 +414,67 @@ model User {
 }
 
 model Organization {
-  id                  String                            @id @default(cuid())
-  name                String
-  displayName         String
-  slug                String                            @unique
-  active              Boolean                           @default(true)
-  primaryState        String                            @default("OH")
-  timezone            String                            @default("America/New_York")
-  website             String?
-  logoUrl             String?
-  appName             String                            @default("Neat")
-  digestName          String                            @default("Neat")
-  productLabel        String                            @default("product")
-  productPluralLabel  String                            @default("products")
-  brandPrimaryColor   String                            @default("#2458ff")
-  brandAccentColor    String                            @default("#6d28d9")
-  contactName         String?
-  contactEmail        String?
-  contactPhone        String?
-  supportEmail        String?
-  settings            Json                              @default("{}")
-  accountStatus       OrganizationStatus                @default(TRIAL)
-  onboardingStatus    OrganizationOnboardingStatus      @default(PROVISIONING)
-  onboardingData      Json                              @default("{}")
-  notes               String?
-  createdAt           DateTime                          @default(now())
-  updatedAt           DateTime                          @updatedAt
-  vendorIdentifiers   OrganizationVendorIdentifier[]
-  a3aStoreIdentifiers OrganizationA3aStoreIdentifier[]
-  products            OrganizationProduct[]
-  features            OrganizationFeature[]
-  accountOverlays     OrganizationAccountOverlay[]
-  auditEvents         OrganizationAuditEvent[]
-  provisioningRuns    OrganizationProvisioningRun[]
-  weeklyDigestLogs    WeeklyDigestLog[]
-  tags                Tag[]
-  menuPlacements      MenuPlacement[]
-  recipes             Recipe[]
-  recipeSuggestions   RecipeSuggestion[]
-  targetProfiles      TargetAccountProfile[]
-  locationTags        LocationTag[]
-  locationContacts    LocationContact[]
-  contactImports      ContactImportSession[]
-  accountActivities   AccountActivity[]
-  loggedVisitContacts LoggedVisitContact[]
-  loggedVisits        LoggedVisit[]
-  visitPhotos         VisitPhoto[]
-  worklistItems       WorklistItem[]
-  agencyProducts      AgencyProductIntelligence[]
-  agencySummaries     AgencyIntelligenceSummary[]
-  agencyEvents        AgencyIntelligenceEvent[]
-  opportunitySignals  OpportunityAccountSignal[]
-  accountSalesEvents  AccountSalesEvent[]
-  salesOpportunities  SalesOpportunity[]
-  opportunityEvents   OpportunityEvent[]
-  ohlqCredentials     OrganizationOhlqCredentials?
-  inventorySnapshots  OhlqAgencyInventorySnapshot[]
-  currentInventory    OhlqAgencyInventoryCurrent[]
-  inventoryImportRuns OhlqTenantInventoryImportStatus[]
-  wholesaleOrders     WholesaleOrder[]
+  id                    String                            @id @default(cuid())
+  name                  String
+  displayName           String
+  slug                  String                            @unique
+  active                Boolean                           @default(true)
+  primaryState          String                            @default("OH")
+  timezone              String                            @default("America/New_York")
+  website               String?
+  logoUrl               String?
+  appName               String                            @default("Neat")
+  digestName            String                            @default("Neat")
+  productLabel          String                            @default("product")
+  productPluralLabel    String                            @default("products")
+  brandPrimaryColor     String                            @default("#2458ff")
+  brandAccentColor      String                            @default("#6d28d9")
+  contactName           String?
+  contactEmail          String?
+  contactPhone          String?
+  supportEmail          String?
+  settings              Json                              @default("{}")
+  accountStatus         OrganizationStatus                @default(TRIAL)
+  onboardingStatus      OrganizationOnboardingStatus      @default(PROVISIONING)
+  onboardingData        Json                              @default("{}")
+  notes                 String?
+  createdAt             DateTime                          @default(now())
+  updatedAt             DateTime                          @updatedAt
+  vendorIdentifiers     OrganizationVendorIdentifier[]
+  a3aStoreIdentifiers   OrganizationA3aStoreIdentifier[]
+  products              OrganizationProduct[]
+  features              OrganizationFeature[]
+  accountOverlays       OrganizationAccountOverlay[]
+  auditEvents           OrganizationAuditEvent[]
+  provisioningRuns      OrganizationProvisioningRun[]
+  weeklyDigestLogs      WeeklyDigestLog[]
+  tags                  Tag[]
+  menuPlacements        MenuPlacement[]
+  recipes               Recipe[]
+  recipeSuggestions     RecipeSuggestion[]
+  targetProfiles        TargetAccountProfile[]
+  locationTags          LocationTag[]
+  locationContacts      LocationContact[]
+  contactImports        ContactImportSession[]
+  accountActivities     AccountActivity[]
+  loggedVisitContacts   LoggedVisitContact[]
+  loggedVisits          LoggedVisit[]
+  visitPhotos           VisitPhoto[]
+  worklistItems         WorklistItem[]
+  agencyProducts        AgencyProductIntelligence[]
+  agencySummaries       AgencyIntelligenceSummary[]
+  agencyEvents          AgencyIntelligenceEvent[]
+  opportunitySignals    OpportunityAccountSignal[]
+  accountSalesEvents    AccountSalesEvent[]
+  salesOpportunities    SalesOpportunity[]
+  opportunityEvents     OpportunityEvent[]
+  ohlqCredentials       OrganizationOhlqCredentials?
+  inventorySnapshots    OhlqAgencyInventorySnapshot[]
+  currentInventory      OhlqAgencyInventoryCurrent[]
+  inventoryImportRuns   OhlqTenantInventoryImportStatus[]
+  wholesaleOrders       WholesaleOrder[]
+  accountResearchPilots AccountResearchPilot[]
+  accountResearchJobs   AccountResearchJob[]
 
   @@index([active, accountStatus])
   @@index([onboardingStatus])
@@ -1314,6 +1341,7 @@ model WholesaleAccount {
   opportunitySignals            OpportunityAccountSignal[]
   salesEvents                   AccountSalesEvent[]
   wholesaleOrders               WholesaleOrder[]
+  accountResearchJobs           AccountResearchJob[]
 
   @@index([createdByUserId])
   @@index([mergedByUserId])
@@ -1579,6 +1607,67 @@ model TargetPublicResearch {
   @@index([researchStatus])
   @@index([lastRefreshedAt])
   @@index([refreshStatus, lastAttemptedAt])
+}
+
+model AccountResearchPilot {
+  id                   String                     @id @default(cuid())
+  organizationId       String
+  status               AccountResearchPilotStatus @default(RUNNING)
+  model                String
+  maxAccounts          Int                        @default(50)
+  budgetLimitMicros    Int                        @default(20000000)
+  reservedMicros       Int                        @default(0)
+  estimatedSpendMicros Int                        @default(0)
+  pricingSnapshot      Json
+  startedByUserId      String
+  startedAt            DateTime                   @default(now())
+  lastPolledAt         DateTime?
+  completedAt          DateTime?
+  createdAt            DateTime                   @default(now())
+  updatedAt            DateTime                   @updatedAt
+  organization         Organization               @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  jobs                 AccountResearchJob[]
+
+  @@index([organizationId, status])
+  @@index([startedAt])
+}
+
+model AccountResearchJob {
+  id                  String                   @id @default(cuid())
+  pilotId             String
+  organizationId      String
+  wholesaleAccountId  String
+  tier                AccountResearchTier
+  status              AccountResearchJobStatus @default(QUEUED)
+  priority            Int
+  reason              String
+  inputSnapshot       Json
+  responseId          String?                  @unique
+  result              Json?
+  evidence            Json                     @default("[]")
+  locationValidation  Json?
+  reservedMicros      Int                      @default(400000)
+  estimatedCostMicros Int                      @default(0)
+  inputTokens         Int                      @default(0)
+  outputTokens        Int                      @default(0)
+  webSearchCalls      Int                      @default(0)
+  attemptCount        Int                      @default(0)
+  error               String?
+  submittedAt         DateTime?
+  completedAt         DateTime?
+  reviewedAt          DateTime?
+  reviewedByUserId    String?
+  reviewNote          String?
+  createdAt           DateTime                 @default(now())
+  updatedAt           DateTime                 @updatedAt
+  pilot               AccountResearchPilot     @relation(fields: [pilotId], references: [id], onDelete: Cascade)
+  organization        Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  wholesaleAccount    WholesaleAccount         @relation(fields: [wholesaleAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([pilotId, wholesaleAccountId])
+  @@index([pilotId, status, priority])
+  @@index([organizationId, status])
+  @@index([wholesaleAccountId, createdAt])
 }
 
 model TargetSkuOpportunity {
