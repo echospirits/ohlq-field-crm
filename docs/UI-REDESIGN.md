@@ -13,7 +13,7 @@ The September 2026 direction uses warm ivory surfaces, dark readable text, olive
 | Search and directories | Consistent live search, lighter linked rows, restrained navigation | Existing matching, filters, sorting, pagination and account-type destinations |
 | Orders and administration | Shared light surfaces, readable statuses and touch targets | Order creation/PDF/status flows, organization settings, role gates, diagnostics, data operations and integrations |
 
-No schema, order calculation, import, email-delivery, tenant authorization, or production configuration changes are part of this redesign. It is published to the dedicated `neat-tst` repository's `tst` branch only.
+No schema, order calculation, import, email-delivery, tenant authorization, or production configuration changes are part of this redesign. It was first validated on the dedicated `neat-tst` repository's `tst` branch, then selectively promoted to `ohlq-field-crm/main` with user authorization.
 
 ## Interaction details
 
