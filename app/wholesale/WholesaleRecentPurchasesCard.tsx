@@ -1,4 +1,5 @@
 import type { WholesalePurchaseList, WholesaleRecentPurchases } from '../../lib/ohlqSalesData';
+import { DataFreshnessBadge } from '../components/DataFreshnessBadge';
 
 const numberFormatter = new Intl.NumberFormat('en-US');
 
@@ -89,10 +90,13 @@ export function WholesaleRecentPurchasesCard({
     <section className="dashboard-section ohlq-sales-section">
       <div className="section-heading ohlq-sales-heading">
         <h2>Recent OHLQ Purchases</h2>
-        <span className="pill">
-          {purchases.startDate && purchases.endDate ? `${purchases.startDate} to ${purchases.endDate}` : 'No data'}
-        </span>
+        <DataFreshnessBadge sourceDate={purchases.endDate} />
       </div>
+
+      <details className="source-explanation compact-details nested-details">
+        <summary>How these purchases relate to the timeline</summary>
+        <p>This card includes every matched OHLQ wholesale purchase for this account during the source-date window. The activity timeline shows only your organization&apos;s tracked products, so it can contain fewer purchase entries. CRM visits and tasks may also be newer than the latest OHLQ report.</p>
+      </details>
 
       <div className="card ohlq-window-card">
         <div className="section-heading ohlq-purchase-window-heading">

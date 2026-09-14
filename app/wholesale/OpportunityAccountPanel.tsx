@@ -4,6 +4,7 @@ import { formatEasternDate } from '../../lib/dateTime';
 import { getOhlqWindowStartDate, getTenantAccountSalesEventWhere, summarizeLinkedWholesaleAccountSales } from '../../lib/ohlqSalesData';
 import { prisma } from '../../lib/prisma';
 import { ContextualActions } from '../components/ContextualActions';
+import { DataFreshnessBadge } from '../components/DataFreshnessBadge';
 import type { ReactNode } from 'react';
 import { getCurrentUser } from '../../lib/auth';
 import { getOrganizationContext, hasFeature } from '../../lib/organizations';
@@ -46,12 +47,13 @@ function OpportunityRow({
         {accountHref && accountName ? <span className="sr-only">Opportunity: </span> : null}
         <strong>{title}</strong>
       </div>
-      <div className="account-opportunity-meta">
-        <span>{explanation}</span>
-        <span className="account-opportunity-next"><strong>Next</strong> {recommendedAction}</span>
-      </div>
+      <span className="account-opportunity-next"><strong>Next</strong> {recommendedAction}</span>
     </div>
     {actions}
+    <details className="opportunity-evidence compact-details nested-details">
+      <summary>Why this opportunity</summary>
+      <p>{explanation}</p>
+    </details>
   </article>;
 }
 
@@ -197,6 +199,14 @@ export async function OpportunityAccountPanel({ agencyId, wholesaleAccountId, cu
       />)}
       {opportunities.length === 0 ? <p className="muted activity-empty">No active Opportunities for this account.</p> : null}
     </section>
-    <section className="dashboard-section unified-timeline"><div className="section-heading"><h2>Activity + sales timeline</h2><span className="pill">{timeline.length}</span></div>{timeline.map((event, index) => <article className={`timeline-event timeline-${event.kind}`} key={`${event.kind}-${event.at.toISOString()}-${index}`}><time>{formatEasternDate(event.at)}</time><div><strong>{event.title}</strong><p>{event.detail}</p></div></article>)}</section>
+    <section className="dashboard-section unified-timeline">
+      <div className="section-heading"><div><h2>Activity + sales timeline</h2><span className="muted timeline-count">{timeline.length} events</span></div><DataFreshnessBadge datePrefix="Purchases through" sourceDate={sales[0]?.reportDate} /></div>
+      <details className="source-explanation compact-details nested-details">
+        <summary>Why purchase totals may differ</summary>
+        <p>Purchase entries here include your organization&apos;s tracked products from the sales timeline. The Recent OHLQ Purchases card includes all matched vendors for this account, so it can show a larger total. Visits, tasks, and opportunity events use their own activity dates and may be newer than the latest OHLQ report.</p>
+      </details>
+      {timeline.map((event, index) => <article className={`timeline-event timeline-${event.kind}`} key={`${event.kind}-${event.at.toISOString()}-${index}`}><time>{formatEasternDate(event.at)}</time><div><strong>{event.title}</strong><p>{event.detail}</p></div></article>)}
+      {timeline.length === 0 ? <p className="card muted activity-empty">No account activity is available yet.</p> : null}
+    </section>
   </>;
 }

@@ -1,5 +1,6 @@
 import type { AgencySalesSummaryItem, AgencySalesWindow } from '../../lib/ohlqSalesData';
 import { getTenantConfig } from '../../lib/tenantConfig';
+import { DataFreshnessBadge } from '../components/DataFreshnessBadge';
 
 const numberFormatter = new Intl.NumberFormat('en-US');
 
@@ -125,8 +126,10 @@ export function AgencyRecentSalesCard({ salesWindows }: { salesWindows: AgencySa
     <section className="dashboard-section ohlq-sales-section">
       <div className="section-heading ohlq-sales-heading">
         <h2>Recent {tenantConfig.productLabel} Item Sales</h2>
-        <span className="pill">{thirtyDayWindow?.endDate ? `Through ${thirtyDayWindow.endDate}` : 'No data'}</span>
+        <DataFreshnessBadge sourceDate={thirtyDayWindow?.endDate} />
       </div>
+
+      <p className="source-window-note">The 7 and 30 day windows end on the source date shown above.</p>
 
       <div className="card ohlq-window-card">
         <div className="ohlq-sales-grid-scroll">

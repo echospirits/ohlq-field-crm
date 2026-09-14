@@ -8,6 +8,7 @@ import Link from 'next/link';
 import { formatEasternDate } from '../../lib/dateTime';
 import { prisma } from '../../lib/prisma';
 import { ContextualActions } from '../components/ContextualActions';
+import { DataFreshnessBadge } from '../components/DataFreshnessBadge';
 
 const titleCase = (value: string) => value.toLowerCase().replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 const actionLabels: Record<AgencyRecommendedAction, string> = {
@@ -66,7 +67,7 @@ export async function AgencyIntelligencePanel({ agencyId, agencyName, currentUse
     <section className="card agency-intelligence-overview">
       <div className="section-heading agency-intelligence-heading">
         <div><span className="page-eyebrow">Agency opportunity</span><h2>What to do here next</h2></div>
-        <span className="pill">As of {formatEasternDate(summary.asOfDate)}</span>
+        <DataFreshnessBadge datePrefix="As of" sourceDate={summary.asOfDate} />
       </div>
       <dl className="agency-intelligence-snapshot">
         <IntelligenceBand label="Retail" value={summary.retailBand} />
@@ -85,12 +86,21 @@ export async function AgencyIntelligencePanel({ agencyId, agencyName, currentUse
     <section className="dashboard-section" id="product-opportunities">
       <div className="section-heading"><div><span className="page-eyebrow">Agency × product</span><h2>Product opportunities</h2></div><Link className="btn secondary compact-btn" href={`/agency-focus?agencyId=${agencyId}`}>Open focus view</Link></div>
       <div className="agency-product-list">
-        {activeProducts.slice(0, 5).map((product) => <details className="card agency-product-card" key={product.id}>
-          <summary>
+        {activeProducts.slice(0, 5).map((product) => <article className="card agency-product-card" key={product.id}>
+          <div className="agency-product-card-heading">
             <span className="agency-product-title"><span className="ohlq-item-code">{product.itemCode}</span><strong>{product.itemName}</strong><small>{titleCase(product.opportunityState)}</small></span>
             <span className={`priority priority-${product.priorityBand.toLowerCase()}`}>{product.priorityBand}</span>
-          </summary>
-          <div className="agency-product-body">
+          </div>
+          <p className="agency-product-action"><strong>Next:</strong> {actionLabels[product.recommendedAction]}</p>
+          <ContextualActions
+            context={{ accountName: agencyName, agencyId, agencyProductIntelligenceId: product.id, productItemCode: product.itemCode, productName: product.itemName, reason: stringList(product.reasons).join(' '), returnTo: `/agencies/${agencyId}`, sourceLabel: `${titleCase(product.opportunityState)} - ${product.itemName}`, sourceType: product.opportunityState }}
+            currentUserId={currentUserId}
+            existingFollowUpId={product.worklistItems[0]?.id}
+            users={users}
+          />
+          <details className="opportunity-evidence compact-details nested-details">
+            <summary>View evidence</summary>
+            <div className="agency-product-body">
             <dl className="agency-product-metrics">
               <div><dt>On hand</dt><dd>{product.onHand ?? '—'}</dd></div>
               <div><dt>Minimum</dt><dd>{product.minimum ?? '—'}</dd></div>
@@ -99,16 +109,10 @@ export async function AgencyIntelligencePanel({ agencyId, agencyName, currentUse
               <div><dt>Fit</dt><dd>{titleCase(product.fitBand)} · {product.fitScore}</dd></div>
               <div><dt>Peer carry</dt><dd>{product.peerCarryPercent === null ? '—' : `${Math.round(product.peerCarryPercent)}%`}</dd></div>
             </dl>
-            <p className="agency-product-action"><strong>Next:</strong> {actionLabels[product.recommendedAction]}</p>
             <ul className="agency-product-reasons">{stringList(product.reasons).map((reason) => <li key={reason}>{reason}</li>)}</ul>
-            <ContextualActions
-              context={{ accountName: agencyName, agencyId, agencyProductIntelligenceId: product.id, productItemCode: product.itemCode, productName: product.itemName, reason: stringList(product.reasons).join(' '), returnTo: `/agencies/${agencyId}`, sourceLabel: `${titleCase(product.opportunityState)} - ${product.itemName}`, sourceType: product.opportunityState }}
-              currentUserId={currentUserId}
-              existingFollowUpId={product.worklistItems[0]?.id}
-              users={users}
-            />
-          </div>
-        </details>)}
+            </div>
+          </details>
+        </article>)}
         {activeProducts.length === 0 ? <p className="card muted activity-empty">No active product issues require attention.</p> : null}
       </div>
     </section>

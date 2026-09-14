@@ -9,9 +9,12 @@ import { prisma } from '../../lib/prisma';
 import { updateAgencyOpportunity } from './actions';
 import { getUserDisplayName } from '../../lib/auth';
 import { ContextualActions } from '../components/ContextualActions';
+import { DataFreshnessBadge } from '../components/DataFreshnessBadge';
 import { requireFeatureForUser } from '../../lib/organizations';
 
 export const metadata = buildPageMetadata('Agency Focus');
+
+const titleCase = (value: string) => value.toLowerCase().replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 
 const stateLabels: Record<AgencyProductOpportunityState, string> = {
   ACTIVATION_OPPORTUNITY: 'Tasting',
@@ -68,14 +71,19 @@ export default async function AgencyFocusPage({
     take: 250,
   }), prisma.user.findMany({ where: { organizationId, isActive: true, role: { notIn: ['TASTER', 'PLATFORM_ADMIN'] } }, orderBy: [{ name: 'asc' }, { email: 'asc' }] })]);
   const actionUsers = users.map((user) => ({ id: user.id, name: getUserDisplayName(user) }));
+  const latestSourceDate = opportunities.reduce<Date | null>(
+    (latest, item) => !latest || item.asOfDate > latest ? item.asOfDate : latest,
+    null,
+  );
 
   return <>
     <header className="page-heading page-header">
       <div><span className="page-eyebrow">Agency intelligence</span><h1>Agency Focus</h1><p className="muted">The highest-value retail actions, with the inventory and sales facts behind each recommendation.</p></div>
+      <DataFreshnessBadge sourceDate={latestSourceDate} />
     </header>
-    <nav className="opportunity-filters">
-      <Link href="/agency-focus">All actions</Link>
-      {actionableStates.map((value) => <Link href={`/agency-focus?state=${value}`} key={value}>{stateLabels[value]}</Link>)}
+    <nav aria-label="Agency opportunity filters" className="opportunity-filters">
+      <Link aria-current={!state ? 'page' : undefined} className={!state ? 'active' : undefined} href="/agency-focus">All actions</Link>
+      {actionableStates.map((value) => <Link aria-current={state === value ? 'page' : undefined} className={state === value ? 'active' : undefined} href={`/agency-focus?state=${value}`} key={value}>{stateLabels[value]}</Link>)}
     </nav>
     <section className="agency-focus-list">
       {opportunities.map((item) => <article className="card agency-focus-card" key={item.id}>
@@ -83,16 +91,7 @@ export default async function AgencyFocusPage({
           <div><span className={`priority priority-${item.priorityBand.toLowerCase()}`}>{item.priorityBand}</span><small>{stateLabels[item.opportunityState]}</small><h2><Link href={`/agencies/${item.agency.id}`}>{item.agency.name}</Link></h2><p className="muted">Agency {item.agency.agencyId}{item.agency.city ? ` · ${item.agency.city}` : ''}</p></div>
           <div className="agency-focus-item"><span className="ohlq-item-code">{item.itemCode}</span><strong>{item.itemName}</strong></div>
         </div>
-        <dl className="agency-product-metrics">
-          <div><dt>On hand</dt><dd>{item.onHand ?? '—'}</dd></div>
-          <div><dt>Minimum</dt><dd>{item.minimum ?? '—'}</dd></div>
-          <div><dt>Sales / 7d</dt><dd>{item.retailSales7}</dd></div>
-          <div><dt>Sales / 30d</dt><dd>{item.retailSales30}</dd></div>
-          <div><dt>Fit</dt><dd>{item.fitBand} · {item.fitScore}</dd></div>
-          <div><dt>Peer carry</dt><dd>{item.peerCarryPercent === null ? '—' : `${Math.round(item.peerCarryPercent)}%`}</dd></div>
-        </dl>
-        <ul className="agency-product-reasons">{stringList(item.reasons).map((reason) => <li key={reason}>{reason}</li>)}</ul>
-        <p className="agency-product-action"><strong>Recommended:</strong> {item.recommendedAction.toLowerCase().replaceAll('_', ' ')}</p>
+        <p className="agency-product-action"><strong>Recommended:</strong> {titleCase(item.recommendedAction)}</p>
         <div className="agency-focus-actions">
           <Link className="btn secondary compact-btn" href={`/agencies/${item.agency.id}`}>Open Agency</Link>
           <ContextualActions
@@ -103,6 +102,18 @@ export default async function AgencyFocusPage({
           />
           <form action={updateAgencyOpportunity}><input name="id" type="hidden" value={item.id}/><button className="secondary compact-btn" name="action" value="snooze">Snooze 14d</button></form>
         </div>
+        <details className="opportunity-evidence compact-details nested-details">
+          <summary>View evidence</summary>
+          <dl className="agency-product-metrics">
+            <div><dt>On hand</dt><dd>{item.onHand ?? '—'}</dd></div>
+            <div><dt>Minimum</dt><dd>{item.minimum ?? '—'}</dd></div>
+            <div><dt>Sales / 7d</dt><dd>{item.retailSales7}</dd></div>
+            <div><dt>Sales / 30d</dt><dd>{item.retailSales30}</dd></div>
+            <div><dt>Fit</dt><dd>{item.fitBand} · {item.fitScore}</dd></div>
+            <div><dt>Peer carry</dt><dd>{item.peerCarryPercent === null ? '—' : `${Math.round(item.peerCarryPercent)}%`}</dd></div>
+          </dl>
+          <ul className="agency-product-reasons">{stringList(item.reasons).map((reason) => <li key={reason}>{reason}</li>)}</ul>
+        </details>
         <details className="agency-focus-dismiss"><summary>Dismiss</summary><form action={updateAgencyOpportunity}><input name="id" type="hidden" value={item.id}/><select aria-label="Dismissal reason" name="reason" defaultValue="Not a fit"><option>Not a fit</option><option>Already handled</option><option>Wrong timing</option><option>Bad or missing data</option><option>Other</option></select><button className="danger compact-btn" name="action" value="dismiss">Dismiss</button></form></details>
       </article>)}
       {opportunities.length === 0 ? <p className="card muted">No active Agency opportunities match this view.</p> : null}
