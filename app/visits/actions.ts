@@ -2,7 +2,7 @@
 
 import { AccountType, OpportunityEventType, PhotoType, UserRole, WorklistCategory, WorklistSource, WorklistStatus } from '@prisma/client';
 import { revalidatePath } from 'next/cache';
-import { redirect } from 'next/navigation';
+import { redirect, unstable_rethrow } from 'next/navigation';
 import { getUserDisplayName, requireUser } from '../../lib/auth';
 import {
   deleteStoredPhoto,
@@ -11,11 +11,11 @@ import {
   verifyClientUploadedVisitPhoto,
 } from '../../lib/blob';
 import { prisma } from '../../lib/prisma';
-import { hasFeature, requireOrganizationContext } from '../../lib/organizations';
+import { requireOrganizationContext } from '../../lib/organizations';
 import { getGeocodeResetForAddressChange } from '../../lib/location/geocode';
 import { parseTimeInputToMinutes } from '../../lib/dateTime';
 import { syncWorklistItemCalendar } from '../../lib/calendar/worklistSync';
-import { evaluateOpportunityIntelligence } from '../../lib/opportunityEngine';
+import { createVisitDiagnostics, type VisitDiagnostics } from '../../lib/visitDiagnostics';
 import { getSelectedVoiceFollowUps } from '../../lib/voiceVisitNoteShared';
 import {
   getOutcomeLabels,
@@ -178,8 +178,21 @@ function collectPhotos(formData: FormData, formOrigin: FormOrigin, locationType:
 }
 
 export async function createVisit(formData: FormData) {
+  const diagnostics = createVisitDiagnostics('create');
+  diagnostics.mark('authentication');
+  try {
+    return await createVisitWithDiagnostics(formData, diagnostics);
+  } catch (error) {
+    unstable_rethrow(error);
+    diagnostics.failure(error);
+    throw error;
+  }
+}
+
+async function createVisitWithDiagnostics(formData: FormData, diagnostics: VisitDiagnostics) {
   const user = await requireUser({ allowTaster: true });
   const { organizationId } = await requireOrganizationContext(user);
+  diagnostics.mark('validation', { userId: user.id, organizationId });
   const isTaster = user.role === UserRole.TASTER;
   const actorName = getUserDisplayName(user);
   const formOrigin = isTaster ? 'visits' : getFormOrigin(formData);
@@ -236,7 +249,10 @@ export async function createVisit(formData: FormData) {
       where: { organizationId_submissionKey: { organizationId, submissionKey } },
       select: { createdByUserId: true, id: true },
     });
-    if (existingVisit?.createdByUserId === user.id) redirectToVisitConfirmation(existingVisit.id, formOrigin);
+    if (existingVisit?.createdByUserId === user.id) {
+      diagnostics.mark('duplicate_submission', { visitId: existingVisit.id, committed: true });
+      redirectToVisitConfirmation(existingVisit.id, formOrigin);
+    }
   }
 
   if (isTaster && !summary) {
@@ -288,6 +304,7 @@ export async function createVisit(formData: FormData) {
     redirectVisitWithStatus(formOrigin, 'invalid-context', locationType);
   }
 
+  diagnostics.mark('photo_verification', { locationType });
   try {
     pendingPhotos = await Promise.all(
       pendingPhotos.map(async (photo) => {
@@ -306,6 +323,7 @@ export async function createVisit(formData: FormData) {
       }),
     );
   } catch (error) {
+    diagnostics.failure(error);
     console.error('Visit photo verification failed', {
       error: getErrorLogDetails(error),
       formOrigin,
@@ -315,6 +333,7 @@ export async function createVisit(formData: FormData) {
     redirectVisitWithStatus(formOrigin, 'photo-verification-failed', locationType);
   }
 
+  diagnostics.mark('transaction', { locationType });
   const visit = await prisma.$transaction(async (tx) => {
     let wholesaleAccountId = selectedWholesaleAccountId;
 
@@ -608,6 +627,8 @@ export async function createVisit(formData: FormData) {
     return loggedVisit;
   });
 
+  diagnostics.mark('committed', { visitId: visit.id, committed: true });
+  diagnostics.mark('photos');
   if (isTaster) {
     const photo = pendingPhotos[0]!;
     let uploadedPhoto: Awaited<ReturnType<typeof uploadVisitPhoto>> | null = null;
@@ -628,6 +649,7 @@ export async function createVisit(formData: FormData) {
         },
       });
     } catch (error) {
+      diagnostics.failure(error);
       console.error('Taster visit photo persistence failed', {
         error: getErrorLogDetails(error),
         userId: user.id,
@@ -689,6 +711,7 @@ export async function createVisit(formData: FormData) {
 
       await prisma.visitPhoto.createMany({ data: photos });
     } catch (error) {
+      diagnostics.failure(error);
       console.error('Visit photo persistence failed', {
         error: getErrorLogDetails(error),
         formOrigin,
@@ -699,27 +722,29 @@ export async function createVisit(formData: FormData) {
     }
   }
 
-  const calendarItems = await prisma.worklistItem.findMany({
-    where: {
-      OR: [
-        { loggedVisitId: visit.id },
-        ...(worklistItemId ? [{ id: worklistItemId }] : []),
-        ...(requestedWorklistCompletionIds.length > 0
-          ? [{
-              id: { in: requestedWorklistCompletionIds },
-              assignedToUserId: user.id,
-              completedByUserId: user.id,
-              loggedVisitId: visit.id,
-            }]
-          : []),
-      ],
-    },
-    select: { id: true },
+  await diagnostics.bestEffort('calendar_sync', async () => {
+    const calendarItems = await prisma.worklistItem.findMany({
+      where: {
+        OR: [
+          { loggedVisitId: visit.id },
+          ...(worklistItemId ? [{ id: worklistItemId }] : []),
+          ...(requestedWorklistCompletionIds.length > 0
+            ? [{
+                id: { in: requestedWorklistCompletionIds },
+                assignedToUserId: user.id,
+                completedByUserId: user.id,
+                loggedVisitId: visit.id,
+              }]
+            : []),
+        ],
+      },
+      select: { id: true },
+    });
+    for (const item of calendarItems) await syncWorklistItemCalendar(item.id);
   });
-  for (const item of calendarItems) await syncWorklistItemCalendar(item.id);
-  if (visit.wholesaleAccountId) {
-    if (await hasFeature(organizationId, 'WHOLESALE_OPPORTUNITIES')) await evaluateOpportunityIntelligence({ accountIds: [visit.wholesaleAccountId], organizationId });
-  }
+  // Full opportunity recalculation runs after OHLQ imports. It loads statewide
+  // sales history and must never run inside an interactive visit request.
+  diagnostics.mark('revalidation');
 
   revalidatePath('/visits');
   revalidatePath('/visits/new');
@@ -735,12 +760,26 @@ export async function createVisit(formData: FormData) {
   if (visit.wholesaleAccountId) {
     revalidatePath(`/wholesale/${visit.wholesaleAccountId}`);
   }
+  diagnostics.mark('confirmation');
   redirectToVisitConfirmation(visit.id, formOrigin);
 }
 
 export async function updateVisit(visitId: string, formData: FormData) {
+  const diagnostics = createVisitDiagnostics('update');
+  diagnostics.mark('authentication', { visitId });
+  try {
+    return await updateVisitWithDiagnostics(visitId, formData, diagnostics);
+  } catch (error) {
+    unstable_rethrow(error);
+    diagnostics.failure(error);
+    throw error;
+  }
+}
+
+async function updateVisitWithDiagnostics(visitId: string, formData: FormData, diagnostics: VisitDiagnostics) {
   const user = await requireUser();
   const { organizationId } = await requireOrganizationContext(user);
+  diagnostics.mark('validation', { userId: user.id, organizationId });
   const actorName = getUserDisplayName(user);
   const existingVisit = await prisma.loggedVisit.findFirst({
     where: { id: visitId, organizationId },
@@ -802,6 +841,7 @@ export async function updateVisit(visitId: string, formData: FormData) {
     .filter(Boolean)
     .join('\n') || null;
 
+  diagnostics.mark('transaction', { locationType });
   await prisma.$transaction(async (tx) => {
     await tx.loggedVisit.update({
       where: { id: visitId },
@@ -848,15 +888,17 @@ export async function updateVisit(visitId: string, formData: FormData) {
     }
   });
 
-  const calendarTask = await prisma.worklistItem.findFirst({
-    where: { loggedVisitId: visitId, source: WorklistSource.VISIT_FOLLOW_UP, title: { startsWith: 'Follow up', mode: 'insensitive' } },
-    orderBy: { createdAt: 'asc' },
-    select: { id: true },
+  diagnostics.mark('committed', { committed: true });
+  await diagnostics.bestEffort('calendar_sync', async () => {
+    const calendarTask = await prisma.worklistItem.findFirst({
+      where: { loggedVisitId: visitId, source: WorklistSource.VISIT_FOLLOW_UP, title: { startsWith: 'Follow up', mode: 'insensitive' } },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true },
+    });
+    if (calendarTask) await syncWorklistItemCalendar(calendarTask.id);
   });
-  if (calendarTask) await syncWorklistItemCalendar(calendarTask.id);
-  if (existingVisit.wholesaleAccountId) {
-    if (await hasFeature(organizationId, 'WHOLESALE_OPPORTUNITIES')) await evaluateOpportunityIntelligence({ accountIds: [existingVisit.wholesaleAccountId], organizationId });
-  }
+  // The import workflow owns full opportunity recalculation; see createVisit.
+  diagnostics.mark('revalidation');
 
   revalidatePath('/visits');
   if (existingVisit.agencyId) revalidatePath(`/agencies/${existingVisit.agencyId}`);
@@ -865,5 +907,6 @@ export async function updateVisit(visitId: string, formData: FormData) {
   if (wholesaleAccountId) revalidatePath(`/wholesale/${wholesaleAccountId}`);
   revalidatePath('/alerts');
   revalidatePath('/my-week');
+  diagnostics.mark('confirmation');
   redirect('/visits?status=updated');
 }
