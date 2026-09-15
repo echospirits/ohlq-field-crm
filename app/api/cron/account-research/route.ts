@@ -3,8 +3,9 @@ export const runtime = 'nodejs';
 export const maxDuration = 300;
 
 import { NextResponse } from 'next/server';
+import { start } from 'workflow/api';
+import { runDailyAccountResearchWorkflow } from '../../../../lib/accountResearchDailyWorkflow';
 import { getAccountResearchAutomationAvailability } from '../../../../lib/accountResearchOpenAI';
-import { runAutomaticAccountResearch } from '../../../../lib/accountResearchAutomation';
 import { logEnvironmentEvent } from '../../../../lib/appEnvironment';
 
 export async function GET(request: Request) {
@@ -18,9 +19,9 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: true, skipped: true, environmentDisabled: true });
   }
   try {
-    const result = await runAutomaticAccountResearch();
-    logEnvironmentEvent('cron.account-research.completed', { submitted: result.submitted, queueCount: result.queueCount });
-    return NextResponse.json({ ok: true, ...result });
+    const run = await start(runDailyAccountResearchWorkflow);
+    logEnvironmentEvent('cron.account-research.started', { workflowRunId: run.runId });
+    return NextResponse.json({ ok: true, started: true, workflowRunId: run.runId });
   } catch (error) {
     console.error('Automatic account research failed:', error);
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : 'Unknown automatic account research failure.' }, { status: 500 });

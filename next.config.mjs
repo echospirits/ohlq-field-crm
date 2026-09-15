@@ -1,3 +1,5 @@
+import { withWorkflow } from 'workflow/next';
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   experimental: {
@@ -18,4 +20,4 @@ const nextConfig = {
   serverExternalPackages: ['@sparticuz/chromium'],
 };
 
-export default nextConfig;
+export default withWorkflow(nextConfig);

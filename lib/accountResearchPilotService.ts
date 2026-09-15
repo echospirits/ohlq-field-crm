@@ -146,10 +146,7 @@ export async function submitQueuedPilotJobs({ pilotId, organizationId, db = pris
   let submitted = 0;
   let failed = 0;
   let paused = false;
-  for (const [jobIndex, job] of jobs.entries()) {
-    if (mode === 'automatic' && jobIndex > 0 && jobIndex % ACCOUNT_RESEARCH_SUBMISSION_WAVE_SIZE === 0) {
-      await new Promise((resolve) => setTimeout(resolve, 15_000));
-    }
+  for (const job of jobs) {
     const claimedAt = new Date();
     const claim = await db.accountResearchJob.updateMany({
       where: { id: job.id, status: AccountResearchJobStatus.QUEUED },

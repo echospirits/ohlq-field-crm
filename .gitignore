@@ -21,3 +21,4 @@ output/
 .DS_Store
 .vscode/
 .env*.local
+/.swc

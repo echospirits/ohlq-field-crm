@@ -87,7 +87,7 @@ async function createAutomaticRun({ db, now, maxAccounts }: { db: PrismaClient; 
   });
 }
 
-export async function runAutomaticAccountResearch({ db = prisma, now = new Date() }: { db?: PrismaClient; now?: Date } = {}) {
+export async function runAutomaticAccountResearch({ db = prisma, now = new Date(), submissionTake = ACCOUNT_RESEARCH_SUBMISSION_WAVE_SIZE }: { db?: PrismaClient; now?: Date; submissionTake?: number } = {}) {
   assertAccountResearchAutomationEnabled();
   const submittedToday = await db.accountResearchJob.count({
     where: { submittedAt: { gte: startOfUtcDay(now) }, pilot: { startedByUserId: ACCOUNT_RESEARCH_AUTOMATIC_RUN_ACTOR } },
@@ -117,7 +117,7 @@ export async function runAutomaticAccountResearch({ db = prisma, now = new Date(
       organizationId: run.organizationId,
       db,
       mode: 'automatic',
-      take: remainingToday,
+      take: Math.min(remainingToday, submissionTake),
     });
     remainingToday -= submission.submitted;
   }

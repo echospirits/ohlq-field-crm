@@ -11,6 +11,8 @@ import { getAppEnvironment, isSideEffectEnabled, parseBooleanEnvironmentValue, v
 
 type ResearchFetch = typeof fetch;
 export type AccountResearchExecutionMode = 'manual' | 'automatic';
+const AUTOMATIC_RATE_LIMIT_RETRIES = 3;
+const MAX_RATE_LIMIT_WAIT_MS = 10_000;
 
 type OpenAIResponse = {
   id?: string;
@@ -102,25 +104,47 @@ export function assertAccountResearchPilotEnabled(env: NodeJS.ProcessEnv = proce
   return { apiKey: env.OPENAI_API_KEY.trim(), runtime };
 }
 
+export function getRateLimitRetryDelayMs(response: Pick<Response, 'headers'>, message: string) {
+  const retryAfter = response.headers.get('retry-after');
+  if (retryAfter) {
+    const seconds = Number(retryAfter);
+    if (Number.isFinite(seconds)) return Math.min(MAX_RATE_LIMIT_WAIT_MS, Math.max(1_000, Math.ceil(seconds * 1_000) + 500));
+    const at = Date.parse(retryAfter);
+    if (Number.isFinite(at)) return Math.min(MAX_RATE_LIMIT_WAIT_MS, Math.max(1_000, at - Date.now() + 500));
+  }
+  const messageDelay = message.match(/try again in\s+([\d.]+)\s*(ms|s)/i);
+  if (messageDelay) {
+    const multiplier = messageDelay[2].toLowerCase() === 'ms' ? 1 : 1_000;
+    return Math.min(MAX_RATE_LIMIT_WAIT_MS, Math.max(1_000, Math.ceil(Number(messageDelay[1]) * multiplier) + 500));
+  }
+  return 5_000;
+}
+
 async function requestOpenAI(path: string, init: RequestInit, fetchImpl: ResearchFetch = fetch, env: NodeJS.ProcessEnv = process.env, mode: AccountResearchExecutionMode = 'manual') {
   const { apiKey } = mode === 'automatic' ? assertAccountResearchAutomationEnabled(env) : assertAccountResearchPilotEnabled(env);
-  const response = await fetchImpl(`https://api.openai.com/v1${path}`, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-      ...(init.headers ?? {}),
-    },
-    signal: AbortSignal.timeout(30_000),
-  });
-  const payload = await response.json().catch(() => ({})) as OpenAIResponse & { error?: { message?: string } };
-  if (!response.ok) {
+  const attempts = mode === 'automatic' ? AUTOMATIC_RATE_LIMIT_RETRIES + 1 : 1;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const response = await fetchImpl(`https://api.openai.com/v1${path}`, {
+      ...init,
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        ...(init.headers ?? {}),
+      },
+      signal: AbortSignal.timeout(30_000),
+    });
+    const payload = await response.json().catch(() => ({})) as OpenAIResponse & { error?: { message?: string } };
+    if (response.ok) return payload;
     const message = payload.error?.message || `OpenAI request failed with HTTP ${response.status}.`;
+    if (response.status === 429 && attempt + 1 < attempts) {
+      await new Promise((resolve) => setTimeout(resolve, getRateLimitRetryDelayMs(response, message)));
+      continue;
+    }
     const error = new Error(message) as Error & { status?: number };
     error.status = response.status;
     throw error;
   }
-  return payload;
+  throw new Error('OpenAI request retry loop ended unexpectedly.');
 }
 
 export async function submitAccountResearch({

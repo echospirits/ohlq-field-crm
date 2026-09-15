@@ -6,7 +6,7 @@ import { AccountResearchJobStatus, AccountResearchPilotStatus } from '@prisma/cl
 import Link from 'next/link';
 import { buildPageMetadata } from '../../../lib/appBrand';
 import { requirePlatformAdmin } from '../../../lib/auth';
-import { ACCOUNT_RESEARCH_AUTOMATIC_DAILY_LIMIT, ACCOUNT_RESEARCH_PILOT_BUDGET_MICROS, ACCOUNT_RESEARCH_PILOT_MAX_ACCOUNTS, ACCOUNT_RESEARCH_SUBMISSION_WAVE_SIZE, formatUsdMicros } from '../../../lib/accountResearchPilot';
+import { ACCOUNT_RESEARCH_AUTOMATIC_DAILY_BUDGET_MICROS, ACCOUNT_RESEARCH_AUTOMATIC_DAILY_LIMIT, ACCOUNT_RESEARCH_MINIMUM_BOTTLES_30, ACCOUNT_RESEARCH_PILOT_BUDGET_MICROS, ACCOUNT_RESEARCH_PILOT_MAX_ACCOUNTS, ACCOUNT_RESEARCH_SUBMISSION_WAVE_SIZE, formatUsdMicros } from '../../../lib/accountResearchPilot';
 import { getAutomaticAccountResearchStatus } from '../../../lib/accountResearchAutomation';
 import { getAccountResearchAutomationAvailability, getAccountResearchPilotAvailability } from '../../../lib/accountResearchOpenAI';
 import { deriveSettledPilotStatus, getLatestAccountResearchPilot } from '../../../lib/accountResearchPilotService';
@@ -124,7 +124,7 @@ export default async function AccountResearchPage({ searchParams }: { searchPara
       </div>
 
       <section className="dashboard-section">
-        <SectionHeading description={`Production checks the queue once daily and paces requests in ${ACCOUNT_RESEARCH_SUBMISSION_WAVE_SIZE}-account groups. It never submits more than ${ACCOUNT_RESEARCH_AUTOMATIC_DAILY_LIMIT} accounts in a UTC day. Opportunity scoring continues independently when sales and CRM activity change.`} title="Automatic research" />
+        <SectionHeading description={`Production checks the queue once daily and durably paces requests in ${ACCOUNT_RESEARCH_SUBMISSION_WAVE_SIZE}-account waves. It never submits more than ${ACCOUNT_RESEARCH_AUTOMATIC_DAILY_LIMIT} accounts or reserves more than ${formatUsdMicros(ACCOUNT_RESEARCH_AUTOMATIC_DAILY_BUDGET_MICROS)} in a UTC day. Opportunity scoring continues independently when sales and CRM activity change.`} title="Automatic research" />
         <article className="card research-workflow-card">
           <div className="research-pilot-summary">
             <div><span className={`status-badge ${automationAvailability.available ? '' : 'muted'}`}>{automationAvailability.available ? 'Enabled' : 'Disabled here'}</span><strong>{automaticStatus.queueCount.toLocaleString()} accounts queued</strong><small>{automaticStatus.submittedToday} of {ACCOUNT_RESEARCH_AUTOMATIC_DAILY_LIMIT} submitted today</small></div>
@@ -132,6 +132,7 @@ export default async function AccountResearchPage({ searchParams }: { searchPara
             <div><strong>{automaticStatus.latestRun ? automaticStatus.latestRun.status.replaceAll('_', ' ').toLowerCase() : 'No automatic run yet'}</strong><small>{automaticStatus.latestRun ? `${formatUsdMicros(automaticStatus.latestRun.estimatedSpendMicros)} estimated · started ${formatEasternDateTime(automaticStatus.latestRun.startedAt)}` : 'The production scheduler will create the first run when enabled.'}</small></div>
           </div>
           {!automationAvailability.available ? <p className="muted">Automatic OpenAI research is intentionally disabled in this environment. Manual test runs remain available.</p> : null}
+          <p className="muted">Accounts below {ACCOUNT_RESEARCH_MINIMUM_BOTTLES_30} bottles in the last 30 days are excluded unless recent tenant pursuit or work activity elevates them.</p>
         </article>
       </section>
 

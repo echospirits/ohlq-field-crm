@@ -9,13 +9,14 @@ import {
   ACCOUNT_RESEARCH_PILOT_MAX_ACCOUNTS,
   ACCOUNT_RESEARCH_SUBMISSION_WAVE_SIZE,
   ACCOUNT_RESEARCH_AUTOMATIC_DAILY_LIMIT,
+  ACCOUNT_RESEARCH_AUTOMATIC_DAILY_BUDGET_MICROS,
   chooseResearchTier,
   estimateResearchCostMicros,
   parseAccountResearchResult,
   validateExactResearchLocation,
   type AccountResearchInputSnapshot,
 } from '../lib/accountResearchPilot';
-import { assertAccountResearchAutomationEnabled, assertAccountResearchEnvironment, assertAccountResearchPilotEnabled, retrieveAccountResearch, submitAccountResearch } from '../lib/accountResearchOpenAI';
+import { assertAccountResearchAutomationEnabled, assertAccountResearchEnvironment, assertAccountResearchPilotEnabled, getRateLimitRetryDelayMs, retrieveAccountResearch, submitAccountResearch } from '../lib/accountResearchOpenAI';
 import { deriveSettledPilotStatus } from '../lib/accountResearchPilotService';
 import { AccountResearchPilotStatus } from '@prisma/client';
 
@@ -46,7 +47,8 @@ it('hard-caps manual tests at 25 accounts and two dollars', () => {
   assert.equal(ACCOUNT_RESEARCH_SUBMISSION_WAVE_SIZE, 25);
   assert.equal(ACCOUNT_RESEARCH_JOB_RESERVE_MICROS, 80_000);
   assert.equal(ACCOUNT_RESEARCH_PILOT_MAX_ACCOUNTS * ACCOUNT_RESEARCH_JOB_RESERVE_MICROS, ACCOUNT_RESEARCH_PILOT_BUDGET_MICROS);
-  assert.equal(ACCOUNT_RESEARCH_AUTOMATIC_DAILY_LIMIT, 100);
+  assert.equal(ACCOUNT_RESEARCH_AUTOMATIC_DAILY_LIMIT, 500);
+  assert.equal(ACCOUNT_RESEARCH_AUTOMATIC_DAILY_BUDGET_MICROS, 40_000_000);
 });
 
 it('reports an all-failed settled pilot as failed instead of complete', () => {
@@ -119,6 +121,12 @@ it('retrieves and validates structured evidence and usage', async () => {
   assert.deepEqual(retrieved.sourceUrls, ['https://example.com/contact']);
 });
 
+it('honors OpenAI retry timing with a bounded buffer', () => {
+  assert.equal(getRateLimitRetryDelayMs(new Response(null, { headers: { 'retry-after': '3.334' } }), ''), 3_834);
+  assert.equal(getRateLimitRetryDelayMs(new Response(null), 'Please try again in 2.5s.'), 3_000);
+  assert.equal(getRateLimitRetryDelayMs(new Response(null, { headers: { 'retry-after': '90' } }), ''), 10_000);
+});
+
 it('scopes waterfall candidates to the selected tenant organization', async () => {
   let query: unknown;
   const db = { wholesaleAccount: { findMany: async (value: unknown) => { query = value; return []; } } } as unknown as PrismaClient;
@@ -136,7 +144,11 @@ it('keeps manual tests Platform Admin protected and schedules a production-gated
   assert.match(actions, /startAccountResearchPilot/);
   assert.match(service, /take = ACCOUNT_RESEARCH_SUBMISSION_WAVE_SIZE/);
   assert.match(service, /The current 25-account wave is still running/);
-  assert.match(service, /setTimeout\(resolve, 15_000\)/);
+  assert.doesNotMatch(service, /setTimeout\(resolve, 15_000\)/);
   const route = readFileSync('app/api/cron/account-research/route.ts', 'utf8');
   assert.match(route, /getAccountResearchAutomationAvailability/);
+  assert.match(route, /start\(runDailyAccountResearchWorkflow\)/);
+  const workflow = readFileSync('lib/accountResearchDailyWorkflow.ts', 'utf8');
+  assert.match(workflow, /'use workflow'/);
+  assert.match(workflow, /sleep\(ACCOUNT_RESEARCH_AUTOMATIC_WAVE_PAUSE\)/);
 });

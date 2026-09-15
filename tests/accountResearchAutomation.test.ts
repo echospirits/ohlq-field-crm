@@ -12,6 +12,7 @@ const candidate = (overrides: Partial<ResearchQueueCandidate> = {}): ResearchQue
   targetPublicResearch: { lastRefreshedAt: daysAgo(40), identitySnapshot: { accountName: 'Example Bar', address: '1 Main St', city: 'Columbus', state: 'OH', zip: '43215' } },
   opportunities: [{ productionScore: 50, status: OpportunityStatus.OPEN, actionedAt: null, lastDetectedAt: daysAgo(1) }],
   upcomingWork: [],
+  bottles30: 100,
   ...overrides,
 });
 
@@ -33,6 +34,19 @@ it('uses other upcoming activity before the routine 90-day refresh', () => {
   assert.equal(classifyResearchNeed(candidate({ upcomingWork: [{ dueDate: new Date(now.getTime() + 5 * 86_400_000), createdAt: daysAgo(2) }] }), now)?.priorityBucket, 5);
   assert.equal(classifyResearchNeed(candidate({ targetPublicResearch: { lastRefreshedAt: daysAgo(91), identitySnapshot: createResearchIdentitySnapshot(candidate()) } }), now)?.priorityBucket, 6);
   assert.equal(classifyResearchNeed(candidate({ targetPublicResearch: { lastRefreshedAt: daysAgo(60), identitySnapshot: createResearchIdentitySnapshot(candidate()) } }), now), null);
+});
+
+it('excludes low-volume accounts unless tenant actions specifically elevate them', () => {
+  assert.equal(classifyResearchNeed(candidate({ bottles30: 39, opportunities: [], targetPublicResearch: null }), now), null);
+  assert.equal(classifyResearchNeed(candidate({ bottles30: 39, name: 'Renamed Bar' }), now), null);
+  assert.equal(classifyResearchNeed(candidate({ bottles30: 39, targetPublicResearch: { lastRefreshedAt: daysAgo(91), identitySnapshot: createResearchIdentitySnapshot(candidate()) } }), now), null);
+
+  const pursued = candidate({
+    bottles30: 0,
+    opportunities: [{ productionScore: 50, status: OpportunityStatus.ACTIONED, actionedAt: daysAgo(0.5), lastDetectedAt: daysAgo(0.5) }],
+  });
+  assert.equal(classifyResearchNeed(pursued, now)?.priorityBucket, 3);
+  assert.equal(classifyResearchNeed(candidate({ bottles30: 0, upcomingWork: [{ dueDate: new Date(now.getTime() + 86_400_000), createdAt: daysAgo(5) }] }), now)?.priorityBucket, 4);
 });
 
 it('refreshes research-driven opportunity scores independently for every entitled tenant', () => {
