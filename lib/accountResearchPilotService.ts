@@ -31,6 +31,16 @@ const ACTIVE_PILOT_STATUSES = [
 const clipError = (error: unknown) => (error instanceof Error ? error.message : String(error)).slice(0, 1_500);
 const isFatalSubmissionError = (error: unknown) => [401, 403, 429].includes(Number((error as { status?: number })?.status));
 
+type PilotJobCounts = Partial<Record<AccountResearchJobStatus, number>>;
+
+export const deriveSettledPilotStatus = (counts: PilotJobCounts) => {
+  const active = (counts.QUEUED ?? 0) + (counts.SUBMITTED ?? 0) + (counts.RUNNING ?? 0);
+  if (active > 0) return null;
+  if ((counts.NEEDS_REVIEW ?? 0) > 0) return AccountResearchPilotStatus.READY_FOR_REVIEW;
+  if ((counts.FAILED ?? 0) + (counts.BLOCKED_BUDGET ?? 0) > 0) return AccountResearchPilotStatus.FAILED;
+  return AccountResearchPilotStatus.COMPLETE;
+};
+
 export async function createAccountResearchPilot({
   organizationId,
   startedByUserId,
@@ -237,14 +247,13 @@ export async function pollAccountResearchPilot({ pilotId, organizationId, db = p
 
 export async function refreshPilotStatus({ pilotId, organizationId, db = prisma }: { pilotId: string; organizationId: string; db?: PrismaClient }) {
   const counts = await db.accountResearchJob.groupBy({ by: ['status'], where: { pilotId, organizationId }, _count: { _all: true } });
-  const count = new Map(counts.map((item) => [item.status, item._count._all]));
-  const active = (count.get(AccountResearchJobStatus.QUEUED) ?? 0) + (count.get(AccountResearchJobStatus.SUBMITTED) ?? 0) + (count.get(AccountResearchJobStatus.RUNNING) ?? 0);
-  const review = count.get(AccountResearchJobStatus.NEEDS_REVIEW) ?? 0;
+  const count = Object.fromEntries(counts.map((item) => [item.status, item._count._all])) as PilotJobCounts;
   const current = await db.accountResearchPilot.findFirst({ where: { id: pilotId, organizationId }, select: { status: true } });
   if (!current) return;
-  if (active > 0) return;
-  const status = review > 0 ? AccountResearchPilotStatus.READY_FOR_REVIEW : AccountResearchPilotStatus.COMPLETE;
-  await db.accountResearchPilot.update({ where: { id: pilotId }, data: { status, completedAt: status === AccountResearchPilotStatus.COMPLETE ? new Date() : null } });
+  const status = deriveSettledPilotStatus(count);
+  if (!status) return;
+  const isTerminal = status === AccountResearchPilotStatus.COMPLETE || status === AccountResearchPilotStatus.FAILED;
+  await db.accountResearchPilot.update({ where: { id: pilotId }, data: { status, completedAt: isTerminal ? new Date() : null } });
 }
 
 export async function approveAccountResearchJob({

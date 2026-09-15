@@ -14,6 +14,8 @@ import {
   type AccountResearchInputSnapshot,
 } from '../lib/accountResearchPilot';
 import { assertAccountResearchPilotEnabled, retrieveAccountResearch, submitAccountResearch } from '../lib/accountResearchOpenAI';
+import { deriveSettledPilotStatus } from '../lib/accountResearchPilotService';
+import { AccountResearchPilotStatus } from '@prisma/client';
 
 const staging = (): NodeJS.ProcessEnv => ({
   NODE_ENV: 'production', APP_ENV: 'test', APP_BASE_URL: 'https://tst.example.com',
@@ -41,6 +43,13 @@ it('hard-caps the pilot at fifty forty-cent reservations and twenty dollars', ()
   assert.equal(ACCOUNT_RESEARCH_PILOT_MAX_ACCOUNTS, 50);
   assert.equal(ACCOUNT_RESEARCH_JOB_RESERVE_MICROS, 400_000);
   assert.equal(ACCOUNT_RESEARCH_PILOT_MAX_ACCOUNTS * ACCOUNT_RESEARCH_JOB_RESERVE_MICROS, ACCOUNT_RESEARCH_PILOT_BUDGET_MICROS);
+});
+
+it('reports an all-failed settled pilot as failed instead of complete', () => {
+  assert.equal(deriveSettledPilotStatus({ FAILED: 50 }), AccountResearchPilotStatus.FAILED);
+  assert.equal(deriveSettledPilotStatus({ NEEDS_REVIEW: 2, FAILED: 1 }), AccountResearchPilotStatus.READY_FOR_REVIEW);
+  assert.equal(deriveSettledPilotStatus({ APPROVED: 49, REJECTED: 1 }), AccountResearchPilotStatus.COMPLETE);
+  assert.equal(deriveSettledPilotStatus({ RUNNING: 1, FAILED: 49 }), null);
 });
 
 it('restricts automated research to an explicitly enabled test environment', () => {

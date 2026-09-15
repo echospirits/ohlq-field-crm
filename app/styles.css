@@ -2447,6 +2447,17 @@ fieldset {
   margin: 0;
 }
 
+.research-pilot-failure {
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--warning) 45%, var(--border));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--warning) 9%, var(--panel));
+}
+
+.research-pilot-failure p {
+  margin: 4px 0 0;
+}
+
 .status-badge {
   display: inline-flex;
   align-self: flex-start;

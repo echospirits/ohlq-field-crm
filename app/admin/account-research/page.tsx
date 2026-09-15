@@ -9,7 +9,7 @@ import { requirePlatformAdmin } from '../../../lib/auth';
 import { getAccountResearchQueue, PURSUED_RESEARCH_DAYS, STANDARD_RESEARCH_DAYS } from '../../../lib/accountResearch';
 import { formatUsdMicros, parseAccountResearchResult, type LocationValidation } from '../../../lib/accountResearchPilot';
 import { getAccountResearchPilotAvailability } from '../../../lib/accountResearchOpenAI';
-import { getLatestAccountResearchPilot } from '../../../lib/accountResearchPilotService';
+import { deriveSettledPilotStatus, getLatestAccountResearchPilot } from '../../../lib/accountResearchPilotService';
 import { formatEasternDateTime } from '../../../lib/dateTime';
 import { prisma } from '../../../lib/prisma';
 import { requireFeatureForUser, requireOrganizationContext } from '../../../lib/organizations';
@@ -43,6 +43,19 @@ const safeResult = (value: unknown) => {
   try { return parseAccountResearchResult(value); } catch { return null; }
 };
 const jobStatusLabel = (status: AccountResearchJobStatus) => status.replaceAll('_', ' ').toLowerCase();
+const friendlyPilotError = (errors: Array<string | null>) => {
+  const error = errors.find(Boolean) ?? '';
+  if (/no credits remaining|insufficient_quota|billing quota|run out of credits/i.test(error)) {
+    return 'OpenAI API credits were unavailable when this pilot ran. No research was applied. After adding credits, start a new pilot below.';
+  }
+  if (/rate.limit|requests.per.minute|tokens.per.minute/i.test(error)) {
+    return 'OpenAI temporarily rate-limited this pilot. No failed result was applied. Start a new pilot when capacity is available.';
+  }
+  if (/401|invalid.api.key|authentication/i.test(error)) {
+    return 'OpenAI could not authenticate the test API key. No research was applied. Correct the key before starting a new pilot.';
+  }
+  return 'One or more research jobs failed. No failed result was applied. Review the job ledger for details, then start a new pilot when the issue is resolved.';
+};
 
 export default async function AccountResearchPage({ searchParams }: { searchParams?: Promise<PageParams> }) {
   const user = await requirePlatformAdmin();
@@ -62,6 +75,13 @@ export default async function AccountResearchPage({ searchParams }: { searchPara
   const reviewJobs = pilot?.jobs.filter((job) => job.status === AccountResearchJobStatus.NEEDS_REVIEW) ?? [];
   const queuedJobs = counts.get(AccountResearchJobStatus.QUEUED) ?? 0;
   const runningJobs = (counts.get(AccountResearchJobStatus.SUBMITTED) ?? 0) + (counts.get(AccountResearchJobStatus.RUNNING) ?? 0);
+  const failedJobs = (counts.get(AccountResearchJobStatus.FAILED) ?? 0) + (counts.get(AccountResearchJobStatus.BLOCKED_BUDGET) ?? 0);
+  const settledStatus = pilot ? deriveSettledPilotStatus(Object.fromEntries(counts)) : null;
+  const displayedPilotStatus = settledStatus ?? pilot?.status;
+  const canStartNewPilot = !pilot
+    || displayedPilotStatus === AccountResearchPilotStatus.COMPLETE
+    || displayedPilotStatus === AccountResearchPilotStatus.FAILED
+    || displayedPilotStatus === AccountResearchPilotStatus.CANCELLED;
 
   return (
     <>
@@ -88,14 +108,17 @@ export default async function AccountResearchPage({ searchParams }: { searchPara
         ) : (
           <article className="card research-workflow-card">
             <div className="research-pilot-summary">
-              <div><span className="status-badge">{pilot.status.replaceAll('_', ' ').toLowerCase()}</span><strong>{pilot.maxAccounts} account pilot</strong><small>Started {formatEasternDateTime(pilot.startedAt)}</small></div>
+              <div><span className={`status-badge ${displayedPilotStatus === AccountResearchPilotStatus.FAILED ? 'warning' : ''}`}>{displayedPilotStatus?.replaceAll('_', ' ').toLowerCase()}</span><strong>{pilot.maxAccounts} account pilot</strong><small>Started {formatEasternDateTime(pilot.startedAt)}</small></div>
               <div><strong>{formatUsdMicros(pilot.estimatedSpendMicros)} estimated</strong><small>{formatUsdMicros(pilot.reservedMicros)} still reserved · {formatUsdMicros(pilot.budgetLimitMicros)} ceiling</small></div>
-              <div><strong>{runningJobs} running · {reviewJobs.length} awaiting review</strong><small>{queuedJobs} queued · {counts.get(AccountResearchJobStatus.APPROVED) ?? 0} approved · {counts.get(AccountResearchJobStatus.REJECTED) ?? 0} rejected</small></div>
+              <div><strong>{runningJobs} running · {reviewJobs.length} awaiting review</strong><small>{queuedJobs} queued · {failedJobs} failed · {counts.get(AccountResearchJobStatus.APPROVED) ?? 0} approved · {counts.get(AccountResearchJobStatus.REJECTED) ?? 0} rejected</small></div>
             </div>
+            {failedJobs > 0 ? <div className="research-pilot-failure" role="alert"><strong>{failedJobs} research job{failedJobs === 1 ? '' : 's'} failed</strong><p>{friendlyPilotError(pilot.jobs.map((job) => job.error))}</p></div> : null}
             <div className="segmented-submit research-pilot-actions">
               {runningJobs > 0 ? <form action={checkAccountResearchPilot}><input name="pilotId" type="hidden" value={pilot.id} /><button type="submit">Check research results</button></form> : null}
               {pilot.status === AccountResearchPilotStatus.PAUSED && queuedJobs > 0 ? <form action={continueAccountResearchPilot}><input name="pilotId" type="hidden" value={pilot.id} /><button className="secondary" type="submit">Retry queued accounts</button></form> : null}
+              {canStartNewPilot ? <form action={startAccountResearchPilot}><button type="submit" disabled={!availability.available}>Start new guarded 50-account pilot</button></form> : null}
             </div>
+            {canStartNewPilot && !availability.available ? <p className="danger-text">A new pilot is unavailable: {availability.appEnvironment !== 'test' ? 'automated research is test-only' : !availability.enabled ? 'ACCOUNT_RESEARCH_PILOT_ENABLED is off' : !availability.hasKey ? 'the test OpenAI key is missing' : availability.configurationError}.</p> : null}
             <p className="muted">Costs are metered estimates from response tokens and web-search calls. The application never reserves more than $20; the OpenAI project budget remains the final billing backstop.</p>
           </article>
         )}
@@ -130,7 +153,7 @@ export default async function AccountResearchPage({ searchParams }: { searchPara
               })}
             </div>
           )}
-          <details className="card research-evidence-disclosure research-job-ledger"><summary>View all {pilot.jobs.length} pilot jobs and costs</summary><div className="research-job-list">{pilot.jobs.map((job) => <div key={job.id}><span><strong>#{job.priority} {job.wholesaleAccount.name}</strong><small>{job.reason}</small></span><span><strong>{jobStatusLabel(job.status)}</strong><small>{formatUsdMicros(job.estimatedCostMicros)} · {job.webSearchCalls} searches</small></span></div>)}</div></details>
+          <details className="card research-evidence-disclosure research-job-ledger"><summary>View all {pilot.jobs.length} pilot jobs, errors, and costs</summary><div className="research-job-list">{pilot.jobs.map((job) => <div key={job.id}><span><strong>#{job.priority} {job.wholesaleAccount.name}</strong><small>{job.reason}</small>{job.error ? <small className="danger-text">{job.error}</small> : null}</span><span><strong>{jobStatusLabel(job.status)}</strong><small>{formatUsdMicros(job.estimatedCostMicros)} · {job.webSearchCalls} searches</small></span></div>)}</div></details>
         </section>
       ) : null}
 
