@@ -38,6 +38,7 @@ const result = {
   researchedAt: '2026-09-14', websiteUrl: 'https://example.com/', cocktailMenuUrl: null, localBrandsOnMenu: [],
   patioOutdoor: 'Unknown', cocktailProgram: 'Moderate', events: null, popularitySignal: 'High', openStatus: 'Open',
   googleRating: 4.6, googleReviewCount: 400, yelpRating: null, yelpReviewCount: null, isNationalChain: false,
+  googleHours: [{ day: 'Monday', hours: '11:00 AM–10:00 PM' }],
   ownershipVerification: 'Independent', buyerStructure: 'Local', notes: 'Exact address supported.', confidence: 'HIGH',
   evidence: [{ field: 'identity', claim: 'The listing uses 123 W Main St.', sourceUrl: 'https://example.com/contact', sourceTitle: 'Contact', exactLocation: true }],
 };
@@ -86,6 +87,12 @@ it('requires exact street number, city, ZIP, model verdict, and location evidenc
   assert.equal(validateExactResearchLocation(input, { ...parsed, evidence: parsed.evidence.map((item) => ({ ...item, exactLocation: false })) }).exact, false);
 });
 
+it('keeps pre-hours research responses readable during deployment', () => {
+  const legacy = { ...result } as Partial<typeof result>;
+  delete legacy.googleHours;
+  assert.deepEqual(parseAccountResearchResult(legacy).googleHours, []);
+});
+
 it('records a deterministic token and search-call cost estimate', () => {
   assert.equal(estimateResearchCostMicros({ inputTokens: 1_000, outputTokens: 500, webSearchCalls: 2 }), 20_800);
 });
@@ -117,6 +124,7 @@ it('retrieves and validates structured evidence and usage', async () => {
   }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   const retrieved = await retrieveAccountResearch({ responseId: 'resp_1', fetchImpl: fetchImpl as typeof fetch, env: staging() });
   assert.equal(retrieved.result?.identity.verdict, 'EXACT');
+  assert.deepEqual(retrieved.result?.googleHours, [{ day: 'Monday', hours: '11:00 AM–10:00 PM' }]);
   assert.equal(retrieved.webSearchCalls, 1);
   assert.deepEqual(retrieved.sourceUrls, ['https://example.com/contact']);
 });
@@ -153,10 +161,15 @@ it('keeps manual tests Platform Admin protected and schedules a production-gated
   assert.match(workflow, /sleep\(ACCOUNT_RESEARCH_AUTOMATIC_WAVE_PAUSE\)/);
   const automation = readFileSync('lib/accountResearchAutomation.ts', 'utf8');
   assert.match(automation, /settledWaveThisPass/);
+  assert.match(automation, /remainingRunCapacity/);
+  assert.doesNotMatch(automation, /ACCOUNT_RESEARCH_AUTOMATIC_DAILY_LIMIT - submittedToday/);
   assert.match(automation, /activeJobs === 0 && !settledWaveThisPass/);
   const page = readFileSync('app/admin/account-research/page.tsx', 'utf8');
   assert.match(page, /const researchWhere = \{ lastRefreshedAt: \{ not: null as null \} \}/);
   assert.match(page, /orderBy: \[\{ updatedAt: 'desc' \}/);
   assert.match(page, /formatEasternDateTime\(item\.updatedAt\)/);
   assert.doesNotMatch(page, /const researchWhere = .*opportunities/);
+  const dailyWorkflow = readFileSync('lib/accountResearchDailyWorkflow.ts', 'utf8');
+  assert.match(dailyWorkflow, /submittedThisRun/);
+  assert.match(dailyWorkflow, /runLimit: ACCOUNT_RESEARCH_AUTOMATIC_DAILY_LIMIT/);
 });

@@ -320,7 +320,7 @@ export async function autoResolveAccountResearchJobs({
           city: input.city,
           state: input.state,
           zip: input.zip,
-        }),
+        }, result.googleHours),
       };
       await tx.targetPublicResearch.upsert({
         where: { wholesaleAccountId: job.wholesaleAccountId },
@@ -478,7 +478,7 @@ export async function approveAccountResearchJob({
           city: input.city,
           state: input.state,
           zip: input.zip,
-        }),
+        }, result.googleHours),
       },
       update: {
         researchStatus: 'Reviewed pilot research',
@@ -514,7 +514,7 @@ export async function approveAccountResearchJob({
           city: input.city,
           state: input.state,
           zip: input.zip,
-        }),
+        }, result.googleHours),
       },
     });
     await tx.accountResearchJob.update({

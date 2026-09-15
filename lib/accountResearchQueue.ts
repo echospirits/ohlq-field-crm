@@ -1,5 +1,6 @@
 import { AccountResearchJobStatus, OpportunityStatus, WorklistStatus, type PrismaClient } from '@prisma/client';
 import { ACCOUNT_RESEARCH_MINIMUM_BOTTLES_30 } from './accountResearchPilot';
+import type { AccountResearchResult } from './accountResearchPilot';
 import { prisma } from './prisma';
 
 const DAY = 86_400_000;
@@ -16,6 +17,7 @@ export type ResearchIdentitySnapshot = {
   city: string | null;
   state: string | null;
   zip: string | null;
+  googleHours?: AccountResearchResult['googleHours'];
 };
 
 export type ResearchQueueCandidate = {
@@ -42,13 +44,29 @@ const normalized = (value: string | null | undefined) => (value ?? '').trim().to
 const ageCutoff = (now: Date, days: number) => new Date(now.getTime() - days * DAY);
 const isOlderThan = (value: Date | null | undefined, cutoff: Date) => !value || value < cutoff;
 
-export const createResearchIdentitySnapshot = (candidate: Pick<ResearchQueueCandidate, 'name' | 'address' | 'city' | 'state' | 'zip'>): ResearchIdentitySnapshot => ({
+export const createResearchIdentitySnapshot = (
+  candidate: Pick<ResearchQueueCandidate, 'name' | 'address' | 'city' | 'state' | 'zip'>,
+  googleHours?: AccountResearchResult['googleHours'],
+): ResearchIdentitySnapshot => ({
   accountName: candidate.name,
   address: candidate.address,
   city: candidate.city,
   state: candidate.state,
   zip: candidate.zip,
+  ...(googleHours ? { googleHours } : {}),
 });
+
+export const readGoogleHours = (snapshot: unknown): AccountResearchResult['googleHours'] => {
+  if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) return [];
+  const hours = (snapshot as Partial<ResearchIdentitySnapshot>).googleHours;
+  if (!Array.isArray(hours)) return [];
+  return hours.filter((item): item is AccountResearchResult['googleHours'][number] => (
+    Boolean(item)
+    && typeof item === 'object'
+    && typeof item.day === 'string'
+    && typeof item.hours === 'string'
+  ));
+};
 
 export const hasResearchIdentityChanged = (
   candidate: Pick<ResearchQueueCandidate, 'name' | 'address' | 'city' | 'state' | 'zip'>,

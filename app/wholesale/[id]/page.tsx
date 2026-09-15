@@ -26,6 +26,7 @@ import { listWholesaleOrders } from '../../../lib/wholesaleOrders';
 import { formatOrderCurrency } from '../../wholesale-orders/orderPresentation';
 import { AccountMemoryPanel } from '../../account-memory/AccountMemoryPanel';
 import { getCommunicationTitle } from '../../../lib/accountMemory';
+import { readGoogleHours } from '../../../lib/accountResearchQueue';
 
 const formatVisitDate = (date: Date | null | undefined) => formatEasternDate(date) || 'No visits yet';
 const getMergedWholesaleAccountIds = async (accountId: string) => {
@@ -105,6 +106,7 @@ export default async function WholesaleActivityPage({
         orderBy: [{ isPrimary: 'desc' }, { licenseeId: 'asc' }],
         select: { licenseeId: true },
       },
+      targetPublicResearch: { select: { identitySnapshot: true } },
     },
   });
 
@@ -245,6 +247,7 @@ export default async function WholesaleActivityPage({
   const contactMap = Object.fromEntries(contacts.map((contact) => [contact.id, contact.name]));
   const latestVisitAt = visits[0]?.visitAt;
   const actionUsers = users.filter((activeUser) => activeUser.isActive && activeUser.role !== UserRole.TASTER).map((activeUser) => ({ id: activeUser.id, name: getUserDisplayName(activeUser) }));
+  const googleHours = readGoogleHours(account.targetPublicResearch?.identitySnapshot);
 
   return (
     <>
@@ -289,7 +292,7 @@ export default async function WholesaleActivityPage({
 
       <AccountMemoryPanel accountId={account.id} accountType="WHOLESALE" contacts={accountContacts} notes={overlay?.notes ?? null} returnTo={`/wholesale/${account.id}`} />
 
-      <AnchoredDetails className="account-overview-details account-workspace-section" id="overview" summary="Account details, visit totals & tags">
+      <AnchoredDetails className="account-overview-details account-workspace-section" id="overview" initialOpen summary="Account details, visit totals & tags">
       <div className="grid account-summary-grid account-workspace-section">
         <div className="card metric-card">
           <h3>Logged visits</h3>
@@ -322,6 +325,10 @@ export default async function WholesaleActivityPage({
             <strong>Delivery day</strong>
             <span>{account.deliveryDay}</span>
           </p>
+          <div className="account-business-hours">
+            <strong>Current hours</strong>
+            {googleHours.length ? <dl>{googleHours.map((item) => <div key={item.day}><dt>{item.day}</dt><dd>{item.hours}</dd></div>)}</dl> : <span className="muted">Not yet confirmed from Google</span>}
+          </div>
         </div>
         <AccountTagPanel
           assignments={account.tags}

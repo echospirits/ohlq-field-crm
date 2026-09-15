@@ -17,6 +17,14 @@ test('Wholesale activity timeline loads only the viewing tenant portfolio purcha
   assert.match(panel, /where: \{ organizationId, wholesaleAccountId, \.\.\.getTenantAccountSalesEventWhere\(tenantConfig\) \}/);
 });
 
+test('Wholesale account overview opens by default and displays researched Google hours', () => {
+  const page = readFileSync('app/wholesale/[id]/page.tsx', 'utf8');
+  assert.match(page, /id="overview" initialOpen summary="Account details, visit totals & tags"/);
+  assert.match(page, /readGoogleHours\(account\.targetPublicResearch\?\.identitySnapshot\)/);
+  assert.match(page, />Current hours</);
+  assert.match(page, /Not yet confirmed from Google/);
+});
+
 test('Wholesale opportunity intelligence shows the tenant-scoped production score', () => {
   const panel = readFileSync('app/wholesale/OpportunityAccountPanel.tsx', 'utf8');
 

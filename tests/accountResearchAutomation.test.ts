@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { it } from 'node:test';
 import { OpportunityStatus } from '@prisma/client';
-import { classifyResearchNeed, createResearchIdentitySnapshot, hasResearchIdentityChanged, type ResearchQueueCandidate } from '../lib/accountResearchQueue';
+import { classifyResearchNeed, createResearchIdentitySnapshot, hasResearchIdentityChanged, readGoogleHours, type ResearchQueueCandidate } from '../lib/accountResearchQueue';
 
 const now = new Date('2026-09-15T16:00:00.000Z');
 const daysAgo = (days: number) => new Date(now.getTime() - days * 86_400_000);
@@ -53,4 +53,10 @@ it('refreshes research-driven opportunity scores independently for every entitle
   const scoring = readFileSync('lib/accountResearchScoring.ts', 'utf8');
   assert.match(scoring, /featureKey: 'ADVANCED_INTELLIGENCE'/);
   assert.match(scoring, /organizationId: scope\.id/);
+});
+
+it('stores and reads structured Google hours without changing identity comparisons', () => {
+  const snapshot = createResearchIdentitySnapshot(candidate(), [{ day: 'Monday', hours: '11:00 AM–10:00 PM' }]);
+  assert.deepEqual(readGoogleHours(snapshot), [{ day: 'Monday', hours: '11:00 AM–10:00 PM' }]);
+  assert.equal(hasResearchIdentityChanged(candidate(), snapshot), false);
 });

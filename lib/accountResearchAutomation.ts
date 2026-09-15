@@ -87,12 +87,19 @@ async function createAutomaticRun({ db, now, maxAccounts }: { db: PrismaClient; 
   });
 }
 
-export async function runAutomaticAccountResearch({ db = prisma, now = new Date(), submissionTake = ACCOUNT_RESEARCH_SUBMISSION_WAVE_SIZE }: { db?: PrismaClient; now?: Date; submissionTake?: number } = {}) {
+export async function runAutomaticAccountResearch({
+  db = prisma,
+  now = new Date(),
+  submissionTake = ACCOUNT_RESEARCH_SUBMISSION_WAVE_SIZE,
+  remainingRunCapacity = ACCOUNT_RESEARCH_AUTOMATIC_DAILY_LIMIT,
+}: {
+  db?: PrismaClient;
+  now?: Date;
+  submissionTake?: number;
+  remainingRunCapacity?: number;
+} = {}) {
   assertAccountResearchAutomationEnabled();
-  const submittedToday = await db.accountResearchJob.count({
-    where: { submittedAt: { gte: startOfUtcDay(now) }, pilot: { startedByUserId: ACCOUNT_RESEARCH_AUTOMATIC_RUN_ACTOR } },
-  });
-  let remainingToday = Math.max(0, ACCOUNT_RESEARCH_AUTOMATIC_DAILY_LIMIT - submittedToday);
+  let remainingCapacity = Math.max(0, Math.min(ACCOUNT_RESEARCH_AUTOMATIC_DAILY_LIMIT, remainingRunCapacity));
   let run = await db.accountResearchPilot.findFirst({
     where: { startedByUserId: ACCOUNT_RESEARCH_AUTOMATIC_RUN_ACTOR, status: { in: ACTIVE_RUN_STATUSES } },
     orderBy: { startedAt: 'asc' },
@@ -104,10 +111,10 @@ export async function runAutomaticAccountResearch({ db = prisma, now = new Date(
     const current = await db.accountResearchPilot.findUnique({ where: { id: run.id }, select: { status: true } });
     if (!current || !ACTIVE_RUN_STATUSES.includes(current.status)) run = null;
   }
-  if (!run && remainingToday > 0) run = await createAutomaticRun({ db, now, maxAccounts: Math.min(ACCOUNT_RESEARCH_AUTOMATIC_DAILY_LIMIT, remainingToday) });
-  if (!run || remainingToday === 0) {
+  if (!run && remainingCapacity > 0) run = await createAutomaticRun({ db, now, maxAccounts: remainingCapacity });
+  if (!run || remainingCapacity === 0) {
     const status = await getAutomaticAccountResearchStatus({ db, now });
-    return { ...status, poll, submitted: 0, dailyLimitReached: remainingToday === 0 };
+    return { ...status, poll, submitted: 0, runLimitReached: remainingCapacity === 0 };
   }
   const activeJobs = await db.accountResearchJob.count({ where: { pilotId: run.id, status: { in: ACTIVE_JOB_STATUSES } } });
   const settledWaveThisPass = Boolean(poll && poll.checked > 0 && activeJobs === 0);
@@ -118,10 +125,10 @@ export async function runAutomaticAccountResearch({ db = prisma, now = new Date(
       organizationId: run.organizationId,
       db,
       mode: 'automatic',
-      take: Math.min(remainingToday, submissionTake),
+      take: Math.min(remainingCapacity, submissionTake),
     });
-    remainingToday -= submission.submitted;
+    remainingCapacity -= submission.submitted;
   }
   const status = await getAutomaticAccountResearchStatus({ db, now });
-  return { ...status, poll, ...submission, coolingDown: settledWaveThisPass, dailyLimitReached: remainingToday === 0 };
+  return { ...status, poll, ...submission, coolingDown: settledWaveThisPass, runLimitReached: remainingCapacity === 0 };
 }
