@@ -154,4 +154,9 @@ it('keeps manual tests Platform Admin protected and schedules a production-gated
   const automation = readFileSync('lib/accountResearchAutomation.ts', 'utf8');
   assert.match(automation, /settledWaveThisPass/);
   assert.match(automation, /activeJobs === 0 && !settledWaveThisPass/);
+  const page = readFileSync('app/admin/account-research/page.tsx', 'utf8');
+  assert.match(page, /const researchWhere = \{ lastRefreshedAt: \{ not: null as null \} \}/);
+  assert.match(page, /orderBy: \[\{ updatedAt: 'desc' \}/);
+  assert.match(page, /formatEasternDateTime\(item\.updatedAt\)/);
+  assert.doesNotMatch(page, /const researchWhere = .*opportunities/);
 });

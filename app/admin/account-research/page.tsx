@@ -64,20 +64,22 @@ export default async function AccountResearchPage({ searchParams }: { searchPara
   const params = (await searchParams) ?? {};
   const requestedHistoryPage = Number.parseInt(params.historyPage ?? '1', 10);
   const historyPage = Number.isFinite(requestedHistoryPage) && requestedHistoryPage > 0 ? requestedHistoryPage : 1;
-  const researchWhere = { lastRefreshedAt: { not: null as null }, wholesaleAccount: { opportunities: { some: { organizationId } } } };
+  // Public account research is shared reference data, so Platform Admin history
+  // must include researched accounts even before a tenant opportunity exists.
+  const researchWhere = { lastRefreshedAt: { not: null as null } };
   const [automaticStatus, latestResearch, completedCount, pilot, researchHistoryCount, researchHistory] = await Promise.all([
     getAutomaticAccountResearchStatus(),
-    prisma.targetPublicResearch.findFirst({ where: { lastRefreshedAt: { not: null }, wholesaleAccount: { opportunities: { some: { organizationId } } } }, orderBy: { lastRefreshedAt: 'desc' }, select: { lastRefreshedAt: true } }),
-    prisma.targetPublicResearch.count({ where: { refreshStatus: 'COMPLETE', wholesaleAccount: { opportunities: { some: { organizationId } } } } }),
+    prisma.targetPublicResearch.findFirst({ where: researchWhere, orderBy: { updatedAt: 'desc' }, select: { updatedAt: true } }),
+    prisma.targetPublicResearch.count({ where: { refreshStatus: 'COMPLETE' } }),
     getLatestAccountResearchPilot({ organizationId }),
     prisma.targetPublicResearch.count({ where: researchWhere }),
     prisma.targetPublicResearch.findMany({
       where: researchWhere,
-      orderBy: [{ lastRefreshedAt: 'desc' }, { wholesaleAccount: { name: 'asc' } }],
+      orderBy: [{ updatedAt: 'desc' }, { wholesaleAccount: { name: 'asc' } }],
       skip: (historyPage - 1) * RESEARCH_HISTORY_PAGE_SIZE,
       take: RESEARCH_HISTORY_PAGE_SIZE,
       select: {
-        lastRefreshedAt: true,
+        updatedAt: true,
         researchResponseId: true,
         researcher: true,
         wholesaleAccount: { select: {
@@ -119,8 +121,8 @@ export default async function AccountResearchPage({ searchParams }: { searchPara
 
       <div className="grid target-import-stats">
         <div className="card metric-card"><h3>Needing intelligence</h3><p className="metric-value">{automaticStatus.queueCount}</p><p className="muted">Prioritized across all tenant activity; oldest routine refreshes come last</p></div>
-        <div className="card metric-card"><h3>Accounts researched</h3><p className="metric-value">{completedCount}</p><p className="muted">Accounts relevant to this tenant</p></div>
-        <div className="card metric-card"><h3>Latest refresh</h3><p className="metric-value metric-date">{formatEasternDateTime(latestResearch?.lastRefreshedAt) || 'Never'}</p></div>
+        <div className="card metric-card"><h3>Accounts researched</h3><p className="metric-value">{completedCount}</p><p className="muted">Completed public research across all accounts</p></div>
+        <div className="card metric-card"><h3>Latest update</h3><p className="metric-value metric-date">{formatEasternDateTime(latestResearch?.updatedAt) || 'Never'}</p></div>
       </div>
 
       <section className="dashboard-section">
@@ -166,11 +168,11 @@ export default async function AccountResearchPage({ searchParams }: { searchPara
       </section>
 
       <section className="dashboard-section" id="research-history">
-        <SectionHeading description={`${researchHistoryCount.toLocaleString()} tenant-relevant accounts have current research. Automated costs are estimates from the associated API response.`} title="Account research history" />
+        <SectionHeading description={`${researchHistoryCount.toLocaleString()} accounts have saved research. Automated costs are estimates from the associated API response.`} title="Account research history" />
         {researchHistory.length === 0 ? <div className="card empty-state"><h3>No completed research yet</h3><p>Completed, validated account research will appear here.</p></div> : <div className="card research-job-list">{researchHistory.map((item) => {
           const latestJob = item.wholesaleAccount.accountResearchJobs[0];
           const cost = latestJob?.responseId === item.researchResponseId ? latestJob.estimatedCostMicros : undefined;
-          return <div key={item.wholesaleAccount.id}><span><strong><Link href={`/wholesale/${item.wholesaleAccount.id}`}>{item.wholesaleAccount.name}</Link></strong><small>{[item.wholesaleAccount.city, item.wholesaleAccount.licenseeId].filter(Boolean).join(' · ')}</small></span><span><strong>{formatEasternDateTime(item.lastRefreshedAt)}</strong><small>{cost === undefined ? item.researcher ?? 'Imported research' : `${formatUsdMicros(cost)} estimated cost`}</small></span></div>;
+          return <div key={item.wholesaleAccount.id}><span><strong><Link href={`/wholesale/${item.wholesaleAccount.id}`}>{item.wholesaleAccount.name}</Link></strong><small>{[item.wholesaleAccount.city, item.wholesaleAccount.licenseeId].filter(Boolean).join(' · ')}</small></span><span><strong>{formatEasternDateTime(item.updatedAt)}</strong><small>{cost === undefined ? item.researcher ?? 'Imported research' : `${formatUsdMicros(cost)} estimated cost`}</small></span></div>;
         })}</div>}
         {researchHistoryCount > RESEARCH_HISTORY_PAGE_SIZE ? <nav aria-label="Research history pages" className="pagination-actions">
           {historyPage > 1 ? <Link className="btn secondary" href={`/admin/account-research?historyPage=${historyPage - 1}#research-history`}>Newer updates</Link> : <span />}
