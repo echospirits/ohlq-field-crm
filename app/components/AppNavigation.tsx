@@ -66,10 +66,9 @@ function AdministrationMenu({ enabledFeatures, hasOrganizationAdminAccess, isPla
   const groups = getAdministrationNavigationGroups(enabledFeatures, isPlatformAdmin, hasOrganizationAdminAccess);
   const isActive = pathname === '/users' || pathname === '/platform' || pathname.startsWith('/admin/') || pathname.startsWith('/platform/');
 
-  return <details className={`app-nav-disclosure${isActive ? ' is-active' : ''}`}>
+  return <details className={`app-nav-disclosure${isActive ? ' is-active' : ''}`} open={isActive || undefined}>
     <summary><span>Administration</span><span aria-hidden="true" className="app-nav-disclosure-arrow">›</span></summary>
     <div className="app-admin-menu">
-      <div className="app-admin-menu-heading"><strong>Administration</strong><span>Manage Neat outside daily field work.</span></div>
       <div className="app-admin-menu-groups">
         {groups.map((group) => <section className="app-admin-menu-group" key={group.label}>
           <p className="app-nav-label">{group.label}</p>

@@ -13,7 +13,7 @@ aside a { min-height: 40px; padding: 9px 12px; font-size: 13px; font-weight: 550
 aside a[aria-current="page"], .mobile-tabbar a[aria-current="page"] { color: var(--text); background: var(--sage); border-color: transparent; }
 aside a.app-nav-primary { background: var(--action); color: white; border: 0; box-shadow: none; min-height: 44px; }
 .user-card { gap: 5px; margin-top: 24px; }
-.app-admin-menu, .mobile-more-menu { background: #fffefa; box-shadow: 0 8px 32px #28301e1f; }
+.mobile-more-menu { background: #fffefa; box-shadow: 0 8px 32px #28301e1f; }
 h1 { font-size: 34px; font-weight: 650; letter-spacing: -.045em; }
 h2 { font-size: 22px; font-weight: 620; letter-spacing: -.025em; }
 h3 { font-weight: 620; }
