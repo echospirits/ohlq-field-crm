@@ -16,11 +16,13 @@ it('refreshes a pursued product without replacing its detection snapshot or conv
     { itemCode: 'B', name: 'Tenant Vodka', category: 'Vodka', retailPrice: 10, productVolume: 25.4, solItemStatusCode: '70' },
     { itemCode: 'C', name: 'Competitor Rum', category: 'Rum', retailPrice: 30, productVolume: 25.4, solItemStatusCode: '70' },
   ];
+  let availableItemCodes = ['A', 'B'];
   const db = {
     organization: { findUnique: async () => ({ id: 'tenant', appName: 'CRM', digestName: 'CRM', displayName: 'Tenant', productLabel: 'Tenant', productPluralLabel: 'Tenant products', products: [{ externalItemCode: 'A' }, { externalItemCode: 'B' }], vendorIdentifiers: [] }) },
     ohlqBrandMasterItem: { findMany: async () => catalog },
     organizationProduct: { findMany: async () => [{ externalItemCode: 'A' }, { externalItemCode: 'B' }] },
-    ohlqTenantInventoryImportStatus: { findFirst: async () => null },
+    ohlqTenantInventoryImportStatus: { findFirst: async () => ({ diagnostics: {} }) },
+    ohlqAgencyInventoryCurrent: { findMany: async () => availableItemCodes.map(itemCode => ({ itemCode })) },
     wholesaleAccount: { findMany: async ({ select }: { select: Record<string, unknown> }) => select.licenseeIds
       ? [{ id: 'account', licenseeId: '12345', licenseeIds: [] }]
       : [{ id: 'account', name: 'Customer', targetProfiles: [], opportunitySignals: [], tags: [], targetPublicResearch: null }] },
@@ -54,6 +56,11 @@ it('refreshes a pursued product without replacing its detection snapshot or conv
   assert.notEqual(updates[0].title, 'Introduce Tenant Rum');
   assert.equal(updates[0].title, 'Active customer needing attention');
   catalog[0].solItemStatusCode = '70';
+  availableItemCodes = ['B'];
+  updates.length = 0;
+  await evaluateOpportunityIntelligence({ db: db as unknown as PrismaClient, organizationId: 'tenant', asOfDate: new Date('2026-09-04') });
+  assert.equal(updates[0].title, 'Active customer needing attention');
+  availableItemCodes = ['A', 'B'];
   raw.push({ ...raw[0], brand: 'A' });
   updates.length = 0;
   const converted = await evaluateOpportunityIntelligence({ db: db as unknown as PrismaClient, organizationId: 'tenant', asOfDate: new Date('2026-09-04') });

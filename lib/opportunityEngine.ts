@@ -38,13 +38,18 @@ export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = 
   const start90 = new Date(asOfDate.getTime() - 89 * DAY);
   const config = await getOrganizationTenantConfig(organizationId, db);
   config.productFilter.mode = 'item-list';
-  const [catalog, productDecisions, latestInventoryImport, identities, rawRows, historic, overlays] = await Promise.all([
+  const [catalog, productDecisions, latestInventoryImport, wholesaleAvailableProducts, identities, rawRows, historic, overlays] = await Promise.all([
     db.ohlqBrandMasterItem.findMany(),
     db.organizationProduct.findMany({ where: { organizationId, active: true, market: 'OH', discontinued: false, status: { in: ['OWNED', 'REPRESENTED'] } } }),
     db.ohlqTenantInventoryImportStatus.findFirst({
       where: { organizationId, status: 'COMPLETED' },
       orderBy: { reportDate: 'desc' },
       select: { diagnostics: true },
+    }),
+    db.ohlqAgencyInventoryCurrent.findMany({
+      where: { organizationId },
+      distinct: ['itemCode'],
+      select: { itemCode: true },
     }),
     db.wholesaleAccount.findMany({ where: { mergedIntoId: null }, select: { id: true, licenseeId: true, licenseeIds: { select: { licenseeId: true } } } }),
     db.ohlqAnnualSalesByWholesaleRow.findMany({ where: { reportDate: { gte: start90, lte: asOfDate } }, select: { reportDate: true, permitNumber: true, agencyId: true, vendor: true, brand: true, wholesaleBottlesSold: true } }),
@@ -53,9 +58,11 @@ export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = 
   ]);
   const masterByCode = new Map(catalog.map(c => [c.itemCode,c]));
   const distilleryOnlyItemCodes = getDistilleryOnlyItemCodes(latestInventoryImport?.diagnostics);
+  const wholesaleAvailableItemCodes = new Set(wholesaleAvailableProducts.map(product => product.itemCode));
   const portfolio = productDecisions.flatMap(p => {
     const master = masterByCode.get(p.externalItemCode);
-    return master && isOpportunityEligibleOhlqProduct(master, distilleryOnlyItemCodes)
+    const hasWholesaleAvailability = !latestInventoryImport || wholesaleAvailableItemCodes.has(p.externalItemCode);
+    return master && hasWholesaleAvailability && isOpportunityEligibleOhlqProduct(master, distilleryOnlyItemCodes)
       ? [toAffinityProduct(master, p.strategicPriority ?? 1)]
       : [];
   });
