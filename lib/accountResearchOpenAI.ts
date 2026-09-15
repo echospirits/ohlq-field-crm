@@ -54,12 +54,17 @@ export function getAccountResearchPilotAvailability(env: NodeJS.ProcessEnv = pro
   };
 }
 
-export function assertAccountResearchPilotEnabled(env: NodeJS.ProcessEnv = process.env) {
+export function assertAccountResearchEnvironment(env: NodeJS.ProcessEnv = process.env) {
   if (getAppEnvironment(env) !== 'test') throw new Error('Automated account research is restricted to APP_ENV=test.');
   const runtime = validateRuntimeEnvironment(env);
   if (parseBooleanEnvironmentValue(env.ACCOUNT_RESEARCH_PILOT_ENABLED, 'ACCOUNT_RESEARCH_PILOT_ENABLED') !== true) {
     throw new Error('The account research pilot is disabled.');
   }
+  return { runtime };
+}
+
+export function assertAccountResearchPilotEnabled(env: NodeJS.ProcessEnv = process.env) {
+  const { runtime } = assertAccountResearchEnvironment(env);
   if (!env.OPENAI_API_KEY?.trim()) throw new Error('OPENAI_API_KEY is not configured for the test environment.');
   return { apiKey: env.OPENAI_API_KEY.trim(), runtime };
 }

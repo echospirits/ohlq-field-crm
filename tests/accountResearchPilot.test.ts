@@ -13,7 +13,7 @@ import {
   validateExactResearchLocation,
   type AccountResearchInputSnapshot,
 } from '../lib/accountResearchPilot';
-import { assertAccountResearchPilotEnabled, retrieveAccountResearch, submitAccountResearch } from '../lib/accountResearchOpenAI';
+import { assertAccountResearchEnvironment, assertAccountResearchPilotEnabled, retrieveAccountResearch, submitAccountResearch } from '../lib/accountResearchOpenAI';
 import { deriveSettledPilotStatus } from '../lib/accountResearchPilotService';
 import { AccountResearchPilotStatus } from '@prisma/client';
 
@@ -54,6 +54,7 @@ it('reports an all-failed settled pilot as failed instead of complete', () => {
 
 it('restricts automated research to an explicitly enabled test environment', () => {
   assert.doesNotThrow(() => assertAccountResearchPilotEnabled(staging()));
+  assert.doesNotThrow(() => assertAccountResearchEnvironment({ ...staging(), OPENAI_API_KEY: '' }));
   assert.throws(() => assertAccountResearchPilotEnabled({ ...staging(), ACCOUNT_RESEARCH_PILOT_ENABLED: 'false' }), /disabled/);
   assert.throws(() => assertAccountResearchPilotEnabled({ ...staging(), APP_ENV: 'production', VERCEL_GIT_COMMIT_REF: 'main' }), /restricted to APP_ENV=test/);
 });

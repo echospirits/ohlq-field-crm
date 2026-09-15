@@ -18,7 +18,7 @@ import {
   validateExactResearchLocation,
   type AccountResearchInputSnapshot,
 } from './accountResearchPilot';
-import { assertAccountResearchPilotEnabled, retrieveAccountResearch, submitAccountResearch } from './accountResearchOpenAI';
+import { assertAccountResearchEnvironment, assertAccountResearchPilotEnabled, retrieveAccountResearch, submitAccountResearch } from './accountResearchOpenAI';
 import { evaluateOpportunityIntelligence } from './opportunityEngine';
 import { prisma } from './prisma';
 
@@ -212,7 +212,7 @@ export async function autoResolveAccountResearchJobs({
   organizationId: string;
   db?: PrismaClient;
 }) {
-  assertAccountResearchPilotEnabled();
+  assertAccountResearchEnvironment();
   const jobs = await db.accountResearchJob.findMany({
     where: { pilotId, organizationId, status: AccountResearchJobStatus.NEEDS_REVIEW },
     orderBy: { priority: 'asc' },
