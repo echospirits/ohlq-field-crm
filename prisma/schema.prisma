@@ -1598,6 +1598,7 @@ model TargetPublicResearch {
   refreshError          String?
   researchModel         String?
   researchResponseId    String?
+  identitySnapshot      Json?
   createdAt             DateTime           @default(now())
   updatedAt             DateTime           @updatedAt
   wholesaleAccount      WholesaleAccount   @relation(fields: [wholesaleAccountId], references: [id], onDelete: Cascade)

@@ -5,7 +5,8 @@ import {
   Prisma,
   type PrismaClient,
 } from '@prisma/client';
-import { getAccountResearchQueue } from './accountResearch';
+import { createResearchIdentitySnapshot, getPrioritizedAccountResearchQueue } from './accountResearchQueue';
+import { refreshTenantOpportunityScoresForAccounts } from './accountResearchScoring';
 import {
   ACCOUNT_RESEARCH_JOB_RESERVE_MICROS,
   ACCOUNT_RESEARCH_PILOT_BUDGET_MICROS,
@@ -13,14 +14,14 @@ import {
   ACCOUNT_RESEARCH_PILOT_MODEL,
   ACCOUNT_RESEARCH_PRICING,
   ACCOUNT_RESEARCH_SUBMISSION_WAVE_SIZE,
+  ACCOUNT_RESEARCH_AUTOMATIC_RUN_ACTOR,
   chooseResearchTier,
   estimateResearchCostMicros,
   parseAccountResearchResult,
   validateExactResearchLocation,
   type AccountResearchInputSnapshot,
 } from './accountResearchPilot';
-import { assertAccountResearchEnvironment, assertAccountResearchPilotEnabled, retrieveAccountResearch, submitAccountResearch } from './accountResearchOpenAI';
-import { evaluateOpportunityIntelligence } from './opportunityEngine';
+import { assertAccountResearchAutomationEnabled, assertAccountResearchPilotEnabled, retrieveAccountResearch, submitAccountResearch, type AccountResearchExecutionMode } from './accountResearchOpenAI';
 import { prisma } from './prisma';
 
 const ACTIVE_PILOT_STATUSES = [
@@ -31,6 +32,7 @@ const ACTIVE_PILOT_STATUSES = [
 
 const clipError = (error: unknown) => (error instanceof Error ? error.message : String(error)).slice(0, 1_500);
 const isFatalSubmissionError = (error: unknown) => [401, 403, 429].includes(Number((error as { status?: number })?.status));
+const assertResearchMode = (mode: AccountResearchExecutionMode) => mode === 'automatic' ? assertAccountResearchAutomationEnabled() : assertAccountResearchPilotEnabled();
 
 type PilotJobCounts = Partial<Record<AccountResearchJobStatus, number>>;
 
@@ -53,19 +55,19 @@ export async function createAccountResearchPilot({
 }) {
   assertAccountResearchPilotEnabled();
   const existing = await db.accountResearchPilot.findFirst({
-    where: { organizationId, status: { in: ACTIVE_PILOT_STATUSES } },
+    where: { organizationId, startedByUserId: { not: ACCOUNT_RESEARCH_AUTOMATIC_RUN_ACTOR }, status: { in: ACTIVE_PILOT_STATUSES } },
     orderBy: { startedAt: 'desc' },
     select: { id: true },
   });
-  if (existing) throw new Error('This organization already has an active research pilot.');
+  if (existing) throw new Error('This organization already has an active manual research test.');
 
-  const dueAccounts = await getAccountResearchQueue({ db, organizationId, limit: null });
+  const dueAccounts = await getPrioritizedAccountResearchQueue({ db, limit: null });
   const candidates = dueAccounts
     .filter((candidate) => candidate.address?.trim() && candidate.city?.trim() && candidate.zip?.match(/\d{5}/))
     .slice(0, ACCOUNT_RESEARCH_PILOT_MAX_ACCOUNTS);
-  if (candidates.length === 0) throw new Error('No due opportunity accounts are available for the pilot.');
+  if (candidates.length === 0) throw new Error('No accounts currently need refreshed research.');
   const requiredReservation = candidates.length * ACCOUNT_RESEARCH_JOB_RESERVE_MICROS;
-  if (requiredReservation > ACCOUNT_RESEARCH_PILOT_BUDGET_MICROS) throw new Error('The pilot reservation would exceed the $20 ceiling.');
+  if (requiredReservation > ACCOUNT_RESEARCH_PILOT_BUDGET_MICROS) throw new Error('The manual test reservation would exceed its spending ceiling.');
 
   return db.accountResearchPilot.create({
     data: {
@@ -96,7 +98,7 @@ export async function createAccountResearchPilot({
             tier: waterfall.tier === 'DEEP' ? AccountResearchTier.DEEP : AccountResearchTier.LIGHTWEIGHT,
             status: AccountResearchJobStatus.QUEUED,
             priority: index + 1,
-            reason: waterfall.reason,
+            reason: candidate.researchReason || waterfall.reason,
             inputSnapshot: inputSnapshot as unknown as Prisma.InputJsonValue,
             reservedMicros: ACCOUNT_RESEARCH_JOB_RESERVE_MICROS,
           };
@@ -107,14 +109,26 @@ export async function createAccountResearchPilot({
   });
 }
 
-export async function submitQueuedPilotJobs({ pilotId, organizationId, db = prisma }: { pilotId: string; organizationId: string; db?: PrismaClient }) {
-  assertAccountResearchPilotEnabled();
+export async function submitQueuedPilotJobs({ pilotId, organizationId, db = prisma, mode = 'manual', take = ACCOUNT_RESEARCH_SUBMISSION_WAVE_SIZE }: { pilotId: string; organizationId: string; db?: PrismaClient; mode?: AccountResearchExecutionMode; take?: number }) {
+  assertResearchMode(mode);
   const pilot = await db.accountResearchPilot.findFirst({
     where: { id: pilotId, organizationId, status: { in: [AccountResearchPilotStatus.RUNNING, AccountResearchPilotStatus.PAUSED] } },
     select: { id: true, budgetLimitMicros: true, reservedMicros: true, estimatedSpendMicros: true },
   });
   if (!pilot) throw new Error('The active pilot could not be found.');
   if (pilot.estimatedSpendMicros + pilot.reservedMicros > pilot.budgetLimitMicros) throw new Error('The pilot budget reservation is invalid; no jobs were submitted.');
+
+  const staleClaimCutoff = new Date(Date.now() - 15 * 60_000);
+  const staleClaims = await db.accountResearchJob.findMany({
+    where: { pilotId, organizationId, status: AccountResearchJobStatus.SUBMITTED, responseId: null, submittedAt: { lt: staleClaimCutoff } },
+    select: { id: true, reservedMicros: true },
+  });
+  for (const stale of staleClaims) {
+    await db.$transaction([
+      db.accountResearchJob.update({ where: { id: stale.id }, data: { status: AccountResearchJobStatus.FAILED, reservedMicros: 0, error: 'Submission was interrupted before an OpenAI response ID was saved.' } }),
+      db.accountResearchPilot.update({ where: { id: pilotId }, data: { reservedMicros: { decrement: stale.reservedMicros } } }),
+    ]);
+  }
 
   const activeJobs = await db.accountResearchJob.count({
     where: { pilotId, organizationId, status: { in: [AccountResearchJobStatus.SUBMITTED, AccountResearchJobStatus.RUNNING] } },
@@ -127,12 +141,21 @@ export async function submitQueuedPilotJobs({ pilotId, organizationId, db = pris
   const jobs = await db.accountResearchJob.findMany({
     where: { pilotId, organizationId, status: AccountResearchJobStatus.QUEUED },
     orderBy: { priority: 'asc' },
-    take: ACCOUNT_RESEARCH_SUBMISSION_WAVE_SIZE,
+    take,
   });
   let submitted = 0;
   let failed = 0;
   let paused = false;
-  for (const job of jobs) {
+  for (const [jobIndex, job] of jobs.entries()) {
+    if (mode === 'automatic' && jobIndex > 0 && jobIndex % ACCOUNT_RESEARCH_SUBMISSION_WAVE_SIZE === 0) {
+      await new Promise((resolve) => setTimeout(resolve, 15_000));
+    }
+    const claimedAt = new Date();
+    const claim = await db.accountResearchJob.updateMany({
+      where: { id: job.id, status: AccountResearchJobStatus.QUEUED },
+      data: { status: AccountResearchJobStatus.SUBMITTED, submittedAt: claimedAt, attemptCount: { increment: 1 }, error: null },
+    });
+    if (claim.count !== 1) continue;
     try {
       const input = job.inputSnapshot as unknown as AccountResearchInputSnapshot;
       const response = await submitAccountResearch({
@@ -140,14 +163,13 @@ export async function submitQueuedPilotJobs({ pilotId, organizationId, db = pris
         tier: job.tier,
         pilotId,
         jobId: job.id,
+        mode,
       });
       await db.accountResearchJob.update({
         where: { id: job.id },
         data: {
           responseId: response.responseId,
           status: response.status === 'in_progress' ? AccountResearchJobStatus.RUNNING : AccountResearchJobStatus.SUBMITTED,
-          submittedAt: new Date(),
-          attemptCount: { increment: 1 },
           error: null,
         },
       });
@@ -156,7 +178,7 @@ export async function submitQueuedPilotJobs({ pilotId, organizationId, db = pris
       await db.$transaction([
         db.accountResearchJob.update({
           where: { id: job.id },
-          data: { status: AccountResearchJobStatus.FAILED, error: clipError(error), attemptCount: { increment: 1 }, reservedMicros: 0 },
+          data: { status: AccountResearchJobStatus.FAILED, error: clipError(error), reservedMicros: 0 },
         }),
         db.accountResearchPilot.update({ where: { id: pilotId }, data: { reservedMicros: { decrement: job.reservedMicros } } }),
       ]);
@@ -223,12 +245,14 @@ export async function autoResolveAccountResearchJobs({
   pilotId,
   organizationId,
   db = prisma,
+  mode = 'manual',
 }: {
   pilotId: string;
   organizationId: string;
   db?: PrismaClient;
+  mode?: AccountResearchExecutionMode;
 }) {
-  assertAccountResearchEnvironment();
+  assertResearchMode(mode);
   const jobs = await db.accountResearchJob.findMany({
     where: { pilotId, organizationId, status: AccountResearchJobStatus.NEEDS_REVIEW },
     orderBy: { priority: 'asc' },
@@ -264,6 +288,7 @@ export async function autoResolveAccountResearchJobs({
   await db.$transaction(async (tx) => {
     for (const { job, result } of approved) {
       const sourceUrls = [...new Set(result.evidence.map((item) => item.sourceUrl))];
+      const input = job.inputSnapshot as unknown as AccountResearchInputSnapshot;
       const researchData = {
         researchStatus: 'Automatically validated research',
         patioOutdoor: result.patioOutdoor,
@@ -292,6 +317,13 @@ export async function autoResolveAccountResearchJobs({
         refreshError: null,
         researchModel: job.pilot.model,
         researchResponseId: job.responseId,
+        identitySnapshot: createResearchIdentitySnapshot({
+          name: input.accountName,
+          address: input.address,
+          city: input.city,
+          state: input.state,
+          zip: input.zip,
+        }),
       };
       await tx.targetPublicResearch.upsert({
         where: { wholesaleAccountId: job.wholesaleAccountId },
@@ -317,21 +349,19 @@ export async function autoResolveAccountResearchJobs({
     for (const item of failed) {
       await tx.accountResearchJob.update({ where: { id: item.id }, data: { status: AccountResearchJobStatus.FAILED, error: item.error } });
     }
-    if (approved.length > 0) {
-      await evaluateOpportunityIntelligence({
-        db: tx as unknown as PrismaClient,
-        asOfDate: resolvedAt,
-        accountIds: approved.map(({ job }) => job.wholesaleAccountId),
-        organizationId,
-      });
-    }
   }, { timeout: 300_000 });
+
+  await refreshTenantOpportunityScoresForAccounts({
+    db,
+    asOfDate: resolvedAt,
+    accountIds: approved.map(({ job }) => job.wholesaleAccountId),
+  });
 
   return { applied: approved.length, rejected: rejected.length, failed: failed.length };
 }
 
-export async function pollAccountResearchPilot({ pilotId, organizationId, db = prisma }: { pilotId: string; organizationId: string; db?: PrismaClient }) {
-  assertAccountResearchPilotEnabled();
+export async function pollAccountResearchPilot({ pilotId, organizationId, db = prisma, mode = 'manual' }: { pilotId: string; organizationId: string; db?: PrismaClient; mode?: AccountResearchExecutionMode }) {
+  assertResearchMode(mode);
   const jobs = await db.accountResearchJob.findMany({
     where: { pilotId, organizationId, status: { in: [AccountResearchJobStatus.SUBMITTED, AccountResearchJobStatus.RUNNING] }, responseId: { not: null } },
     orderBy: { priority: 'asc' },
@@ -341,7 +371,7 @@ export async function pollAccountResearchPilot({ pilotId, organizationId, db = p
   let failedChecks = 0;
   for (const job of jobs) {
     try {
-      const retrieved = await retrieveAccountResearch({ responseId: job.responseId! });
+      const retrieved = await retrieveAccountResearch({ responseId: job.responseId!, mode });
       if (['queued', 'in_progress'].includes(retrieved.status)) {
         await db.accountResearchJob.updateMany({
           where: { id: job.id, status: { in: [AccountResearchJobStatus.SUBMITTED, AccountResearchJobStatus.RUNNING] } },
@@ -367,7 +397,7 @@ export async function pollAccountResearchPilot({ pilotId, organizationId, db = p
       }
     }
   }
-  const automatic = await autoResolveAccountResearchJobs({ pilotId, organizationId, db });
+  const automatic = await autoResolveAccountResearchJobs({ pilotId, organizationId, db, mode });
   await refreshPilotStatus({ pilotId, organizationId, db });
   await db.accountResearchPilot.updateMany({ where: { id: pilotId, organizationId }, data: { lastPolledAt: new Date() } });
   return { checked: jobs.length, completed, pending, failedChecks, ...automatic };
@@ -445,6 +475,13 @@ export async function approveAccountResearchJob({
         refreshError: null,
         researchModel: job.pilot.model,
         researchResponseId: job.responseId,
+        identitySnapshot: createResearchIdentitySnapshot({
+          name: input.accountName,
+          address: input.address,
+          city: input.city,
+          state: input.state,
+          zip: input.zip,
+        }),
       },
       update: {
         researchStatus: 'Reviewed pilot research',
@@ -474,14 +511,21 @@ export async function approveAccountResearchJob({
         refreshError: null,
         researchModel: job.pilot.model,
         researchResponseId: job.responseId,
+        identitySnapshot: createResearchIdentitySnapshot({
+          name: input.accountName,
+          address: input.address,
+          city: input.city,
+          state: input.state,
+          zip: input.zip,
+        }),
       },
     });
-    await evaluateOpportunityIntelligence({ db: tx as unknown as PrismaClient, asOfDate: new Date(), accountIds: [job.wholesaleAccountId], organizationId });
     await tx.accountResearchJob.update({
       where: { id: job.id },
       data: { status: AccountResearchJobStatus.APPROVED, reviewedAt: new Date(), reviewedByUserId, reviewNote: reviewNote?.trim() || null },
     });
   }, { timeout: 180_000 });
+  await refreshTenantOpportunityScoresForAccounts({ db, asOfDate: appliedAt, accountIds: [job.wholesaleAccountId] });
   await refreshPilotStatus({ pilotId: job.pilotId, organizationId, db });
 }
 
@@ -511,7 +555,7 @@ export async function rejectAccountResearchJob({
 
 export async function getLatestAccountResearchPilot({ organizationId, db = prisma }: { organizationId: string; db?: PrismaClient }) {
   return db.accountResearchPilot.findFirst({
-    where: { organizationId },
+    where: { organizationId, startedByUserId: { not: ACCOUNT_RESEARCH_AUTOMATIC_RUN_ACTOR } },
     orderBy: { startedAt: 'desc' },
     include: {
       jobs: {

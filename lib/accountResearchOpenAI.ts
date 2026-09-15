@@ -7,9 +7,10 @@ import {
   parseAccountResearchResult,
   type AccountResearchInputSnapshot,
 } from './accountResearchPilot';
-import { getAppEnvironment, parseBooleanEnvironmentValue, validateRuntimeEnvironment } from './appEnvironment';
+import { getAppEnvironment, isSideEffectEnabled, parseBooleanEnvironmentValue, validateRuntimeEnvironment } from './appEnvironment';
 
 type ResearchFetch = typeof fetch;
+export type AccountResearchExecutionMode = 'manual' | 'automatic';
 
 type OpenAIResponse = {
   id?: string;
@@ -46,7 +47,7 @@ export function getAccountResearchPilotAvailability(env: NodeJS.ProcessEnv = pro
   }
   const hasKey = Boolean(env.OPENAI_API_KEY?.trim());
   return {
-    available: appEnvironment === 'test' && enabled && hasKey && !configurationError,
+    available: ['test', 'production'].includes(appEnvironment) && enabled && hasKey && !configurationError,
     appEnvironment,
     enabled,
     hasKey,
@@ -55,7 +56,7 @@ export function getAccountResearchPilotAvailability(env: NodeJS.ProcessEnv = pro
 }
 
 export function assertAccountResearchEnvironment(env: NodeJS.ProcessEnv = process.env) {
-  if (getAppEnvironment(env) !== 'test') throw new Error('Automated account research is restricted to APP_ENV=test.');
+  if (!['test', 'production'].includes(getAppEnvironment(env))) throw new Error('Account research is restricted to deployed test or production environments.');
   const runtime = validateRuntimeEnvironment(env);
   if (parseBooleanEnvironmentValue(env.ACCOUNT_RESEARCH_PILOT_ENABLED, 'ACCOUNT_RESEARCH_PILOT_ENABLED') !== true) {
     throw new Error('The account research pilot is disabled.');
@@ -63,14 +64,46 @@ export function assertAccountResearchEnvironment(env: NodeJS.ProcessEnv = proces
   return { runtime };
 }
 
-export function assertAccountResearchPilotEnabled(env: NodeJS.ProcessEnv = process.env) {
-  const { runtime } = assertAccountResearchEnvironment(env);
-  if (!env.OPENAI_API_KEY?.trim()) throw new Error('OPENAI_API_KEY is not configured for the test environment.');
+export function getAccountResearchAutomationAvailability(env: NodeJS.ProcessEnv = process.env) {
+  const appEnvironment = getAppEnvironment(env);
+  let enabled = false;
+  let configurationError: string | null = null;
+  try {
+    enabled = parseBooleanEnvironmentValue(env.ACCOUNT_RESEARCH_AUTOMATION_ENABLED, 'ACCOUNT_RESEARCH_AUTOMATION_ENABLED') === true;
+  } catch (error) {
+    configurationError = error instanceof Error ? error.message : String(error);
+  }
+  const hasKey = Boolean(env.OPENAI_API_KEY?.trim());
+  const cronEnabled = isSideEffectEnabled('cron', env);
+  return {
+    available: appEnvironment === 'production' && enabled && hasKey && cronEnabled && !configurationError,
+    appEnvironment,
+    enabled,
+    hasKey,
+    cronEnabled,
+    configurationError,
+  };
+}
+
+export function assertAccountResearchAutomationEnabled(env: NodeJS.ProcessEnv = process.env) {
+  const runtime = validateRuntimeEnvironment(env);
+  if (runtime.appEnvironment !== 'production') throw new Error('Automatic account research is restricted to APP_ENV=production.');
+  if (!isSideEffectEnabled('cron', env)) throw new Error('Automatic account research is disabled because cron side effects are off.');
+  if (parseBooleanEnvironmentValue(env.ACCOUNT_RESEARCH_AUTOMATION_ENABLED, 'ACCOUNT_RESEARCH_AUTOMATION_ENABLED') !== true) {
+    throw new Error('Automatic account research is disabled.');
+  }
+  if (!env.OPENAI_API_KEY?.trim()) throw new Error('OPENAI_API_KEY is not configured for production account research.');
   return { apiKey: env.OPENAI_API_KEY.trim(), runtime };
 }
 
-async function requestOpenAI(path: string, init: RequestInit, fetchImpl: ResearchFetch = fetch, env: NodeJS.ProcessEnv = process.env) {
-  const { apiKey } = assertAccountResearchPilotEnabled(env);
+export function assertAccountResearchPilotEnabled(env: NodeJS.ProcessEnv = process.env) {
+  const { runtime } = assertAccountResearchEnvironment(env);
+  if (!env.OPENAI_API_KEY?.trim()) throw new Error('OPENAI_API_KEY is not configured for account research.');
+  return { apiKey: env.OPENAI_API_KEY.trim(), runtime };
+}
+
+async function requestOpenAI(path: string, init: RequestInit, fetchImpl: ResearchFetch = fetch, env: NodeJS.ProcessEnv = process.env, mode: AccountResearchExecutionMode = 'manual') {
+  const { apiKey } = mode === 'automatic' ? assertAccountResearchAutomationEnabled(env) : assertAccountResearchPilotEnabled(env);
   const response = await fetchImpl(`https://api.openai.com/v1${path}`, {
     ...init,
     headers: {
@@ -97,6 +130,7 @@ export async function submitAccountResearch({
   jobId,
   fetchImpl,
   env,
+  mode = 'manual',
 }: {
   input: AccountResearchInputSnapshot;
   tier: 'LIGHTWEIGHT' | 'DEEP';
@@ -104,6 +138,7 @@ export async function submitAccountResearch({
   jobId: string;
   fetchImpl?: ResearchFetch;
   env?: NodeJS.ProcessEnv;
+  mode?: AccountResearchExecutionMode;
 }) {
   const response = await requestOpenAI('/responses', {
     method: 'POST',
@@ -128,7 +163,7 @@ export async function submitAccountResearch({
       include: ['web_search_call.action.sources'],
       metadata: { pilot_id: pilotId, research_job_id: jobId, wholesale_account_id: input.wholesaleAccountId },
     }),
-  }, fetchImpl, env);
+  }, fetchImpl, env, mode);
   if (!response.id) throw new Error('OpenAI did not return a response ID.');
   return { responseId: response.id, status: response.status ?? 'queued' };
 }
@@ -141,12 +176,14 @@ export async function retrieveAccountResearch({
   responseId,
   fetchImpl,
   env,
+  mode = 'manual',
 }: {
   responseId: string;
   fetchImpl?: ResearchFetch;
   env?: NodeJS.ProcessEnv;
+  mode?: AccountResearchExecutionMode;
 }): Promise<RetrievedResearchResponse> {
-  const response = await requestOpenAI(`/responses/${encodeURIComponent(responseId)}`, { method: 'GET' }, fetchImpl, env);
+  const response = await requestOpenAI(`/responses/${encodeURIComponent(responseId)}`, { method: 'GET' }, fetchImpl, env, mode);
   const status = response.status ?? 'failed';
   const outputText = status === 'completed' ? extractOutputText(response) : null;
   let result = null;

@@ -8,13 +8,14 @@ import {
   ACCOUNT_RESEARCH_PILOT_BUDGET_MICROS,
   ACCOUNT_RESEARCH_PILOT_MAX_ACCOUNTS,
   ACCOUNT_RESEARCH_SUBMISSION_WAVE_SIZE,
+  ACCOUNT_RESEARCH_AUTOMATIC_DAILY_LIMIT,
   chooseResearchTier,
   estimateResearchCostMicros,
   parseAccountResearchResult,
   validateExactResearchLocation,
   type AccountResearchInputSnapshot,
 } from '../lib/accountResearchPilot';
-import { assertAccountResearchEnvironment, assertAccountResearchPilotEnabled, retrieveAccountResearch, submitAccountResearch } from '../lib/accountResearchOpenAI';
+import { assertAccountResearchAutomationEnabled, assertAccountResearchEnvironment, assertAccountResearchPilotEnabled, retrieveAccountResearch, submitAccountResearch } from '../lib/accountResearchOpenAI';
 import { deriveSettledPilotStatus } from '../lib/accountResearchPilotService';
 import { AccountResearchPilotStatus } from '@prisma/client';
 
@@ -40,11 +41,12 @@ const result = {
   evidence: [{ field: 'identity', claim: 'The listing uses 123 W Main St.', sourceUrl: 'https://example.com/contact', sourceTitle: 'Contact', exactLocation: true }],
 };
 
-it('hard-caps the pilot at 250 eight-cent reservations and twenty dollars', () => {
-  assert.equal(ACCOUNT_RESEARCH_PILOT_MAX_ACCOUNTS, 250);
+it('hard-caps manual tests at 25 accounts and two dollars', () => {
+  assert.equal(ACCOUNT_RESEARCH_PILOT_MAX_ACCOUNTS, 25);
   assert.equal(ACCOUNT_RESEARCH_SUBMISSION_WAVE_SIZE, 25);
   assert.equal(ACCOUNT_RESEARCH_JOB_RESERVE_MICROS, 80_000);
   assert.equal(ACCOUNT_RESEARCH_PILOT_MAX_ACCOUNTS * ACCOUNT_RESEARCH_JOB_RESERVE_MICROS, ACCOUNT_RESEARCH_PILOT_BUDGET_MICROS);
+  assert.equal(ACCOUNT_RESEARCH_AUTOMATIC_DAILY_LIMIT, 100);
 });
 
 it('reports an all-failed settled pilot as failed instead of complete', () => {
@@ -54,11 +56,19 @@ it('reports an all-failed settled pilot as failed instead of complete', () => {
   assert.equal(deriveSettledPilotStatus({ RUNNING: 1, FAILED: 49 }), null);
 });
 
-it('restricts automated research to an explicitly enabled test environment', () => {
+it('allows guarded manual research in test and production but automatic research only in production', () => {
   assert.doesNotThrow(() => assertAccountResearchPilotEnabled(staging()));
   assert.doesNotThrow(() => assertAccountResearchEnvironment({ ...staging(), OPENAI_API_KEY: '' }));
   assert.throws(() => assertAccountResearchPilotEnabled({ ...staging(), ACCOUNT_RESEARCH_PILOT_ENABLED: 'false' }), /disabled/);
-  assert.throws(() => assertAccountResearchPilotEnabled({ ...staging(), APP_ENV: 'production', VERCEL_GIT_COMMIT_REF: 'main' }), /restricted to APP_ENV=test/);
+  const production = {
+    ...staging(), APP_ENV: 'production', APP_BASE_URL: 'https://crm.example.com', DATABASE_ENVIRONMENT: 'production',
+    DATABASE_URL: 'postgresql://user:password@prod-db.example.com:5432/neat', DATABASE_TARGET_ID: 'prod-db',
+    EXPECTED_DATABASE_HOST: 'prod-db.example.com', VERCEL_GIT_COMMIT_REF: 'main', ACCOUNT_RESEARCH_AUTOMATION_ENABLED: 'true',
+    CRON_JOBS_ENABLED: 'true',
+  };
+  assert.doesNotThrow(() => assertAccountResearchPilotEnabled(production));
+  assert.doesNotThrow(() => assertAccountResearchAutomationEnabled(production));
+  assert.throws(() => assertAccountResearchAutomationEnabled({ ...staging(), ACCOUNT_RESEARCH_AUTOMATION_ENABLED: 'true' }), /APP_ENV=production/);
 });
 
 it('assigns deep research only to pursued and high-provisional-score accounts', () => {
@@ -116,13 +126,17 @@ it('scopes waterfall candidates to the selected tenant organization', async () =
   assert.match(JSON.stringify(query), /"organizationId":"org_1"/);
 });
 
-it('keeps the pilot manual and Platform Admin protected', () => {
+it('keeps manual tests Platform Admin protected and schedules a production-gated worker', () => {
   const vercel = readFileSync('vercel.json', 'utf8');
   const actions = readFileSync('app/admin/account-research/actions.ts', 'utf8');
   const service = readFileSync('lib/accountResearchPilotService.ts', 'utf8');
-  assert.doesNotMatch(vercel, /account-research/);
+  assert.match(vercel, /\/api\/cron\/account-research/);
+  assert.match(vercel, /"schedule": "0 12 \* \* \*"/);
   assert.match(actions, /requirePlatformAdmin/);
   assert.match(actions, /startAccountResearchPilot/);
-  assert.match(service, /take: ACCOUNT_RESEARCH_SUBMISSION_WAVE_SIZE/);
+  assert.match(service, /take = ACCOUNT_RESEARCH_SUBMISSION_WAVE_SIZE/);
   assert.match(service, /The current 25-account wave is still running/);
+  assert.match(service, /setTimeout\(resolve, 15_000\)/);
+  const route = readFileSync('app/api/cron/account-research/route.ts', 'utf8');
+  assert.match(route, /getAccountResearchAutomationAvailability/);
 });

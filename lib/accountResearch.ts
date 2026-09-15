@@ -1,6 +1,7 @@
 import { OpportunityStatus, Prisma, type PrismaClient } from '@prisma/client';
 import Papa from 'papaparse';
-import { evaluateOpportunityIntelligence } from './opportunityEngine';
+import { createResearchIdentitySnapshot } from './accountResearchQueue';
+import { refreshTenantOpportunityScoresForAccounts } from './accountResearchScoring';
 import { prisma } from './prisma';
 
 const DAY = 86_400_000;
@@ -38,6 +39,10 @@ export type ParsedAccountResearchRow = {
   wholesaleAccountId: string;
   licenseeId: string;
   accountName: string;
+  address: string | null;
+  city: string | null;
+  state: string | null;
+  zip: string | null;
   researchedAt: Date;
   websiteUrl: string | null;
   cocktailMenuUrl: string | null;
@@ -224,6 +229,7 @@ export function parseAccountResearchCsv(csv: string | Buffer) {
     const confidence = parseEnum(clean(raw.confidence), ['HIGH', 'MEDIUM', 'LOW'] as const, 'confidence', rowNumber, errors) ?? 'LOW';
     rows.push({
       rowNumber, wholesaleAccountId, licenseeId, accountName,
+      address: clean(raw.address), city: clean(raw.city), state: clean(raw.state), zip: clean(raw.zip),
       researchedAt: parseResearchDate(clean(raw.researched_at), rowNumber, errors),
       websiteUrl: parseUrl(clean(raw.website_url), 'website_url', rowNumber, errors),
       cocktailMenuUrl: parseUrl(clean(raw.cocktail_menu_url), 'cocktail_menu_url', rowNumber, errors),
@@ -262,6 +268,7 @@ export async function validateAccountResearchRows({ rows, db = prisma }: { rows:
 }
 
 export async function importAccountResearchCsv({ csv, db = prisma, dryRun = true, importedBy, organizationId }: { csv: string | Buffer; db?: PrismaClient; dryRun?: boolean; importedBy: string; organizationId: string }) {
+  void organizationId; // Authorization remains tenant-scoped; shared research refreshes every affected tenant score below.
   const parsed = parseAccountResearchCsv(csv);
   const identityErrors = await validateAccountResearchRows({ rows: parsed.rows, db });
   const errors = [...parsed.errors, ...identityErrors].sort((a, b) => a.rowNumber - b.rowNumber);
@@ -280,18 +287,24 @@ export async function importAccountResearchCsv({ csv, db = prisma, dryRun = true
         completedAt: row.researchedAt, researcher: `ChatGPT CSV imported by ${importedBy}`,
         lastAttemptedAt: row.researchedAt, lastRefreshedAt: row.researchedAt, refreshStatus: 'COMPLETE', refreshError: null,
         researchModel: 'ChatGPT subscription research', researchResponseId: null,
+        identitySnapshot: createResearchIdentitySnapshot({
+          name: row.accountName,
+          address: row.address,
+          city: row.city,
+          state: row.state,
+          zip: row.zip,
+        }),
       } satisfies Prisma.TargetPublicResearchUncheckedUpdateInput;
       await tx.targetPublicResearch.upsert({
         where: { wholesaleAccountId: row.wholesaleAccountId },
         create: { wholesaleAccountId: row.wholesaleAccountId, ...data }, update: data,
       });
     }
-    await evaluateOpportunityIntelligence({
-      db: tx as unknown as PrismaClient,
-      asOfDate: scoredAt,
-      accountIds: parsed.rows.map((row) => row.wholesaleAccountId),
-      organizationId,
-    });
   }, { timeout: 180_000 });
+  await refreshTenantOpportunityScoresForAccounts({
+    db,
+    asOfDate: scoredAt,
+    accountIds: parsed.rows.map((row) => row.wholesaleAccountId),
+  });
   return { parsedRows: parsed.rows.length, importedRows: parsed.rows.length, errors: [], dryRun: false };
 }
