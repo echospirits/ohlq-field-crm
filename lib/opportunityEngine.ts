@@ -66,6 +66,7 @@ export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = 
       ? [toAffinityProduct(master, p.strategicPriority ?? 1)]
       : [];
   });
+  const portfolioItemCodes = new Set(portfolio.map(product => product.itemCode));
   const oldestDetection = historic.length ? new Date(Math.min(...historic.map(h => h.detectedAt.getTime()))) : asOfDate;
   const [outcomePurchases, completedReports, ledgerDates] = historic.length ? await Promise.all([
     db.accountSalesEvent.findMany({ where: { organizationId, sourceKey: { startsWith: 'DAILY_V3:' }, wholesaleAccountId: { in: historic.map(h => h.wholesaleAccountId) }, reportDate: { gte: oldestDetection, lte: asOfDate } }, select: { wholesaleAccountId: true, itemCode: true, reportDate: true } }),
@@ -239,6 +240,34 @@ export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = 
         select: { id: true },
       });
       for (const opportunity of active) {
+        const detection = await db.opportunityEvent.findFirst({
+          where: { organizationId, opportunityId: opportunity.id, eventType: 'DETECTED' },
+          select: { metadata: true },
+        });
+        const targetItemCode = (detection?.metadata as unknown as { hypothesis?: { targetProduct?: { itemCode?: string } } } | null)
+          ?.hypothesis?.targetProduct?.itemCode;
+        if (targetItemCode && !portfolioItemCodes.has(targetItemCode)) {
+          await db.salesOpportunity.update({
+            where: { id: opportunity.id },
+            data: { status: OpportunityStatus.RESOLVED, activeAccountKey: null, resolvedAt: asOfDate },
+          });
+          await db.opportunityEvent.create({
+            data: {
+              organizationId,
+              opportunityId: opportunity.id,
+              eventType: OpportunityEventType.RESOLVED,
+              eventKey: `RESOLVED:PRODUCT_UNAVAILABLE:${dateOnly(asOfDate)}`,
+              wholesaleAccountId: account.id,
+              metadata: { targetItemCode },
+              occurredAt: asOfDate,
+            },
+          }).catch(() => undefined);
+          await db.worklistItem.updateMany({
+            where: { organizationId, salesOpportunityId: opportunity.id, status: { in: [WorklistStatus.OPEN, WorklistStatus.IN_PROGRESS] } },
+            data: { status: WorklistStatus.CANCELLED, cancelledAt: asOfDate },
+          });
+          continue;
+        }
         await db.salesOpportunity.update({
           where: { id: opportunity.id },
           data: { scoringVersion: ranking.version, productionScore: ranking.score, priorityBand: ranking.priorityBand, explanation: ranking.factors, lastDetectedAt: asOfDate },

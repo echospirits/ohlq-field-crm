@@ -57,9 +57,10 @@ it('refreshes a pursued product without replacing its detection snapshot or conv
   assert.equal(updates[0].title, 'Active customer needing attention');
   catalog[0].solItemStatusCode = '70';
   availableItemCodes = ['B'];
+  raw.splice(1, 1);
   updates.length = 0;
   await evaluateOpportunityIntelligence({ db: db as unknown as PrismaClient, organizationId: 'tenant', asOfDate: new Date('2026-09-04') });
-  assert.equal(updates[0].title, 'Active customer needing attention');
+  assert.ok(updates.some(update => update.status === 'RESOLVED'));
   availableItemCodes = ['A', 'B'];
   raw.push({ ...raw[0], brand: 'A' });
   updates.length = 0;
