@@ -23,4 +23,19 @@ test('Wholesale opportunity intelligence shows the tenant-scoped production scor
   assert.match(panel, /\{ organizationId, wholesaleAccountId, status: \{ in: activeStatuses \} \}/);
   assert.match(panel, /productionScore=\{item\.productionScore\}/);
   assert.match(panel, /Opportunity score \$\{Math\.round\(productionScore\)\} out of 100/);
+  assert.match(panel, /How this score was calculated/);
+  assert.match(panel, /This score is calculated for your organization/);
+  assert.match(panel, /parseOpportunityScoreComponents\(factors\)/);
+});
+
+test('Wholesale opportunity intelligence shows public research signals and freshness', () => {
+  const panel = readFileSync('app/wholesale/OpportunityAccountPanel.tsx', 'utf8');
+
+  assert.match(panel, /prisma\.targetPublicResearch\.findUnique/);
+  assert.match(panel, /Public account research/);
+  assert.match(panel, /Google/);
+  assert.match(panel, /Yelp/);
+  assert.match(panel, /Patio/);
+  assert.match(panel, /Cocktails/);
+  assert.match(panel, /Updated \{formatEasternDateTime\(research\.updatedAt\)\}/);
 });

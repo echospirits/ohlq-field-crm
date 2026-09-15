@@ -1,7 +1,8 @@
 import { OpportunityStatus, Prisma } from '@prisma/client';
 import Link from 'next/link';
-import { formatEasternDate } from '../../lib/dateTime';
+import { formatEasternDate, formatEasternDateTime } from '../../lib/dateTime';
 import { getOhlqWindowStartDate, getTenantAccountSalesEventWhere, summarizeLinkedWholesaleAccountSales } from '../../lib/ohlqSalesData';
+import { opportunityEvidence, opportunityFactors, parseOpportunityScoreComponents } from '../../lib/opportunityPresentation';
 import { prisma } from '../../lib/prisma';
 import { ContextualActions } from '../components/ContextualActions';
 import { DataFreshnessBadge } from '../components/DataFreshnessBadge';
@@ -13,7 +14,96 @@ import { getOrganizationTenantConfig } from '../../lib/tenantConfig';
 const activeStatuses = [OpportunityStatus.OPEN, OpportunityStatus.ACTIONED, OpportunityStatus.SNOOZED];
 
 const firstExplanation = (explanation: Prisma.JsonValue) =>
-  Array.isArray(explanation) && explanation.length > 0 ? String(explanation[0]) : 'Review the current account signals.';
+  opportunityFactors(explanation)[0] ?? 'Review the current account signals.';
+
+const displayResearchValue = (value: string | null | undefined) => value?.trim() || 'Not confirmed';
+
+function ScoreBreakdown({ explanation, score, scoringVersion, scoredAt }: { explanation: Prisma.JsonValue; score: number; scoringVersion: string; scoredAt: Date }) {
+  const factors = opportunityFactors(explanation);
+  const components = parseOpportunityScoreComponents(factors);
+  const evidence = opportunityEvidence(factors);
+  return <div className="opportunity-score-detail">
+    <div className="opportunity-score-summary">
+      <div><strong>{Math.round(score)}</strong><span>out of 100</span></div>
+      <p>This score is calculated for your organization using its active products, purchases, activity, public research, and learned outcomes.</p>
+    </div>
+    {components.length > 0 ? <>
+      <h4>Point contributions</h4>
+      <div className="opportunity-score-components">
+        {components.map((component) => <div className={component.points < 0 ? 'is-negative' : ''} key={component.key}>
+          <span>{component.label}</span>
+          <strong>{component.points > 0 ? '+' : ''}{component.points.toFixed(1)}</strong>
+          <span aria-hidden="true" className="opportunity-score-meter"><i style={{ width: `${Math.min(100, Math.abs(component.points) / 15 * 100)}%` }} /></span>
+        </div>)}
+      </div>
+    </> : null}
+    {evidence.length > 0 ? <>
+      <h4>Evidence and adjustments</h4>
+      <ul className="opportunity-score-evidence">{evidence.map((factor, index) => <li key={`${factor}-${index}`}>{factor}</li>)}</ul>
+    </> : <p className="muted">No detailed scoring evidence is available for this calculation.</p>}
+    <small className="muted">Calculated {formatEasternDateTime(scoredAt)} · Model {scoringVersion}</small>
+  </div>;
+}
+
+type AccountResearch = {
+  buyerStructure: string | null;
+  cocktailMenuUrl: string | null;
+  cocktailProgram: string | null;
+  events: string | null;
+  googleRating: Prisma.Decimal | null;
+  googleReviewCount: number | null;
+  isNationalChain: boolean | null;
+  localBrandsOnMenu: Prisma.JsonValue;
+  notes: string | null;
+  openStatus: string | null;
+  ownershipVerification: string | null;
+  patioOutdoor: string | null;
+  popularitySignal: string | null;
+  privateDining: string | null;
+  researchConfidence: string | null;
+  sourceUrls: Prisma.JsonValue;
+  updatedAt: Date;
+  websiteUrl: string | null;
+  yelpRating: Prisma.Decimal | null;
+  yelpReviewCount: number | null;
+};
+
+function ResearchSummary({ research }: { research: AccountResearch | null }) {
+  if (!research) return <section className="account-research-summary is-empty" aria-label="Account research summary">
+    <div><h3>Public research</h3><p className="muted">This account has not been researched yet. Its opportunity score currently relies on available sales and activity signals.</p></div>
+  </section>;
+  const brands = opportunityFactors(research.localBrandsOnMenu);
+  const sources = opportunityFactors(research.sourceUrls);
+  const links = [...new Set([research.websiteUrl, research.cocktailMenuUrl, ...sources].filter((url): url is string => Boolean(url)))];
+  return <section className="account-research-summary" aria-label="Account research summary">
+    <div className="account-research-heading">
+      <div><span className="page-eyebrow">Public account research</span><h3>What we found</h3></div>
+      <small className="muted">Updated {formatEasternDateTime(research.updatedAt)}</small>
+    </div>
+    <dl className="account-research-signals">
+      <div><dt>Google</dt><dd>{research.googleRating ? <><strong>{Number(research.googleRating).toFixed(1)}</strong><span>{research.googleReviewCount?.toLocaleString() ?? 'Unknown'} reviews</span></> : <span>Not found</span>}</dd></div>
+      <div><dt>Yelp</dt><dd>{research.yelpRating ? <><strong>{Number(research.yelpRating).toFixed(1)}</strong><span>{research.yelpReviewCount?.toLocaleString() ?? 'Unknown'} reviews</span></> : <span>Not found</span>}</dd></div>
+      <div><dt>Patio</dt><dd><span>{displayResearchValue(research.patioOutdoor)}</span></dd></div>
+      <div><dt>Cocktails</dt><dd><span>{displayResearchValue(research.cocktailProgram)}</span></dd></div>
+      <div><dt>Popularity</dt><dd><span>{displayResearchValue(research.popularitySignal)}</span></dd></div>
+      <div><dt>Buying structure</dt><dd><span>{research.isNationalChain === true ? 'National chain' : research.isNationalChain === false ? 'Not a national chain' : displayResearchValue(research.buyerStructure)}</span></dd></div>
+    </dl>
+    <details className="compact-details nested-details account-research-details">
+      <summary>Research details and sources</summary>
+      <dl>
+        <div><dt>Confidence</dt><dd>{displayResearchValue(research.researchConfidence)}</dd></div>
+        <div><dt>Operating status</dt><dd>{displayResearchValue(research.openStatus)}</dd></div>
+        <div><dt>Ownership</dt><dd>{displayResearchValue(research.ownershipVerification)}</dd></div>
+        <div><dt>Buyer structure</dt><dd>{displayResearchValue(research.buyerStructure)}</dd></div>
+        <div><dt>Events</dt><dd>{displayResearchValue(research.events)}</dd></div>
+        <div><dt>Private dining</dt><dd>{displayResearchValue(research.privateDining)}</dd></div>
+        <div><dt>Local brands found</dt><dd>{brands.length ? brands.join(', ') : 'None confirmed'}</dd></div>
+      </dl>
+      {research.notes ? <p><strong>Research notes</strong><br />{research.notes}</p> : null}
+      {links.length ? <div className="account-research-links"><strong>Sources</strong>{links.map((url, index) => <a href={url} key={url} rel="noreferrer" target="_blank">{index === 0 && url === research.websiteUrl ? 'Website' : url === research.cocktailMenuUrl ? 'Cocktail menu' : `Source ${index + 1}`}<span className="sr-only"> (opens in a new tab)</span></a>)}</div> : <p className="muted">No source links were saved.</p>}
+    </details>
+  </section>;
+}
 
 function IntelligenceFacts({ facts }: { facts: Array<{ label: string; value: number | string }> }) {
   return <dl className="account-intelligence-facts">
@@ -25,18 +115,22 @@ function OpportunityRow({
   accountHref,
   accountName,
   explanation,
+  lastDetectedAt,
   priorityBand,
   productionScore,
   recommendedAction,
+  scoringVersion,
   title,
   actions,
 }: {
   accountHref?: string;
   accountName?: string;
-  explanation: string;
+  explanation: Prisma.JsonValue;
+  lastDetectedAt?: Date;
   priorityBand: string;
   productionScore?: number;
   recommendedAction: string;
+  scoringVersion?: string;
   title: string;
   actions?: ReactNode;
 }) {
@@ -54,8 +148,10 @@ function OpportunityRow({
     </div>
     {actions}
     <details className="opportunity-evidence compact-details nested-details">
-      <summary>Why this opportunity</summary>
-      <p>{explanation}</p>
+      <summary>How this score was calculated</summary>
+      {productionScore !== undefined && lastDetectedAt && scoringVersion
+        ? <ScoreBreakdown explanation={explanation} score={productionScore} scoredAt={lastDetectedAt} scoringVersion={scoringVersion} />
+        : <p>{firstExplanation(explanation)}</p>}
     </details>
   </article>;
 }
@@ -140,11 +236,13 @@ export async function OpportunityAccountPanel({ agencyId, wholesaleAccountId, cu
         return <OpportunityRow
           accountHref={`/wholesale/${account.id}`}
           accountName={account.name}
-          explanation={opportunity ? `${firstExplanation(opportunity.explanation)} · ${salesExplanation}` : salesExplanation}
+          explanation={opportunity ? opportunity.explanation : [salesExplanation]}
           key={account.id}
+          lastDetectedAt={opportunity?.lastDetectedAt}
           priorityBand={opportunity?.priorityBand ?? (sales.echoBottles > 0 ? 'MEDIUM' : 'LOW')}
           productionScore={opportunity?.productionScore}
           recommendedAction={opportunity?.recommendedAction ?? (sales.echoBottles > 0 ? 'Maintain relationship' : 'Review account')}
+          scoringVersion={opportunity?.scoringVersion}
           title={opportunity?.title ?? (sales.allBottles > 0 ? 'Recent wholesale activity' : 'No recent wholesale purchases')}
           actions={<ContextualActions
             context={{ accountName: account.name, opportunityId: opportunity?.id, reason: opportunity ? firstExplanation(opportunity.explanation) : salesExplanation, returnTo, sourceLabel: opportunity?.title ?? 'wholesale account activity', sourceType: opportunity?.type ?? 'AGENCY_WHOLESALE_ROLLUP', wholesaleAccountId: account.id }}
@@ -159,7 +257,7 @@ export async function OpportunityAccountPanel({ agencyId, wholesaleAccountId, cu
 
   if (!wholesaleAccountId) return null;
 
-  const [opportunities, sales, visits, worklist] = await Promise.all([
+  const [opportunities, sales, visits, worklist, research] = await Promise.all([
     prisma.salesOpportunity.findMany({
       where: opportunityWhere,
       include: { wholesaleAccount: { select: { id: true, name: true } } },
@@ -173,6 +271,10 @@ export async function OpportunityAccountPanel({ agencyId, wholesaleAccountId, cu
     }),
     prisma.loggedVisit.findMany({ where: { organizationId, wholesaleAccountId, locationType: 'wholesale' }, orderBy: { visitAt: 'desc' }, take: 20, select: { id: true, visitAt: true, summary: true, createdBy: true } }),
     prisma.worklistItem.findMany({ where: { organizationId, wholesaleAccountId, status: { in: ['OPEN', 'IN_PROGRESS'] } }, orderBy: { dueDate: 'asc' }, take: 10, select: { id: true, title: true, dueDate: true, salesOpportunityId: true } }),
+    prisma.targetPublicResearch.findUnique({
+      where: { wholesaleAccountId },
+      select: { buyerStructure: true, cocktailMenuUrl: true, cocktailProgram: true, events: true, googleRating: true, googleReviewCount: true, isNationalChain: true, localBrandsOnMenu: true, notes: true, openStatus: true, ownershipVerification: true, patioOutdoor: true, popularitySignal: true, privateDining: true, researchConfidence: true, sourceUrls: true, updatedAt: true, websiteUrl: true, yelpRating: true, yelpReviewCount: true },
+    }),
   ]);
   const timeline = [
     ...sales.map((event) => ({ at: event.reportDate, kind: 'purchase', title: `${event.itemCode} - ${event.itemName}`, detail: `${event.bottles} bottle${event.bottles === 1 ? '' : 's'} purchased` })),
@@ -188,12 +290,15 @@ export async function OpportunityAccountPanel({ agencyId, wholesaleAccountId, cu
         { label: 'Last visit', value: visits[0] ? formatEasternDate(visits[0].visitAt) : 'Never' },
         { label: 'Follow-ups', value: worklist.length },
       ]} />
+      <ResearchSummary research={research} />
       {opportunities.slice(0, 3).map((item) => <OpportunityRow
-        explanation={firstExplanation(item.explanation)}
+        explanation={item.explanation}
         key={item.id}
+        lastDetectedAt={item.lastDetectedAt}
         priorityBand={item.priorityBand}
         productionScore={item.productionScore}
         recommendedAction={item.recommendedAction}
+        scoringVersion={item.scoringVersion}
         title={item.title}
         actions={<ContextualActions
           context={{ accountName: item.wholesaleAccount.name, opportunityId: item.id, reason: firstExplanation(item.explanation), returnTo: `/wholesale/${wholesaleAccountId}`, sourceLabel: item.title, sourceType: item.type, wholesaleAccountId }}
