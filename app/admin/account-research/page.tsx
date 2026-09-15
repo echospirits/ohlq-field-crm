@@ -7,7 +7,7 @@ import Link from 'next/link';
 import { buildPageMetadata } from '../../../lib/appBrand';
 import { requirePlatformAdmin } from '../../../lib/auth';
 import { getAccountResearchQueue, PURSUED_RESEARCH_DAYS, STANDARD_RESEARCH_DAYS } from '../../../lib/accountResearch';
-import { ACCOUNT_RESEARCH_PILOT_BUDGET_MICROS, ACCOUNT_RESEARCH_PILOT_MAX_ACCOUNTS, formatUsdMicros } from '../../../lib/accountResearchPilot';
+import { ACCOUNT_RESEARCH_PILOT_BUDGET_MICROS, ACCOUNT_RESEARCH_PILOT_MAX_ACCOUNTS, ACCOUNT_RESEARCH_SUBMISSION_WAVE_SIZE, formatUsdMicros } from '../../../lib/accountResearchPilot';
 import { getAccountResearchPilotAvailability } from '../../../lib/accountResearchOpenAI';
 import { deriveSettledPilotStatus, getLatestAccountResearchPilot } from '../../../lib/accountResearchPilotService';
 import { formatEasternDateTime } from '../../../lib/dateTime';
@@ -32,8 +32,8 @@ const statusMessage = (params: PageParams) => {
   if (params.status === 'failed') return `Import blocked${params.errors ? ` with ${params.errors} validation error(s)` : ''}. Nothing was changed.`;
   if (params.status === 'missing-file') return 'Choose a research CSV before continuing.';
   if (params.status === 'invalid-file') return 'Upload a .csv file generated from the research queue.';
-  if (params.status === 'pilot-started') return `Pilot started. ${params.submitted ?? '0'} account research jobs were submitted in the background.`;
-  if (params.status === 'pilot-continued') return `Pilot continued. ${params.submitted ?? '0'} additional jobs were submitted.`;
+  if (params.status === 'pilot-started') return `Pilot started. The first wave of ${params.submitted ?? '0'} account research jobs was submitted in the background.`;
+  if (params.status === 'pilot-continued') return `The next wave of ${params.submitted ?? '0'} account research jobs was submitted.`;
   if (params.status === 'pilot-paused') return `Pilot paused after ${params.submitted ?? '0'} submissions and ${params.failed ?? '0'} failure(s). ${params.remaining ?? '0'} queued accounts were not sent.`;
   if (params.status === 'pilot-checked') return `Checked ${params.checked ?? '0'} jobs: ${params.applied ?? '0'} automatically applied, ${params.rejected ?? '0'} declined by validation, ${params.pending ?? '0'} still running, and ${params.failed ?? '0'} failed.`;
   if (params.status === 'pilot-approved') return 'Research approved, saved to the account, and its opportunity score recalculated.';
@@ -123,7 +123,7 @@ export default async function AccountResearchPage({ searchParams }: { searchPara
       </div>
 
       <section className="dashboard-section">
-        <SectionHeading description={`The run is manually triggered, test-only, limited to ${ACCOUNT_RESEARCH_PILOT_MAX_ACCOUNTS} accounts, and reserves no more than ${formatUsdMicros(ACCOUNT_RESEARCH_PILOT_BUDGET_MICROS)} before contacting OpenAI.`} title="Guarded research run" />
+        <SectionHeading description={`The run is manually triggered, test-only, and covers up to ${ACCOUNT_RESEARCH_PILOT_MAX_ACCOUNTS} accounts in controlled waves of ${ACCOUNT_RESEARCH_SUBMISSION_WAVE_SIZE}. It reserves no more than ${formatUsdMicros(ACCOUNT_RESEARCH_PILOT_BUDGET_MICROS)} before contacting OpenAI.`} title="Guarded research run" />
         {!pilot ? (
           <article className="card research-workflow-card">
             <div className="research-pilot-callout">
@@ -142,11 +142,11 @@ export default async function AccountResearchPage({ searchParams }: { searchPara
             {failedJobs > 0 ? <div className="research-pilot-failure" role="alert"><strong>{failedJobs} research job{failedJobs === 1 ? '' : 's'} failed</strong><p>{friendlyPilotError(pilot.jobs.map((job) => job.error))}</p></div> : null}
             <div className="segmented-submit research-pilot-actions">
               {runningJobs > 0 || reviewJobs.length > 0 ? <form action={checkAccountResearchPilot}><input name="pilotId" type="hidden" value={pilot.id} /><button type="submit">Check and apply research</button></form> : null}
-              {pilot.status === AccountResearchPilotStatus.PAUSED && queuedJobs > 0 ? <form action={continueAccountResearchPilot}><input name="pilotId" type="hidden" value={pilot.id} /><button className="secondary" type="submit">Retry queued accounts</button></form> : null}
+              {queuedJobs > 0 && runningJobs === 0 && reviewJobs.length === 0 ? <form action={continueAccountResearchPilot}><input name="pilotId" type="hidden" value={pilot.id} /><button className="secondary" type="submit">Submit next {Math.min(ACCOUNT_RESEARCH_SUBMISSION_WAVE_SIZE, queuedJobs)} accounts</button></form> : null}
               {canStartNewPilot ? <form action={startAccountResearchPilot}><button type="submit" disabled={!availability.available}>Start new guarded {ACCOUNT_RESEARCH_PILOT_MAX_ACCOUNTS}-account run</button></form> : null}
             </div>
             {canStartNewPilot && !availability.available ? <p className="danger-text">A new pilot is unavailable: {availability.appEnvironment !== 'test' ? 'automated research is test-only' : !availability.enabled ? 'ACCOUNT_RESEARCH_PILOT_ENABLED is off' : !availability.hasKey ? 'the test OpenAI key is missing' : availability.configurationError}.</p> : null}
-            <p className="muted">Costs are metered estimates from response tokens and web-search calls. The application never reserves more than {formatUsdMicros(ACCOUNT_RESEARCH_PILOT_BUDGET_MICROS)}; the OpenAI project budget remains the final billing backstop.</p>
+            <p className="muted">Only one {ACCOUNT_RESEARCH_SUBMISSION_WAVE_SIZE}-account wave can run at a time. Check and apply the current wave before sending the next. Costs are metered estimates from response tokens and web-search calls. The application never reserves more than {formatUsdMicros(ACCOUNT_RESEARCH_PILOT_BUDGET_MICROS)}; the OpenAI project budget remains the final billing backstop.</p>
           </article>
         )}
       </section>

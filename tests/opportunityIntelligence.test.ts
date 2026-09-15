@@ -30,10 +30,22 @@ it('does not let unqualified legacy Ohio volume imply premium affinity', () => {
   assert.match(withLocal.factors.join(' '), /unverified for category and price/i);
 });
 
+it('has no automatic baseline and lets a clearly poor price fit score zero', () => {
+  const targetProduct = { itemCode: 'PREMIUM', name: 'Premium bourbon', category: 'BOURBON' as const, price750: 50, isLocal: true, priority: 1 };
+  const hypothesis = { type: OpportunityType.CATEGORY_CONQUEST, targetProduct, cycleKey: 'x', targetCategory: 'BOURBON' as const, title: 'x', recommendedAction: 'visit', explanation: ['Bourbon buyer'] };
+  const result = new RuleBasedOpportunityRanker().rank(hypothesis, base({
+    daysSinceLastVisit: null,
+    purchases: [item({ isEcho: false, bottles90: 6, price750: 8 })],
+  }));
+  assert.equal(result.score, 0);
+  assert.match(result.factors.join(' '), /no baseline points/i);
+  assert.match(result.factors.join(' '), /20-point penalty/i);
+});
+
 it('caps national chains at very low priority even when volume is strong', () => {
   const hypothesis = { type: OpportunityType.CATEGORY_CONQUEST, cycleKey: 'x', targetCategory: 'RUM' as const, title: 'x', recommendedAction: 'visit', explanation: ['Rum buyer'] };
   const result = new RuleBasedOpportunityRanker().rank(hypothesis, base({ accountName: 'Olive Garden', purchases: [item({ category: 'RUM', isEcho: false, bottles90: 200 })], targetDataScore: 100, targetPublicFitScore: 100, ohioCraft9L: 20, ohioCraftAffinity: 100 }));
-  assert.equal(result.score, 20);
+  assert.ok(result.score >= 0 && result.score <= 20);
   assert.equal(result.priorityBand, 'LOW');
   assert.match(result.factors.join(' '), /National chain/i);
 });

@@ -16,17 +16,20 @@ export const metadata = buildPageMetadata('Opportunities');
 
 const labels: Record<OpportunityType, string> = { LAPSED_BUYER: 'Reactivation', FIRST_ORDER_FOLLOW_UP: 'First Reorder', CATEGORY_CONQUEST: 'Category Opportunity', CROSS_SELL: 'Cross-Sell', NO_RECENT_TOUCH: 'Needs Attention' };
 
-export default async function OpportunityInbox({ searchParams }: { searchParams?: Promise<{ type?: string; priority?: string }> }) {
+export default async function OpportunityInbox({ searchParams }: { searchParams?: Promise<{ type?: string; priority?: string; sort?: string }> }) {
   const currentUser = await requireUser();
   const { organizationId } = await requireFeatureForUser(currentUser, 'WHOLESALE_OPPORTUNITIES');
   const query = (await searchParams) ?? {};
   const type = Object.values(OpportunityType).includes(query.type as OpportunityType) ? query.type as OpportunityType : undefined;
-  const [opportunities, assignees] = await Promise.all([
+  const lowestFirst = query.sort === 'lowest';
+  const opportunityWhere = { organizationId, status: OpportunityStatus.OPEN, ...(type ? { type } : {}), ...(query.priority ? { priorityBand: query.priority.toUpperCase() } : {}) };
+  const [opportunities, opportunityCount, assignees] = await Promise.all([
     prisma.salesOpportunity.findMany({
-      where: { organizationId, status: OpportunityStatus.OPEN, ...(type ? { type } : {}), ...(query.priority ? { priorityBand: query.priority.toUpperCase() } : {}) },
+      where: opportunityWhere,
       include: { wholesaleAccount: { select: { name: true, city: true } }, worklistItems: { where: { status: { in: ['OPEN', 'IN_PROGRESS'] } }, orderBy: [{ dueDate: 'asc' }, { createdAt: 'asc' }], take: 1, select: { id: true } } },
-      orderBy: [{ productionScore: 'desc' }, { detectedAt: 'desc' }], take: 250,
+      orderBy: [{ productionScore: lowestFirst ? 'asc' : 'desc' }, { detectedAt: 'desc' }], take: 250,
     }),
+    prisma.salesOpportunity.count({ where: opportunityWhere }),
     prisma.user.findMany({ where: { organizationId, isActive: true, role: { notIn: ['TASTER', 'PLATFORM_ADMIN'] } }, orderBy: [{ name: 'asc' }, { email: 'asc' }] }),
   ]);
   const actionUsers = assignees.map((assignee) => ({ id: assignee.id, name: getUserDisplayName(assignee) }));
@@ -40,8 +43,10 @@ export default async function OpportunityInbox({ searchParams }: { searchParams?
     <nav aria-label="Opportunity filters" className="opportunity-filters">
       <Link aria-current={!type && !query.priority ? 'page' : undefined} className={!type && !query.priority ? 'active' : undefined} href="/opportunities">Best Opportunities</Link>
       <Link aria-current={query.priority?.toLowerCase() === 'high' ? 'page' : undefined} className={query.priority?.toLowerCase() === 'high' ? 'active' : undefined} href="/opportunities?priority=high">High priority</Link>
+      <Link aria-current={lowestFirst ? 'page' : undefined} className={lowestFirst ? 'active' : undefined} href="/opportunities?sort=lowest">Lowest scores</Link>
       {Object.values(OpportunityType).map((value) => <Link aria-current={type === value ? 'page' : undefined} className={type === value ? 'active' : undefined} href={`/opportunities?type=${value}`} key={value}>{labels[value]}</Link>)}
     </nav>
+    <p className="muted opportunity-result-count">Showing {opportunities.length.toLocaleString()} of {opportunityCount.toLocaleString()} open opportunities, {lowestFirst ? 'lowest' : 'highest'} score first.</p>
     <section className="opportunity-grid">{opportunities.map((item) => <article className="card opportunity-card" key={item.id}>
       <div className="opportunity-card-heading"><div><span className={`priority priority-${item.priorityBand.toLowerCase()}`}>{item.priorityBand}</span><small>{labels[item.type]}</small><h2><Link href={`/wholesale/${item.wholesaleAccountId}`}>{item.wholesaleAccount.name}</Link></h2><p className="muted">{item.wholesaleAccount.city}</p></div><span className="opportunity-score"><strong>{Math.round(item.productionScore)}</strong><small>score</small></span></div>
       <p className="opportunity-primary-action"><strong>Next:</strong> {item.recommendedAction}</p>

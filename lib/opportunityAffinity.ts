@@ -46,7 +46,7 @@ export function getPriceEvidence(purchases: AffinityPurchase[], target: Affinity
     // A small local preference bonus; the meaningful bonus requires category AND price alignment.
     localScore: (anyLocal ? 2 : 0) + Math.min(8, localComparable / 3),
     priceScore: target.price750 ? (20 * comparableShare + 15 * Math.min(1, comparableBottles / 24)) * coverage : 0,
-    mismatch: Boolean(target.price750 && coverage >= .7 && knownVolume / .75 >= 12 && cheapShare >= .8 && comparableBottles < 6),
+    mismatch: Boolean(target.price750 && coverage >= .7 && knownVolume / .75 >= 6 && cheapShare >= .8 && comparableBottles < 3),
     targetPrice750: target.price750,
   };
 }

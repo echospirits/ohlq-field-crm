@@ -12,6 +12,7 @@ import {
   ACCOUNT_RESEARCH_PILOT_MAX_ACCOUNTS,
   ACCOUNT_RESEARCH_PILOT_MODEL,
   ACCOUNT_RESEARCH_PRICING,
+  ACCOUNT_RESEARCH_SUBMISSION_WAVE_SIZE,
   chooseResearchTier,
   estimateResearchCostMicros,
   parseAccountResearchResult,
@@ -115,9 +116,18 @@ export async function submitQueuedPilotJobs({ pilotId, organizationId, db = pris
   if (!pilot) throw new Error('The active pilot could not be found.');
   if (pilot.estimatedSpendMicros + pilot.reservedMicros > pilot.budgetLimitMicros) throw new Error('The pilot budget reservation is invalid; no jobs were submitted.');
 
+  const activeJobs = await db.accountResearchJob.count({
+    where: { pilotId, organizationId, status: { in: [AccountResearchJobStatus.SUBMITTED, AccountResearchJobStatus.RUNNING] } },
+  });
+  if (activeJobs > 0) throw new Error('The current 25-account wave is still running. Check and apply it before submitting the next wave.');
+
+  const queuedJobs = await db.accountResearchJob.count({
+    where: { pilotId, organizationId, status: AccountResearchJobStatus.QUEUED },
+  });
   const jobs = await db.accountResearchJob.findMany({
     where: { pilotId, organizationId, status: AccountResearchJobStatus.QUEUED },
     orderBy: { priority: 'asc' },
+    take: ACCOUNT_RESEARCH_SUBMISSION_WAVE_SIZE,
   });
   let submitted = 0;
   let failed = 0;
@@ -158,7 +168,13 @@ export async function submitQueuedPilotJobs({ pilotId, organizationId, db = pris
       }
     }
   }
-  return { submitted, failed, paused, remaining: jobs.length - submitted - failed };
+  if (submitted > 0 && !paused) {
+    await db.accountResearchPilot.updateMany({
+      where: { id: pilotId, organizationId },
+      data: { status: AccountResearchPilotStatus.RUNNING },
+    });
+  }
+  return { submitted, failed, paused, remaining: queuedJobs - submitted - failed };
 }
 
 const finishRetrievedJob = async ({
@@ -247,7 +263,6 @@ export async function autoResolveAccountResearchJobs({
   const resolvedAt = new Date();
   await db.$transaction(async (tx) => {
     for (const { job, result } of approved) {
-      const researchedAt = new Date(`${result.researchedAt}T12:00:00.000Z`);
       const sourceUrls = [...new Set(result.evidence.map((item) => item.sourceUrl))];
       const researchData = {
         researchStatus: 'Automatically validated research',
@@ -269,10 +284,10 @@ export async function autoResolveAccountResearchJobs({
         researchConfidence: result.confidence,
         notes: result.notes,
         sourceUrls,
-        completedAt: researchedAt,
+        completedAt: job.completedAt ?? resolvedAt,
         researcher: 'Automated guarded research',
-        lastAttemptedAt: researchedAt,
-        lastRefreshedAt: researchedAt,
+        lastAttemptedAt: job.completedAt ?? resolvedAt,
+        lastRefreshedAt: resolvedAt,
         refreshStatus: 'COMPLETE',
         refreshError: null,
         researchModel: job.pilot.model,
@@ -397,7 +412,7 @@ export async function approveAccountResearchJob({
     throw new Error('The account identity changed after research; rerun this account.');
   }
   const sourceUrls = [...new Set(result.evidence.map((item) => item.sourceUrl))];
-  const researchedAt = new Date(`${result.researchedAt}T12:00:00.000Z`);
+  const appliedAt = new Date();
   await db.$transaction(async (tx) => {
     await tx.targetPublicResearch.upsert({
       where: { wholesaleAccountId: job.wholesaleAccountId },
@@ -422,10 +437,10 @@ export async function approveAccountResearchJob({
         researchConfidence: result.confidence,
         notes: result.notes,
         sourceUrls,
-        completedAt: researchedAt,
+        completedAt: job.completedAt ?? appliedAt,
         researcher: `Reviewed automated pilot by ${reviewedByUserId}`,
-        lastAttemptedAt: researchedAt,
-        lastRefreshedAt: researchedAt,
+        lastAttemptedAt: job.completedAt ?? appliedAt,
+        lastRefreshedAt: appliedAt,
         refreshStatus: 'COMPLETE',
         refreshError: null,
         researchModel: job.pilot.model,
@@ -451,10 +466,10 @@ export async function approveAccountResearchJob({
         researchConfidence: result.confidence,
         notes: result.notes,
         sourceUrls,
-        completedAt: researchedAt,
+        completedAt: job.completedAt ?? appliedAt,
         researcher: `Reviewed automated pilot by ${reviewedByUserId}`,
-        lastAttemptedAt: researchedAt,
-        lastRefreshedAt: researchedAt,
+        lastAttemptedAt: job.completedAt ?? appliedAt,
+        lastRefreshedAt: appliedAt,
         refreshStatus: 'COMPLETE',
         refreshError: null,
         researchModel: job.pilot.model,

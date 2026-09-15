@@ -7,6 +7,7 @@ import {
   ACCOUNT_RESEARCH_JOB_RESERVE_MICROS,
   ACCOUNT_RESEARCH_PILOT_BUDGET_MICROS,
   ACCOUNT_RESEARCH_PILOT_MAX_ACCOUNTS,
+  ACCOUNT_RESEARCH_SUBMISSION_WAVE_SIZE,
   chooseResearchTier,
   estimateResearchCostMicros,
   parseAccountResearchResult,
@@ -41,6 +42,7 @@ const result = {
 
 it('hard-caps the pilot at 250 eight-cent reservations and twenty dollars', () => {
   assert.equal(ACCOUNT_RESEARCH_PILOT_MAX_ACCOUNTS, 250);
+  assert.equal(ACCOUNT_RESEARCH_SUBMISSION_WAVE_SIZE, 25);
   assert.equal(ACCOUNT_RESEARCH_JOB_RESERVE_MICROS, 80_000);
   assert.equal(ACCOUNT_RESEARCH_PILOT_MAX_ACCOUNTS * ACCOUNT_RESEARCH_JOB_RESERVE_MICROS, ACCOUNT_RESEARCH_PILOT_BUDGET_MICROS);
 });
@@ -117,7 +119,10 @@ it('scopes waterfall candidates to the selected tenant organization', async () =
 it('keeps the pilot manual and Platform Admin protected', () => {
   const vercel = readFileSync('vercel.json', 'utf8');
   const actions = readFileSync('app/admin/account-research/actions.ts', 'utf8');
+  const service = readFileSync('lib/accountResearchPilotService.ts', 'utf8');
   assert.doesNotMatch(vercel, /account-research/);
   assert.match(actions, /requirePlatformAdmin/);
   assert.match(actions, /startAccountResearchPilot/);
+  assert.match(service, /take: ACCOUNT_RESEARCH_SUBMISSION_WAVE_SIZE/);
+  assert.match(service, /The current 25-account wave is still running/);
 });

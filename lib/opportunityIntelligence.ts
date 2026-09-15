@@ -216,11 +216,16 @@ export class RuleBasedOpportunityRanker implements OpportunityRanker {
     const localCraftScore = price?.localScore ?? (((signals.ohioCraft9L ?? 0) > 0 || (signals.ohioCraftAffinity ?? 0) > 0) ? 1 : 0);
     const publicFitScore = Math.max(percent(signals.targetPublicFitScore) * 0.15, qualitativePublicScore(signals));
     const relationshipScore = Math.min(10, signals.echoBottles90 * 0.5);
-    const urgencyScore = Math.min(5, (signals.daysSinceLastVisit ?? 90) / 18);
+    const relationshipOpportunity = new Set<OpportunityType>([OpportunityType.LAPSED_BUYER, OpportunityType.FIRST_ORDER_FOLLOW_UP, OpportunityType.NO_RECENT_TOUCH]).has(opportunity.type);
+    const urgencyScore = relationshipOpportunity ? Math.min(5, (signals.daysSinceLastVisit ?? 90) / 18) : 0;
     const peer = opportunity.targetProduct ? signals.peerEvidence?.[opportunity.targetProduct.itemCode] : null;
     const learned = opportunity.targetProduct ? signals.learningAdjustment?.[opportunity.targetProduct.itemCode] ?? 0 : 0;
-    let score = 10 + categoryDemandScore + (price ? price.priceScore : Math.min(8, targetMarketScore)) + localCraftScore + publicFitScore + relationshipScore + urgencyScore + (peer?.score ?? 0) + Math.max(-10, Math.min(10, learned));
-    score -= Math.min(5, signals.openWorklistCount * 1.5);
+    const priceScore = price ? price.priceScore : Math.min(8, targetMarketScore);
+    const peerScore = peer?.score ?? 0;
+    const learningScore = Math.max(-10, Math.min(10, learned));
+    const worklistPenalty = Math.min(5, signals.openWorklistCount * 1.5);
+    let score = categoryDemandScore + priceScore + localCraftScore + publicFitScore + relationshipScore + urgencyScore + peerScore + learningScore - worklistPenalty;
+    factors.push(`Score components: demand ${categoryDemandScore.toFixed(1)}, price ${priceScore.toFixed(1)}, Ohio affinity ${localCraftScore.toFixed(1)}, public fit ${publicFitScore.toFixed(1)}, relationship ${relationshipScore.toFixed(1)}, urgency ${urgencyScore.toFixed(1)}, peers ${peerScore.toFixed(1)}, learning ${learningScore.toFixed(1)}, worklist -${worklistPenalty.toFixed(1)}; no baseline points`);
 
     if (price) {
       factors.push(`Target ${opportunity.targetProduct!.name} (${opportunity.targetProduct!.itemCode}): ${price.targetPrice750 ? `$${price.targetPrice750.toFixed(2)} retail per 750ml equivalent` : 'catalog price unavailable'}`);
@@ -230,7 +235,7 @@ export class RuleBasedOpportunityRanker implements OpportunityRanker {
       if (!price.targetPrice750 || price.coverage < .7) factors.push('Insufficient catalog price coverage; price suitability is unconfirmed');
       if (peer) factors.push(`Existing buyers of this product: ${peer.buyers} comparable accounts; peer contribution ${peer.score.toFixed(1)}/5`);
       if (learned) factors.push(`Validated tenant outcome adjustment ${learned.toFixed(1)} points`);
-      if (price.mismatch) { score = Math.min(30, score); factors.push('Purchasing is concentrated well below this product’s price; acquisition priority capped at 30'); }
+      if (price.mismatch) { score = Math.min(30, score - 20); factors.push('Purchasing is concentrated well below this product’s price; 20-point penalty and acquisition priority capped at 30'); }
     } else if ((signals.ohioCraft9L ?? 0) > 0) factors.push('Legacy Ohio-brand volume is unverified for category and price; contributes at most 1 point');
     if (signals.observedSince) factors.push(`Available purchase observations begin ${signals.observedSince}; windows may be incomplete`);
     if (signals.targetTotalVolumePercentile !== null && signals.targetTotalVolumePercentile !== undefined) factors.push(`Sales volume percentile ${Math.round(Number(signals.targetTotalVolumePercentile))}`);
@@ -242,8 +247,8 @@ export class RuleBasedOpportunityRanker implements OpportunityRanker {
     if (signals.localBrandsOnMenu?.length) factors.push(`Local brands found on menu: ${signals.localBrandsOnMenu.slice(0, 4).join(', ')}`);
     if (!signals.targetPublicFitScore && !signals.patioOutdoor && !signals.cocktailProgram && !signals.popularitySignal) factors.push('Public-fit research has not been completed; score currently relies on sales evidence');
     if (isNationalChainSignal(signals)) {
-      score = Math.min(score, opportunityRules.nationalChainScoreCap);
-      factors.push(`National chain with likely centralized brand contracts; priority capped at ${opportunityRules.nationalChainScoreCap}`);
+      score = Math.min(score - 20, opportunityRules.nationalChainScoreCap);
+      factors.push(`National chain with likely centralized brand contracts; 20-point penalty and priority capped at ${opportunityRules.nationalChainScoreCap}`);
     }
     score = Math.round(Math.max(0, Math.min(100, score)) * 10) / 10;
     return { score, priorityBand: score >= 75 ? 'HIGH' : score >= 45 ? 'MEDIUM' : 'LOW', factors, version: OPPORTUNITY_RANKING_VERSION };
