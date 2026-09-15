@@ -110,8 +110,9 @@ export async function runAutomaticAccountResearch({ db = prisma, now = new Date(
     return { ...status, poll, submitted: 0, dailyLimitReached: remainingToday === 0 };
   }
   const activeJobs = await db.accountResearchJob.count({ where: { pilotId: run.id, status: { in: ACTIVE_JOB_STATUSES } } });
+  const settledWaveThisPass = Boolean(poll && poll.checked > 0 && activeJobs === 0);
   let submission = { submitted: 0, failed: 0, paused: false, remaining: 0 };
-  if (activeJobs === 0) {
+  if (activeJobs === 0 && !settledWaveThisPass) {
     submission = await submitQueuedPilotJobs({
       pilotId: run.id,
       organizationId: run.organizationId,
@@ -122,5 +123,5 @@ export async function runAutomaticAccountResearch({ db = prisma, now = new Date(
     remainingToday -= submission.submitted;
   }
   const status = await getAutomaticAccountResearchStatus({ db, now });
-  return { ...status, poll, ...submission, dailyLimitReached: remainingToday === 0 };
+  return { ...status, poll, ...submission, coolingDown: settledWaveThisPass, dailyLimitReached: remainingToday === 0 };
 }

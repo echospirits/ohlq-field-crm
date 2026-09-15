@@ -151,4 +151,7 @@ it('keeps manual tests Platform Admin protected and schedules a production-gated
   const workflow = readFileSync('lib/accountResearchDailyWorkflow.ts', 'utf8');
   assert.match(workflow, /'use workflow'/);
   assert.match(workflow, /sleep\(ACCOUNT_RESEARCH_AUTOMATIC_WAVE_PAUSE\)/);
+  const automation = readFileSync('lib/accountResearchAutomation.ts', 'utf8');
+  assert.match(automation, /settledWaveThisPass/);
+  assert.match(automation, /activeJobs === 0 && !settledWaveThisPass/);
 });
