@@ -46,6 +46,7 @@ export type OhlqAgencyInventoryDiagnostics = {
   duplicateAgencyItemRows: number;
   durationMs: number;
   excludedDistilleryOnlyRows: number;
+  distilleryOnlyItemCodes: string[];
   excludedItemRows: Record<'3150B' | '3750B' | '4359B', number>;
   malformedIdentifierRows: number;
   malformedNumericRows: number;
@@ -142,6 +143,8 @@ export function parseOhlqAgencyInventoryCsv(
     rawRows: parsed.data.length,
     rowsMatchingVendor: 0,
   };
+  const distilleryOnlyItemCodes = new Set<string>();
+  const wholesaleItemCodes = new Set<string>();
 
   for (const row of parsed.data) {
     const agencyNumber = normalizeOhlqId(row.Store);
@@ -162,6 +165,9 @@ export function parseOhlqAgencyInventoryCsv(
     const detailCodeDescription = clean(row.Detail_Code_Description);
     if (matchesConfiguredVendor && isDistilleryOnlyInventoryDetail(detailCodeDescription)) {
       stats.excludedDistilleryOnlyRows += 1;
+      distilleryOnlyItemCodes.add(itemCode);
+    } else if (matchesConfiguredVendor) {
+      wholesaleItemCodes.add(itemCode);
     }
 
     if (
@@ -220,7 +226,15 @@ export function parseOhlqAgencyInventoryCsv(
     );
   }
 
-  return { rows: Array.from(rowsByKey.values()), stats };
+  return {
+    rows: Array.from(rowsByKey.values()),
+    stats: {
+      ...stats,
+      distilleryOnlyItemCodes: Array.from(distilleryOnlyItemCodes)
+        .filter((itemCode) => !wholesaleItemCodes.has(itemCode))
+        .sort(),
+    },
+  };
 }
 
 const keyFor = (row: { agencyNumber: string; itemCode: string }) => `${row.agencyNumber}:${row.itemCode}`;

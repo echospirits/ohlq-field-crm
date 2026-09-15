@@ -5,6 +5,7 @@ import { getOrganizationTenantConfig, matchesTenantProduct } from './tenantConfi
 import { catalogLiters, compareWithBuyers, toAffinityProduct, type BuyerBasket } from './opportunityAffinity';
 import { learnedAdjustment, labelMatureOutcome, outcomeSegment, trainOutcomeModel, type OutcomeExample } from './opportunityLearning';
 import { buildDailyPurchaseEvents } from './opportunitySalesLedger';
+import { getDistilleryOnlyItemCodes, isOpportunityEligibleOhlqProduct } from './ohlqProductEligibility';
 import { normalizeOpportunityCategory, OPPORTUNITY_RANKING_VERSION, OPPORTUNITY_RULES_VERSION, OPPORTUNITY_SIGNAL_VERSION, opportunityRules } from './opportunityConfig';
 import { detectOpportunityHypotheses, noCurrentOpportunityRank, RuleBasedOpportunityRanker, selectPrimaryOpportunity, type AccountOpportunitySignals } from './opportunityIntelligence';
 import { ECHO_ORGANIZATION_ID } from './organizations';
@@ -37,16 +38,27 @@ export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = 
   const start90 = new Date(asOfDate.getTime() - 89 * DAY);
   const config = await getOrganizationTenantConfig(organizationId, db);
   config.productFilter.mode = 'item-list';
-  const [catalog, productDecisions, identities, rawRows, historic, overlays] = await Promise.all([
+  const [catalog, productDecisions, latestInventoryImport, identities, rawRows, historic, overlays] = await Promise.all([
     db.ohlqBrandMasterItem.findMany(),
     db.organizationProduct.findMany({ where: { organizationId, active: true, market: 'OH', discontinued: false, status: { in: ['OWNED', 'REPRESENTED'] } } }),
+    db.ohlqTenantInventoryImportStatus.findFirst({
+      where: { organizationId, status: 'COMPLETED' },
+      orderBy: { reportDate: 'desc' },
+      select: { diagnostics: true },
+    }),
     db.wholesaleAccount.findMany({ where: { mergedIntoId: null }, select: { id: true, licenseeId: true, licenseeIds: { select: { licenseeId: true } } } }),
     db.ohlqAnnualSalesByWholesaleRow.findMany({ where: { reportDate: { gte: start90, lte: asOfDate } }, select: { reportDate: true, permitNumber: true, agencyId: true, vendor: true, brand: true, wholesaleBottlesSold: true } }),
     db.salesOpportunity.findMany({ where: { organizationId, rulesVersion: OPPORTUNITY_RULES_VERSION, detectedAt: { lte: new Date(asOfDate.getTime() - 90 * DAY) } }, select: { wholesaleAccountId: true, detectedAt: true, convertedAt: true, type: true, signalSnapshot: true, events: { where: { eventType: 'DETECTED' }, select: { metadata: true }, take: 1 } } }),
     db.organizationAccountOverlay.findMany({ where: { organizationId, accountType: 'WHOLESALE' } }),
   ]);
   const masterByCode = new Map(catalog.map(c => [c.itemCode,c]));
-  const portfolio = productDecisions.flatMap(p => { const master = masterByCode.get(p.externalItemCode); return master ? [toAffinityProduct(master, p.strategicPriority ?? 1)] : []; });
+  const distilleryOnlyItemCodes = getDistilleryOnlyItemCodes(latestInventoryImport?.diagnostics);
+  const portfolio = productDecisions.flatMap(p => {
+    const master = masterByCode.get(p.externalItemCode);
+    return master && isOpportunityEligibleOhlqProduct(master, distilleryOnlyItemCodes)
+      ? [toAffinityProduct(master, p.strategicPriority ?? 1)]
+      : [];
+  });
   const oldestDetection = historic.length ? new Date(Math.min(...historic.map(h => h.detectedAt.getTime()))) : asOfDate;
   const [outcomePurchases, completedReports, ledgerDates] = historic.length ? await Promise.all([
     db.accountSalesEvent.findMany({ where: { organizationId, sourceKey: { startsWith: 'DAILY_V3:' }, wholesaleAccountId: { in: historic.map(h => h.wholesaleAccountId) }, reportDate: { gte: oldestDetection, lte: asOfDate } }, select: { wholesaleAccountId: true, itemCode: true, reportDate: true } }),
@@ -188,8 +200,11 @@ export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = 
       if (opportunity) {
         const detection = await db.opportunityEvent.findFirst({ where: { organizationId, opportunityId: opportunity.id, eventType: 'DETECTED' }, select: { metadata: true } });
         const original = (detection?.metadata as unknown as { hypothesis?: typeof hypothesis } | null)?.hypothesis;
-        if (original?.targetProduct) {
-          hypothesis = { ...original, targetProduct: portfolio.find(p => p.itemCode === original.targetProduct!.itemCode) ?? original.targetProduct };
+        const currentTargetProduct = original?.targetProduct
+          ? portfolio.find(p => p.itemCode === original.targetProduct!.itemCode)
+          : null;
+        if (original?.targetProduct && currentTargetProduct) {
+          hypothesis = { ...original, targetProduct: currentTargetProduct };
           ranking = ranker.rank(hypothesis, signal);
         }
         // Detection features remain immutable for honest outcome learning. Current

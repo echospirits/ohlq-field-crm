@@ -102,15 +102,18 @@ describe('parseOhlqAgencyInventoryCsv', () => {
       row({ brand: '3750B' }),
       row({ brand: '4359B' }),
       row({ brand: '2806B', detail: '  A3A Distillery Only  ' }),
+      row({ brand: '2807B', detail: 'A3A Distillery Only' }),
+      row({ brand: '2807B', detail: 'A3A Bailment', store: '10510' }),
       row({ brand: '2847B', detail: 'A3A Distillery Only Special' }),
       row({ brand: '9999Z', vendor: 'OTHER' }),
     ].join('\n');
     const result = parseOhlqAgencyInventoryCsv(csv, '2026-08-18', { minimumQualifyingRows: 1 });
 
-    assert.deepEqual(result.rows.map((item) => item.itemCode), ['2796B', '2847B']);
-    assert.equal(result.stats.rowsMatchingVendor, 6);
+    assert.deepEqual(result.rows.map((item) => item.itemCode), ['2796B', '2807B', '2847B']);
+    assert.equal(result.stats.rowsMatchingVendor, 8);
     assert.deepEqual(result.stats.excludedItemRows, { '3150B': 1, '3750B': 1, '4359B': 1 });
-    assert.equal(result.stats.excludedDistilleryOnlyRows, 1);
+    assert.equal(result.stats.excludedDistilleryOnlyRows, 2);
+    assert.deepEqual(result.stats.distilleryOnlyItemCodes, ['2806B']);
   });
 
   it('counts malformed numeric rows and rejects empty, malformed, or unexpectedly sparse files', () => {

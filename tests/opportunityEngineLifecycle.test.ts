@@ -12,14 +12,15 @@ it('refreshes a pursued product without replacing its detection snapshot or conv
     { brand: 'B', wholesaleBottlesSold: 12 },
   ].map(r => ({ ...r, reportDate: new Date('2026-09-03'), permitNumber: '12345', agencyId: '1', vendor: 'V' }));
   const catalog = [
-    { itemCode: 'A', name: 'Tenant Rum', category: 'Rum', retailPrice: 30, productVolume: 25.4 },
-    { itemCode: 'B', name: 'Tenant Vodka', category: 'Vodka', retailPrice: 10, productVolume: 25.4 },
-    { itemCode: 'C', name: 'Competitor Rum', category: 'Rum', retailPrice: 30, productVolume: 25.4 },
+    { itemCode: 'A', name: 'Tenant Rum', category: 'Rum', retailPrice: 30, productVolume: 25.4, solItemStatusCode: '70' },
+    { itemCode: 'B', name: 'Tenant Vodka', category: 'Vodka', retailPrice: 10, productVolume: 25.4, solItemStatusCode: '70' },
+    { itemCode: 'C', name: 'Competitor Rum', category: 'Rum', retailPrice: 30, productVolume: 25.4, solItemStatusCode: '70' },
   ];
   const db = {
     organization: { findUnique: async () => ({ id: 'tenant', appName: 'CRM', digestName: 'CRM', displayName: 'Tenant', productLabel: 'Tenant', productPluralLabel: 'Tenant products', products: [{ externalItemCode: 'A' }, { externalItemCode: 'B' }], vendorIdentifiers: [] }) },
     ohlqBrandMasterItem: { findMany: async () => catalog },
     organizationProduct: { findMany: async () => [{ externalItemCode: 'A' }, { externalItemCode: 'B' }] },
+    ohlqTenantInventoryImportStatus: { findFirst: async () => null },
     wholesaleAccount: { findMany: async ({ select }: { select: Record<string, unknown> }) => select.licenseeIds
       ? [{ id: 'account', licenseeId: '12345', licenseeIds: [] }]
       : [{ id: 'account', name: 'Customer', targetProfiles: [], opportunitySignals: [], tags: [], targetPublicResearch: null }] },
@@ -32,7 +33,7 @@ it('refreshes a pursued product without replacing its detection snapshot or conv
     organizationAccountOverlay: { findMany: async () => [] },
     accountSalesEvent: { findMany: async () => [], createMany: async () => ({ count: 2 }) },
     loggedVisit: { findMany: async () => [] },
-    worklistItem: { findMany: async () => [], updateMany: async () => ({ count: 1 }) },
+    worklistItem: { findFirst: async () => ({ id: 'task' }), findMany: async () => [], updateMany: async () => ({ count: 1 }) },
     opportunityModelVersion: { findFirst: async () => ({ id: 'model' }) },
     opportunityAccountSignal: { upsert: async () => ({}) },
     opportunityEvent: { findFirst: async () => ({ metadata: { hypothesis: originalHypothesis } }), create: async () => ({}) },
@@ -46,6 +47,13 @@ it('refreshes a pursued product without replacing its detection snapshot or conv
   assert.equal(updates[0].cycleKey, 'original');
   assert.equal('signalSnapshot' in updates[0], false);
   assert.equal('status' in updates[0], false);
+  catalog[0].solItemStatusCode = '30';
+  updates.length = 0;
+  await evaluateOpportunityIntelligence({ db: db as unknown as PrismaClient, organizationId: 'tenant', asOfDate: new Date('2026-09-04') });
+  assert.equal(updates.length, 1);
+  assert.notEqual(updates[0].title, 'Introduce Tenant Rum');
+  assert.equal(updates[0].title, 'Active customer needing attention');
+  catalog[0].solItemStatusCode = '70';
   raw.push({ ...raw[0], brand: 'A' });
   updates.length = 0;
   const converted = await evaluateOpportunityIntelligence({ db: db as unknown as PrismaClient, organizationId: 'tenant', asOfDate: new Date('2026-09-04') });
