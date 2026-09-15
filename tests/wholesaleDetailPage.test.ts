@@ -16,3 +16,11 @@ test('Wholesale activity timeline loads only the viewing tenant portfolio purcha
   assert.match(panel, /getOrganizationTenantConfig\(organizationId\)/);
   assert.match(panel, /where: \{ organizationId, wholesaleAccountId, \.\.\.getTenantAccountSalesEventWhere\(tenantConfig\) \}/);
 });
+
+test('Wholesale opportunity intelligence shows the tenant-scoped production score', () => {
+  const panel = readFileSync('app/wholesale/OpportunityAccountPanel.tsx', 'utf8');
+
+  assert.match(panel, /\{ organizationId, wholesaleAccountId, status: \{ in: activeStatuses \} \}/);
+  assert.match(panel, /productionScore=\{item\.productionScore\}/);
+  assert.match(panel, /Opportunity score \$\{Math\.round\(productionScore\)\} out of 100/);
+});

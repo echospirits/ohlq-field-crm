@@ -26,6 +26,7 @@ function OpportunityRow({
   accountName,
   explanation,
   priorityBand,
+  productionScore,
   recommendedAction,
   title,
   actions,
@@ -34,6 +35,7 @@ function OpportunityRow({
   accountName?: string;
   explanation: string;
   priorityBand: string;
+  productionScore?: number;
   recommendedAction: string;
   title: string;
   actions?: ReactNode;
@@ -46,6 +48,7 @@ function OpportunityRow({
         {accountHref && accountName ? <span aria-hidden="true">·</span> : null}
         {accountHref && accountName ? <span className="sr-only">Opportunity: </span> : null}
         <strong>{title}</strong>
+        {productionScore !== undefined ? <span aria-label={`Opportunity score ${Math.round(productionScore)} out of 100`} className="account-opportunity-score"><strong>{Math.round(productionScore)}</strong> score</span> : null}
       </div>
       <span className="account-opportunity-next"><strong>Next</strong> {recommendedAction}</span>
     </div>
@@ -140,6 +143,7 @@ export async function OpportunityAccountPanel({ agencyId, wholesaleAccountId, cu
           explanation={opportunity ? `${firstExplanation(opportunity.explanation)} · ${salesExplanation}` : salesExplanation}
           key={account.id}
           priorityBand={opportunity?.priorityBand ?? (sales.echoBottles > 0 ? 'MEDIUM' : 'LOW')}
+          productionScore={opportunity?.productionScore}
           recommendedAction={opportunity?.recommendedAction ?? (sales.echoBottles > 0 ? 'Maintain relationship' : 'Review account')}
           title={opportunity?.title ?? (sales.allBottles > 0 ? 'Recent wholesale activity' : 'No recent wholesale purchases')}
           actions={<ContextualActions
@@ -188,6 +192,7 @@ export async function OpportunityAccountPanel({ agencyId, wholesaleAccountId, cu
         explanation={firstExplanation(item.explanation)}
         key={item.id}
         priorityBand={item.priorityBand}
+        productionScore={item.productionScore}
         recommendedAction={item.recommendedAction}
         title={item.title}
         actions={<ContextualActions
