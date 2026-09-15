@@ -203,6 +203,118 @@ const finishRetrievedJob = async ({
   });
 };
 
+export async function autoResolveAccountResearchJobs({
+  pilotId,
+  organizationId,
+  db = prisma,
+}: {
+  pilotId: string;
+  organizationId: string;
+  db?: PrismaClient;
+}) {
+  assertAccountResearchPilotEnabled();
+  const jobs = await db.accountResearchJob.findMany({
+    where: { pilotId, organizationId, status: AccountResearchJobStatus.NEEDS_REVIEW },
+    orderBy: { priority: 'asc' },
+    include: {
+      pilot: { select: { model: true } },
+      wholesaleAccount: { select: { id: true, licenseeId: true, isActive: true, mergedIntoId: true } },
+    },
+  });
+  const approved: Array<{ job: typeof jobs[number]; result: ReturnType<typeof parseAccountResearchResult> }> = [];
+  const rejected: Array<{ id: string; note: string }> = [];
+  const failed: Array<{ id: string; error: string }> = [];
+
+  for (const job of jobs) {
+    try {
+      const result = parseAccountResearchResult(job.result);
+      const input = job.inputSnapshot as unknown as AccountResearchInputSnapshot;
+      const validation = validateExactResearchLocation(input, result);
+      if (!job.wholesaleAccount.isActive || job.wholesaleAccount.mergedIntoId) {
+        rejected.push({ id: job.id, note: 'Automatically declined because the account is inactive or merged.' });
+      } else if (job.wholesaleAccount.id !== input.wholesaleAccountId || job.wholesaleAccount.licenseeId.toUpperCase() !== input.licenseeId.toUpperCase()) {
+        rejected.push({ id: job.id, note: 'Automatically declined because the CRM account identity changed after submission.' });
+      } else if (!validation.exact) {
+        rejected.push({ id: job.id, note: `Automatically declined: exact-location validation failed. ${validation.explanation}`.slice(0, 500) });
+      } else {
+        approved.push({ job, result });
+      }
+    } catch (error) {
+      failed.push({ id: job.id, error: `Automatic validation failed: ${clipError(error)}` });
+    }
+  }
+
+  const resolvedAt = new Date();
+  await db.$transaction(async (tx) => {
+    for (const { job, result } of approved) {
+      const researchedAt = new Date(`${result.researchedAt}T12:00:00.000Z`);
+      const sourceUrls = [...new Set(result.evidence.map((item) => item.sourceUrl))];
+      const researchData = {
+        researchStatus: 'Automatically validated research',
+        patioOutdoor: result.patioOutdoor,
+        cocktailProgram: result.cocktailProgram,
+        events: result.events,
+        popularitySignal: result.popularitySignal,
+        openStatus: result.openStatus,
+        ownershipVerification: result.ownershipVerification,
+        buyerStructure: result.buyerStructure,
+        websiteUrl: result.websiteUrl,
+        cocktailMenuUrl: result.cocktailMenuUrl,
+        localBrandsOnMenu: result.localBrandsOnMenu,
+        googleRating: result.googleRating,
+        googleReviewCount: result.googleReviewCount,
+        yelpRating: result.yelpRating,
+        yelpReviewCount: result.yelpReviewCount,
+        isNationalChain: result.isNationalChain,
+        researchConfidence: result.confidence,
+        notes: result.notes,
+        sourceUrls,
+        completedAt: researchedAt,
+        researcher: 'Automated guarded research',
+        lastAttemptedAt: researchedAt,
+        lastRefreshedAt: researchedAt,
+        refreshStatus: 'COMPLETE',
+        refreshError: null,
+        researchModel: job.pilot.model,
+        researchResponseId: job.responseId,
+      };
+      await tx.targetPublicResearch.upsert({
+        where: { wholesaleAccountId: job.wholesaleAccountId },
+        create: { wholesaleAccountId: job.wholesaleAccountId, ...researchData },
+        update: researchData,
+      });
+      await tx.accountResearchJob.update({
+        where: { id: job.id },
+        data: {
+          status: AccountResearchJobStatus.APPROVED,
+          reviewedAt: resolvedAt,
+          reviewedByUserId: null,
+          reviewNote: 'Automatically applied after exact-location and structured-evidence validation.',
+        },
+      });
+    }
+    for (const item of rejected) {
+      await tx.accountResearchJob.update({
+        where: { id: item.id },
+        data: { status: AccountResearchJobStatus.REJECTED, reviewedAt: resolvedAt, reviewedByUserId: null, reviewNote: item.note },
+      });
+    }
+    for (const item of failed) {
+      await tx.accountResearchJob.update({ where: { id: item.id }, data: { status: AccountResearchJobStatus.FAILED, error: item.error } });
+    }
+    if (approved.length > 0) {
+      await evaluateOpportunityIntelligence({
+        db: tx as unknown as PrismaClient,
+        asOfDate: resolvedAt,
+        accountIds: approved.map(({ job }) => job.wholesaleAccountId),
+        organizationId,
+      });
+    }
+  }, { timeout: 300_000 });
+
+  return { applied: approved.length, rejected: rejected.length, failed: failed.length };
+}
+
 export async function pollAccountResearchPilot({ pilotId, organizationId, db = prisma }: { pilotId: string; organizationId: string; db?: PrismaClient }) {
   assertAccountResearchPilotEnabled();
   const jobs = await db.accountResearchJob.findMany({
@@ -240,9 +352,10 @@ export async function pollAccountResearchPilot({ pilotId, organizationId, db = p
       }
     }
   }
+  const automatic = await autoResolveAccountResearchJobs({ pilotId, organizationId, db });
   await refreshPilotStatus({ pilotId, organizationId, db });
   await db.accountResearchPilot.updateMany({ where: { id: pilotId, organizationId }, data: { lastPolledAt: new Date() } });
-  return { checked: jobs.length, completed, pending, failedChecks };
+  return { checked: jobs.length, completed, pending, failedChecks, ...automatic };
 }
 
 export async function refreshPilotStatus({ pilotId, organizationId, db = prisma }: { pilotId: string; organizationId: string; db?: PrismaClient }) {

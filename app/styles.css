@@ -2584,6 +2584,19 @@ fieldset {
   text-align: right;
 }
 
+.pagination-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.opportunity-intelligence-updated {
+  margin: -4px 0 0;
+  font-size: 0.82rem;
+}
+
 @media (max-width: 640px) {
   .research-pilot-callout form,
   .research-pilot-callout button,
@@ -2604,6 +2617,15 @@ fieldset {
 
   .research-job-list span:last-child {
     text-align: left;
+  }
+
+  .pagination-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .pagination-actions .btn {
+    width: 100%;
   }
 }
 

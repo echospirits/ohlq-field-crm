@@ -5,7 +5,7 @@ import { OpportunityEventType, OpportunityStatus, OpportunityType, UserRole } fr
 import Link from 'next/link';
 import { buildPageMetadata } from '../../lib/appBrand';
 import { getUserDisplayName, requireUser } from '../../lib/auth';
-import { formatEasternDate } from '../../lib/dateTime';
+import { formatEasternDate, formatEasternDateTime } from '../../lib/dateTime';
 import { prisma } from '../../lib/prisma';
 import { requireFeatureForUser } from '../../lib/organizations';
 import { updateOpportunity } from './actions';
@@ -45,6 +45,7 @@ export default async function OpportunityInbox({ searchParams }: { searchParams?
     <section className="opportunity-grid">{opportunities.map((item) => <article className="card opportunity-card" key={item.id}>
       <div className="opportunity-card-heading"><div><span className={`priority priority-${item.priorityBand.toLowerCase()}`}>{item.priorityBand}</span><small>{labels[item.type]}</small><h2><Link href={`/wholesale/${item.wholesaleAccountId}`}>{item.wholesaleAccount.name}</Link></h2><p className="muted">{item.wholesaleAccount.city}</p></div><span className="opportunity-score"><strong>{Math.round(item.productionScore)}</strong><small>score</small></span></div>
       <p className="opportunity-primary-action"><strong>Next:</strong> {item.recommendedAction}</p>
+      <p className="muted opportunity-intelligence-updated">Intelligence updated {formatEasternDateTime(item.lastDetectedAt)}</p>
       {item.status === OpportunityStatus.ACTIONED ? <p className="opportunity-pursuing" role="status"><strong>Pursuing</strong>{item.actionedAt ? ` since ${formatEasternDate(item.actionedAt)}` : ''}</p> : null}
       <ContextualActions
         context={{ accountName: item.wholesaleAccount.name, opportunityId: item.id, reason: (item.explanation as string[]).join(' '), returnTo: '/opportunities', sourceLabel: item.title, sourceType: item.type, wholesaleAccountId: item.wholesaleAccountId }}

@@ -39,9 +39,9 @@ const result = {
   evidence: [{ field: 'identity', claim: 'The listing uses 123 W Main St.', sourceUrl: 'https://example.com/contact', sourceTitle: 'Contact', exactLocation: true }],
 };
 
-it('hard-caps the pilot at fifty forty-cent reservations and twenty dollars', () => {
-  assert.equal(ACCOUNT_RESEARCH_PILOT_MAX_ACCOUNTS, 50);
-  assert.equal(ACCOUNT_RESEARCH_JOB_RESERVE_MICROS, 400_000);
+it('hard-caps the pilot at 250 eight-cent reservations and twenty dollars', () => {
+  assert.equal(ACCOUNT_RESEARCH_PILOT_MAX_ACCOUNTS, 250);
+  assert.equal(ACCOUNT_RESEARCH_JOB_RESERVE_MICROS, 80_000);
   assert.equal(ACCOUNT_RESEARCH_PILOT_MAX_ACCOUNTS * ACCOUNT_RESEARCH_JOB_RESERVE_MICROS, ACCOUNT_RESEARCH_PILOT_BUDGET_MICROS);
 });
 

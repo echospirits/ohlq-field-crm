@@ -95,7 +95,15 @@ export async function checkAccountResearchPilot(formData: FormData) {
   try {
     const result = await pollAccountResearchPilot({ pilotId, organizationId });
     revalidatePath('/admin/account-research');
-    returnWith({ status: 'pilot-checked', checked: result.checked, completed: result.completed, pending: result.pending, failed: result.failedChecks });
+    returnWith({
+      status: 'pilot-checked',
+      checked: result.checked,
+      completed: result.completed,
+      pending: result.pending,
+      failed: result.failedChecks + result.failed,
+      applied: result.applied,
+      rejected: result.rejected,
+    });
   } catch (error) {
     returnWith({ status: 'pilot-failed', detail: (error instanceof Error ? error.message : String(error)).slice(0, 1_500) });
   }
