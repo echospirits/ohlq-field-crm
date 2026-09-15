@@ -6,7 +6,7 @@ import { catalogLiters, compareWithBuyers, toAffinityProduct, type BuyerBasket }
 import { learnedAdjustment, labelMatureOutcome, outcomeSegment, trainOutcomeModel, type OutcomeExample } from './opportunityLearning';
 import { buildDailyPurchaseEvents } from './opportunitySalesLedger';
 import { normalizeOpportunityCategory, OPPORTUNITY_RANKING_VERSION, OPPORTUNITY_RULES_VERSION, OPPORTUNITY_SIGNAL_VERSION, opportunityRules } from './opportunityConfig';
-import { detectOpportunityHypotheses, RuleBasedOpportunityRanker, selectPrimaryOpportunity, type AccountOpportunitySignals } from './opportunityIntelligence';
+import { detectOpportunityHypotheses, noCurrentOpportunityRank, RuleBasedOpportunityRanker, selectPrimaryOpportunity, type AccountOpportunitySignals } from './opportunityIntelligence';
 import { ECHO_ORGANIZATION_ID } from './organizations';
 
 const DAY = 86400000;
@@ -209,6 +209,23 @@ export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = 
       if (opportunityRules.autoCreateWorklist[hypothesis.type] && !await db.worklistItem.findFirst({ where: { organizationId, salesOpportunityId: opportunity.id } })) {
         const task = await db.worklistItem.create({ data: { organizationId, title: hypothesis.recommendedAction, detail: ranking.factors.join('\n'), status: WorklistStatus.OPEN, source: WorklistSource.OPPORTUNITY_INTELLIGENCE, category: WorklistCategory.WHOLESALE, wholesaleAccountId: account.id, salesOpportunityId: opportunity.id, assignedToUserId: signal.assignedUserId, dueDate: new Date(asOfDate.getTime() + 7 * DAY), createdBy: 'Opportunity intelligence' } });
         await db.opportunityEvent.create({ data: { organizationId, opportunityId: opportunity.id, eventType: OpportunityEventType.WORKLIST_CREATED, eventKey: eventKey(OpportunityEventType.WORKLIST_CREATED, task.id), wholesaleAccountId: account.id, worklistItemId: task.id, occurredAt: asOfDate } }); worklistCreated++;
+      }
+    } else {
+      const ranking = noCurrentOpportunityRank();
+      const active = await db.salesOpportunity.findMany({
+        where: { organizationId, wholesaleAccountId: account.id, status: { in: activeOpportunityStatuses } },
+        select: { id: true },
+      });
+      for (const opportunity of active) {
+        await db.salesOpportunity.update({
+          where: { id: opportunity.id },
+          data: { scoringVersion: ranking.version, productionScore: ranking.score, priorityBand: ranking.priorityBand, explanation: ranking.factors, lastDetectedAt: asOfDate },
+        });
+        await db.opportunityScore.upsert({
+          where: { opportunityId_modelVersionId: { opportunityId: opportunity.id, modelVersionId: model!.id } },
+          create: { opportunityId: opportunity.id, modelVersionId: model!.id, mode: OpportunityRankingMode.ACTIVE, score: ranking.score, priorityBand: ranking.priorityBand, factors: ranking.factors, scoredAt: asOfDate },
+          update: { score: ranking.score, priorityBand: ranking.priorityBand, factors: ranking.factors, scoredAt: asOfDate },
+        });
       }
     }
 

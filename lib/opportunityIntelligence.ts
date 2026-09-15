@@ -202,6 +202,13 @@ export function detectOpportunityHypotheses(signals: AccountOpportunitySignals):
 export type RankResult = { score: number; priorityBand: 'HIGH' | 'MEDIUM' | 'LOW'; factors: string[]; version: string };
 export interface OpportunityRanker { rank(opportunity: OpportunityHypothesis, signals: AccountOpportunitySignals): RankResult }
 
+export const noCurrentOpportunityRank = (): RankResult => ({
+  score: 0,
+  priorityBand: 'LOW',
+  factors: ['No current qualifying opportunity signals', 'Score components: no baseline points'],
+  version: OPPORTUNITY_RANKING_VERSION,
+});
+
 export class RuleBasedOpportunityRanker implements OpportunityRanker {
   rank(opportunity: OpportunityHypothesis, signals: AccountOpportunitySignals): RankResult {
     const factors = [...opportunity.explanation];

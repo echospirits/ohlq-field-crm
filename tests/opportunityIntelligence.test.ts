@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { OpportunityType } from '@prisma/client';
-import { analyzeActivityToPurchases, detectOpportunityHypotheses, rescoreHistoricalSnapshot, RuleBasedOpportunityRanker, selectPrimaryOpportunity, type AccountOpportunitySignals } from '../lib/opportunityIntelligence';
+import { analyzeActivityToPurchases, detectOpportunityHypotheses, noCurrentOpportunityRank, rescoreHistoricalSnapshot, RuleBasedOpportunityRanker, selectPrimaryOpportunity, type AccountOpportunitySignals } from '../lib/opportunityIntelligence';
 
 const base = (overrides: Partial<AccountOpportunitySignals> = {}): AccountOpportunitySignals => ({
   asOfDate: '2026-08-14', accountStatus: 'ACTIVE', assignedUserId: null, daysSinceLastEchoPurchase: null, daysSinceLastVisit: 60,
@@ -40,6 +40,15 @@ it('has no automatic baseline and lets a clearly poor price fit score zero', () 
   assert.equal(result.score, 0);
   assert.match(result.factors.join(' '), /no baseline points/i);
   assert.match(result.factors.join(' '), /20-point penalty/i);
+});
+
+it('resets an opportunity with no current qualifying signals to zero', () => {
+  assert.deepEqual(noCurrentOpportunityRank(), {
+    score: 0,
+    priorityBand: 'LOW',
+    factors: ['No current qualifying opportunity signals', 'Score components: no baseline points'],
+    version: 'PRICE_AFFINITY_V4',
+  });
 });
 
 it('caps national chains at very low priority even when volume is strong', () => {
