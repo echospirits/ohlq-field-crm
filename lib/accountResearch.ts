@@ -261,7 +261,7 @@ export async function validateAccountResearchRows({ rows, db = prisma }: { rows:
   return errors;
 }
 
-export async function importAccountResearchCsv({ csv, db = prisma, dryRun = true, importedBy }: { csv: string | Buffer; db?: PrismaClient; dryRun?: boolean; importedBy: string }) {
+export async function importAccountResearchCsv({ csv, db = prisma, dryRun = true, importedBy, organizationId }: { csv: string | Buffer; db?: PrismaClient; dryRun?: boolean; importedBy: string; organizationId: string }) {
   const parsed = parseAccountResearchCsv(csv);
   const identityErrors = await validateAccountResearchRows({ rows: parsed.rows, db });
   const errors = [...parsed.errors, ...identityErrors].sort((a, b) => a.rowNumber - b.rowNumber);
@@ -290,6 +290,7 @@ export async function importAccountResearchCsv({ csv, db = prisma, dryRun = true
       db: tx as unknown as PrismaClient,
       asOfDate: scoredAt,
       accountIds: parsed.rows.map((row) => row.wholesaleAccountId),
+      organizationId,
     });
   }, { timeout: 180_000 });
   return { parsedRows: parsed.rows.length, importedRows: parsed.rows.length, errors: [], dryRun: false };

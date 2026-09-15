@@ -21,7 +21,7 @@ const returnWith = (values: Record<string, string | number>): never => {
 
 export async function uploadAccountResearchCsv(formData: FormData) {
   const user = await requirePlatformAdmin();
-  await requireOrganizationContext(user);
+  const { organizationId } = await requireOrganizationContext(user);
   await requireFeatureForUser(user, 'ADVANCED_INTELLIGENCE');
   const file = formData.get('researchFile');
   const dryRun = String(formData.get('mode') ?? 'dry-run') !== 'commit';
@@ -32,7 +32,7 @@ export async function uploadAccountResearchCsv(formData: FormData) {
   let redirectValues: Record<string, string | number>;
   try {
     const result = await importAccountResearchCsv({
-      csv: await researchFile.text(), dryRun, importedBy: getUserDisplayName(user),
+      csv: await researchFile.text(), dryRun, importedBy: getUserDisplayName(user), organizationId,
     });
     if (result.errors.length > 0) {
       redirectValues = {

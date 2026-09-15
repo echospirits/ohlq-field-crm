@@ -8,7 +8,7 @@ import { buildDailyPurchaseEvents } from './opportunitySalesLedger';
 import { getDistilleryOnlyItemCodes, isOpportunityEligibleOhlqProduct } from './ohlqProductEligibility';
 import { normalizeOpportunityCategory, OPPORTUNITY_RANKING_VERSION, OPPORTUNITY_RULES_VERSION, OPPORTUNITY_SIGNAL_VERSION, opportunityRules } from './opportunityConfig';
 import { detectOpportunityHypotheses, noCurrentOpportunityRank, RuleBasedOpportunityRanker, selectPrimaryOpportunity, type AccountOpportunitySignals } from './opportunityIntelligence';
-import { ECHO_ORGANIZATION_ID } from './organizations';
+import { isDismissedOpportunityMatch } from './opportunityWorkflow';
 
 const DAY = 86400000;
 const dateOnly = (date: Date) => date.toISOString().slice(0, 10);
@@ -18,7 +18,7 @@ const numberValue = (value: unknown) => value === null || value === undefined ? 
 const stringList = (value: unknown) => Array.isArray(value) ? value.map(String).filter(Boolean) : [];
 const activeOpportunityStatuses = [OpportunityStatus.OPEN, OpportunityStatus.ACTIONED, OpportunityStatus.SNOOZED];
 
-export async function captureWholesaleSalesEvents({ db = prisma, reportDate, organizationId = ECHO_ORGANIZATION_ID }: { db?: PrismaClient; reportDate: Date; organizationId?: string }) {
+export async function captureWholesaleSalesEvents({ db = prisma, reportDate, organizationId }: { db?: PrismaClient; reportDate: Date; organizationId: string }) {
   const config = await getOrganizationTenantConfig(organizationId, db);
   config.productFilter.mode = 'item-list';
   const [currentRows, accounts, masters] = await Promise.all([
@@ -34,7 +34,7 @@ export async function captureWholesaleSalesEvents({ db = prisma, reportDate, org
 
 const eventKey = (type: OpportunityEventType, suffix: string) => `${type}:${suffix}`;
 
-export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = new Date(), accountIds, organizationId = ECHO_ORGANIZATION_ID, dryRun = false }: { db?: PrismaClient; asOfDate?: Date; accountIds?: string[]; organizationId?: string; dryRun?: boolean } = {}) {
+export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = new Date(), accountIds, organizationId, dryRun = false }: { db?: PrismaClient; asOfDate?: Date; accountIds?: string[]; organizationId: string; dryRun?: boolean }) {
   const start90 = new Date(asOfDate.getTime() - 89 * DAY);
   const config = await getOrganizationTenantConfig(organizationId, db);
   config.productFilter.mode = 'item-list';
@@ -219,6 +219,27 @@ export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = 
         // features live in OpportunityAccountSignal, not the historical snapshot.
         opportunity = await db.salesOpportunity.update({ where: { id: opportunity.id }, data: { activeAccountKey: `${organizationId}:${account.id}`, type: hypothesis.type, cycleKey: hypothesis.cycleKey, targetCategory: hypothesis.targetCategory, title: hypothesis.title, recommendedAction: hypothesis.recommendedAction, explanation: ranking.factors, scoringVersion: ranking.version, productionScore: ranking.score, priorityBand: ranking.priorityBand, lastDetectedAt: asOfDate } });
       } else {
+        const dismissed = await db.salesOpportunity.findMany({
+          where: {
+            organizationId,
+            wholesaleAccountId: account.id,
+            status: OpportunityStatus.DISMISSED,
+            type: hypothesis.type,
+            targetCategory: hypothesis.targetCategory,
+          },
+          orderBy: { dismissedAt: 'desc' },
+          select: {
+            targetCategory: true,
+            type: true,
+            events: {
+              where: { eventType: OpportunityEventType.DETECTED },
+              orderBy: { occurredAt: 'asc' },
+              take: 1,
+              select: { metadata: true },
+            },
+          },
+        });
+        if (isDismissedOpportunityMatch(hypothesis, dismissed)) continue;
         const previouslyClosed = await db.salesOpportunity.findFirst({
           where: { organizationId, wholesaleAccountId: account.id, type: hypothesis.type, cycleKey: hypothesis.cycleKey },
           select: { id: true },

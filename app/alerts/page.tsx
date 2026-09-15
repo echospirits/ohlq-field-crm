@@ -175,7 +175,7 @@ async function updateWorklistStatus(formData: FormData) {
     },
   });
   await syncWorklistItemCalendar(id);
-  if (item.wholesaleAccountId) await evaluateOpportunityIntelligence({ accountIds: [item.wholesaleAccountId] });
+  if (item.wholesaleAccountId) await evaluateOpportunityIntelligence({ accountIds: [item.wholesaleAccountId], organizationId });
 
   revalidatePath('/alerts');
   revalidatePath('/my-week');
