@@ -36,7 +36,7 @@ function ScoreBreakdown({ explanation, score, scoringVersion, scoredAt }: { expl
           <span aria-hidden="true" className="opportunity-score-meter"><i style={{ width: `${Math.min(100, Math.abs(component.points) / 15 * 100)}%` }} /></span>
         </div>)}
       </div>
-    </> : null}
+    </> : <p className="opportunity-score-legacy-note"><strong>Point-by-point values were not stored with this earlier score.</strong> The original evidence is shown below. Exact component values will appear after the next score refresh.</p>}
     {evidence.length > 0 ? <>
       <h4>Evidence and adjustments</h4>
       <ul className="opportunity-score-evidence">{evidence.map((factor, index) => <li key={`${factor}-${index}`}>{factor}</li>)}</ul>
@@ -115,7 +115,7 @@ function OpportunityRow({
   accountHref,
   accountName,
   explanation,
-  lastDetectedAt,
+  scoredAt,
   priorityBand,
   productionScore,
   recommendedAction,
@@ -126,7 +126,7 @@ function OpportunityRow({
   accountHref?: string;
   accountName?: string;
   explanation: Prisma.JsonValue;
-  lastDetectedAt?: Date;
+  scoredAt?: Date;
   priorityBand: string;
   productionScore?: number;
   recommendedAction: string;
@@ -149,8 +149,8 @@ function OpportunityRow({
     {actions}
     <details className="opportunity-evidence compact-details nested-details">
       <summary>How this score was calculated</summary>
-      {productionScore !== undefined && lastDetectedAt && scoringVersion
-        ? <ScoreBreakdown explanation={explanation} score={productionScore} scoredAt={lastDetectedAt} scoringVersion={scoringVersion} />
+      {productionScore !== undefined && scoredAt && scoringVersion
+        ? <ScoreBreakdown explanation={explanation} score={productionScore} scoredAt={scoredAt} scoringVersion={scoringVersion} />
         : <p>{firstExplanation(explanation)}</p>}
     </details>
   </article>;
@@ -182,7 +182,7 @@ export async function OpportunityAccountPanel({ agencyId, wholesaleAccountId, cu
     const [opportunities, openFollowUps, salesRows] = await Promise.all([
       prisma.salesOpportunity.findMany({
         where: opportunityWhere,
-        include: { wholesaleAccount: { select: { id: true, name: true } } },
+        include: { scores: { orderBy: { scoredAt: 'desc' }, select: { factors: true, scoredAt: true }, take: 1 }, wholesaleAccount: { select: { id: true, name: true } } },
         orderBy: [{ productionScore: 'desc' }, { lastDetectedAt: 'desc' }],
         take: 12,
       }),
@@ -236,12 +236,12 @@ export async function OpportunityAccountPanel({ agencyId, wholesaleAccountId, cu
         return <OpportunityRow
           accountHref={`/wholesale/${account.id}`}
           accountName={account.name}
-          explanation={opportunity ? opportunity.explanation : [salesExplanation]}
+          explanation={opportunity ? opportunity.scores[0]?.factors ?? opportunity.explanation : [salesExplanation]}
           key={account.id}
-          lastDetectedAt={opportunity?.lastDetectedAt}
           priorityBand={opportunity?.priorityBand ?? (sales.echoBottles > 0 ? 'MEDIUM' : 'LOW')}
           productionScore={opportunity?.productionScore}
           recommendedAction={opportunity?.recommendedAction ?? (sales.echoBottles > 0 ? 'Maintain relationship' : 'Review account')}
+          scoredAt={opportunity?.scores[0]?.scoredAt ?? opportunity?.lastDetectedAt}
           scoringVersion={opportunity?.scoringVersion}
           title={opportunity?.title ?? (sales.allBottles > 0 ? 'Recent wholesale activity' : 'No recent wholesale purchases')}
           actions={<ContextualActions
@@ -260,7 +260,7 @@ export async function OpportunityAccountPanel({ agencyId, wholesaleAccountId, cu
   const [opportunities, sales, visits, worklist, research] = await Promise.all([
     prisma.salesOpportunity.findMany({
       where: opportunityWhere,
-      include: { wholesaleAccount: { select: { id: true, name: true } } },
+      include: { scores: { orderBy: { scoredAt: 'desc' }, select: { factors: true, scoredAt: true }, take: 1 }, wholesaleAccount: { select: { id: true, name: true } } },
       orderBy: [{ productionScore: 'desc' }, { lastDetectedAt: 'desc' }],
       take: 5,
     }),
@@ -292,12 +292,12 @@ export async function OpportunityAccountPanel({ agencyId, wholesaleAccountId, cu
       ]} />
       <ResearchSummary research={research} />
       {opportunities.slice(0, 3).map((item) => <OpportunityRow
-        explanation={item.explanation}
+        explanation={item.scores[0]?.factors ?? item.explanation}
         key={item.id}
-        lastDetectedAt={item.lastDetectedAt}
         priorityBand={item.priorityBand}
         productionScore={item.productionScore}
         recommendedAction={item.recommendedAction}
+        scoredAt={item.scores[0]?.scoredAt ?? item.lastDetectedAt}
         scoringVersion={item.scoringVersion}
         title={item.title}
         actions={<ContextualActions
