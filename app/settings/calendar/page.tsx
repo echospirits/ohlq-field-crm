@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
+import { SubmitButton } from '../../components/SubmitButton';
 import { CalendarSyncStatus } from '@prisma/client';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
@@ -158,13 +159,13 @@ export default async function CalendarSettingsPage({ searchParams }: { searchPar
               <form action={updateCalendarSettings}>
                 <label>Calendar<select name="calendarId" defaultValue={connection.selectedCalendarId}>{calendars.map((calendar) => <option key={calendar.id} value={calendar.id}>{calendar.name}</option>)}</select></label>
                 <label className="checkbox-row"><input name="syncEnabled" type="checkbox" defaultChecked={connection.syncEnabled} /> Sync Neat follow-ups</label>
-                <button type="submit">Save calendar settings</button>
+                <SubmitButton type="submit">Save calendar settings</SubmitButton>
               </form>
             ) : null)}
             {calendarEnabled ? <div className="action-row">
-              <form action={checkCalendarChanges}><button className="secondary" type="submit">Check Google for changes</button></form>
-              <form action={resyncCalendar}><button className="secondary" type="submit">Push Neat tasks to Google</button></form>
-              <form action={disconnectCalendar}><button className="secondary" type="submit">Disconnect</button></form>
+              <form action={checkCalendarChanges}><SubmitButton className="secondary" type="submit">Check Google for changes</SubmitButton></form>
+              <form action={resyncCalendar}><SubmitButton className="secondary" type="submit">Push Neat tasks to Google</SubmitButton></form>
+              <form action={disconnectCalendar}><SubmitButton className="secondary" type="submit">Disconnect</SubmitButton></form>
             </div> : null}
           </>
         )}

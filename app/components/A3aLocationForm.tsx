@@ -1,3 +1,5 @@
+import { SubmitButton } from './SubmitButton';
+
 type A3aLocation = {
   active: boolean;
   addressLine1: string | null;
@@ -33,7 +35,7 @@ export function A3aLocationForm({
           <span className="page-eyebrow">{location ? `Store ${location.storeId}` : 'New selling location'}</span>
           <h3>{location?.name || 'Add A-3a location'}</h3>
         </div>
-        <button className="compact-btn" type="submit">{location ? 'Save location' : 'Add location'}</button>
+        <SubmitButton className="compact-btn" type="submit">{location ? 'Save location' : 'Add location'}</SubmitButton>
       </div>
       <div className="form-grid">
         <label>A-3a Store ID<input defaultValue={location?.storeId ?? ''} name="storeId" required /></label>

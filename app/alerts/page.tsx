@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
+import { SubmitButton } from '../components/SubmitButton';
 import { OpportunityEventType, OpportunityStatus, Prisma, WorklistCategory, WorklistSource, WorklistStatus } from '@prisma/client';
 import { revalidatePath } from 'next/cache';
 import Link from 'next/link';
@@ -8,8 +9,7 @@ import { redirect } from 'next/navigation';
 import { buildPageMetadata } from '../../lib/appBrand';
 import { getUserDisplayName, requireUser } from '../../lib/auth';
 import { formatDateOnlyInputValue, formatTimeMinutesInput, formatWorklistDue, parseTimeInputToMinutes } from '../../lib/dateTime';
-import { syncWorklistItemCalendar } from '../../lib/calendar/worklistSync';
-import { evaluateOpportunityIntelligence } from '../../lib/opportunityEngine';
+import { scheduleWorklistSync } from '../../lib/calendar/scheduleWorklistSync';
 import { splitReactivationPurchasedAgainDetail } from '../../lib/ohlqWholesaleReactivation';
 import { prisma } from '../../lib/prisma';
 import { getOrganizationFeatures, requireOrganizationContext } from '../../lib/organizations';
@@ -143,7 +143,7 @@ async function createWorklistItem(formData: FormData) {
       createdByUserId: currentUser.id,
     },
   });
-  await syncWorklistItemCalendar(item.id);
+  scheduleWorklistSync(item.id);
 
   revalidatePath('/alerts');
   revalidatePath('/');
@@ -157,14 +157,13 @@ async function updateWorklistStatus(formData: FormData) {
   const { organizationId } = await requireOrganizationContext(currentUser);
   const id = toOptional(formData.get('id'));
   const status = toWorklistStatus(formData.get('status'));
+  if (status !== WorklistStatus.COMPLETED && status !== WorklistStatus.CANCELLED) return { error: 'Choose Complete or Cancel task.' };
 
-  if (!id) {
-    return;
-  }
+  if (!id) return { error: 'This task is missing. Refresh the worklist.' };
 
   const owned = await prisma.worklistItem.findFirst({ where: { id, organizationId }, select: { id: true } });
-  if (!owned) return;
-  const item = await prisma.worklistItem.update({
+  if (!owned) return { error: 'This task is no longer available. Refresh the worklist.' };
+  await prisma.worklistItem.update({
     where: { id: owned.id },
     data: {
       status,
@@ -174,12 +173,13 @@ async function updateWorklistStatus(formData: FormData) {
       cancelledByUserId: status === WorklistStatus.CANCELLED ? currentUser.id : null,
     },
   });
-  await syncWorklistItemCalendar(id);
-  if (item.wholesaleAccountId) await evaluateOpportunityIntelligence({ accountIds: [item.wholesaleAccountId], organizationId });
+  scheduleWorklistSync(id);
+  // Statewide opportunity recalculation belongs to the import/scheduled pipeline.
 
   revalidatePath('/alerts');
   revalidatePath('/my-week');
   revalidatePath('/');
+  return { success: status === WorklistStatus.COMPLETED ? 'Task completed.' : 'Task cancelled.' };
 }
 
 async function updateWorklistItem(formData: FormData) {
@@ -190,13 +190,13 @@ async function updateWorklistItem(formData: FormData) {
   const title = toOptional(formData.get('title'));
   const assignedToUserId = toOptional(formData.get('assignedToUserId'));
   const dueDate = toDate(formData.get('dueDate'));
-  if (!id || !title) return;
+  if (!id || !title) return { error: 'Enter a task title before saving.' };
   const assignedUser = assignedToUserId
     ? await prisma.user.findFirst({ where: { id: assignedToUserId, organizationId, isActive: true, role: { notIn: ['TASTER', 'PLATFORM_ADMIN'] } } })
     : null;
-  if (assignedToUserId && !assignedUser) return;
+  if (assignedToUserId && !assignedUser) return { error: 'Choose an active team member or Unassigned.' };
   const previous = await prisma.worklistItem.findFirst({ where: { id, organizationId }, select: { assignedToUserId: true, salesOpportunityId: true, wholesaleAccountId: true } });
-  if (!previous) return;
+  if (!previous) return { error: 'This task is no longer available. Refresh the worklist.' };
   await prisma.worklistItem.update({
     where: { id },
     data: {
@@ -211,10 +211,11 @@ async function updateWorklistItem(formData: FormData) {
   if (previous.salesOpportunityId && previous.wholesaleAccountId && previous.assignedToUserId !== (assignedUser?.id ?? null)) {
     await prisma.opportunityEvent.create({ data: { organizationId, opportunityId: previous.salesOpportunityId, eventType: OpportunityEventType.TASK_REASSIGNED, eventKey: `TASK_REASSIGNED:${id}:${assignedUser?.id ?? 'unassigned'}:${Date.now()}`, wholesaleAccountId: previous.wholesaleAccountId, userId: currentUser.id, worklistItemId: id, metadata: { assignedToUserId: assignedUser?.id ?? null }, occurredAt: new Date() } });
   }
-  await syncWorklistItemCalendar(id);
+  scheduleWorklistSync(id);
   revalidatePath('/alerts');
   revalidatePath('/my-week');
   revalidatePath('/');
+  return { success: 'Task saved.' };
 }
 
 export default async function Alerts({
@@ -357,6 +358,7 @@ export default async function Alerts({
       <WorkViewNavigation active={pursuingView ? 'pursuing' : 'all'} showPursuing={enabledFeatures.has('WHOLESALE_OPPORTUNITIES')} />
 
       {params.created === '1' ? <p className="pill">Worklist item created.</p> : null}
+      {params.created === 'invalid-assignee' ? <p className="notice danger" role="alert">Choose an active team member for the task.</p> : null}
       {params.created === 'invalid' ? <p className="pill">A title is required.</p> : null}
       {params.notice ? <p className="pill">{noticeMessages[params.notice] ?? params.notice}</p> : null}
 
@@ -513,7 +515,7 @@ export default async function Alerts({
               <option value={WorklistCategory.WHOLESALE}>Wholesale</option>
               <option value={WorklistCategory.GENERAL}>General</option>
             </select>
-            <button type="submit">Create task</button>
+            <SubmitButton type="submit">Create task</SubmitButton>
 
             <details className="compact-details nested-details quick-task-more">
               <summary>Add account, owner, or details</summary>

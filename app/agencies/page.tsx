@@ -1,6 +1,7 @@
 ﻿export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
+import { SubmitButton } from '../components/SubmitButton';
 import Papa from 'papaparse';
 import Link from 'next/link';
 import { revalidatePath } from 'next/cache';
@@ -207,7 +208,7 @@ export default async function AgenciesPage({
         <summary>Import Agencies CSV</summary>
         <form action={importAgencies}>
           <input type="file" name="csvFile" accept=".csv,text/csv" required />
-          <button type="submit">Upload agencies</button>
+          <SubmitButton type="submit">Upload agencies</SubmitButton>
         </form>
       </details>
 

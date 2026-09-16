@@ -1,5 +1,6 @@
 'use client';
 
+import { SubmitButton } from '../../components/SubmitButton';
 import { useEffect, useState, type ChangeEvent } from 'react';
 import Link from 'next/link';
 import { createAccountContact } from '../../account-memory/actions';
@@ -89,7 +90,7 @@ export function ContactImportReviewForm({ accountId, accountType, installUrl, re
       <label className="contact-form-wide">Contact notes<textarea name="notes" rows={3} /></label>
       <label className="checkbox-label"><input name="isPrimary" type="checkbox" value="true" /> Primary contact</label>
       <div className="contact-import-review-actions contact-form-wide">
-        <button type="submit">Save contact</button>
+        <SubmitButton type="submit">Save contact</SubmitButton>
         <Link className="btn secondary" href={returnTo}>Cancel</Link>
       </div>
     </form>

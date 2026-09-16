@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
+import { SubmitButton } from '../components/SubmitButton';
 import Link from 'next/link';
 import { buildPageMetadata } from '../../lib/appBrand';
 import { getUserDisplayName, requireUser } from '../../lib/auth';
@@ -64,7 +65,7 @@ export default async function TagsPage({
             <label>Description</label>
             <textarea name="description" rows={3} placeholder="How this tag should be used" />
 
-            <button type="submit">Save tag</button>
+            <SubmitButton type="submit">Save tag</SubmitButton>
           </form>
         </div>
 
@@ -115,9 +116,9 @@ export default async function TagsPage({
                   </Link>
                   <form action={deleteTag}>
                     <input name="id" type="hidden" value={tag.id} />
-                    <button className="secondary" type="submit">
+                    <SubmitButton className="secondary" type="submit">
                       Delete
-                    </button>
+                    </SubmitButton>
                   </form>
                 </div>
               </td>

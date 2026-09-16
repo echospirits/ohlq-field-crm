@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
+import { SubmitButton } from '../components/SubmitButton';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { buildPageMetadata } from '../../lib/appBrand';
@@ -119,7 +120,7 @@ export default async function ProfilePage({
               </label>
             </div>
           </details>
-          <button type="submit">Save profile</button>
+          <SubmitButton type="submit">Save profile</SubmitButton>
         </form>
         <div className="profile-integration-link">
           <h2>Calendar</h2>

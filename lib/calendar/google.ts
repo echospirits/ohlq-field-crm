@@ -79,6 +79,7 @@ async function getAccessToken(connection: CalendarProviderConnection) {
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
   if (!clientId || !clientSecret) throw new CalendarProviderError('Google OAuth is not configured.', 'not_configured');
   const response = await fetch(TOKEN_URL, {
+    signal: AbortSignal.timeout(15_000),
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -113,6 +114,7 @@ async function googleFetch(connection: CalendarProviderConnection, path: string,
   const accessToken = await getAccessToken(connection);
   const response = await fetch(`${API_ROOT}${path}`, {
     ...init,
+    signal: AbortSignal.timeout(15_000),
     headers: {
       authorization: `Bearer ${accessToken}`,
       ...(init?.body ? { 'content-type': 'application/json' } : {}),
@@ -221,6 +223,7 @@ export const getGoogleOAuthUrl = (state: string) => {
 export const exchangeGoogleOAuthCode = async (code: string) => {
   if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) throw new Error('Google OAuth is not configured.');
   const response = await fetch(TOKEN_URL, {
+    signal: AbortSignal.timeout(15_000),
     method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ code, client_id: process.env.GOOGLE_CLIENT_ID, client_secret: process.env.GOOGLE_CLIENT_SECRET, redirect_uri: getGoogleOAuthRedirectUri(), grant_type: 'authorization_code' }),
   });

@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
+import { SubmitButton } from '../../components/SubmitButton';
 import { UserRole } from '@prisma/client';
 import Link from 'next/link';
 import { buildPageMetadata } from '../../../lib/appBrand';
@@ -82,14 +83,14 @@ export default async function VisitConfirmedPage({
         <h2>Did this visit address the follow-up?</h2>
         <p>{visit.originatingWorklistItem?.title}</p>
         <div className="visit-confirmation-actions">
-          <form action={resolveVisitOrigin}><input name="visitId" type="hidden" value={visitId} /><input name="origin" type="hidden" value={formOrigin} /><button name="decision" value="complete-task">Complete task</button><button className="secondary" name="decision" value="keep-open">Keep task open</button></form>
+          <form action={resolveVisitOrigin}><input name="visitId" type="hidden" value={visitId} /><input name="origin" type="hidden" value={formOrigin} /><SubmitButton name="decision" value="complete-task">Complete task</SubmitButton><SubmitButton className="secondary" name="decision" value="keep-open">Keep task open</SubmitButton></form>
         </div>
       </div> : null}
       {!resolutionHandled && resolutionType === 'opportunity' ? <div className="visit-origin-resolution">
         <h2>Did this visit address the opportunity?</h2>
         <p>{visit.salesOpportunity?.title ?? `${visit.agencyProductIntelligence?.itemName} - ${visit.agencyProductIntelligence?.opportunityState.toLowerCase().replaceAll('_', ' ')}`}</p>
         <div className="visit-confirmation-actions">
-          <form action={resolveVisitOrigin}><input name="visitId" type="hidden" value={visitId} /><input name="origin" type="hidden" value={formOrigin} /><button name="decision" value="action-opportunity">Mark actioned</button><button className="secondary" name="decision" value="keep-open">Keep open</button></form>
+          <form action={resolveVisitOrigin}><input name="visitId" type="hidden" value={visitId} /><input name="origin" type="hidden" value={formOrigin} /><SubmitButton name="decision" value="action-opportunity">Mark actioned</SubmitButton><SubmitButton className="secondary" name="decision" value="keep-open">Keep open</SubmitButton></form>
         </div>
       </div> : null}
       {resolutionHandled ? <p className="toast-notice">Your resolution choice was saved.</p> : null}

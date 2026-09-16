@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
+import { SubmitButton } from '../../components/SubmitButton';
 import { WholesaleOrderFiledSource, WholesaleOrderStatus } from '@prisma/client';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
@@ -50,8 +51,8 @@ export default async function WholesaleOrderDetailPage({ params, searchParams }:
           {order.filedAt ? <div><dt>Filed</dt><dd>{formatEasternDateTime(order.filedAt)} · {order.filedSource ? filedSourceLabel[order.filedSource] : 'Filed'}{order.filedBy?.displayName ? ` by ${order.filedBy.displayName}` : ''}{order.filedSource === WholesaleOrderFiledSource.AUTO_MATCH && order.matchedReportDate ? ` · OHLQ sale ${formatDateOnly(order.matchedReportDate)}` : ''}</dd></div> : null}
         </dl>
         <div className="action-row wholesale-order-status-actions">
-          {order.status === WholesaleOrderStatus.PDF_GENERATED ? <form action={markOrderSentAction}><input name="orderId" type="hidden" value={order.id} /><button type="submit">Mark Sent</button></form> : null}
-          {order.status !== WholesaleOrderStatus.FILED ? <form action={markOrderFiledAction}><input name="orderId" type="hidden" value={order.id} /><button className="secondary" type="submit">Mark Filed</button></form> : null}
+          {order.status === WholesaleOrderStatus.PDF_GENERATED ? <form action={markOrderSentAction}><input name="orderId" type="hidden" value={order.id} /><SubmitButton type="submit">Mark Sent</SubmitButton></form> : null}
+          {order.status !== WholesaleOrderStatus.FILED ? <form action={markOrderFiledAction}><input name="orderId" type="hidden" value={order.id} /><SubmitButton className="secondary" type="submit">Mark Filed</SubmitButton></form> : null}
         </div>
       </article>
     </div>

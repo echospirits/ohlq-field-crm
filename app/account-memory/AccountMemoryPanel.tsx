@@ -1,3 +1,4 @@
+import { SubmitButton } from '../components/SubmitButton';
 import { getCommunicationHref } from '../../lib/accountMemory';
 import { getIPhoneShortcutConfig } from '../../lib/contactImport';
 import { CommunicationLink } from './CommunicationLink';
@@ -50,7 +51,7 @@ export function AccountMemoryPanel({ accountId, accountType, contacts, notes, re
           <label className="contact-form-wide">Contact notes<textarea defaultValue={contact.notes ?? ''} name="notes" rows={3} /></label>
           <label className="checkbox-label"><input defaultChecked={contact.isPrimary} name="isPrimary" type="checkbox" value="true" /> Primary contact</label>
           <label className="checkbox-label"><input defaultChecked={contact.active} name="active" type="checkbox" value="true" /> Active</label>
-          <button type="submit">Save contact</button>
+          <SubmitButton type="submit">Save contact</SubmitButton>
         </form>
       </details>
     </div>
@@ -64,7 +65,7 @@ export function AccountMemoryPanel({ accountId, accountType, contacts, notes, re
         <form action={saveAccountNotes}>
           <LocationFields accountId={accountId} accountType={accountType} returnTo={returnTo} />
           <textarea aria-label="Account notes" defaultValue={notes ?? ''} name="notes" placeholder="Best visit time, buyer preferences, or account context" rows={5} />
-          <button type="submit">Save notes</button>
+          <SubmitButton type="submit">Save notes</SubmitButton>
         </form>
       </details>
     </article>

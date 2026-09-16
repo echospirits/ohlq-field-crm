@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
+import { SubmitButton } from '../../components/SubmitButton';
 import { OrganizationAuditAction, UserRole } from '@prisma/client';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
@@ -143,12 +144,12 @@ export default async function OrganizationSetupPage({ searchParams }: { searchPa
         <div className="section-heading"><div><span className="page-eyebrow">Tenant data connection</span><h2>OHLQ inventory login</h2><p className="muted">Used only for this organization's inventory download. Credentials are encrypted and never displayed after saving.</p></div><span className="pill">{organization.ohlqCredentials ? 'Configured' : 'Not configured'}</span></div>
         {organization.ohlqCredentials ? <p className="muted">Current login: {organization.ohlqCredentials.usernameHint}</p> : null}
         <div className="form-grid"><label>OHLQ username<input autoComplete="username" name="username" required /></label><label>OHLQ password<input autoComplete="new-password" name="password" type="password" required /></label></div>
-        <button type="submit">{organization.ohlqCredentials ? 'Replace credentials' : 'Save credentials'}</button>
+        <SubmitButton type="submit">{organization.ohlqCredentials ? 'Replace credentials' : 'Save credentials'}</SubmitButton>
       </form>
-      <article className="card"><span className="page-eyebrow">Connection safety</span><h2>Inventory isolation</h2><p className="muted">The daily runner stores this tenant's current inventory and history separately. Missing credentials skip this tenant without using another organization's login.</p>{actor.role !== UserRole.PLATFORM_ADMIN && organization.ohlqCredentials ? <form action={removeOhlqCredentials}><button className="danger" type="submit">Remove inventory login</button></form> : null}</article>
+      <article className="card"><span className="page-eyebrow">Connection safety</span><h2>Inventory isolation</h2><p className="muted">The daily runner stores this tenant's current inventory and history separately. Missing credentials skip this tenant without using another organization's login.</p>{actor.role !== UserRole.PLATFORM_ADMIN && organization.ohlqCredentials ? <form action={removeOhlqCredentials}><SubmitButton className="danger" type="submit">Remove inventory login</SubmitButton></form> : null}</article>
     </section>
     <article className="card product-selection-card">
-      <div className="section-heading"><div><span className="page-eyebrow">Catalog configuration</span><h2>Product selection</h2><p className="muted">Choose which discovered item codes your organization includes. Brand Master imports remain Platform Admin-only.</p></div><form action={refreshProductCandidates}><button className="compact-btn secondary" type="submit">Check for new products</button></form></div>
+      <div className="section-heading"><div><span className="page-eyebrow">Catalog configuration</span><h2>Product selection</h2><p className="muted">Choose which discovered item codes your organization includes. Brand Master imports remain Platform Admin-only.</p></div><form action={refreshProductCandidates}><SubmitButton className="compact-btn secondary" type="submit">Check for new products</SubmitButton></form></div>
       <ProductSelectionEditor action={saveProductSelection} organizationId={organizationId} products={organization.products.map((product) => ({ id: product.id, itemCode: product.externalItemCode, name: product.displayName, status: product.status }))} />
     </article>
   </>;

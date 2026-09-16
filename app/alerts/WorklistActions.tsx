@@ -1,6 +1,8 @@
 'use client';
 
+import { SubmitButton } from '../components/SubmitButton';
 import { useCallback, useRef, useState } from 'react';
+import { ActionForm, type ActionResult } from '../components/ActionForm';
 import { useDialogFocus } from '../components/useDialogFocus';
 import {
   LogVisitForm,
@@ -47,8 +49,8 @@ type WorklistActionsProps = {
   contacts: VisitFormContactOption[];
   tags: VisitFormTagOption[];
   createVisitAction: (formData: FormData) => void | Promise<void>;
-  updateStatusAction: (formData: FormData) => void | Promise<void>;
-  updateItemAction: (formData: FormData) => void | Promise<void>;
+  updateStatusAction: (formData: FormData) => Promise<ActionResult>;
+  updateItemAction: (formData: FormData) => Promise<ActionResult>;
   currentUserId: string;
   users: Array<{ id: string; name: string }>;
 };
@@ -90,13 +92,13 @@ export function WorklistActions({
         Log Visit
       </button>
 
-      <form action={updateStatusAction}>
+      <ActionForm action={updateStatusAction}>
         <input name="id" type="hidden" value={item.id} />
         <input name="status" type="hidden" value="COMPLETED" />
-        <button disabled={item.status === 'COMPLETED'} type="submit">
-          Complete
-        </button>
-      </form>
+        <SubmitButton disabled={item.status === 'COMPLETED'} pendingLabel="Completing…" type="submit">
+          {item.status === 'COMPLETED' ? 'Completed' : 'Complete'}
+        </SubmitButton>
+      </ActionForm>
 
       <button className="secondary" type="button" onClick={() => setOpenAction('reschedule')}>Reschedule</button>
 
@@ -104,7 +106,7 @@ export function WorklistActions({
       <details className="compact-details worklist-edit-details">
         <summary>Edit, reassign, or cancel</summary>
       <button className="secondary" type="button" onClick={() => setOpenAction('reassign')}>Reassign</button>
-        <form action={updateItemAction} className="worklist-edit-form">
+        <ActionForm action={updateItemAction} className="worklist-edit-form">
           <input name="id" type="hidden" value={item.id} />
           <label>Task<input name="title" defaultValue={item.title} required /></label>
           <label>Details<textarea name="detail" defaultValue={item.editDetail ?? ''} rows={3} /></label>
@@ -114,15 +116,15 @@ export function WorklistActions({
             <label>Assigned to<select name="assignedToUserId" defaultValue={item.assignedToUserId ?? ''}><option value="">-- Unassigned --</option>{users.map((user) => <option key={user.id} value={user.id}>{user.name}</option>)}</select></label>
           </div>
           {item.calendarSyncStatus ? <p className="field-note">Calendar: {item.calendarSyncStatus.toLowerCase().replaceAll('_', ' ')}{item.calendarSyncError ? ` - ${item.calendarSyncError}` : ''}</p> : null}
-          <button type="submit">Save task</button>
-        </form>
-      <form action={updateStatusAction}>
+          <SubmitButton type="submit">Save task</SubmitButton>
+        </ActionForm>
+      <ActionForm action={updateStatusAction}>
         <input name="id" type="hidden" value={item.id} />
         <input name="status" type="hidden" value="CANCELLED" />
-        <button className="secondary" disabled={item.status === 'CANCELLED'} type="submit">
-          Cancel task
-        </button>
-      </form>
+        <SubmitButton className="secondary" disabled={item.status === 'CANCELLED'} pendingLabel="Cancelling…" type="submit">
+          {item.status === 'CANCELLED' ? 'Cancelled' : 'Cancel task'}
+        </SubmitButton>
+      </ActionForm>
       </details>
 
 
@@ -131,12 +133,12 @@ export function WorklistActions({
         <button aria-label="Close reschedule" className="app-modal-backdrop" type="button" onClick={() => setOpenAction(null)} />
         <div ref={dialogRef} className="app-modal-panel contextual-action-sheet">
           <div className="app-modal-header"><h2 id={`reschedule-${item.id}`}>Reschedule</h2><button className="app-modal-close secondary" type="button" onClick={() => setOpenAction(null)}>Close</button></div>
-          <form action={async (formData) => { await updateItemAction(formData); setOpenAction(null); }} className="contextual-action-form">
+          <ActionForm action={updateItemAction} onSuccess={closeDialog} className="contextual-action-form">
             <input name="id" type="hidden" value={item.id} /><input name="title" type="hidden" value={item.title} /><input name="detail" type="hidden" value={item.editDetail ?? ''} /><input name="assignedToUserId" type="hidden" value={item.assignedToUserId ?? ''} />
             <label>Due date<input name="dueDate" type="date" defaultValue={item.dueDate} /></label>
             <label>Time <span className="optional-label">Optional</span><input name="dueTime" type="time" defaultValue={item.dueTime} /></label>
-            <button type="submit">Save schedule</button>
-          </form>
+            <SubmitButton type="submit">Save schedule</SubmitButton>
+          </ActionForm>
         </div>
       </div> : null}
 
@@ -144,11 +146,11 @@ export function WorklistActions({
         <button aria-label="Close reassign" className="app-modal-backdrop" type="button" onClick={() => setOpenAction(null)} />
         <div ref={dialogRef} className="app-modal-panel contextual-action-sheet">
           <div className="app-modal-header"><h2 id={`reassign-${item.id}`}>Reassign</h2><button className="app-modal-close secondary" type="button" onClick={() => setOpenAction(null)}>Close</button></div>
-          <form action={async (formData) => { await updateItemAction(formData); setOpenAction(null); }} className="contextual-action-form">
+          <ActionForm action={updateItemAction} onSuccess={closeDialog} className="contextual-action-form">
             <input name="id" type="hidden" value={item.id} /><input name="title" type="hidden" value={item.title} /><input name="detail" type="hidden" value={item.editDetail ?? ''} /><input name="dueDate" type="hidden" value={item.dueDate} /><input name="dueTime" type="hidden" value={item.dueTime} />
             <label>Assigned to<select name="assignedToUserId" defaultValue={item.assignedToUserId ?? ''}><option value="">-- Unassigned --</option>{users.map((user) => <option key={user.id} value={user.id}>{user.name}</option>)}</select></label>
-            <button type="submit">Save assignee</button>
-          </form>
+            <SubmitButton type="submit">Save assignee</SubmitButton>
+          </ActionForm>
         </div>
       </div> : null}
 

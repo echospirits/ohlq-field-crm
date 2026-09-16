@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
+import { SubmitButton } from '../../../components/SubmitButton';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { buildPageMetadata } from '../../../../lib/appBrand';
@@ -125,9 +126,9 @@ export default async function MergeWholesaleAccountPage({
                 Search by name, Licensee ID, address, or city
                 <input defaultValue={q} name="q" placeholder="Search official accounts" />
               </label>
-              <button className="compact-btn secondary" type="submit">
+              <SubmitButton className="compact-btn secondary" type="submit">
                 Search
-              </button>
+              </SubmitButton>
             </form>
 
             <h3>{q ? 'Search results' : 'Likely matches'}</h3>
@@ -252,9 +253,9 @@ export default async function MergeWholesaleAccountPage({
                     <input name="confirmation" required type="checkbox" value="MERGE" /> I understand that all linked
                     activity will move to {preview.target.name}.
                   </label>
-                  <button className="compact-btn danger-btn" type="submit">
+                  <SubmitButton className="compact-btn danger-btn" type="submit">
                     Merge into official account
-                  </button>
+                  </SubmitButton>
                 </form>
               )}
             </div>

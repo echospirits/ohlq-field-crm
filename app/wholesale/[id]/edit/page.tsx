@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
+import { SubmitButton } from '../../../components/SubmitButton';
 import { revalidatePath } from 'next/cache';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
@@ -353,7 +354,7 @@ export default async function EditWholesaleAccountPage({
               <input name="deliveryDay" defaultValue={account.deliveryDay ?? ''} />
             </label>
           </div>
-          <button type="submit">Save wholesale account</button>
+          <SubmitButton type="submit">Save wholesale account</SubmitButton>
         </form>
       </div></div>
     </>

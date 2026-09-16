@@ -1,3 +1,4 @@
+import { SubmitButton } from '../components/SubmitButton';
 import { getUserDisplayName } from '../../lib/auth';
 import { formatEasternDateTime } from '../../lib/dateTime';
 import { addLocationTag, removeLocationTag } from './actions';
@@ -60,9 +61,9 @@ export function AccountTagPanel({
           ))}
         </select>
         <input name="note" placeholder="Optional note or reason" />
-        <button disabled={availableTags.length === 0} type="submit">
+        <SubmitButton disabled={availableTags.length === 0} type="submit">
           Add tag
-        </button>
+        </SubmitButton>
       </form>
 
       {assignments.length > 0 ? (
@@ -81,9 +82,9 @@ export function AccountTagPanel({
                 <input name="id" type="hidden" value={assignment.id} />
                 <input name={locationField} type="hidden" value={locationId} />
                 <input name="returnTo" type="hidden" value={returnTo} />
-                <button className="secondary" type="submit">
+                <SubmitButton className="secondary" type="submit">
                   Remove
-                </button>
+                </SubmitButton>
               </form>
             </div>
           ))}

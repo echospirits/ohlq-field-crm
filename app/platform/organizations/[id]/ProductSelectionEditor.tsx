@@ -1,5 +1,6 @@
 'use client';
 
+import { SubmitButton } from '../../../components/SubmitButton';
 import { OrganizationProductStatus } from '@prisma/client';
 import { useMemo, useState } from 'react';
 
@@ -76,7 +77,7 @@ export function ProductSelectionEditor({ action, organizationId, products }: Pro
     </div>
     <div className="product-selection-footer">
       <small>Tip: Ctrl-click or Shift-click to select multiple items. Double-click moves an item immediately.</small>
-      <button type="submit">Save product selection</button>
+      <SubmitButton type="submit">Save product selection</SubmitButton>
     </div>
   </form>;
 }

@@ -7,6 +7,7 @@ import { getOrganizationContext, getOrganizationFeatures } from '../lib/organiza
 import Link from 'next/link';
 import { AppBreadcrumbs, AppSidebarNavigation, MobileTabbar } from './components/AppNavigation';
 import { GlobalSearchForm } from './components/GlobalSearchForm';
+import { ActionNotice } from './components/ActionNotice';
 import './styles.css';
 import './redesign.css';
 import { getAppEnvironment, getEnvironmentLabel } from '../lib/appEnvironment';
@@ -82,6 +83,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             <main id="main-content">
               {organizationContext?.isSupportView ? <div className="support-view-banner"><strong>Viewing Neat as {organizationContext.organization.displayName}</strong><form action="/platform/support-view/exit" method="post"><button className="secondary" type="submit">Exit Support View</button></form></div> : null}
               <AppBreadcrumbs isTaster={isTaster} />
+              <ActionNotice />
               {children}
             </main>
             <Link className="fab" href="/visits/new" aria-label="Log Visit">

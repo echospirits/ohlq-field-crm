@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 export const maxDuration = 300;
 
+import { SubmitButton } from '../../components/SubmitButton';
 import { AccountResearchJobStatus, AccountResearchPilotStatus } from '@prisma/client';
 import Link from 'next/link';
 import { buildPageMetadata } from '../../../lib/appBrand';
@@ -144,7 +145,7 @@ export default async function AccountResearchPage({ searchParams }: { searchPara
           <article className="card research-workflow-card">
             <div className="research-pilot-callout">
               <div><strong>{ACCOUNT_RESEARCH_PILOT_MAX_ACCOUNTS} accounts · {formatUsdMicros(ACCOUNT_RESEARCH_PILOT_BUDGET_MICROS)} hard ceiling</strong><p className="muted">Exact-location results apply automatically. Uncertain matches are declined without changing account intelligence.</p></div>
-              <form action={startAccountResearchPilot}><button type="submit" disabled={!availability.available}>Start {ACCOUNT_RESEARCH_PILOT_MAX_ACCOUNTS}-account test</button></form>
+              <form action={startAccountResearchPilot}><SubmitButton type="submit" disabled={!availability.available}>Start {ACCOUNT_RESEARCH_PILOT_MAX_ACCOUNTS}-account test</SubmitButton></form>
             </div>
             {!availability.available ? <p className="danger-text">Unavailable: {!availability.enabled ? 'manual research is disabled' : !availability.hasKey ? 'the OpenAI key is missing' : availability.configurationError}.</p> : null}
           </article>
@@ -157,9 +158,9 @@ export default async function AccountResearchPage({ searchParams }: { searchPara
             </div>
             {failedJobs > 0 ? <div className="research-pilot-failure" role="alert"><strong>{failedJobs} research job{failedJobs === 1 ? '' : 's'} failed</strong><p>{friendlyPilotError(pilot.jobs.map((job) => job.error))}</p></div> : null}
             <div className="segmented-submit research-pilot-actions">
-              {runningJobs > 0 || reviewJobs.length > 0 ? <form action={checkAccountResearchPilot}><input name="pilotId" type="hidden" value={pilot.id} /><button type="submit">Check and apply research</button></form> : null}
-              {queuedJobs > 0 && runningJobs === 0 && reviewJobs.length === 0 ? <form action={continueAccountResearchPilot}><input name="pilotId" type="hidden" value={pilot.id} /><button className="secondary" type="submit">Submit next {Math.min(ACCOUNT_RESEARCH_SUBMISSION_WAVE_SIZE, queuedJobs)} accounts</button></form> : null}
-              {canStartNewPilot ? <form action={startAccountResearchPilot}><button type="submit" disabled={!availability.available}>Start new {ACCOUNT_RESEARCH_PILOT_MAX_ACCOUNTS}-account test</button></form> : null}
+              {runningJobs > 0 || reviewJobs.length > 0 ? <form action={checkAccountResearchPilot}><input name="pilotId" type="hidden" value={pilot.id} /><SubmitButton type="submit">Check and apply research</SubmitButton></form> : null}
+              {queuedJobs > 0 && runningJobs === 0 && reviewJobs.length === 0 ? <form action={continueAccountResearchPilot}><input name="pilotId" type="hidden" value={pilot.id} /><SubmitButton className="secondary" type="submit">Submit next {Math.min(ACCOUNT_RESEARCH_SUBMISSION_WAVE_SIZE, queuedJobs)} accounts</SubmitButton></form> : null}
+              {canStartNewPilot ? <form action={startAccountResearchPilot}><SubmitButton type="submit" disabled={!availability.available}>Start new {ACCOUNT_RESEARCH_PILOT_MAX_ACCOUNTS}-account test</SubmitButton></form> : null}
             </div>
             {canStartNewPilot && !availability.available ? <p className="danger-text">A new test run is unavailable: {!availability.enabled ? 'manual research is disabled' : !availability.hasKey ? 'the OpenAI key is missing' : availability.configurationError}.</p> : null}
             <p className="muted">Only one {ACCOUNT_RESEARCH_SUBMISSION_WAVE_SIZE}-account wave can run at a time. Check and apply the current wave before sending the next. Costs are metered estimates from response tokens and web-search calls. The application never reserves more than {formatUsdMicros(ACCOUNT_RESEARCH_PILOT_BUDGET_MICROS)}; the OpenAI project budget remains the final billing backstop.</p>
@@ -192,7 +193,7 @@ Keep every identity column unchanged and verify findings against the exact stree
         </div>
         <form action={uploadAccountResearchCsv} encType="multipart/form-data" className="card target-import-form research-workflow-card">
           <label>Completed research CSV<input name="researchFile" type="file" accept=".csv,text/csv" required /></label>
-          <div className="segmented-submit"><button name="mode" value="dry-run" type="submit">Validate only</button><button name="mode" value="commit" type="submit">Import research</button></div>
+          <div className="segmented-submit"><SubmitButton name="mode" value="dry-run" type="submit">Validate only</SubmitButton><SubmitButton name="mode" value="commit" type="submit">Import research</SubmitButton></div>
           <p className="muted">Imports remain all-or-nothing. A successful reviewed import immediately recalculates affected opportunities.</p>
         </form>
       </section>

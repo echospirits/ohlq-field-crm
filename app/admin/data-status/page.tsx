@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 export const maxDuration = 300;
 
+import { SubmitButton } from '../../components/SubmitButton';
 import { OhlqReportDataSource, OhlqReportRunStatus, UserRole } from '@prisma/client';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
@@ -504,7 +505,7 @@ export default async function DataStatusPage({
         <summary>Import OHLQ Brand Master CSV</summary>
         <form action={importBrandMaster} encType="multipart/form-data">
           <input type="file" name="brandMasterFile" accept=".csv,text/csv" required />
-          <button type="submit">Refresh brand master</button>
+          <SubmitButton type="submit">Refresh brand master</SubmitButton>
           <p className="muted">
             Each upload fully replaces the brand master lookup table, then reloads item code and item name data from
             the uploaded CSV.

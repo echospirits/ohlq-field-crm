@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
+import { SubmitButton } from '../components/SubmitButton';
 import { InvitationDeliveryStatus, UserRole } from '@prisma/client';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
@@ -448,7 +449,7 @@ export default async function UsersPage({
               </select>
             </label>
           </div>
-          <button type="submit">Invite user</button>
+          <SubmitButton type="submit">Invite user</SubmitButton>
         </form>
       </details>
 
@@ -497,9 +498,9 @@ export default async function UsersPage({
                   {isAwaitingActivation ? (
                     <form action={sendActivationReminder} className="inline-control-form">
                       <input name="userId" type="hidden" value={user.id} />
-                      <button className="compact-btn secondary" type="submit">
+                      <SubmitButton className="compact-btn secondary" type="submit">
                         Send reminder
-                      </button>
+                      </SubmitButton>
                     </form>
                   ) : null}
 
@@ -510,18 +511,18 @@ export default async function UsersPage({
                       <option value={UserRole.TASTER}>Taster</option>
                       <option value={UserRole.ADMIN}>Admin</option>
                     </select>
-                    <button className="compact-btn secondary" type="submit">
+                    <SubmitButton className="compact-btn secondary" type="submit">
                       Save role
-                    </button>
+                    </SubmitButton>
                   </form>
 
                   {!isAwaitingActivation ? (
                     <form action={toggleUserStatus} className="inline-control-form">
                       <input name="userId" type="hidden" value={user.id} />
                       <input name="activate" type="hidden" value={user.isActive ? 'false' : 'true'} />
-                      <button className={user.isActive ? 'compact-btn danger-btn' : 'compact-btn secondary'} type="submit">
+                      <SubmitButton className={user.isActive ? 'compact-btn danger-btn' : 'compact-btn secondary'} type="submit">
                         {user.isActive ? 'Deactivate' : 'Reactivate'}
-                      </button>
+                      </SubmitButton>
                     </form>
                   ) : null}
 
@@ -539,9 +540,9 @@ export default async function UsersPage({
                           type="password"
                           required
                         />
-                        <button className="compact-btn secondary" type="submit">
+                        <SubmitButton className="compact-btn secondary" type="submit">
                           Reset
-                        </button>
+                        </SubmitButton>
                       </form>
                     </details>
                   ) : null}

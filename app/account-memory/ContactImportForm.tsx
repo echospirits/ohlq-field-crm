@@ -1,5 +1,6 @@
 'use client';
 
+import { SubmitButton } from '../components/SubmitButton';
 import { useRef, useState, type ChangeEvent } from 'react';
 import { parseVCard, type ImportedContact } from '../../lib/vCard';
 import { createAccountContact } from './actions';
@@ -85,7 +86,7 @@ export function ContactImportForm({ accountId, accountType, installUrl, returnTo
         <label>Phone (optional)<input inputMode="tel" name="phone" onChange={update('phone')} type="tel" value={contact.phone} /></label>
         <label className="contact-form-wide">Contact notes<textarea name="notes" onChange={update('notes')} rows={3} value={contact.notes} /></label>
         <label className="checkbox-label"><input name="isPrimary" type="checkbox" value="true" /> Primary contact</label>
-        <button type="submit">Add contact</button>
+        <SubmitButton type="submit">Add contact</SubmitButton>
       </form>
     </details>
     <details className="compact-details nested-details contact-import-setup">

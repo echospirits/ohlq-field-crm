@@ -1,3 +1,4 @@
+import { SubmitButton } from '../components/SubmitButton';
 import {
   MenuPlacementSource,
   MenuPlacementStatus,
@@ -183,7 +184,7 @@ export function MenuPlacementPanel({
               <span className="field-note">Menu photo or proof link</span>
             </div>
           </details>
-          <button type="submit">Save placement</button>
+          <SubmitButton type="submit">Save placement</SubmitButton>
         </form>
       </details>
 
@@ -292,15 +293,15 @@ export function MenuPlacementPanel({
                           <input name="proofUrl" type="url" placeholder="Replacement proof URL" />
                         </div>
                       </details>
-                      <button type="submit">Save changes</button>
+                      <SubmitButton type="submit">Save changes</SubmitButton>
                     </form>
                   </details>
                   <form action={deleteMenuPlacement}>
                     <input name="id" type="hidden" value={placement.id} />
                     <input name="returnTo" type="hidden" value={returnTo} />
-                    <button className="secondary compact-btn" type="submit">
+                    <SubmitButton className="secondary compact-btn" type="submit">
                       Delete
-                    </button>
+                    </SubmitButton>
                   </form>
                 </td>
               </tr>

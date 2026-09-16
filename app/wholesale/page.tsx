@@ -1,6 +1,7 @@
 ﻿export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
+import { SubmitButton } from '../components/SubmitButton';
 import { revalidatePath } from 'next/cache';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
@@ -589,7 +590,7 @@ export default async function WholesalePage({
               </div>
             </details>
           ) : null}
-          <button type="submit">Save wholesale account</button>
+          <SubmitButton type="submit">Save wholesale account</SubmitButton>
         </form>
       </details>
 

@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
+import { SubmitButton } from '../../components/SubmitButton';
 import { WeeklyDigestStatus } from '@prisma/client';
 import { APP_NAME, buildPageMetadata } from '../../../lib/appBrand';
 import { getUserDisplayName, requireAdminSession } from '../../../lib/auth';
@@ -125,12 +126,12 @@ export default async function WeeklyDigestAdminPage({
             <form action={sendWeeklyDigestTestAction}>
               <input name="digestType" type="hidden" value={previewMode} />
               <input name="userId" type="hidden" value={selectedUserId} />
-              <button type="submit">Send test to me</button>
+              <SubmitButton type="submit">Send test to me</SubmitButton>
             </form>
             <form action={sendWeeklyDigestManualAction}>
-              <button className="secondary" type="submit">
+              <SubmitButton className="secondary" type="submit">
                 Send current digest to all recipients
-              </button>
+              </SubmitButton>
             </form>
           </div>
         </div>

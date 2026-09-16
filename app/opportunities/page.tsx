@@ -1,6 +1,8 @@
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
+import { ActionForm } from '../components/ActionForm';
+import { SubmitButton } from '../components/SubmitButton';
 import { OpportunityEventType, OpportunityStatus, OpportunityType, UserRole } from '@prisma/client';
 import Link from 'next/link';
 import { buildPageMetadata } from '../../lib/appBrand';
@@ -64,8 +66,8 @@ export default async function OpportunityInbox({ searchParams }: { searchParams?
         <ul>{(item.explanation as string[]).map((reason) => <li key={reason}>{reason}</li>)}</ul>
       </details>
       <details className="opportunity-more-actions"><summary>More</summary><div className="opportunity-more-menu">
-        <form action={updateOpportunity} className="opportunity-feedback"><input type="hidden" name="id" value={item.id}/><input aria-label="Snooze until" name="snoozedUntil" type="date"/><button name="action" value="snooze">Snooze</button></form>
-        <form action={updateOpportunity} className="opportunity-dismiss"><input type="hidden" name="id" value={item.id}/><select aria-label="Dismissal reason" name="reason" defaultValue="Wrong timing">{['Not a fit','Wrong timing','Already handled','Buyer not interested','Seasonal','Bad/missing data','Other'].map((reason) => <option key={reason}>{reason}</option>)}</select><button className="danger" name="action" value="dismiss">Dismiss</button></form>
+        <ActionForm action={updateOpportunity} className="opportunity-feedback"><input type="hidden" name="id" value={item.id}/><input aria-label="Snooze until" name="snoozedUntil" type="date" required/><SubmitButton name="action" value="snooze">Snooze</SubmitButton></ActionForm>
+        <ActionForm action={updateOpportunity} className="opportunity-dismiss"><input type="hidden" name="id" value={item.id}/><select aria-label="Dismissal reason" name="reason" defaultValue="Wrong timing">{['Not a fit','Wrong timing','Already handled','Buyer not interested','Seasonal','Bad/missing data','Other'].map((reason) => <option key={reason}>{reason}</option>)}</select><SubmitButton className="danger" name="action" value="dismiss">Dismiss</SubmitButton></ActionForm>
       </div></details>
     </article>)}</section>{opportunities.length === 0 ? <p className="card muted">No open opportunities match this view.</p> : null}
   </>;

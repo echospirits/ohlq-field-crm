@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
+import { SubmitButton } from '../components/SubmitButton';
 import Link from 'next/link';
 import { APP_NAME, buildPageMetadata } from '../../lib/appBrand';
 import { getUserDisplayName } from '../../lib/auth';
@@ -77,7 +78,7 @@ export default async function AcceptInvitePage({
           Confirm password
           <input autoComplete="new-password" minLength={10} name="confirmPassword" type="password" required />
         </label>
-        <button type="submit">Create password</button>
+        <SubmitButton type="submit">Create password</SubmitButton>
       </form>
       <p className="muted">This invitation expires {formatEasternDateTime(invitation.expiresAt)}.</p>
     </div>

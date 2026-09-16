@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
+import { SubmitButton } from '../components/SubmitButton';
 import { AgencyProductOpportunityState, OpportunityStatus } from '@prisma/client';
 import Link from 'next/link';
 import { buildPageMetadata } from '../../lib/appBrand';
@@ -100,7 +101,7 @@ export default async function AgencyFocusPage({
             existingFollowUpId={item.worklistItems[0]?.id}
             users={actionUsers}
           />
-          <form action={updateAgencyOpportunity}><input name="id" type="hidden" value={item.id}/><button className="secondary compact-btn" name="action" value="snooze">Snooze 14d</button></form>
+          <form action={updateAgencyOpportunity}><input name="id" type="hidden" value={item.id}/><SubmitButton className="secondary compact-btn" name="action" value="snooze">Snooze 14d</SubmitButton></form>
         </div>
         <details className="opportunity-evidence compact-details nested-details">
           <summary>View evidence</summary>
@@ -114,7 +115,7 @@ export default async function AgencyFocusPage({
           </dl>
           <ul className="agency-product-reasons">{stringList(item.reasons).map((reason) => <li key={reason}>{reason}</li>)}</ul>
         </details>
-        <details className="agency-focus-dismiss"><summary>Dismiss</summary><form action={updateAgencyOpportunity}><input name="id" type="hidden" value={item.id}/><select aria-label="Dismissal reason" name="reason" defaultValue="Not a fit"><option>Not a fit</option><option>Already handled</option><option>Wrong timing</option><option>Bad or missing data</option><option>Other</option></select><button className="danger compact-btn" name="action" value="dismiss">Dismiss</button></form></details>
+        <details className="agency-focus-dismiss"><summary>Dismiss</summary><form action={updateAgencyOpportunity}><input name="id" type="hidden" value={item.id}/><select aria-label="Dismissal reason" name="reason" defaultValue="Not a fit"><option>Not a fit</option><option>Already handled</option><option>Wrong timing</option><option>Bad or missing data</option><option>Other</option></select><SubmitButton className="danger compact-btn" name="action" value="dismiss">Dismiss</SubmitButton></form></details>
       </article>)}
       {opportunities.length === 0 ? <p className="card muted">No active Agency opportunities match this view.</p> : null}
     </section>
