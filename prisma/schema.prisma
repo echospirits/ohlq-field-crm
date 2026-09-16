@@ -340,6 +340,7 @@ enum WholesaleOrderStatus {
   PDF_GENERATED
   SENT
   FILED
+  COMPLETED
 }
 
 enum WholesaleOrderFiledSource {
@@ -419,6 +420,7 @@ model User {
   followUpAssignedVisits      LoggedVisit[]          @relation("LoggedVisitFollowUpAssignedTo")
   createdWholesaleOrders      WholesaleOrder[]       @relation("WholesaleOrderCreatedBy")
   sentWholesaleOrders         WholesaleOrder[]       @relation("WholesaleOrderSentBy")
+  paidWholesaleOrders         WholesaleOrder[]       @relation("WholesaleOrderPaidBy")
   filedWholesaleOrders        WholesaleOrder[]       @relation("WholesaleOrderFiledBy")
 
   @@index([role])
@@ -1394,6 +1396,8 @@ model WholesaleOrder {
   status                 WholesaleOrderStatus            @default(PDF_GENERATED)
   sentAt                 DateTime?
   sentByUserId           String?
+  paidAt                 DateTime?
+  paidByUserId           String?
   filedAt                DateTime?
   filedByUserId          String?
   filedSource            WholesaleOrderFiledSource?
@@ -1407,11 +1411,13 @@ model WholesaleOrder {
   directSaleLocation     OrganizationA3aStoreIdentifier? @relation(fields: [directSaleLocationId], references: [id], onDelete: SetNull)
   createdByUser          User                            @relation("WholesaleOrderCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
   sentByUser             User?                           @relation("WholesaleOrderSentBy", fields: [sentByUserId], references: [id], onDelete: SetNull)
+  paidByUser             User?                           @relation("WholesaleOrderPaidBy", fields: [paidByUserId], references: [id], onDelete: SetNull)
   filedByUser            User?                           @relation("WholesaleOrderFiledBy", fields: [filedByUserId], references: [id], onDelete: SetNull)
 
   @@unique([organizationId, clientRequestId])
   @@index([organizationId, saleDate, createdAt])
   @@index([organizationId, status, saleDate])
+  @@index([organizationId, sentAt, paidAt, filedAt, saleDate], map: "WholesaleOrder_checklist_date_idx")
   @@index([wholesaleAccountId, saleDate])
   @@index([customerPermitNumber, sellerStoreNumber, saleDate], map: "WholesaleOrder_customer_store_date_idx")
 }

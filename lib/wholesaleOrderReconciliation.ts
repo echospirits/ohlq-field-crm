@@ -22,7 +22,7 @@ export type WholesaleOrderReconciliationOrder = {
   organizationId: string;
   saleDate: Date;
   sellerStoreNumber: string;
-  status: 'PDF_GENERATED' | 'SENT' | 'FILED';
+  status: 'PDF_GENERATED' | 'SENT' | 'FILED' | 'COMPLETED';
 };
 
 export type WholesaleOrderReconciliationRow = {
@@ -279,7 +279,9 @@ type WholesaleOrderSnapshot = {
   organizationId: string;
   saleDate: Date;
   sellerStoreNumber: string;
-  status: 'PDF_GENERATED' | 'SENT' | 'FILED';
+  status: 'PDF_GENERATED' | 'SENT' | 'FILED' | 'COMPLETED';
+  sentAt: Date | null;
+  paidAt: Date | null;
   wholesaleAccountId: string;
 };
 
@@ -317,12 +319,14 @@ export async function reconcileWholesaleOrdersAfterOhlqImport({
         id: true,
         inputSnapshot: true,
         organizationId: true,
+        paidAt: true,
         saleDate: true,
         sellerStoreNumber: true,
+        sentAt: true,
         status: true,
         wholesaleAccountId: true,
       },
-      where: { status: { in: ['PDF_GENERATED', 'SENT'] } },
+      where: { filedAt: null },
     });
     if (pendingSnapshots.length === 0) {
       return {
@@ -347,8 +351,10 @@ export async function reconcileWholesaleOrdersAfterOhlqImport({
         id: true,
         inputSnapshot: true,
         organizationId: true,
+        paidAt: true,
         saleDate: true,
         sellerStoreNumber: true,
+        sentAt: true,
         status: true,
         wholesaleAccountId: true,
       },
@@ -359,7 +365,7 @@ export async function reconcileWholesaleOrdersAfterOhlqImport({
           lte: latestPending,
         },
         sellerStoreNumber: { in: pendingStores },
-        status: 'FILED',
+        filedAt: { not: null },
       },
     });
     const snapshots: WholesaleOrderSnapshot[] = [...pendingSnapshots, ...manualSnapshots];
@@ -415,11 +421,13 @@ export async function reconcileWholesaleOrdersAfterOhlqImport({
         where: {
           id: pending.id,
           organizationId: pending.organizationId,
-          status: { in: ['PDF_GENERATED', 'SENT'] },
+          filedAt: null,
         },
       });
     }
     for (const match of plan.matches) {
+      const pending = pendingSnapshots.find((order) => order.id === match.orderId && order.organizationId === match.organizationId);
+      if (!pending) throw new Error(`Wholesale order ${match.orderId} was not in the pending reconciliation set.`);
       const updated = await tx.wholesaleOrder.updateMany({
         data: {
           automaticMatchKey: match.evidence.automaticMatchKey,
@@ -430,13 +438,13 @@ export async function reconcileWholesaleOrdersAfterOhlqImport({
             ...match.evidence,
             reportDate: dateOnlyIso(match.evidence.reportDate),
           },
-          status: 'FILED',
+          status: pending.sentAt && pending.paidAt ? 'COMPLETED' : 'FILED',
         },
         where: {
           automaticMatchKey: null,
           id: match.orderId,
           organizationId: match.organizationId,
-          status: { in: ['PDF_GENERATED', 'SENT'] },
+          filedAt: null,
         },
       });
       filedOrders += updated.count;

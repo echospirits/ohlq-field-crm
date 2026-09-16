@@ -8,6 +8,7 @@ import {
   parseWholesaleOrderDate,
   markWholesaleOrderFiledManually,
   markWholesaleOrderSent,
+  setWholesaleOrderChecklist,
   persistGeneratedWholesaleOrder,
   WholesaleOrderLifecycleError,
   wholesaleOrderSnapshotSchema,
@@ -98,8 +99,8 @@ test('reusing a client request id with changed details is rejected', async () =>
   assert.equal(fake.getCreates(), 1);
 });
 
-function makeStatusDb(initial: { id: string; organizationId: string; status: 'PDF_GENERATED' | 'SENT' | 'FILED' }) {
-  let order: Record<string, unknown> = { ...initial, sentAt: null, sentByUserId: null, filedAt: null, filedByUserId: null, filedSource: null };
+function makeStatusDb(initial: { id: string; organizationId: string; status: 'PDF_GENERATED' | 'SENT' | 'FILED' | 'COMPLETED'; sentAt?: Date | null; paidAt?: Date | null; filedAt?: Date | null; filedSource?: 'AUTO_MATCH' | 'MANUAL' | null }) {
+  let order: Record<string, unknown> = { sentAt: null, sentByUserId: null, paidAt: null, paidByUserId: null, filedAt: null, filedByUserId: null, filedSource: null, ...initial };
   const wholesaleOrder = {
     findFirst: async ({ where }: { where: { id: string; organizationId: string } }) => where.id === order.id && where.organizationId === order.organizationId ? order : null,
     update: async ({ data }: { data: Record<string, unknown> }) => { order = { ...order, ...data }; return order; },
@@ -120,13 +121,13 @@ test('tenant-scoped status mutation cannot see another organization order', asyn
   assert.equal(fake.getOrder().status, 'PDF_GENERATED');
 });
 
-test('a Filed order is terminal and cannot be marked Sent', async () => {
-  const fake = makeStatusDb({ id: 'order-a', organizationId: 'org-a', status: 'FILED' });
-  await assert.rejects(
-    markWholesaleOrderSent({ id: 'order-a', organizationId: 'org-a', actorUserId: 'user-a' }, fake.db),
-    (error) => error instanceof WholesaleOrderLifecycleError && error.code === 'INVALID_TRANSITION',
-  );
+test('checklist items remain independent until all three complete the order', async () => {
+  const fake = makeStatusDb({ id: 'order-a', organizationId: 'org-a', status: 'FILED', filedAt: new Date() });
+  await markWholesaleOrderSent({ id: 'order-a', organizationId: 'org-a', actorUserId: 'user-a' }, fake.db);
   assert.equal(fake.getOrder().status, 'FILED');
+  await setWholesaleOrderChecklist({ id: 'order-a', organizationId: 'org-a', actorUserId: 'user-a', field: 'paid', checked: true }, fake.db);
+  assert.equal(fake.getOrder().status, 'COMPLETED');
+  assert.equal(fake.getOrder().paidByUserId, 'user-a');
 });
 
 test('manual filing records the actor, timestamp, and MANUAL provenance', async () => {
@@ -139,9 +140,25 @@ test('manual filing records the actor, timestamp, and MANUAL provenance', async 
   assert.ok(order.filedAt instanceof Date);
 });
 
+test('an automatic OHLQ filing cannot be unchecked manually', async () => {
+  const fake = makeStatusDb({ id: 'order-a', organizationId: 'org-a', status: 'FILED', filedAt: new Date(), filedSource: 'AUTO_MATCH' });
+  await assert.rejects(
+    setWholesaleOrderChecklist({ id: 'order-a', organizationId: 'org-a', actorUserId: 'user-a', field: 'filed', checked: false }, fake.db),
+    (error) => error instanceof WholesaleOrderLifecycleError && error.code === 'INVALID_TRANSITION',
+  );
+  assert.equal(fake.getOrder().filedSource, 'AUTO_MATCH');
+});
+
 test('create endpoint accepts the JSON contract used by the order form', () => {
   const source = readFileSync('app/api/wholesale-orders/pdf/route.ts', 'utf8');
   assert.match(source, /rawPayload = await request\.json\(\)/);
   assert.doesNotMatch(source, /request\.formData\(\)/);
   assert.match(source, /clientRequestId: z\.string\(\)\.uuid\(\)/);
+});
+
+test('checklist migration leaves Paid unchecked for every existing order', () => {
+  const migration = readFileSync('prisma/migrations/20260916140000_wholesale_order_checklist/migration.sql', 'utf8');
+  assert.match(migration, /ADD COLUMN "paidAt" TIMESTAMP\(3\)/);
+  assert.doesNotMatch(migration, /UPDATE "WholesaleOrder"/);
+  assert.doesNotMatch(migration, /DEFAULT/);
 });

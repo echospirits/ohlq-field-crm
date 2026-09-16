@@ -4,7 +4,7 @@ export const runtime = 'nodejs';
 
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
-import { MenuPlacementStatus, MenuPlacementType, Prisma, UserRole, WholesaleOrderFiledSource, WholesaleOrderStatus } from '@prisma/client';
+import { MenuPlacementStatus, MenuPlacementType, Prisma, UserRole, WholesaleOrderFiledSource } from '@prisma/client';
 import { buildPageMetadata } from '../../../lib/appBrand';
 import { getUserDisplayName, requireUser } from '../../../lib/auth';
 import { formatDateOnly, formatEasternDate } from '../../../lib/dateTime';
@@ -156,7 +156,7 @@ export default async function WholesaleActivityPage({
       : null,
     prisma.user.findMany({ where: { organizationId }, orderBy: [{ name: 'asc' }, { email: 'asc' }] }),
     getWholesaleRecentPurchases({ account, config: tenantConfig }),
-    hasDirectWholesaleOrders ? listWholesaleOrders({ organizationId, wholesaleAccountIds: mergedAccountIds, status: WholesaleOrderStatus.FILED, pageSize: 200 }) : { orders: [], totalCount: 0, page: 1, pageSize: 200 },
+    hasDirectWholesaleOrders ? listWholesaleOrders({ organizationId, wholesaleAccountIds: mergedAccountIds, filed: true, pageSize: 200 }) : { orders: [], totalCount: 0, page: 1, pageSize: 200 },
     prisma.organizationAccountOverlay.findUnique({
       where: { organizationId_accountType_externalAccountId: { organizationId, accountType: 'WHOLESALE', externalAccountId: id } },
       select: { notes: true },
@@ -171,7 +171,7 @@ export default async function WholesaleActivityPage({
       orderBy: { occurredAt: 'desc' }, take: 50,
     }),
   ]);
-  const filedOrders = accountOrders.orders.filter((order) => order.status === WholesaleOrderStatus.FILED && order.filedAt);
+  const filedOrders = accountOrders.orders.filter((order) => order.filedAt);
   const placementQ = (query.placementQ ?? '').trim();
   const placementStatusFilter = Object.values(MenuPlacementStatus).includes(
     query.placementStatusFilter as MenuPlacementStatus,

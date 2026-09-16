@@ -156,12 +156,14 @@ const orderViewSelect = {
   totalCents: true,
   pdfFilename: true,
   sentAt: true,
+  paidAt: true,
   filedAt: true,
   filedSource: true,
   matchedReportDate: true,
   reconciliationEvidence: true,
   createdByUser: { select: orderActorSelect },
   sentByUser: { select: orderActorSelect },
+  paidByUser: { select: orderActorSelect },
   filedByUser: { select: orderActorSelect },
 } satisfies Prisma.WholesaleOrderSelect;
 
@@ -190,6 +192,8 @@ export const toWholesaleOrderView = (order: OrderWithActors) => {
     createdBy: { ...order.createdByUser, displayName: actorName(order.createdByUser) },
     sentAt: order.sentAt,
     sentBy: order.sentByUser ? { ...order.sentByUser, displayName: actorName(order.sentByUser) } : null,
+    paidAt: order.paidAt,
+    paidBy: order.paidByUser ? { ...order.paidByUser, displayName: actorName(order.paidByUser) } : null,
     filedAt: order.filedAt,
     filedBy: order.filedByUser ? { ...order.filedByUser, displayName: actorName(order.filedByUser) } : null,
     filedSource: order.filedSource,
@@ -198,18 +202,25 @@ export const toWholesaleOrderView = (order: OrderWithActors) => {
   };
 };
 
-export async function listWholesaleOrders({ organizationId, wholesaleAccountId, wholesaleAccountIds, status, page = 1, pageSize = 50 }: {
+export async function listWholesaleOrders({ organizationId, wholesaleAccountId, wholesaleAccountIds, status, completion, filed, page = 1, pageSize = 50 }: {
   organizationId: string;
   wholesaleAccountId?: string;
   wholesaleAccountIds?: string[];
   status?: WholesaleOrderStatus;
+  completion?: 'outstanding' | 'completed';
+  filed?: boolean;
   page?: number;
   pageSize?: number;
 }) {
   const accountIds = [...new Set([...(wholesaleAccountIds ?? []), ...(wholesaleAccountId ? [wholesaleAccountId] : [])])];
   const safePage = Math.max(1, Math.trunc(page));
   const safePageSize = Math.min(200, Math.max(1, Math.trunc(pageSize)));
-  const where: Prisma.WholesaleOrderWhereInput = { organizationId, ...(accountIds.length ? { wholesaleAccountId: { in: accountIds } } : {}), ...(status ? { status } : {}) };
+  const completionWhere: Prisma.WholesaleOrderWhereInput = completion === 'completed'
+    ? { sentAt: { not: null }, paidAt: { not: null }, filedAt: { not: null } }
+    : completion === 'outstanding'
+      ? { OR: [{ sentAt: null }, { paidAt: null }, { filedAt: null }] }
+      : {};
+  const where: Prisma.WholesaleOrderWhereInput = { organizationId, ...(accountIds.length ? { wholesaleAccountId: { in: accountIds } } : {}), ...(status ? { status } : {}), ...(filed === undefined ? {} : { filedAt: filed ? { not: null } : null }), ...completionWhere };
   const [orders, totalCount] = await Promise.all([
     prisma.wholesaleOrder.findMany({
       where,
@@ -235,27 +246,45 @@ export async function getWholesaleOrderForDownload({ id, organizationId }: { id:
   });
 }
 
-export async function markWholesaleOrderSent({ id, organizationId, actorUserId }: { id: string; organizationId: string; actorUserId: string }, db: typeof prisma = prisma) {
+type WholesaleOrderChecklistField = 'sent' | 'paid' | 'filed';
+
+const checklistStatus = ({ sent, paid, filed }: Record<WholesaleOrderChecklistField, boolean>) => {
+  if (sent && paid && filed) return WholesaleOrderStatus.COMPLETED;
+  if (filed) return WholesaleOrderStatus.FILED;
+  if (sent) return WholesaleOrderStatus.SENT;
+  return WholesaleOrderStatus.PDF_GENERATED;
+};
+
+export async function setWholesaleOrderChecklist({ id, organizationId, actorUserId, field, checked }: {
+  id: string;
+  organizationId: string;
+  actorUserId: string;
+  field: WholesaleOrderChecklistField;
+  checked: boolean;
+}, db: typeof prisma = prisma) {
   return db.$transaction(async (tx) => {
     await lockWholesaleOrderLifecycle(tx);
-    const order = await tx.wholesaleOrder.findFirst({ where: { id, organizationId }, select: { id: true, status: true, sentAt: true, sentByUserId: true } });
+    const order = await tx.wholesaleOrder.findFirst({ where: { id, organizationId }, select: { id: true, sentAt: true, paidAt: true, filedAt: true, filedSource: true } });
     if (!order) throw new WholesaleOrderLifecycleError('NOT_FOUND', 'Wholesale order not found.');
-    if (order.status === WholesaleOrderStatus.SENT) return order;
-    if (order.status !== WholesaleOrderStatus.PDF_GENERATED) throw new WholesaleOrderLifecycleError('INVALID_TRANSITION', 'Only a generated PDF can be marked Sent.');
-    return tx.wholesaleOrder.update({ where: { id }, data: { status: WholesaleOrderStatus.SENT, sentAt: new Date(), sentByUserId: actorUserId }, select: { id: true, status: true, sentAt: true, sentByUserId: true } });
+    if (field === 'filed' && !checked && order.filedSource === WholesaleOrderFiledSource.AUTO_MATCH) {
+      throw new WholesaleOrderLifecycleError('INVALID_TRANSITION', 'A filing confirmed by OHLQ sales data cannot be unchecked manually.');
+    }
+    const state = { sent: Boolean(order.sentAt), paid: Boolean(order.paidAt), filed: Boolean(order.filedAt), [field]: checked };
+    const now = new Date();
+    const data: Prisma.WholesaleOrderUncheckedUpdateInput = { status: checklistStatus(state) };
+    if (field === 'sent') Object.assign(data, checked ? { sentAt: now, sentByUserId: actorUserId } : { sentAt: null, sentByUserId: null });
+    if (field === 'paid') Object.assign(data, checked ? { paidAt: now, paidByUserId: actorUserId } : { paidAt: null, paidByUserId: null });
+    if (field === 'filed') Object.assign(data, checked
+      ? { filedAt: now, filedByUserId: actorUserId, filedSource: WholesaleOrderFiledSource.MANUAL }
+      : { filedAt: null, filedByUserId: null, filedSource: null, matchedReportDate: null, reconciliationEvidence: Prisma.DbNull, automaticMatchKey: null });
+    return tx.wholesaleOrder.update({ where: { id }, data, select: { id: true, status: true, sentAt: true, paidAt: true, filedAt: true, filedSource: true } });
   }, { maxWait: 10_000, timeout: 30_000 });
 }
 
+export async function markWholesaleOrderSent(input: { id: string; organizationId: string; actorUserId: string }, db: typeof prisma = prisma) {
+  return setWholesaleOrderChecklist({ ...input, field: 'sent', checked: true }, db);
+}
+
 export async function markWholesaleOrderFiledManually({ id, organizationId, actorUserId }: { id: string; organizationId: string; actorUserId: string }, db: typeof prisma = prisma) {
-  return db.$transaction(async (tx) => {
-    await lockWholesaleOrderLifecycle(tx);
-    const order = await tx.wholesaleOrder.findFirst({ where: { id, organizationId }, select: { id: true, status: true, filedAt: true, filedByUserId: true, filedSource: true } });
-    if (!order) throw new WholesaleOrderLifecycleError('NOT_FOUND', 'Wholesale order not found.');
-    if (order.status === WholesaleOrderStatus.FILED) return order;
-    return tx.wholesaleOrder.update({
-      where: { id },
-      data: { status: WholesaleOrderStatus.FILED, filedAt: new Date(), filedByUserId: actorUserId, filedSource: WholesaleOrderFiledSource.MANUAL },
-      select: { id: true, status: true, filedAt: true, filedByUserId: true, filedSource: true },
-    });
-  }, { maxWait: 10_000, timeout: 30_000 });
+  return setWholesaleOrderChecklist({ id, organizationId, actorUserId, field: 'filed', checked: true }, db);
 }

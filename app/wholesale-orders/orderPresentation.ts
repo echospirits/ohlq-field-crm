@@ -4,6 +4,7 @@ export const orderStatusLabel: Record<WholesaleOrderStatus, string> = {
   PDF_GENERATED: 'PDF Generated',
   SENT: 'Sent',
   FILED: 'Filed',
+  COMPLETED: 'Completed',
 };
 
 export const filedSourceLabel: Record<WholesaleOrderFiledSource, string> = {

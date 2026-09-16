@@ -36,33 +36,33 @@ test('order sale and matched report dates use date-only formatting', () => {
   assert.match(detail, /formatDateOnly\(order\.matchedReportDate\)/);
 });
 
-test('order list is paginated without loading stored PDFs and All clears the status filter', () => {
+test('order list separates outstanding and collapsed completed orders without loading stored PDFs', () => {
   const page = readFileSync('app/wholesale-orders/page.tsx', 'utf8');
   const service = readFileSync('lib/wholesaleOrders.ts', 'utf8');
   const viewSelect = service.slice(service.indexOf('const orderViewSelect'), service.indexOf('type OrderWithActors'));
-  assert.match(page, /listWholesaleOrders\(\{ organizationId, status, page: requestedPage, pageSize: PAGE_SIZE \}\)/);
-  assert.match(page, /href=\{href\(1, null\)\}/);
+  assert.match(page, /completion: 'outstanding'/);
+  assert.match(page, /completion: 'completed'/);
+  assert.match(page, /<details className="card wholesale-order-completed"/);
+  assert.match(page, />Order Details</);
+  assert.match(page, /field="paid"/);
   assert.doesNotMatch(viewSelect, /pdfBytes/);
 });
 
-test('detail offers manual filing for either open status and uses duplicate-safe line keys', () => {
+test('detail offers the same checklist and uses duplicate-safe line keys', () => {
   const detail = readFileSync('app/wholesale-orders/[id]/page.tsx', 'utf8');
   const actions = readFileSync('app/wholesale-orders/actions.ts', 'utf8');
-  assert.match(detail, /order\.status !== WholesaleOrderStatus\.FILED/);
-  assert.match(detail, />Mark Sent</);
-  assert.match(detail, />Mark Filed</);
+  assert.match(detail, /\(\['sent', 'paid', 'filed'\] as const\)/);
+  assert.match(detail, /OHLQ match/);
   assert.match(detail, /key=\{`\$\{line\.itemCode\}-\$\{index\}`\}/);
-  assert.doesNotMatch(detail, />Complete</);
-  assert.equal((actions.match(/requireFeatureForUser\(user, 'OHIO_DIRECT_WHOLESALE_ORDERS'\)/g) ?? []).length, 2);
-  assert.match(actions, /markWholesaleOrderSent\(\{ id, organizationId, actorUserId: user\.id \}\)/);
-  assert.match(actions, /markWholesaleOrderFiledManually\(\{ id, organizationId, actorUserId: user\.id \}\)/);
+  assert.equal((actions.match(/requireFeatureForUser\(user, 'OHIO_DIRECT_WHOLESALE_ORDERS'\)/g) ?? []).length, 1);
+  assert.match(actions, /setWholesaleOrderChecklist\(\{ id, organizationId, actorUserId: user\.id, field, checked \}\)/);
 });
 
 test('filed orders join the existing account activity stream including merged sources', () => {
   const account = readFileSync('app/wholesale/[id]/page.tsx', 'utf8');
   const activity = readFileSync('app/visits/VisitActivityTable.tsx', 'utf8');
   assert.match(account, /getMergedWholesaleAccountIds/);
-  assert.match(account, /status: WholesaleOrderStatus\.FILED/);
+  assert.match(account, /filed: true/);
   assert.match(account, /supplementalEvents=\{filedOrders\.map/);
   assert.match(activity, /events\.map/);
   assert.match(activity, /right\.at\.getTime\(\) - left\.at\.getTime\(\)/);

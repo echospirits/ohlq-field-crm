@@ -180,6 +180,8 @@ describe('wholesale order reconciliation persistence adapter', () => {
       organizationId: 'organization-1',
       saleDate: day('2026-08-01'),
       sellerStoreNumber: '90399',
+      sentAt: day('2026-08-01'),
+      paidAt: null,
       status: 'SENT',
       wholesaleAccountId: 'customer-1',
     };
@@ -219,6 +221,6 @@ describe('wholesale order reconciliation persistence adapter', () => {
     assert.equal(data.status, 'FILED');
     assert.equal((data.reconciliationEvidence as { reportDate: string }).reportDate, '2026-08-02');
     assert.equal(where.automaticMatchKey, null);
-    assert.deepEqual(where.status, { in: ['PDF_GENERATED', 'SENT'] });
+    assert.equal(where.filedAt, null);
   });
 });
