@@ -72,6 +72,11 @@ it('refreshes a pursued product without replacing its detection snapshot or conv
   availableItemCodes = ['B'];
   raw.splice(1, 1);
   updates.length = 0;
+  await evaluateOpportunityIntelligence({ db: db as unknown as PrismaClient, organizationId: 'tenant', asOfDate: new Date('2026-09-04'), scoreExistingOnly: true });
+  assert.equal(updates.length, 1);
+  assert.equal(updates[0].title, 'High-fit account');
+  assert.equal('status' in updates[0], false);
+  updates.length = 0;
   await evaluateOpportunityIntelligence({ db: db as unknown as PrismaClient, organizationId: 'tenant', asOfDate: new Date('2026-09-04') });
   assert.ok(updates.some(update => update.status === 'RESOLVED'));
   availableItemCodes = ['A', 'B'];

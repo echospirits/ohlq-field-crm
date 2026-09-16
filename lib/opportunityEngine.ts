@@ -242,7 +242,7 @@ export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = 
           ? presentOpportunityHypothesis({ ...original, targetProduct: currentTargetProduct }, signal)
           : original && !original.targetProduct
             ? presentOpportunityHypothesis(original, signal)
-            : !original ? primary?.hypothesis : null;
+            : primary?.hypothesis ?? null;
         const ranking = hypothesis ? ranker.rank(hypothesis, signal) : noCurrentOpportunityRank();
         await db.salesOpportunity.update({
           where: { id: opportunity.id },
