@@ -178,4 +178,6 @@ it('keeps manual tests Platform Admin protected and schedules a production-gated
   const dailyWorkflow = readFileSync('lib/accountResearchDailyWorkflow.ts', 'utf8');
   assert.match(dailyWorkflow, /submittedThisRun/);
   assert.match(dailyWorkflow, /runLimit: ACCOUNT_RESEARCH_AUTOMATIC_DAILY_LIMIT/);
+  assert.match(dailyWorkflow, /runLimitReached && latest\.outstandingJobs === 0/);
+  assert.doesNotMatch(dailyWorkflow, /submittedThisRun >= ACCOUNT_RESEARCH_AUTOMATIC_DAILY_LIMIT \|\|/);
 });

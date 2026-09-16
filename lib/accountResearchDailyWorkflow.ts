@@ -41,7 +41,11 @@ export async function runDailyAccountResearchWorkflow() {
   for (let pass = 0; pass < 160; pass += 1) {
     latest = await processAutomaticResearchWave(ACCOUNT_RESEARCH_AUTOMATIC_DAILY_LIMIT - submittedThisRun);
     submittedThisRun += latest.submitted;
-    if (submittedThisRun >= ACCOUNT_RESEARCH_AUTOMATIC_DAILY_LIMIT || (latest.queueCount === 0 && latest.outstandingJobs === 0)) break;
+    const runLimitReached = submittedThisRun >= ACCOUNT_RESEARCH_AUTOMATIC_DAILY_LIMIT;
+    // Reaching the submission ceiling must not strand the final wave. Keep
+    // polling and applying it, but pass zero remaining capacity so no further
+    // accounts can be submitted by this invocation.
+    if ((runLimitReached && latest.outstandingJobs === 0) || (latest.queueCount === 0 && latest.outstandingJobs === 0)) break;
     await sleep(ACCOUNT_RESEARCH_AUTOMATIC_WAVE_PAUSE);
   }
 
