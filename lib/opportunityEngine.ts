@@ -18,6 +18,7 @@ const hash = (value: string) => createHash('sha256').update(value).digest('hex')
 const numberValue = (value: unknown) => value === null || value === undefined ? null : Number(value);
 const stringList = (value: unknown) => Array.isArray(value) ? value.map(String).filter(Boolean) : [];
 const activeOpportunityStatuses = [OpportunityStatus.OPEN, OpportunityStatus.ACTIONED, OpportunityStatus.SNOOZED];
+const scoreOnlyOpportunityStatuses = [...activeOpportunityStatuses, OpportunityStatus.DISMISSED];
 
 export async function captureWholesaleSalesEvents({ db = prisma, reportDate, organizationId }: { db?: PrismaClient; reportDate: Date; organizationId: string }) {
   const config = await getOrganizationTenantConfig(organizationId, db);
@@ -35,7 +36,7 @@ export async function captureWholesaleSalesEvents({ db = prisma, reportDate, org
 
 const eventKey = (type: OpportunityEventType, suffix: string) => `${type}:${suffix}`;
 
-export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = new Date(), accountIds, organizationId, dryRun = false }: { db?: PrismaClient; asOfDate?: Date; accountIds?: string[]; organizationId: string; dryRun?: boolean }) {
+export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = new Date(), accountIds, organizationId, dryRun = false, scoreExistingOnly = false }: { db?: PrismaClient; asOfDate?: Date; accountIds?: string[]; organizationId: string; dryRun?: boolean; scoreExistingOnly?: boolean }) {
   const start90 = new Date(asOfDate.getTime() - 89 * DAY);
   const config = await getOrganizationTenantConfig(organizationId, db);
   config.productFilter.mode = 'item-list';
@@ -143,7 +144,29 @@ export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = 
   let model = dryRun ? null : await db.opportunityModelVersion.findFirst({ where: { name: modelName, version: modelVersion, mode: OpportunityRankingMode.ACTIVE } });
   if (!dryRun) {
     model ??= await db.opportunityModelVersion.create({ data: { name: modelName, version: modelVersion, mode: OpportunityRankingMode.ACTIVE, configuration: { organizationId, portfolio, learning }, evaluation: learning, activatedAt: asOfDate } });
-    await db.salesOpportunity.updateMany({ where: { organizationId, status: OpportunityStatus.SNOOZED, snoozedUntil: { lte: asOfDate } }, data: { status: OpportunityStatus.OPEN, snoozedUntil: null } });
+    if (!scoreExistingOnly) await db.salesOpportunity.updateMany({ where: { organizationId, status: OpportunityStatus.SNOOZED, snoozedUntil: { lte: asOfDate } }, data: { status: OpportunityStatus.OPEN, snoozedUntil: null } });
+  }
+
+  const scoreOnlyOpportunities = scoreExistingOnly ? await db.salesOpportunity.findMany({
+      where: {
+        organizationId,
+        status: { in: scoreOnlyOpportunityStatuses },
+        ...(accountIds?.length ? { wholesaleAccountId: { in: accountIds } } : {}),
+      },
+      include: {
+        events: {
+          where: { eventType: OpportunityEventType.DETECTED },
+          orderBy: { occurredAt: 'asc' },
+          take: 1,
+          select: { metadata: true },
+        },
+      },
+    }) : [];
+  const scoreOnlyByAccount = new Map<string, typeof scoreOnlyOpportunities>();
+  if (scoreExistingOnly) {
+    for (const opportunity of scoreOnlyOpportunities) {
+      scoreOnlyByAccount.set(opportunity.wholesaleAccountId, [...(scoreOnlyByAccount.get(opportunity.wholesaleAccountId) ?? []), opportunity]);
+    }
   }
 
   for (const account of accounts) {
@@ -188,6 +211,41 @@ export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = 
     const primary = selectPrimaryOpportunity(hypotheses, signal, ranker);
     if (dryRun) { previews.push({ accountId: account.id, name: account.name, primary, alternatives: hypotheses.filter(h => h.targetProduct).map(h => ({ item: h.targetProduct!.name, score: ranker.rank(h,signal).score, peers: signal.peerEvidence?.[h.targetProduct!.itemCode], factors: ranker.rank(h,signal).factors })), purchases }); continue; }
     await db.opportunityAccountSignal.upsert({ where: { organizationId_wholesaleAccountId: { organizationId, wholesaleAccountId: account.id } }, create: { organizationId, wholesaleAccountId: account.id, asOfDate, signalVersion: OPPORTUNITY_SIGNAL_VERSION, features: signal, firstEchoPurchaseAt: firstObserved, lastEchoPurchaseAt: lastEcho, historyComplete: false }, update: { asOfDate, signalVersion: OPPORTUNITY_SIGNAL_VERSION, features: signal, firstEchoPurchaseAt: firstObserved, lastEchoPurchaseAt: lastEcho } });
+    if (scoreExistingOnly) {
+      for (const opportunity of scoreOnlyByAccount.get(account.id) ?? []) {
+        const original = (opportunity.events[0]?.metadata as unknown as { hypothesis?: ReturnType<typeof detectOpportunityHypotheses>[number] } | null)?.hypothesis;
+        const currentTargetProduct = original?.targetProduct
+          ? portfolio.find((product) => product.itemCode === original.targetProduct!.itemCode)
+          : null;
+        const hypothesis = original && currentTargetProduct
+          ? { ...original, targetProduct: currentTargetProduct }
+          : !original ? primary?.hypothesis : null;
+        const ranking = hypothesis ? ranker.rank(hypothesis, signal) : noCurrentOpportunityRank();
+        await db.salesOpportunity.update({
+          where: { id: opportunity.id },
+          data: {
+            ...(hypothesis ? {
+              type: hypothesis.type,
+              cycleKey: hypothesis.cycleKey,
+              targetCategory: hypothesis.targetCategory,
+              title: hypothesis.title,
+              recommendedAction: hypothesis.recommendedAction,
+            } : {}),
+            scoringVersion: ranking.version,
+            productionScore: ranking.score,
+            priorityBand: ranking.priorityBand,
+            explanation: ranking.factors,
+            lastDetectedAt: asOfDate,
+          },
+        });
+        await db.opportunityScore.upsert({
+          where: { opportunityId_modelVersionId: { opportunityId: opportunity.id, modelVersionId: model!.id } },
+          create: { opportunityId: opportunity.id, modelVersionId: model!.id, mode: OpportunityRankingMode.ACTIVE, score: ranking.score, priorityBand: ranking.priorityBand, factors: ranking.factors },
+          update: { score: ranking.score, priorityBand: ranking.priorityBand, factors: ranking.factors, scoredAt: asOfDate },
+        });
+      }
+      continue;
+    }
     if (primary) {
       let { hypothesis, ranking } = primary;
       const active = await db.salesOpportunity.findMany({

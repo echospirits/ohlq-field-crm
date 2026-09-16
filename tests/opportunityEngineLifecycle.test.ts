@@ -5,6 +5,7 @@ import { evaluateOpportunityIntelligence } from '../lib/opportunityEngine';
 
 it('refreshes a pursued product without replacing its detection snapshot or converting for another owned item', async () => {
   const updates: Record<string, unknown>[] = [];
+  let bulkStatusUpdates = 0;
   const originalHypothesis = { type: 'CATEGORY_CONQUEST', cycleKey: 'original', targetCategory: 'RUM', title: 'Introduce Tenant Rum', recommendedAction: 'Discuss Tenant Rum', explanation: ['Original evidence'], targetProduct: { itemCode: 'A', name: 'Tenant Rum', category: 'RUM', price750: 30, isLocal: false, priority: 1 } };
   const opportunity = { id: 'opp', organizationId: 'tenant', wholesaleAccountId: 'account', status: 'ACTIONED', type: 'CATEGORY_CONQUEST', cycleKey: 'original', targetCategory: 'RUM', productionScore: 80, detectedAt: new Date('2026-08-01'), actionedAt: new Date('2026-08-02'), signalSnapshot: { original: true } };
   const raw = [
@@ -28,9 +29,9 @@ it('refreshes a pursued product without replacing its detection snapshot or conv
       : [{ id: 'account', name: 'Customer', targetProfiles: [], opportunitySignals: [], tags: [], targetPublicResearch: null }] },
     ohlqAnnualSalesByWholesaleRow: { findMany: async () => raw },
     salesOpportunity: {
-      findMany: async ({ where }: { where: Record<string, unknown> }) => where.rulesVersion ? [] : [opportunity],
+      findMany: async ({ where, include }: { where: Record<string, unknown>; include?: Record<string, unknown> }) => where.rulesVersion ? [] : include?.events ? [{ ...opportunity, events: [{ metadata: { hypothesis: originalHypothesis } }] }] : [opportunity],
       update: async ({ data }: { data: Record<string, unknown> }) => { updates.push(data); return { ...opportunity, ...data }; },
-      updateMany: async () => ({ count: 0 }),
+      updateMany: async () => { bulkStatusUpdates += 1; return { count: 0 }; },
     },
     organizationAccountOverlay: { findMany: async () => [] },
     accountSalesEvent: { findMany: async () => [], createMany: async () => ({ count: 2 }) },
@@ -49,6 +50,18 @@ it('refreshes a pursued product without replacing its detection snapshot or conv
   assert.equal(updates[0].cycleKey, 'original');
   assert.equal('signalSnapshot' in updates[0], false);
   assert.equal('status' in updates[0], false);
+  updates.length = 0;
+  bulkStatusUpdates = 0;
+  const scoreOnly = await evaluateOpportunityIntelligence({ db: db as unknown as PrismaClient, organizationId: 'tenant', asOfDate: new Date('2026-09-04'), scoreExistingOnly: true });
+  assert.equal(scoreOnly.converted, 0);
+  assert.equal(scoreOnly.detected, 0);
+  assert.equal(scoreOnly.worklistCreated, 0);
+  assert.equal(bulkStatusUpdates, 0);
+  assert.equal(updates.length, 1);
+  assert.equal('status' in updates[0], false);
+  assert.equal('actionedAt' in updates[0], false);
+  assert.equal('snoozedUntil' in updates[0], false);
+  assert.equal('dismissedAt' in updates[0], false);
   catalog[0].solItemStatusCode = '30';
   updates.length = 0;
   await evaluateOpportunityIntelligence({ db: db as unknown as PrismaClient, organizationId: 'tenant', asOfDate: new Date('2026-09-04') });

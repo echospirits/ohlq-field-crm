@@ -3,17 +3,42 @@ import { readFileSync } from 'node:fs';
 import { it } from 'node:test';
 import { OpportunityStatus } from '@prisma/client';
 import { classifyResearchNeed, createResearchIdentitySnapshot, hasResearchIdentityChanged, readBusinessHours, readPublicRatings, type ResearchQueueCandidate } from '../lib/accountResearchQueue';
+import { opportunityTerritoryForCounty, territoryCoverageDeficits } from '../lib/opportunityTerritories';
 
 const now = new Date('2026-09-15T16:00:00.000Z');
 const daysAgo = (days: number) => new Date(now.getTime() - days * 86_400_000);
 const candidate = (overrides: Partial<ResearchQueueCandidate> = {}): ResearchQueueCandidate => ({
-  id: 'account_1', licenseeId: 'LIC-1', name: 'Example Bar', address: '1 Main St', city: 'Columbus', state: 'OH', zip: '43215',
+  id: 'account_1', licenseeId: 'LIC-1', name: 'Example Bar', address: '1 Main St', city: 'Columbus', county: 'Franklin', state: 'OH', zip: '43215',
   createdAt: daysAgo(100),
   targetPublicResearch: { lastRefreshedAt: daysAgo(40), identitySnapshot: { accountName: 'Example Bar', address: '1 Main St', city: 'Columbus', state: 'OH', zip: '43215' } },
   opportunities: [{ productionScore: 50, status: OpportunityStatus.OPEN, actionedAt: null, lastDetectedAt: daysAgo(1) }],
   upcomingWork: [],
   bottles30: 100,
   ...overrides,
+});
+
+it('maps Ohio metros and only favors outside territories while their research coverage trails Central Ohio', () => {
+  assert.equal(opportunityTerritoryForCounty('Franklin'), 'central-ohio');
+  assert.equal(opportunityTerritoryForCounty('CUYAHOGA'), 'cleveland');
+  assert.equal(opportunityTerritoryForCounty('Lucas'), 'toledo');
+  assert.equal(opportunityTerritoryForCounty('Athens'), 'other-ohio');
+
+  const researched = { lastRefreshedAt: daysAgo(1) };
+  const missing = null;
+  const deficits = territoryCoverageDeficits([
+    { county: 'Franklin', targetPublicResearch: researched },
+    { county: 'Delaware', targetPublicResearch: researched },
+    { county: 'Cuyahoga', targetPublicResearch: researched },
+    { county: 'Lake', targetPublicResearch: missing },
+  ]);
+  assert.equal(deficits.get('central-ohio'), 0);
+  assert.equal(deficits.get('cleveland'), 0.5);
+
+  const caughtUp = territoryCoverageDeficits([
+    { county: 'Franklin', targetPublicResearch: researched },
+    { county: 'Cuyahoga', targetPublicResearch: researched },
+  ]);
+  assert.equal(caughtUp.get('cleveland'), 0);
 });
 
 it('prioritizes unscored accounts, then exact identity changes', () => {

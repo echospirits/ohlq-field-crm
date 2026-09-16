@@ -1,6 +1,7 @@
 import { AccountResearchJobStatus, OpportunityStatus, WorklistStatus, type PrismaClient } from '@prisma/client';
 import { ACCOUNT_RESEARCH_MINIMUM_BOTTLES_30 } from './accountResearchPilot';
 import type { AccountResearchResult } from './accountResearchPilot';
+import { opportunityTerritoryForCounty, territoryCoverageDeficits } from './opportunityTerritories';
 import { prisma } from './prisma';
 
 const DAY = 86_400_000;
@@ -30,6 +31,7 @@ export type ResearchQueueCandidate = {
   name: string;
   address: string | null;
   city: string | null;
+  county: string | null;
   state: string | null;
   zip: string | null;
   createdAt: Date;
@@ -176,6 +178,7 @@ export async function getPrioritizedAccountResearchQueue({
       name: true,
       address: true,
       city: true,
+      county: true,
       state: true,
       zip: true,
       createdAt: true,
@@ -216,6 +219,7 @@ export async function getPrioritizedAccountResearchQueue({
       Math.max(bottlesByAccount.get(item.wholesaleAccountId) ?? 0, item._sum.bottles ?? 0),
     );
   }
+  const coverageDeficits = territoryCoverageDeficits(accounts);
   const queue = accounts
     .map((account) => classifyResearchNeed({
       ...account,
@@ -224,11 +228,17 @@ export async function getPrioritizedAccountResearchQueue({
     }, now))
     .filter((item): item is ResearchQueueItem => Boolean(item))
     .sort((left, right) => {
+      const leftCoverageDeficit = coverageDeficits.get(opportunityTerritoryForCounty(left.county)) ?? 0;
+      const rightCoverageDeficit = coverageDeficits.get(opportunityTerritoryForCounty(right.county)) ?? 0;
       const leftRefresh = left.targetPublicResearch?.lastRefreshedAt?.getTime() ?? 0;
       const rightRefresh = right.targetPublicResearch?.lastRefreshedAt?.getTime() ?? 0;
       const leftScore = Math.max(0, ...left.opportunities.map((item) => item.productionScore));
       const rightScore = Math.max(0, ...right.opportunities.map((item) => item.productionScore));
-      return left.priorityBucket - right.priorityBucket || leftRefresh - rightRefresh || rightScore - leftScore || left.name.localeCompare(right.name);
+      return left.priorityBucket - right.priorityBucket
+        || rightCoverageDeficit - leftCoverageDeficit
+        || leftRefresh - rightRefresh
+        || rightScore - leftScore
+        || left.name.localeCompare(right.name);
     });
   return limit === null ? queue : queue.slice(0, Math.max(0, limit));
 }
