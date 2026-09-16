@@ -21,11 +21,20 @@ const ACTIVE_JOB_STATUSES: AccountResearchJobStatus[] = [AccountResearchJobStatu
 const startOfUtcDay = (now: Date) => new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 
 export async function getAutomaticAccountResearchStatus({ db = prisma, now = new Date() }: { db?: PrismaClient; now?: Date } = {}) {
-  const [queue, submittedToday, outstandingJobs, latestRun] = await Promise.all([
+  const today = startOfUtcDay(now);
+  const automaticJobs = { pilot: { startedByUserId: ACCOUNT_RESEARCH_AUTOMATIC_RUN_ACTOR } };
+  const [queue, submittedToday, uniqueAccountRowsToday, todayStatusCounts, allTimeStatusCounts, outstandingJobs, latestRun] = await Promise.all([
     getPrioritizedAccountResearchQueue({ db, now, limit: null }),
     db.accountResearchJob.count({
-      where: { submittedAt: { gte: startOfUtcDay(now) }, pilot: { startedByUserId: ACCOUNT_RESEARCH_AUTOMATIC_RUN_ACTOR } },
+      where: { submittedAt: { gte: today }, ...automaticJobs },
     }),
+    db.accountResearchJob.findMany({
+      where: { submittedAt: { gte: today }, ...automaticJobs },
+      distinct: ['wholesaleAccountId'],
+      select: { wholesaleAccountId: true },
+    }),
+    db.accountResearchJob.groupBy({ by: ['status'], where: { submittedAt: { gte: today }, ...automaticJobs }, _count: { _all: true } }),
+    db.accountResearchJob.groupBy({ by: ['status'], where: automaticJobs, _count: { _all: true } }),
     db.accountResearchJob.count({
       where: { status: { in: [AccountResearchJobStatus.QUEUED, ...ACTIVE_JOB_STATUSES] }, pilot: { startedByUserId: ACCOUNT_RESEARCH_AUTOMATIC_RUN_ACTOR } },
     }),
@@ -37,7 +46,22 @@ export async function getAutomaticAccountResearchStatus({ db = prisma, now = new
   ]);
   const byPriority = new Map<number, number>();
   for (const item of queue) byPriority.set(item.priorityBucket, (byPriority.get(item.priorityBucket) ?? 0) + 1);
-  return { queueCount: queue.length + outstandingJobs, unassignedQueueCount: queue.length, outstandingJobs, byPriority: Object.fromEntries(byPriority), submittedToday, latestRun };
+  const todayCounts = Object.fromEntries(todayStatusCounts.map((item) => [item.status, item._count._all])) as Partial<Record<AccountResearchJobStatus, number>>;
+  const allTimeCounts = Object.fromEntries(allTimeStatusCounts.map((item) => [item.status, item._count._all])) as Partial<Record<AccountResearchJobStatus, number>>;
+  return {
+    queueCount: queue.length + outstandingJobs,
+    unassignedQueueCount: queue.length,
+    outstandingJobs,
+    byPriority: Object.fromEntries(byPriority),
+    submittedToday,
+    uniqueAccountsSubmittedToday: uniqueAccountRowsToday.length,
+    approvedToday: todayCounts.APPROVED ?? 0,
+    failedToday: (todayCounts.FAILED ?? 0) + (todayCounts.BLOCKED_BUDGET ?? 0),
+    rejectedToday: todayCounts.REJECTED ?? 0,
+    failedAttempts: (allTimeCounts.FAILED ?? 0) + (allTimeCounts.BLOCKED_BUDGET ?? 0),
+    rejectedAttempts: allTimeCounts.REJECTED ?? 0,
+    latestRun,
+  };
 }
 
 async function createAutomaticRun({ db, now, maxAccounts }: { db: PrismaClient; now: Date; maxAccounts: number }) {

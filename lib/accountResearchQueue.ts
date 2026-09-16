@@ -11,6 +11,12 @@ const ACTIVE_RESEARCH_JOB_STATUSES = [
   AccountResearchJobStatus.RUNNING,
   AccountResearchJobStatus.NEEDS_REVIEW,
 ];
+const TERMINAL_RESEARCH_RETRY_STATUSES = [
+  AccountResearchJobStatus.FAILED,
+  AccountResearchJobStatus.BLOCKED_BUDGET,
+  AccountResearchJobStatus.REJECTED,
+];
+export const ACCOUNT_RESEARCH_TERMINAL_RETRY_COOLDOWN_DAYS = 7;
 
 export type ResearchIdentitySnapshot = {
   accountName: string;
@@ -38,6 +44,7 @@ export type ResearchQueueCandidate = {
   targetPublicResearch: { lastRefreshedAt: Date | null; identitySnapshot: unknown } | null;
   opportunities: Array<{ productionScore: number; status: OpportunityStatus; actionedAt: Date | null; lastDetectedAt: Date }>;
   upcomingWork: Array<{ dueDate: Date | null; createdAt: Date }>;
+  accountResearchJobs?: Array<{ status: AccountResearchJobStatus; submittedAt: Date | null; createdAt: Date }>;
   bottles30: number;
 };
 
@@ -170,7 +177,13 @@ export async function getPrioritizedAccountResearchQueue({
       address: { not: null },
       city: { not: null },
       zip: { not: null },
-      accountResearchJobs: { none: { status: { in: ACTIVE_RESEARCH_JOB_STATUSES } } },
+      accountResearchJobs: { none: { OR: [
+        { status: { in: ACTIVE_RESEARCH_JOB_STATUSES } },
+        {
+          status: { in: TERMINAL_RESEARCH_RETRY_STATUSES },
+          createdAt: { gte: ageCutoff(now, ACCOUNT_RESEARCH_TERMINAL_RETRY_COOLDOWN_DAYS) },
+        },
+      ] } },
     },
     select: {
       id: true,
@@ -184,6 +197,12 @@ export async function getPrioritizedAccountResearchQueue({
       createdAt: true,
       targetPublicResearch: { select: { lastRefreshedAt: true, identitySnapshot: true } },
       opportunities: { select: { productionScore: true, status: true, actionedAt: true, lastDetectedAt: true } },
+      accountResearchJobs: {
+        where: { status: { in: TERMINAL_RESEARCH_RETRY_STATUSES } },
+        orderBy: { createdAt: 'desc' },
+        take: 1,
+        select: { status: true, submittedAt: true, createdAt: true },
+      },
     },
   });
   if (accounts.length === 0) return [];
@@ -232,10 +251,13 @@ export async function getPrioritizedAccountResearchQueue({
       const rightCoverageDeficit = coverageDeficits.get(opportunityTerritoryForCounty(right.county)) ?? 0;
       const leftRefresh = left.targetPublicResearch?.lastRefreshedAt?.getTime() ?? 0;
       const rightRefresh = right.targetPublicResearch?.lastRefreshedAt?.getTime() ?? 0;
+      const leftIsRetry = left.accountResearchJobs?.length ? 1 : 0;
+      const rightIsRetry = right.accountResearchJobs?.length ? 1 : 0;
       const leftScore = Math.max(0, ...left.opportunities.map((item) => item.productionScore));
       const rightScore = Math.max(0, ...right.opportunities.map((item) => item.productionScore));
       return left.priorityBucket - right.priorityBucket
         || rightCoverageDeficit - leftCoverageDeficit
+        || leftIsRetry - rightIsRetry
         || leftRefresh - rightRefresh
         || rightScore - leftScore
         || left.name.localeCompare(right.name);

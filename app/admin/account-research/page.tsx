@@ -9,6 +9,7 @@ import { buildPageMetadata } from '../../../lib/appBrand';
 import { requirePlatformAdmin } from '../../../lib/auth';
 import { ACCOUNT_RESEARCH_AUTOMATIC_DAILY_BUDGET_MICROS, ACCOUNT_RESEARCH_AUTOMATIC_DAILY_LIMIT, ACCOUNT_RESEARCH_MINIMUM_BOTTLES_30, ACCOUNT_RESEARCH_PILOT_BUDGET_MICROS, ACCOUNT_RESEARCH_PILOT_MAX_ACCOUNTS, ACCOUNT_RESEARCH_SUBMISSION_WAVE_SIZE, formatUsdMicros } from '../../../lib/accountResearchPilot';
 import { getAutomaticAccountResearchStatus } from '../../../lib/accountResearchAutomation';
+import { ACCOUNT_RESEARCH_TERMINAL_RETRY_COOLDOWN_DAYS } from '../../../lib/accountResearchQueue';
 import { getAccountResearchAutomationAvailability, getAccountResearchPilotAvailability } from '../../../lib/accountResearchOpenAI';
 import { deriveSettledPilotStatus, getLatestAccountResearchPilot } from '../../../lib/accountResearchPilotService';
 import { formatEasternDateTime } from '../../../lib/dateTime';
@@ -123,16 +124,17 @@ export default async function AccountResearchPage({ searchParams }: { searchPara
       <div className="grid target-import-stats">
         <div className="card metric-card"><h3>Needing intelligence</h3><p className="metric-value">{automaticStatus.queueCount}</p><p className="muted">Prioritized across all tenant activity; oldest routine refreshes come last</p></div>
         <div className="card metric-card"><h3>Accounts researched</h3><p className="metric-value">{completedCount}</p><p className="muted">Completed public research across all accounts</p></div>
+        <div className="card metric-card"><h3>Failed attempts</h3><p className="metric-value">{automaticStatus.failedAttempts.toLocaleString()}</p><p className="muted">No research was saved. Failed and declined accounts wait {ACCOUNT_RESEARCH_TERMINAL_RETRY_COOLDOWN_DAYS} days before retry; {automaticStatus.rejectedAttempts.toLocaleString()} attempts were declined by validation.</p></div>
         <div className="card metric-card"><h3>Latest update</h3><p className="metric-value metric-date">{formatEasternDateTime(latestResearch?.updatedAt) || 'Never'}</p></div>
       </div>
 
       <section className="dashboard-section">
-        <SectionHeading description={`Production checks the queue once daily and durably paces requests in ${ACCOUNT_RESEARCH_SUBMISSION_WAVE_SIZE}-account waves. It never submits more than ${ACCOUNT_RESEARCH_AUTOMATIC_DAILY_LIMIT} accounts or reserves more than ${formatUsdMicros(ACCOUNT_RESEARCH_AUTOMATIC_DAILY_BUDGET_MICROS)} in a UTC day. Opportunity scoring continues independently when sales and CRM activity change.`} title="Automatic research" />
+        <SectionHeading description={`Production checks the queue once daily and durably paces requests in ${ACCOUNT_RESEARCH_SUBMISSION_WAVE_SIZE}-account waves. Each scheduled or manually invoked workflow run submits no more than ${ACCOUNT_RESEARCH_AUTOMATIC_DAILY_LIMIT} accounts or reserves more than ${formatUsdMicros(ACCOUNT_RESEARCH_AUTOMATIC_DAILY_BUDGET_MICROS)}. Opportunity scoring continues independently when sales and CRM activity change.`} title="Automatic research" />
         <article className="card research-workflow-card">
           <div className="research-pilot-summary">
-            <div><span className={`status-badge ${automationAvailability.available ? '' : 'muted'}`}>{automationAvailability.available ? 'Enabled' : 'Disabled here'}</span><strong>{automaticStatus.queueCount.toLocaleString()} accounts queued</strong><small>{automaticStatus.submittedToday} of {ACCOUNT_RESEARCH_AUTOMATIC_DAILY_LIMIT} submitted today</small></div>
+            <div><span className={`status-badge ${automationAvailability.available ? '' : 'muted'}`}>{automationAvailability.available ? 'Enabled' : 'Disabled here'}</span><strong>{automaticStatus.queueCount.toLocaleString()} accounts queued</strong><small>{automaticStatus.submittedToday.toLocaleString()} attempts today · {automaticStatus.uniqueAccountsSubmittedToday.toLocaleString()} unique accounts</small></div>
             <div><strong>Priority queue</strong><small>{automaticStatus.byPriority[1] ?? 0} unscored · {automaticStatus.byPriority[2] ?? 0} identity changes · {automaticStatus.byPriority[3] ?? 0} newly pursued · {automaticStatus.byPriority[4] ?? 0} due soon</small></div>
-            <div><strong>{automaticStatus.latestRun ? automaticStatus.latestRun.status.replaceAll('_', ' ').toLowerCase() : 'No automatic run yet'}</strong><small>{automaticStatus.latestRun ? `${formatUsdMicros(automaticStatus.latestRun.estimatedSpendMicros)} estimated · started ${formatEasternDateTime(automaticStatus.latestRun.startedAt)}` : 'The production scheduler will create the first run when enabled.'}</small></div>
+            <div><strong>{automaticStatus.latestRun ? automaticStatus.latestRun.status.replaceAll('_', ' ').toLowerCase() : 'No automatic run yet'}</strong><small>{automaticStatus.approvedToday.toLocaleString()} applied · {automaticStatus.failedToday.toLocaleString()} failed · {automaticStatus.rejectedToday.toLocaleString()} declined today</small>{automaticStatus.latestRun ? <small>{formatUsdMicros(automaticStatus.latestRun.estimatedSpendMicros)} estimated · started {formatEasternDateTime(automaticStatus.latestRun.startedAt)}</small> : <small>The production scheduler will create the first run when enabled.</small>}</div>
           </div>
           {!automationAvailability.available ? <p className="muted">Automatic OpenAI research is intentionally disabled in this environment. Manual test runs remain available.</p> : null}
           <p className="muted">Accounts below {ACCOUNT_RESEARCH_MINIMUM_BOTTLES_30} bottles in the last 30 days are excluded unless recent tenant pursuit or work activity elevates them.</p>

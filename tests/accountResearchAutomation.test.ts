@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { it } from 'node:test';
 import { OpportunityStatus } from '@prisma/client';
-import { classifyResearchNeed, createResearchIdentitySnapshot, hasResearchIdentityChanged, readBusinessHours, readPublicRatings, type ResearchQueueCandidate } from '../lib/accountResearchQueue';
+import { ACCOUNT_RESEARCH_TERMINAL_RETRY_COOLDOWN_DAYS, classifyResearchNeed, createResearchIdentitySnapshot, hasResearchIdentityChanged, readBusinessHours, readPublicRatings, type ResearchQueueCandidate } from '../lib/accountResearchQueue';
 import { opportunityTerritoryForCounty, territoryCoverageDeficits } from '../lib/opportunityTerritories';
 
 const now = new Date('2026-09-15T16:00:00.000Z');
@@ -78,6 +78,14 @@ it('refreshes research-driven opportunity scores independently for every entitle
   const scoring = readFileSync('lib/accountResearchScoring.ts', 'utf8');
   assert.match(scoring, /featureKey: 'ADVANCED_INTELLIGENCE'/);
   assert.match(scoring, /organizationId: scope\.id/);
+});
+
+it('keeps recent failures and validation declines out of the front of the research queue', () => {
+  assert.equal(ACCOUNT_RESEARCH_TERMINAL_RETRY_COOLDOWN_DAYS, 7);
+  const queue = readFileSync('lib/accountResearchQueue.ts', 'utf8');
+  assert.match(queue, /TERMINAL_RESEARCH_RETRY_STATUSES/);
+  assert.match(queue, /createdAt: \{ gte: ageCutoff\(now, ACCOUNT_RESEARCH_TERMINAL_RETRY_COOLDOWN_DAYS\) \}/);
+  assert.match(queue, /leftIsRetry - rightIsRetry/);
 });
 
 it('stores and reads source-attributed public research without changing identity comparisons', () => {

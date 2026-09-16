@@ -173,6 +173,8 @@ it('keeps manual tests Platform Admin protected and schedules a production-gated
   assert.match(page, /orderBy: \[\{ updatedAt: 'desc' \}/);
   assert.match(page, /formatEasternDateTime\(item\.updatedAt\)/);
   assert.doesNotMatch(page, /const researchWhere = .*opportunities/);
+  assert.match(page, /Failed attempts/);
+  assert.match(page, /uniqueAccountsSubmittedToday/);
   const dailyWorkflow = readFileSync('lib/accountResearchDailyWorkflow.ts', 'utf8');
   assert.match(dailyWorkflow, /submittedThisRun/);
   assert.match(dailyWorkflow, /runLimit: ACCOUNT_RESEARCH_AUTOMATIC_DAILY_LIMIT/);
