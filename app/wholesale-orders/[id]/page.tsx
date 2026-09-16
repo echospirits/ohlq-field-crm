@@ -55,7 +55,7 @@ export default async function WholesaleOrderDetailPage({ params, searchParams }:
           {(['sent', 'paid', 'filed'] as const).map((field) => {
             const checked = Boolean(order[`${field}At`]);
             const automatic = field === 'filed' && order.filedSource === WholesaleOrderFiledSource.AUTO_MATCH;
-            return <form action={toggleOrderChecklistAction} key={field}><input name="orderId" type="hidden" value={order.id} /><input name="field" type="hidden" value={field} /><input name="checked" type="hidden" value={String(!checked)} /><input name="returnTo" type="hidden" value="detail" /><button aria-checked={checked} className={`secondary${checked ? ' checked' : ''}`} disabled={automatic} role="checkbox" title={automatic ? 'Confirmed automatically by OHLQ sales data' : undefined} type="submit"><span className="wholesale-order-check" aria-hidden="true">{checked ? '✓' : ''}</span>{field[0].toUpperCase() + field.slice(1)}{automatic ? ' · OHLQ match' : ''}</button></form>;
+            return <form action={toggleOrderChecklistAction} key={field}><input name="orderId" type="hidden" value={order.id} /><input name="field" type="hidden" value={field} /><input name="checked" type="hidden" value={String(!checked)} /><input name="returnTo" type="hidden" value="detail" /><button aria-checked={checked} className="secondary" disabled={automatic} role="checkbox" title={automatic ? 'Confirmed automatically by OHLQ sales data' : undefined} type="submit"><span className={`wholesale-order-check${checked ? ' checked' : ''}${automatic ? ' automatic' : ''}`} aria-hidden="true">{checked ? '✓' : ''}</span>{field[0].toUpperCase() + field.slice(1)}{automatic ? ' · OHLQ match' : ''}</button></form>;
           })}
         </div>
       </article>

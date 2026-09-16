@@ -53,6 +53,7 @@ test('detail offers the same checklist and uses duplicate-safe line keys', () =>
   const actions = readFileSync('app/wholesale-orders/actions.ts', 'utf8');
   assert.match(detail, /\(\['sent', 'paid', 'filed'\] as const\)/);
   assert.match(detail, /OHLQ match/);
+  assert.match(detail, /wholesale-order-check\$\{checked \? ' checked' : ''\}/);
   assert.match(detail, /key=\{`\$\{line\.itemCode\}-\$\{index\}`\}/);
   assert.equal((actions.match(/requireFeatureForUser\(user, 'OHIO_DIRECT_WHOLESALE_ORDERS'\)/g) ?? []).length, 1);
   assert.match(actions, /setWholesaleOrderChecklist\(\{ id, organizationId, actorUserId: user\.id, field, checked \}\)/);
