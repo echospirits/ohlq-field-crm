@@ -19,6 +19,7 @@ const numberValue = (value: unknown) => value === null || value === undefined ? 
 const stringList = (value: unknown) => Array.isArray(value) ? value.map(String).filter(Boolean) : [];
 const activeOpportunityStatuses = [OpportunityStatus.OPEN, OpportunityStatus.ACTIONED, OpportunityStatus.SNOOZED];
 const scoreOnlyOpportunityStatuses = [...activeOpportunityStatuses, OpportunityStatus.DISMISSED];
+const SCORE_ONLY_ACCOUNT_QUERY_BATCH_SIZE = 250;
 
 export async function captureWholesaleSalesEvents({ db = prisma, reportDate, organizationId }: { db?: PrismaClient; reportDate: Date; organizationId: string }) {
   const config = await getOrganizationTenantConfig(organizationId, db);
@@ -86,18 +87,27 @@ export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = 
     return key && converted !== null ? [{ accountId: row.wholesaleAccountId, detectedAt: row.detectedAt.toISOString(), converted, key }] : [];
   });
   const learning = trainOutcomeModel(examples);
+  const loadAccounts = async () => {
+    const batches = accountIds?.length
+      ? Array.from({ length: Math.ceil(accountIds.length / SCORE_ONLY_ACCOUNT_QUERY_BATCH_SIZE) }, (_, index) => accountIds.slice(index * SCORE_ONLY_ACCOUNT_QUERY_BATCH_SIZE, (index + 1) * SCORE_ONLY_ACCOUNT_QUERY_BATCH_SIZE))
+      : [undefined];
+    const loadBatch = (ids: string[] | undefined) => db.wholesaleAccount.findMany({
+        where: { mergedIntoId: null, ...(ids?.length ? { id: { in: ids } } : {}) },
+        select: {
+          id: true,
+          name: true,
+          targetProfiles: { where: { organizationId }, take: 1, select: { assignedUserId: true, researchStatus: true, ownershipGroup: { select: { name: true } } } },
+          targetPublicResearch: { select: { patioOutdoor: true, cocktailProgram: true, popularitySignal: true, ownershipVerification: true, buyerStructure: true, isNationalChain: true, googleRating: true, googleReviewCount: true, yelpRating: true, yelpReviewCount: true, localBrandsOnMenu: true, sourceUrls: true, identitySnapshot: true } },
+          tags: { where: { organizationId }, select: { tag: { select: { name: true } } } },
+          opportunitySignals: { where: { organizationId }, take: 1 },
+        },
+      });
+    const loaded = await loadBatch(batches[0]);
+    for (const ids of batches.slice(1)) loaded.push(...await loadBatch(ids));
+    return loaded;
+  };
   const [accounts, savedEvents, visits, worklist] = await Promise.all([
-    db.wholesaleAccount.findMany({
-      where: { mergedIntoId: null, ...(accountIds?.length ? { id: { in: accountIds } } : {}) },
-      select: {
-        id: true,
-        name: true,
-        targetProfiles: { where: { organizationId }, take: 1, select: { assignedUserId: true, researchStatus: true, ownershipGroup: { select: { name: true } } } },
-        targetPublicResearch: { select: { patioOutdoor: true, cocktailProgram: true, popularitySignal: true, ownershipVerification: true, buyerStructure: true, isNationalChain: true, googleRating: true, googleReviewCount: true, yelpRating: true, yelpReviewCount: true, localBrandsOnMenu: true, sourceUrls: true, identitySnapshot: true } },
-        tags: { where: { organizationId }, select: { tag: { select: { name: true } } } },
-        opportunitySignals: { where: { organizationId }, take: 1 },
-      },
-    }),
+    loadAccounts(),
     db.accountSalesEvent.findMany({ where: { organizationId, sourceKey: { startsWith: 'DAILY_V3:' }, reportDate: { gte: start90, lte: asOfDate } }, orderBy: { reportDate: 'asc' } }),
     db.loggedVisit.findMany({ where: { organizationId, locationType: 'wholesale', wholesaleAccountId: { not: null }, visitAt: { lte: asOfDate } }, orderBy: { visitAt: 'asc' }, select: { id: true, wholesaleAccountId: true, visitAt: true } }),
     db.worklistItem.findMany({ where: { organizationId, wholesaleAccountId: { not: null }, status: { in: [WorklistStatus.OPEN, WorklistStatus.IN_PROGRESS] } }, select: { wholesaleAccountId: true } }),
@@ -147,21 +157,28 @@ export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = 
     if (!scoreExistingOnly) await db.salesOpportunity.updateMany({ where: { organizationId, status: OpportunityStatus.SNOOZED, snoozedUntil: { lte: asOfDate } }, data: { status: OpportunityStatus.OPEN, snoozedUntil: null } });
   }
 
-  const scoreOnlyOpportunities = scoreExistingOnly ? await db.salesOpportunity.findMany({
-      where: {
-        organizationId,
-        status: { in: scoreOnlyOpportunityStatuses },
-        ...(accountIds?.length ? { wholesaleAccountId: { in: accountIds } } : {}),
-      },
-      include: {
-        events: {
-          where: { eventType: OpportunityEventType.DETECTED },
-          orderBy: { occurredAt: 'asc' },
-          take: 1,
-          select: { metadata: true },
+  const scoreOnlyBatches = accountIds?.length
+      ? Array.from({ length: Math.ceil(accountIds.length / SCORE_ONLY_ACCOUNT_QUERY_BATCH_SIZE) }, (_, index) => accountIds.slice(index * SCORE_ONLY_ACCOUNT_QUERY_BATCH_SIZE, (index + 1) * SCORE_ONLY_ACCOUNT_QUERY_BATCH_SIZE))
+      : [undefined];
+  const loadScoreOnlyBatch = (ids: string[] | undefined) => db.salesOpportunity.findMany({
+        where: {
+          organizationId,
+          status: { in: scoreOnlyOpportunityStatuses },
+          ...(ids?.length ? { wholesaleAccountId: { in: ids } } : {}),
         },
-      },
-    }) : [];
+        include: {
+          events: {
+            where: { eventType: OpportunityEventType.DETECTED },
+            orderBy: { occurredAt: 'asc' },
+            take: 1,
+            select: { metadata: true },
+          },
+        },
+      });
+  const scoreOnlyOpportunities = scoreExistingOnly ? await loadScoreOnlyBatch(scoreOnlyBatches[0]) : [];
+  if (scoreExistingOnly) {
+    for (const ids of scoreOnlyBatches.slice(1)) scoreOnlyOpportunities.push(...await loadScoreOnlyBatch(ids));
+  }
   const scoreOnlyByAccount = new Map<string, typeof scoreOnlyOpportunities>();
   if (scoreExistingOnly) {
     for (const opportunity of scoreOnlyOpportunities) {
