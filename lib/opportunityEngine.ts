@@ -9,6 +9,7 @@ import { getDistilleryOnlyItemCodes, isOpportunityEligibleOhlqProduct } from './
 import { normalizeOpportunityCategory, OPPORTUNITY_RANKING_VERSION, OPPORTUNITY_RULES_VERSION, OPPORTUNITY_SIGNAL_VERSION, opportunityRules } from './opportunityConfig';
 import { detectOpportunityHypotheses, noCurrentOpportunityRank, RuleBasedOpportunityRanker, selectPrimaryOpportunity, type AccountOpportunitySignals } from './opportunityIntelligence';
 import { isDismissedOpportunityMatch } from './opportunityWorkflow';
+import { readPublicRatings } from './accountResearchQueue';
 
 const DAY = 86400000;
 const dateOnly = (date: Date) => date.toISOString().slice(0, 10);
@@ -91,7 +92,7 @@ export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = 
         id: true,
         name: true,
         targetProfiles: { where: { organizationId }, take: 1, select: { assignedUserId: true, researchStatus: true, ownershipGroup: { select: { name: true } } } },
-        targetPublicResearch: { select: { patioOutdoor: true, cocktailProgram: true, popularitySignal: true, ownershipVerification: true, buyerStructure: true, isNationalChain: true, googleRating: true, googleReviewCount: true, yelpRating: true, yelpReviewCount: true, localBrandsOnMenu: true, sourceUrls: true } },
+        targetPublicResearch: { select: { patioOutdoor: true, cocktailProgram: true, popularitySignal: true, ownershipVerification: true, buyerStructure: true, isNationalChain: true, googleRating: true, googleReviewCount: true, yelpRating: true, yelpReviewCount: true, localBrandsOnMenu: true, sourceUrls: true, identitySnapshot: true } },
         tags: { where: { organizationId }, select: { tag: { select: { name: true } } } },
         opportunitySignals: { where: { organizationId }, take: 1 },
       },
@@ -179,6 +180,7 @@ export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = 
       patioOutdoor: research?.patioOutdoor ?? null, cocktailProgram: research?.cocktailProgram ?? null, popularitySignal: research?.popularitySignal ?? null,
       googleRating: numberValue(research?.googleRating), googleReviewCount: research?.googleReviewCount ?? null,
       yelpRating: numberValue(research?.yelpRating), yelpReviewCount: research?.yelpReviewCount ?? null,
+      publicRatings: readPublicRatings(research?.identitySnapshot),
       localBrandsOnMenu: stringList(research?.localBrandsOnMenu), publicResearchSourceUrls: stringList(research?.sourceUrls),
     };
     const hypotheses = detectOpportunityHypotheses(signal);

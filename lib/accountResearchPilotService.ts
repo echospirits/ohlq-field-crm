@@ -19,6 +19,7 @@ import {
   estimateResearchCostMicros,
   parseAccountResearchResult,
   validateExactResearchLocation,
+  type AccountResearchResult,
   type AccountResearchInputSnapshot,
 } from './accountResearchPilot';
 import { assertAccountResearchAutomationEnabled, assertAccountResearchPilotEnabled, retrieveAccountResearch, submitAccountResearch, type AccountResearchExecutionMode } from './accountResearchOpenAI';
@@ -33,6 +34,23 @@ const ACTIVE_PILOT_STATUSES = [
 const clipError = (error: unknown) => (error instanceof Error ? error.message : String(error)).slice(0, 1_500);
 const isFatalSubmissionError = (error: unknown) => [401, 403, 429].includes(Number((error as { status?: number })?.status));
 const assertResearchMode = (mode: AccountResearchExecutionMode) => mode === 'automatic' ? assertAccountResearchAutomationEnabled() : assertAccountResearchPilotEnabled();
+
+const researchStorageFields = (result: AccountResearchResult) => {
+  const [primaryRating, secondaryRating] = result.publicRatings;
+  return {
+    // These legacy columns remain the numeric storage slots until a later schema migration.
+    // Source identity is authoritative in identitySnapshot.publicRatings.
+    googleRating: primaryRating?.rating ?? null,
+    googleReviewCount: primaryRating?.reviewCount ?? null,
+    yelpRating: secondaryRating?.rating ?? null,
+    yelpReviewCount: secondaryRating?.reviewCount ?? null,
+    sourceUrls: [...new Set([
+      ...result.evidence.map((item) => item.sourceUrl),
+      ...result.publicRatings.map((item) => item.sourceUrl),
+      ...(result.businessHours ? [result.businessHours.sourceUrl] : []),
+    ])],
+  };
+};
 
 type PilotJobCounts = Partial<Record<AccountResearchJobStatus, number>>;
 
@@ -284,7 +302,7 @@ export async function autoResolveAccountResearchJobs({
   const resolvedAt = new Date();
   await db.$transaction(async (tx) => {
     for (const { job, result } of approved) {
-      const sourceUrls = [...new Set(result.evidence.map((item) => item.sourceUrl))];
+      const storage = researchStorageFields(result);
       const input = job.inputSnapshot as unknown as AccountResearchInputSnapshot;
       const researchData = {
         researchStatus: 'Automatically validated research',
@@ -298,14 +316,14 @@ export async function autoResolveAccountResearchJobs({
         websiteUrl: result.websiteUrl,
         cocktailMenuUrl: result.cocktailMenuUrl,
         localBrandsOnMenu: result.localBrandsOnMenu,
-        googleRating: result.googleRating,
-        googleReviewCount: result.googleReviewCount,
-        yelpRating: result.yelpRating,
-        yelpReviewCount: result.yelpReviewCount,
+        googleRating: storage.googleRating,
+        googleReviewCount: storage.googleReviewCount,
+        yelpRating: storage.yelpRating,
+        yelpReviewCount: storage.yelpReviewCount,
         isNationalChain: result.isNationalChain,
         researchConfidence: result.confidence,
         notes: result.notes,
-        sourceUrls,
+        sourceUrls: storage.sourceUrls,
         completedAt: job.completedAt ?? resolvedAt,
         researcher: 'Automated guarded research',
         lastAttemptedAt: job.completedAt ?? resolvedAt,
@@ -320,7 +338,7 @@ export async function autoResolveAccountResearchJobs({
           city: input.city,
           state: input.state,
           zip: input.zip,
-        }, result.googleHours),
+        }, { publicRatings: result.publicRatings, businessHours: result.businessHours, evidence: result.evidence }),
       };
       await tx.targetPublicResearch.upsert({
         where: { wholesaleAccountId: job.wholesaleAccountId },
@@ -438,7 +456,7 @@ export async function approveAccountResearchJob({
   if (job.wholesaleAccount.id !== input.wholesaleAccountId || job.wholesaleAccount.licenseeId.toUpperCase() !== input.licenseeId.toUpperCase()) {
     throw new Error('The account identity changed after research; rerun this account.');
   }
-  const sourceUrls = [...new Set(result.evidence.map((item) => item.sourceUrl))];
+  const storage = researchStorageFields(result);
   const appliedAt = new Date();
   await db.$transaction(async (tx) => {
     await tx.targetPublicResearch.upsert({
@@ -456,14 +474,14 @@ export async function approveAccountResearchJob({
         websiteUrl: result.websiteUrl,
         cocktailMenuUrl: result.cocktailMenuUrl,
         localBrandsOnMenu: result.localBrandsOnMenu,
-        googleRating: result.googleRating,
-        googleReviewCount: result.googleReviewCount,
-        yelpRating: result.yelpRating,
-        yelpReviewCount: result.yelpReviewCount,
+        googleRating: storage.googleRating,
+        googleReviewCount: storage.googleReviewCount,
+        yelpRating: storage.yelpRating,
+        yelpReviewCount: storage.yelpReviewCount,
         isNationalChain: result.isNationalChain,
         researchConfidence: result.confidence,
         notes: result.notes,
-        sourceUrls,
+        sourceUrls: storage.sourceUrls,
         completedAt: job.completedAt ?? appliedAt,
         researcher: `Reviewed automated pilot by ${reviewedByUserId}`,
         lastAttemptedAt: job.completedAt ?? appliedAt,
@@ -478,7 +496,7 @@ export async function approveAccountResearchJob({
           city: input.city,
           state: input.state,
           zip: input.zip,
-        }, result.googleHours),
+        }, { publicRatings: result.publicRatings, businessHours: result.businessHours, evidence: result.evidence }),
       },
       update: {
         researchStatus: 'Reviewed pilot research',
@@ -492,14 +510,14 @@ export async function approveAccountResearchJob({
         websiteUrl: result.websiteUrl,
         cocktailMenuUrl: result.cocktailMenuUrl,
         localBrandsOnMenu: result.localBrandsOnMenu,
-        googleRating: result.googleRating,
-        googleReviewCount: result.googleReviewCount,
-        yelpRating: result.yelpRating,
-        yelpReviewCount: result.yelpReviewCount,
+        googleRating: storage.googleRating,
+        googleReviewCount: storage.googleReviewCount,
+        yelpRating: storage.yelpRating,
+        yelpReviewCount: storage.yelpReviewCount,
         isNationalChain: result.isNationalChain,
         researchConfidence: result.confidence,
         notes: result.notes,
-        sourceUrls,
+        sourceUrls: storage.sourceUrls,
         completedAt: job.completedAt ?? appliedAt,
         researcher: `Reviewed automated pilot by ${reviewedByUserId}`,
         lastAttemptedAt: job.completedAt ?? appliedAt,
@@ -514,7 +532,7 @@ export async function approveAccountResearchJob({
           city: input.city,
           state: input.state,
           zip: input.zip,
-        }, result.googleHours),
+        }, { publicRatings: result.publicRatings, businessHours: result.businessHours, evidence: result.evidence }),
       },
     });
     await tx.accountResearchJob.update({

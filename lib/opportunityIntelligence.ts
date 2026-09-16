@@ -60,6 +60,7 @@ export type AccountOpportunitySignals = {
   googleReviewCount?: number | null;
   yelpRating?: number | null;
   yelpReviewCount?: number | null;
+  publicRatings?: Array<{ sourceName: string; rating: number; reviewCount: number | null }>;
   localBrandsOnMenu?: string[];
   publicResearchSourceUrls?: string[];
   visits30: number;
@@ -102,7 +103,9 @@ const qualitativePublicScore = (signals: AccountOpportunitySignals) => {
   else if (hasText(signals.cocktailProgram, /\bmoderate\b|\byes\b/)) score += 2;
   if (hasText(signals.popularitySignal, /\bhigh\b|\bvery busy\b/)) score += 4;
   else if (hasText(signals.popularitySignal, /\bmedium\b|\bmoderate\b/)) score += 2;
-  const ratingSignals = [
+  const ratingSignals = signals.publicRatings?.length ? signals.publicRatings.map((item) => ({
+    rating: item.rating, reviews: item.reviewCount,
+  })) : [
     { rating: signals.googleRating, reviews: signals.googleReviewCount },
     { rating: signals.yelpRating, reviews: signals.yelpReviewCount },
   ].filter((item) => item.rating !== null && item.rating !== undefined);
@@ -249,8 +252,12 @@ export class RuleBasedOpportunityRanker implements OpportunityRanker {
     if (signals.patioOutdoor) factors.push(`Public research — patio: ${signals.patioOutdoor}`);
     if (signals.cocktailProgram) factors.push(`Public research — cocktail program: ${signals.cocktailProgram}`);
     if (signals.popularitySignal) factors.push(`Public research — popularity: ${signals.popularitySignal}`);
-    if (signals.googleRating) factors.push(`Google ${Number(signals.googleRating).toFixed(1)} from ${signals.googleReviewCount ?? 'unknown'} reviews`);
-    if (signals.yelpRating) factors.push(`Yelp ${Number(signals.yelpRating).toFixed(1)} from ${signals.yelpReviewCount ?? 'unknown'} reviews`);
+    if (signals.publicRatings?.length) {
+      for (const rating of signals.publicRatings) factors.push(`${rating.sourceName} public rating ${rating.rating.toFixed(1)} from ${rating.reviewCount ?? 'unknown'} reviews`);
+    } else {
+      if (signals.googleRating) factors.push(`Public rating ${Number(signals.googleRating).toFixed(1)} from ${signals.googleReviewCount ?? 'unknown'} reviews; legacy source not recorded`);
+      if (signals.yelpRating) factors.push(`Yelp public rating ${Number(signals.yelpRating).toFixed(1)} from ${signals.yelpReviewCount ?? 'unknown'} reviews`);
+    }
     if (signals.localBrandsOnMenu?.length) factors.push(`Local brands found on menu: ${signals.localBrandsOnMenu.slice(0, 4).join(', ')}`);
     if (!signals.targetPublicFitScore && !signals.patioOutdoor && !signals.cocktailProgram && !signals.popularitySignal) factors.push('Public-fit research has not been completed; score currently relies on sales evidence');
     if (isNationalChainSignal(signals)) {

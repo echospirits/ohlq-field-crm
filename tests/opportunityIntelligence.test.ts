@@ -61,10 +61,10 @@ it('caps national chains at very low priority even when volume is strong', () =>
 
 it('carries public research into the score and explanation', () => {
   const hypothesis = { type: OpportunityType.CATEGORY_CONQUEST, cycleKey: 'x', targetCategory: 'BOURBON' as const, title: 'x', recommendedAction: 'visit', explanation: ['Bourbon buyer'] };
-  const signal = base({ purchases: [item({ isEcho: false, bottles90: 20 })], patioOutdoor: 'Yes', cocktailProgram: 'Strong', popularitySignal: 'High', googleRating: 4.7, googleReviewCount: 1200, localBrandsOnMenu: ['Watershed'] });
+  const signal = base({ purchases: [item({ isEcho: false, bottles90: 20 })], patioOutdoor: 'Yes', cocktailProgram: 'Strong', popularitySignal: 'High', publicRatings: [{ sourceName: 'Apple Maps', rating: 4.7, reviewCount: 1200 }], localBrandsOnMenu: ['Watershed'] });
   const result = new RuleBasedOpportunityRanker().rank(hypothesis, signal);
   assert.match(result.factors.join(' '), /patio: Yes/);
-  assert.match(result.factors.join(' '), /Google 4.7/);
+  assert.match(result.factors.join(' '), /Apple Maps public rating 4.7/);
   assert.match(result.factors.join(' '), /Watershed/);
 });
 

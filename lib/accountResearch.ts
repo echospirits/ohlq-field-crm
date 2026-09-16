@@ -1,6 +1,6 @@
 import { OpportunityStatus, Prisma, type PrismaClient } from '@prisma/client';
 import Papa from 'papaparse';
-import { createResearchIdentitySnapshot } from './accountResearchQueue';
+import { createResearchIdentitySnapshot, readBusinessHours } from './accountResearchQueue';
 import { refreshTenantOpportunityScoresForAccounts } from './accountResearchScoring';
 import { prisma } from './prisma';
 
@@ -275,8 +275,18 @@ export async function importAccountResearchCsv({ csv, db = prisma, dryRun = true
   if (errors.length > 0 || dryRun) return { parsedRows: parsed.rows.length, importedRows: 0, errors, dryRun };
 
   const scoredAt = new Date();
+  const priorResearch = await db.targetPublicResearch.findMany({
+    where: { wholesaleAccountId: { in: parsed.rows.map((row) => row.wholesaleAccountId) } },
+    select: { wholesaleAccountId: true, identitySnapshot: true },
+  });
+  const priorResearchByAccount = new Map(priorResearch.map((item) => [item.wholesaleAccountId, item.identitySnapshot]));
   await db.$transaction(async (tx) => {
     for (const row of parsed.rows) {
+      const sourceUrl = row.sourceUrls[0] ?? row.websiteUrl ?? row.cocktailMenuUrl;
+      const publicRatings = sourceUrl ? [
+        ...(row.googleRating !== null ? [{ sourceName: 'CSV source not recorded', sourceUrl, rating: Number(row.googleRating), reviewCount: row.googleReviewCount }] : []),
+        ...(row.yelpRating !== null ? [{ sourceName: 'Yelp (CSV)', sourceUrl, rating: Number(row.yelpRating), reviewCount: row.yelpReviewCount }] : []),
+      ] : [];
       const data = {
         researchStatus: 'Researched via ChatGPT CSV', patioOutdoor: row.patioOutdoor, cocktailProgram: row.cocktailProgram,
         events: row.events, popularitySignal: row.popularitySignal, openStatus: row.openStatus,
@@ -293,6 +303,10 @@ export async function importAccountResearchCsv({ csv, db = prisma, dryRun = true
           city: row.city,
           state: row.state,
           zip: row.zip,
+        }, {
+          publicRatings,
+          businessHours: readBusinessHours(priorResearchByAccount.get(row.wholesaleAccountId)),
+          evidence: [],
         }),
       } satisfies Prisma.TargetPublicResearchUncheckedUpdateInput;
       await tx.targetPublicResearch.upsert({

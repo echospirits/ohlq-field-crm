@@ -37,8 +37,9 @@ const result = {
   identity: { verdict: 'EXACT', matchedName: 'Example Bar', matchedAddress: '123 W Main St', matchedCity: 'Columbus', matchedState: 'OH', matchedZip: '43215-1234', explanation: 'Address agrees.' },
   researchedAt: '2026-09-14', websiteUrl: 'https://example.com/', cocktailMenuUrl: null, localBrandsOnMenu: [],
   patioOutdoor: 'Unknown', cocktailProgram: 'Moderate', events: null, popularitySignal: 'High', openStatus: 'Open',
-  googleRating: 4.6, googleReviewCount: 400, yelpRating: null, yelpReviewCount: null, isNationalChain: false,
-  googleHours: [{ day: 'Monday', hours: '11:00 AM–10:00 PM' }],
+  publicRatings: [{ sourceName: 'Apple Maps', sourceUrl: 'https://maps.apple.com/example', rating: 4.6, reviewCount: 400 }],
+  businessHours: { sourceName: 'Apple Maps', sourceUrl: 'https://maps.apple.com/example', schedule: [{ day: 'Monday', hours: '11:00 AM–10:00 PM' }] },
+  isNationalChain: false,
   ownershipVerification: 'Independent', buyerStructure: 'Local', notes: 'Exact address supported.', confidence: 'HIGH',
   evidence: [{ field: 'identity', claim: 'The listing uses 123 W Main St.', sourceUrl: 'https://example.com/contact', sourceTitle: 'Contact', exactLocation: true }],
 };
@@ -87,10 +88,12 @@ it('requires exact street number, city, ZIP, model verdict, and location evidenc
   assert.equal(validateExactResearchLocation(input, { ...parsed, evidence: parsed.evidence.map((item) => ({ ...item, exactLocation: false })) }).exact, false);
 });
 
-it('keeps pre-hours research responses readable during deployment', () => {
-  const legacy = { ...result } as Partial<typeof result>;
-  delete legacy.googleHours;
-  assert.deepEqual(parseAccountResearchResult(legacy).googleHours, []);
+it('keeps legacy Google-shaped research responses readable without asserting Google provenance', () => {
+  const { publicRatings: _publicRatings, businessHours: _businessHours, ...shared } = result;
+  const legacy = { ...shared, googleRating: 4.6, googleReviewCount: 400, yelpRating: null, yelpReviewCount: null };
+  const parsed = parseAccountResearchResult(legacy);
+  assert.equal(parsed.publicRatings[0].sourceName, 'Legacy source not recorded');
+  assert.equal(parsed.businessHours, null);
 });
 
 it('records a deterministic token and search-call cost estimate', () => {
@@ -124,7 +127,8 @@ it('retrieves and validates structured evidence and usage', async () => {
   }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   const retrieved = await retrieveAccountResearch({ responseId: 'resp_1', fetchImpl: fetchImpl as typeof fetch, env: staging() });
   assert.equal(retrieved.result?.identity.verdict, 'EXACT');
-  assert.deepEqual(retrieved.result?.googleHours, [{ day: 'Monday', hours: '11:00 AM–10:00 PM' }]);
+  assert.deepEqual(retrieved.result?.businessHours?.schedule, [{ day: 'Monday', hours: '11:00 AM–10:00 PM' }]);
+  assert.equal(retrieved.result?.publicRatings[0].sourceName, 'Apple Maps');
   assert.equal(retrieved.webSearchCalls, 1);
   assert.deepEqual(retrieved.sourceUrls, ['https://example.com/contact']);
 });

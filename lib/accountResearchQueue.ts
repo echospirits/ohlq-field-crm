@@ -17,7 +17,11 @@ export type ResearchIdentitySnapshot = {
   city: string | null;
   state: string | null;
   zip: string | null;
-  googleHours?: AccountResearchResult['googleHours'];
+  publicRatings?: AccountResearchResult['publicRatings'];
+  businessHours?: AccountResearchResult['businessHours'];
+  researchEvidence?: AccountResearchResult['evidence'];
+  // Read-only compatibility for research completed before source provenance was captured.
+  googleHours?: Array<{ day: string; hours: string }>;
 };
 
 export type ResearchQueueCandidate = {
@@ -46,25 +50,67 @@ const isOlderThan = (value: Date | null | undefined, cutoff: Date) => !value || 
 
 export const createResearchIdentitySnapshot = (
   candidate: Pick<ResearchQueueCandidate, 'name' | 'address' | 'city' | 'state' | 'zip'>,
-  googleHours?: AccountResearchResult['googleHours'],
+  research?: Pick<AccountResearchResult, 'publicRatings' | 'businessHours' | 'evidence'>,
 ): ResearchIdentitySnapshot => ({
   accountName: candidate.name,
   address: candidate.address,
   city: candidate.city,
   state: candidate.state,
   zip: candidate.zip,
-  ...(googleHours ? { googleHours } : {}),
+  ...(research ? {
+    publicRatings: research.publicRatings,
+    businessHours: research.businessHours,
+    researchEvidence: research.evidence,
+  } : {}),
 });
 
-export const readGoogleHours = (snapshot: unknown): AccountResearchResult['googleHours'] => {
-  if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) return [];
-  const hours = (snapshot as Partial<ResearchIdentitySnapshot>).googleHours;
-  if (!Array.isArray(hours)) return [];
-  return hours.filter((item): item is AccountResearchResult['googleHours'][number] => (
+type BusinessHour = NonNullable<AccountResearchResult['businessHours']>['schedule'][number];
+
+const isBusinessHour = (item: unknown): item is BusinessHour => (
     Boolean(item)
     && typeof item === 'object'
-    && typeof item.day === 'string'
-    && typeof item.hours === 'string'
+    && typeof (item as { day?: unknown }).day === 'string'
+    && typeof (item as { hours?: unknown }).hours === 'string'
+  );
+
+export const readBusinessHours = (snapshot: unknown): AccountResearchResult['businessHours'] => {
+  if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) return null;
+  const stored = snapshot as Partial<ResearchIdentitySnapshot>;
+  if (stored.businessHours && typeof stored.businessHours === 'object' && !Array.isArray(stored.businessHours)) {
+    const sourceName = (stored.businessHours as { sourceName?: unknown }).sourceName;
+    const sourceUrl = (stored.businessHours as { sourceUrl?: unknown }).sourceUrl;
+    const schedule = (stored.businessHours as { schedule?: unknown }).schedule;
+    if (typeof sourceName === 'string' && typeof sourceUrl === 'string' && Array.isArray(schedule)) {
+      const validSchedule = schedule.filter(isBusinessHour);
+      if (validSchedule.length) return { sourceName, sourceUrl, schedule: validSchedule };
+    }
+  }
+  const legacyHours = stored.googleHours;
+  if (!Array.isArray(legacyHours)) return null;
+  const schedule = legacyHours.filter(isBusinessHour);
+  return schedule.length ? { sourceName: 'Legacy source not recorded', sourceUrl: '', schedule } : null;
+};
+
+export const readPublicRatings = (snapshot: unknown): AccountResearchResult['publicRatings'] => {
+  if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) return [];
+  const ratings = (snapshot as Partial<ResearchIdentitySnapshot>).publicRatings;
+  if (!Array.isArray(ratings)) return [];
+  return ratings.filter((item): item is AccountResearchResult['publicRatings'][number] => (
+    Boolean(item) && typeof item === 'object'
+    && typeof item.sourceName === 'string' && typeof item.sourceUrl === 'string'
+    && typeof item.rating === 'number'
+    && (item.reviewCount === null || typeof item.reviewCount === 'number')
+  ));
+};
+
+export const readResearchEvidence = (snapshot: unknown): AccountResearchResult['evidence'] => {
+  if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) return [];
+  const evidence = (snapshot as Partial<ResearchIdentitySnapshot>).researchEvidence;
+  if (!Array.isArray(evidence)) return [];
+  return evidence.filter((item): item is AccountResearchResult['evidence'][number] => (
+    Boolean(item) && typeof item === 'object'
+    && typeof item.field === 'string' && typeof item.claim === 'string'
+    && typeof item.sourceUrl === 'string' && typeof item.exactLocation === 'boolean'
   ));
 };
 

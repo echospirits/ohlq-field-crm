@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { it } from 'node:test';
 import { OpportunityStatus } from '@prisma/client';
-import { classifyResearchNeed, createResearchIdentitySnapshot, hasResearchIdentityChanged, readGoogleHours, type ResearchQueueCandidate } from '../lib/accountResearchQueue';
+import { classifyResearchNeed, createResearchIdentitySnapshot, hasResearchIdentityChanged, readBusinessHours, readPublicRatings, type ResearchQueueCandidate } from '../lib/accountResearchQueue';
 
 const now = new Date('2026-09-15T16:00:00.000Z');
 const daysAgo = (days: number) => new Date(now.getTime() - days * 86_400_000);
@@ -55,8 +55,13 @@ it('refreshes research-driven opportunity scores independently for every entitle
   assert.match(scoring, /organizationId: scope\.id/);
 });
 
-it('stores and reads structured Google hours without changing identity comparisons', () => {
-  const snapshot = createResearchIdentitySnapshot(candidate(), [{ day: 'Monday', hours: '11:00 AM–10:00 PM' }]);
-  assert.deepEqual(readGoogleHours(snapshot), [{ day: 'Monday', hours: '11:00 AM–10:00 PM' }]);
+it('stores and reads source-attributed public research without changing identity comparisons', () => {
+  const snapshot = createResearchIdentitySnapshot(candidate(), {
+    publicRatings: [{ sourceName: 'Apple Maps', sourceUrl: 'https://maps.apple.com/example', rating: 4.6, reviewCount: 400 }],
+    businessHours: { sourceName: 'Apple Maps', sourceUrl: 'https://maps.apple.com/example', schedule: [{ day: 'Monday', hours: '11:00 AM–10:00 PM' }] },
+    evidence: [{ field: 'businessHours', claim: 'Hours listed.', sourceUrl: 'https://maps.apple.com/example', sourceTitle: 'Apple Maps', exactLocation: true }],
+  });
+  assert.deepEqual(readBusinessHours(snapshot)?.schedule, [{ day: 'Monday', hours: '11:00 AM–10:00 PM' }]);
+  assert.equal(readPublicRatings(snapshot)[0].sourceName, 'Apple Maps');
   assert.equal(hasResearchIdentityChanged(candidate(), snapshot), false);
 });

@@ -40,6 +40,19 @@ const googleBusinessHourSchema = z.object({
   hours: z.string().min(1).max(120),
 }).strict();
 
+const publicRatingSchema = z.object({
+  sourceName: z.string().min(1).max(120),
+  sourceUrl: z.string().url(),
+  rating: z.number().min(0).max(5),
+  reviewCount: z.number().int().min(0).nullable(),
+}).strict();
+
+const businessHoursSchema = z.object({
+  sourceName: z.string().min(1).max(120),
+  sourceUrl: z.string().url(),
+  schedule: z.array(googleBusinessHourSchema).min(1).max(7),
+}).strict();
+
 const nullableUrl = z.string().url().nullable();
 const evidenceSchema = z.object({
   field: z.string().min(1).max(80),
@@ -49,7 +62,7 @@ const evidenceSchema = z.object({
   exactLocation: z.boolean(),
 }).strict();
 
-export const accountResearchResultSchema = z.object({
+const commonResearchShape = {
   identity: z.object({
     verdict: z.enum(['EXACT', 'PROBABLE', 'MISMATCH', 'UNCLEAR']),
     matchedName: z.string().max(200).nullable(),
@@ -68,17 +81,27 @@ export const accountResearchResultSchema = z.object({
   events: z.string().max(500).nullable(),
   popularitySignal: z.enum(['High', 'Medium', 'Low', 'Unknown']),
   openStatus: z.enum(['Open', 'Closed', 'Unclear']),
-  googleRating: z.number().min(0).max(5).nullable(),
-  googleReviewCount: z.number().int().min(0).nullable(),
-  googleHours: z.array(googleBusinessHourSchema).max(7).default([]),
-  yelpRating: z.number().min(0).max(5).nullable(),
-  yelpReviewCount: z.number().int().min(0).nullable(),
   isNationalChain: z.boolean().nullable(),
   ownershipVerification: z.string().max(500).nullable(),
   buyerStructure: z.string().max(500).nullable(),
   notes: z.string().min(1).max(1_500),
   confidence: z.enum(['HIGH', 'MEDIUM', 'LOW']),
   evidence: z.array(evidenceSchema).min(1).max(30),
+} as const;
+
+export const accountResearchResultSchema = z.object({
+  ...commonResearchShape,
+  publicRatings: z.array(publicRatingSchema).max(4),
+  businessHours: businessHoursSchema.nullable(),
+}).strict();
+
+const legacyAccountResearchResultSchema = z.object({
+  ...commonResearchShape,
+  googleRating: z.number().min(0).max(5).nullable(),
+  googleReviewCount: z.number().int().min(0).nullable(),
+  googleHours: z.array(googleBusinessHourSchema).max(7).default([]),
+  yelpRating: z.number().min(0).max(5).nullable(),
+  yelpReviewCount: z.number().int().min(0).nullable(),
 }).strict();
 
 export type AccountResearchResult = z.infer<typeof accountResearchResultSchema>;
@@ -88,8 +111,8 @@ export const ACCOUNT_RESEARCH_JSON_SCHEMA = {
   additionalProperties: false,
   required: [
     'identity', 'researchedAt', 'websiteUrl', 'cocktailMenuUrl', 'localBrandsOnMenu', 'patioOutdoor',
-    'cocktailProgram', 'events', 'popularitySignal', 'openStatus', 'googleRating', 'googleReviewCount', 'googleHours',
-    'yelpRating', 'yelpReviewCount', 'isNationalChain', 'ownershipVerification', 'buyerStructure', 'notes',
+    'cocktailProgram', 'events', 'popularitySignal', 'openStatus', 'publicRatings', 'businessHours',
+    'isNationalChain', 'ownershipVerification', 'buyerStructure', 'notes',
     'confidence', 'evidence',
   ],
   properties: {
@@ -111,17 +134,31 @@ export const ACCOUNT_RESEARCH_JSON_SCHEMA = {
     events: { type: ['string', 'null'] },
     popularitySignal: { type: 'string', enum: ['High', 'Medium', 'Low', 'Unknown'] },
     openStatus: { type: 'string', enum: ['Open', 'Closed', 'Unclear'] },
-    googleRating: { type: ['number', 'null'], minimum: 0, maximum: 5 },
-    googleReviewCount: { type: ['integer', 'null'], minimum: 0 },
-    googleHours: {
-      type: 'array', maxItems: 7,
+    publicRatings: {
+      type: 'array', maxItems: 4,
       items: {
-        type: 'object', additionalProperties: false, required: ['day', 'hours'],
-        properties: { day: { type: 'string', enum: GOOGLE_BUSINESS_DAYS }, hours: { type: 'string' } },
+        type: 'object', additionalProperties: false, required: ['sourceName', 'sourceUrl', 'rating', 'reviewCount'],
+        properties: {
+          sourceName: { type: 'string' }, sourceUrl: { type: 'string' },
+          rating: { type: 'number', minimum: 0, maximum: 5 }, reviewCount: { type: ['integer', 'null'], minimum: 0 },
+        },
       },
     },
-    yelpRating: { type: ['number', 'null'], minimum: 0, maximum: 5 },
-    yelpReviewCount: { type: ['integer', 'null'], minimum: 0 },
+    businessHours: {
+      anyOf: [{ type: 'null' }, {
+        type: 'object', additionalProperties: false, required: ['sourceName', 'sourceUrl', 'schedule'],
+        properties: {
+          sourceName: { type: 'string' }, sourceUrl: { type: 'string' },
+          schedule: {
+            type: 'array', minItems: 1, maxItems: 7,
+            items: {
+              type: 'object', additionalProperties: false, required: ['day', 'hours'],
+              properties: { day: { type: 'string', enum: GOOGLE_BUSINESS_DAYS }, hours: { type: 'string' } },
+            },
+          },
+        },
+      }],
+    },
     isNationalChain: { type: ['boolean', 'null'] },
     ownershipVerification: { type: ['string', 'null'] }, buyerStructure: { type: ['string', 'null'] },
     notes: { type: 'string' }, confidence: { type: 'string', enum: ['HIGH', 'MEDIUM', 'LOW'] },
@@ -201,9 +238,15 @@ export function chooseResearchTier(opportunities: Array<{ status: string; produc
 
 export function buildAccountResearchPrompt(input: AccountResearchInputSnapshot, tier: 'LIGHTWEIGHT' | 'DEEP') {
   const scope = tier === 'DEEP'
-    ? 'Perform exact-location commercial research, including the official site, current cocktail/drinks menu, named Ohio or local spirits, patio/rooftop, events/private dining, popularity, ownership, buyer structure, open status, and ratings when supported. If you find the exact location on Google, also return its current weekly hours in googleHours, with one entry for each listed day and Closed when applicable.'
-    : 'Perform a bounded exact-location identity and public-fit pass. Prioritize official website, open status, chain status, Google rating/review count and current weekly Google hours when the exact Google location is supported, and obvious cocktail-menu or patio evidence. For Google hours, return one entry for each listed day and Closed when applicable. Leave unsupported fields unknown and return an empty googleHours array when the exact Google listing or its hours cannot be verified.';
+    ? 'Perform exact-location commercial research, including the official site, current cocktail/drinks menu, named Ohio or local spirits, patio/rooftop, events/private dining, popularity, ownership, buyer structure, open status, public ratings, review counts, and business hours when supported.'
+    : 'Perform a bounded exact-location identity and public-fit pass. Prioritize official website, open status, chain status, public ratings/review counts, current weekly business hours, and obvious cocktail-menu or patio evidence.';
   return `${scope}
+
+Source rules:
+- Prefer the official business website, then exact-location Apple Maps or Google Maps listings, then Yelp or another reputable exact-location directory.
+- Return each verified rating in publicRatings with the source that directly displayed it. Never label a third-party score as Google merely because that page says it originated with Google.
+- Return businessHours from the best current exact-location source available, including Apple Maps. Include one schedule entry for each listed day and Closed when applicable. Return null only when no exact-location source provides hours.
+- The sourceName and sourceUrl must identify the page that directly supports the rating or hours. If sources conflict, prefer the official site or mapping listing and explain the conflict in notes.
 
 CRM identity (immutable):
 - wholesale_account_id: ${input.wholesaleAccountId}
@@ -218,7 +261,25 @@ Do not substitute another location with the same or similar name. The identity v
 }
 
 export function parseAccountResearchResult(value: unknown) {
-  return accountResearchResultSchema.parse(value);
+  const current = accountResearchResultSchema.safeParse(value);
+  if (current.success) return current.data;
+  const legacy = legacyAccountResearchResultSchema.parse(value);
+  const publicRatings: AccountResearchResult['publicRatings'] = [];
+  if (legacy.googleRating !== null) publicRatings.push({
+    sourceName: 'Legacy source not recorded', sourceUrl: legacy.evidence.find((item) => item.exactLocation)?.sourceUrl ?? legacy.evidence[0].sourceUrl,
+    rating: legacy.googleRating, reviewCount: legacy.googleReviewCount,
+  });
+  if (legacy.yelpRating !== null) publicRatings.push({
+    sourceName: 'Yelp', sourceUrl: legacy.evidence.find((item) => /yelp/i.test(item.sourceUrl))?.sourceUrl ?? legacy.evidence[0].sourceUrl,
+    rating: legacy.yelpRating, reviewCount: legacy.yelpReviewCount,
+  });
+  const businessHours = legacy.googleHours.length ? {
+    sourceName: 'Legacy source not recorded',
+    sourceUrl: legacy.evidence.find((item) => item.exactLocation)?.sourceUrl ?? legacy.evidence[0].sourceUrl,
+    schedule: legacy.googleHours,
+  } : null;
+  const { googleRating: _googleRating, googleReviewCount: _googleReviewCount, googleHours: _googleHours, yelpRating: _yelpRating, yelpReviewCount: _yelpReviewCount, ...shared } = legacy;
+  return accountResearchResultSchema.parse({ ...shared, publicRatings, businessHours });
 }
 
 export const formatUsdMicros = (micros: number) => `$${(micros / 1_000_000).toFixed(2)}`;

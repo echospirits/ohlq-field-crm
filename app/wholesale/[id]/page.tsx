@@ -26,7 +26,7 @@ import { listWholesaleOrders } from '../../../lib/wholesaleOrders';
 import { formatOrderCurrency } from '../../wholesale-orders/orderPresentation';
 import { AccountMemoryPanel } from '../../account-memory/AccountMemoryPanel';
 import { getCommunicationTitle } from '../../../lib/accountMemory';
-import { readGoogleHours } from '../../../lib/accountResearchQueue';
+import { readBusinessHours } from '../../../lib/accountResearchQueue';
 
 const formatVisitDate = (date: Date | null | undefined) => formatEasternDate(date) || 'No visits yet';
 const getMergedWholesaleAccountIds = async (accountId: string) => {
@@ -247,7 +247,7 @@ export default async function WholesaleActivityPage({
   const contactMap = Object.fromEntries(contacts.map((contact) => [contact.id, contact.name]));
   const latestVisitAt = visits[0]?.visitAt;
   const actionUsers = users.filter((activeUser) => activeUser.isActive && activeUser.role !== UserRole.TASTER).map((activeUser) => ({ id: activeUser.id, name: getUserDisplayName(activeUser) }));
-  const googleHours = readGoogleHours(account.targetPublicResearch?.identitySnapshot);
+  const businessHours = readBusinessHours(account.targetPublicResearch?.identitySnapshot);
 
   return (
     <>
@@ -327,7 +327,10 @@ export default async function WholesaleActivityPage({
           </p>
           <div className="account-business-hours">
             <strong>Current hours</strong>
-            {googleHours.length ? <dl>{googleHours.map((item) => <div key={item.day}><dt>{item.day}</dt><dd>{item.hours}</dd></div>)}</dl> : <span className="muted">Not yet confirmed from Google</span>}
+            {businessHours ? <>
+              <dl>{businessHours.schedule.map((item) => <div key={item.day}><dt>{item.day}</dt><dd>{item.hours}</dd></div>)}</dl>
+              <small className="muted">Source: {businessHours.sourceUrl ? <a href={businessHours.sourceUrl} rel="noreferrer" target="_blank">{businessHours.sourceName}</a> : businessHours.sourceName}</small>
+            </> : <span className="muted">Not yet confirmed from a current public source</span>}
           </div>
         </div>
         <AccountTagPanel

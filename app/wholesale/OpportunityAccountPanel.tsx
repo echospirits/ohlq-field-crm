@@ -10,6 +10,7 @@ import type { ReactNode } from 'react';
 import { getCurrentUser } from '../../lib/auth';
 import { getOrganizationContext, hasFeature } from '../../lib/organizations';
 import { getOrganizationTenantConfig } from '../../lib/tenantConfig';
+import { readPublicRatings, readResearchEvidence } from '../../lib/accountResearchQueue';
 
 const activeStatuses = [OpportunityStatus.OPEN, OpportunityStatus.ACTIONED, OpportunityStatus.SNOOZED];
 
@@ -52,6 +53,7 @@ type AccountResearch = {
   events: string | null;
   googleRating: Prisma.Decimal | null;
   googleReviewCount: number | null;
+  identitySnapshot: Prisma.JsonValue | null;
   isNationalChain: boolean | null;
   localBrandsOnMenu: Prisma.JsonValue;
   notes: string | null;
@@ -68,12 +70,38 @@ type AccountResearch = {
   yelpReviewCount: number | null;
 };
 
+const researchSourceNames = (evidence: ReturnType<typeof readResearchEvidence>, pattern: RegExp) => {
+  const matches = evidence.filter((item) => pattern.test(item.field));
+  return [...new Set(matches.map((item) => {
+    try {
+      const host = new URL(item.sourceUrl).hostname.replace(/^www\./, '');
+      if (host === 'maps.apple.com') return 'Apple Maps';
+      if (host.endsWith('google.com')) return 'Google';
+      if (host.endsWith('yelp.com')) return 'Yelp';
+      if (host.endsWith('restaurantji.com')) return 'Restaurantji';
+      return item.sourceTitle?.trim() || host;
+    } catch {
+      return item.sourceTitle?.trim() || 'Public source';
+    }
+  }))];
+};
+
+function SourceLine({ names }: { names: string[] }) {
+  return <small className="muted">Source: {names.length ? names.join(', ') : 'Not recorded'}</small>;
+}
+
 function ResearchSummary({ research }: { research: AccountResearch | null }) {
   if (!research) return <section className="account-research-summary is-empty" aria-label="Account research summary">
     <div><h3>Public research</h3><p className="muted">This account has not been researched yet. Its opportunity score currently relies on available sales and activity signals.</p></div>
   </section>;
   const brands = opportunityFactors(research.localBrandsOnMenu);
   const sources = opportunityFactors(research.sourceUrls);
+  const evidence = readResearchEvidence(research.identitySnapshot);
+  const storedRatings = readPublicRatings(research.identitySnapshot);
+  const ratings = storedRatings.length ? storedRatings : [
+    ...(research.googleRating ? [{ sourceName: 'Legacy source not recorded', sourceUrl: '', rating: Number(research.googleRating), reviewCount: research.googleReviewCount }] : []),
+    ...(research.yelpRating ? [{ sourceName: 'Yelp', sourceUrl: '', rating: Number(research.yelpRating), reviewCount: research.yelpReviewCount }] : []),
+  ];
   const links = [...new Set([research.websiteUrl, research.cocktailMenuUrl, ...sources].filter((url): url is string => Boolean(url)))];
   return <section className="account-research-summary" aria-label="Account research summary">
     <div className="account-research-heading">
@@ -81,12 +109,12 @@ function ResearchSummary({ research }: { research: AccountResearch | null }) {
       <small className="muted">Updated {formatEasternDateTime(research.updatedAt)}</small>
     </div>
     <dl className="account-research-signals">
-      <div><dt>Google</dt><dd>{research.googleRating ? <><strong>{Number(research.googleRating).toFixed(1)}</strong><span>{research.googleReviewCount?.toLocaleString() ?? 'Unknown'} reviews</span></> : <span>Not found</span>}</dd></div>
-      <div><dt>Yelp</dt><dd>{research.yelpRating ? <><strong>{Number(research.yelpRating).toFixed(1)}</strong><span>{research.yelpReviewCount?.toLocaleString() ?? 'Unknown'} reviews</span></> : <span>Not found</span>}</dd></div>
-      <div><dt>Patio</dt><dd><span>{displayResearchValue(research.patioOutdoor)}</span></dd></div>
-      <div><dt>Cocktails</dt><dd><span>{displayResearchValue(research.cocktailProgram)}</span></dd></div>
-      <div><dt>Popularity</dt><dd><span>{displayResearchValue(research.popularitySignal)}</span></dd></div>
-      <div><dt>Buying structure</dt><dd><span>{research.isNationalChain === true ? 'National chain' : research.isNationalChain === false ? 'Not a national chain' : displayResearchValue(research.buyerStructure)}</span></dd></div>
+      {ratings.map((rating, index) => <div key={`${rating.sourceName}-${index}`}><dt>Public rating</dt><dd><strong>{rating.rating.toFixed(1)}</strong><span>{rating.reviewCount?.toLocaleString() ?? 'Unknown'} reviews</span><SourceLine names={[rating.sourceName]} /></dd></div>)}
+      {!ratings.length ? <div><dt>Public rating</dt><dd><span>Not found</span><SourceLine names={[]} /></dd></div> : null}
+      <div><dt>Patio</dt><dd><span>{displayResearchValue(research.patioOutdoor)}</span><SourceLine names={researchSourceNames(evidence, /patio|outdoor/i)} /></dd></div>
+      <div><dt>Cocktails</dt><dd><span>{displayResearchValue(research.cocktailProgram)}</span><SourceLine names={researchSourceNames(evidence, /cocktail|menu/i)} /></dd></div>
+      <div><dt>Popularity</dt><dd><span>{displayResearchValue(research.popularitySignal)}</span><SourceLine names={researchSourceNames(evidence, /popular|rating|review/i)} /></dd></div>
+      <div><dt>Buying structure</dt><dd><span>{research.isNationalChain === true ? 'National chain' : research.isNationalChain === false ? 'Not a national chain' : displayResearchValue(research.buyerStructure)}</span><SourceLine names={researchSourceNames(evidence, /ownership|buyer|chain/i)} /></dd></div>
     </dl>
     <details className="compact-details nested-details account-research-details">
       <summary>Research details and sources</summary>
@@ -273,7 +301,7 @@ export async function OpportunityAccountPanel({ agencyId, wholesaleAccountId, cu
     prisma.worklistItem.findMany({ where: { organizationId, wholesaleAccountId, status: { in: ['OPEN', 'IN_PROGRESS'] } }, orderBy: { dueDate: 'asc' }, take: 10, select: { id: true, title: true, dueDate: true, salesOpportunityId: true } }),
     prisma.targetPublicResearch.findUnique({
       where: { wholesaleAccountId },
-      select: { buyerStructure: true, cocktailMenuUrl: true, cocktailProgram: true, events: true, googleRating: true, googleReviewCount: true, isNationalChain: true, localBrandsOnMenu: true, notes: true, openStatus: true, ownershipVerification: true, patioOutdoor: true, popularitySignal: true, privateDining: true, researchConfidence: true, sourceUrls: true, updatedAt: true, websiteUrl: true, yelpRating: true, yelpReviewCount: true },
+      select: { buyerStructure: true, cocktailMenuUrl: true, cocktailProgram: true, events: true, googleRating: true, googleReviewCount: true, identitySnapshot: true, isNationalChain: true, localBrandsOnMenu: true, notes: true, openStatus: true, ownershipVerification: true, patioOutdoor: true, popularitySignal: true, privateDining: true, researchConfidence: true, sourceUrls: true, updatedAt: true, websiteUrl: true, yelpRating: true, yelpReviewCount: true },
     }),
   ]);
   const timeline = [

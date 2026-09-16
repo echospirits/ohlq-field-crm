@@ -17,12 +17,13 @@ test('Wholesale activity timeline loads only the viewing tenant portfolio purcha
   assert.match(panel, /where: \{ organizationId, wholesaleAccountId, \.\.\.getTenantAccountSalesEventWhere\(tenantConfig\) \}/);
 });
 
-test('Wholesale account overview opens by default and displays researched Google hours', () => {
+test('Wholesale account overview opens by default and displays source-attributed business hours', () => {
   const page = readFileSync('app/wholesale/[id]/page.tsx', 'utf8');
   assert.match(page, /id="overview" initialOpen summary="Account details, visit totals & tags"/);
-  assert.match(page, /readGoogleHours\(account\.targetPublicResearch\?\.identitySnapshot\)/);
+  assert.match(page, /readBusinessHours\(account\.targetPublicResearch\?\.identitySnapshot\)/);
   assert.match(page, />Current hours</);
-  assert.match(page, /Not yet confirmed from Google/);
+  assert.match(page, /Source:/);
+  assert.match(page, /Not yet confirmed from a current public source/);
 });
 
 test('Wholesale opportunity intelligence shows the tenant-scoped production score', () => {
@@ -43,8 +44,8 @@ test('Wholesale opportunity intelligence shows public research signals and fresh
 
   assert.match(panel, /prisma\.targetPublicResearch\.findUnique/);
   assert.match(panel, /Public account research/);
-  assert.match(panel, /Google/);
-  assert.match(panel, /Yelp/);
+  assert.match(panel, /Public rating/);
+  assert.match(panel, /Source:/);
   assert.match(panel, /Patio/);
   assert.match(panel, /Cocktails/);
   assert.match(panel, /Updated \{formatEasternDateTime\(research\.updatedAt\)\}/);
