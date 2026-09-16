@@ -8,7 +8,12 @@ export function outcomeSegment(signals: AccountOpportunitySignals, hypothesis: O
   if (!hypothesis.targetProduct) return null;
   const evidence = getPriceEvidence(signals.purchases, hypothesis.targetProduct);
   if (evidence.coverage < .7 || !evidence.targetPrice750) return null;
-  return `${hypothesis.type}:${hypothesis.targetCategory}:${evidence.comparableShare >= .5 ? 'aligned' : evidence.comparableShare >= .15 ? 'mixed' : 'low'}:${evidence.localScore > 2 ? 'local-comparable' : 'other'}:${signals.visits90 > 0 ? 'prior-contact' : 'no-prior-contact'}`;
+  const incumbent = evidence.localComparableBottles >= 6
+    ? 'local-incumbent'
+    : evidence.nonLocalComparableBottles >= 12
+      ? 'nonlocal-opportunity'
+      : 'thin-market';
+  return `${hypothesis.type}:${hypothesis.targetCategory}:${evidence.comparableShare >= .5 ? 'aligned' : evidence.comparableShare >= .15 ? 'mixed' : 'low'}:${incumbent}:${signals.visits90 > 0 ? 'prior-contact' : 'no-prior-contact'}`;
 }
 
 export function labelMatureOutcome(detectedAt: Date, asOf: Date, reportDates: Set<string>, purchaseDates: Date[]): boolean | null {

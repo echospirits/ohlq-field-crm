@@ -31,7 +31,7 @@ async function workflowSnapshot(organizationId: string) {
 async function main() {
   const runtime = validateRuntimeEnvironment();
   if (runtime.appEnvironment === 'production' && !process.argv.includes('--confirm-production')) {
-    throw new Error('Production V4 recalculation requires --confirm-production.');
+    throw new Error(`Production ${OPPORTUNITY_RANKING_VERSION} recalculation requires --confirm-production.`);
   }
   const latestImport = await db.ohlqReportImportStatus.findFirst({
     where: { dataSource: 'ANNUAL_SALES_SUMMARY_BY_WHOLESALE', status: 'COMPLETED' },

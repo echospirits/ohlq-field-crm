@@ -70,6 +70,7 @@ export type AccountOpportunitySignals = {
 
 export type OpportunityHypothesis = {
   targetProduct?: AffinityProduct;
+  pitchMode?: 'ACCOUNT_FIT' | 'SPECIFIC_PRODUCT';
   cycleKey: string;
   explanation: string[];
   recommendedAction: string;
@@ -87,6 +88,44 @@ const labels = (items: PurchaseSignal[]) => items.slice(0, 3).map((item) => `${i
 const percent = (value?: number | null) => Math.max(0, Math.min(100, value ?? 0));
 const normalized = (value?: string | null) => (value ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 const hasText = (value: string | null | undefined, pattern: RegExp) => pattern.test(normalized(value));
+const nonTenantPurchases = (signals: AccountOpportunitySignals) => signals.purchases.filter((item) => !item.isEcho && item.bottles90 > 0);
+const accountVolume90 = (signals: AccountOpportunitySignals) => sum90(nonTenantPurchases(signals));
+const localAccountVolume90 = (signals: AccountOpportunitySignals) => sum90(nonTenantPurchases(signals).filter((item) => item.isLocal));
+
+function productPitchQualified(signals: AccountOpportunitySignals, product: AffinityProduct) {
+  const evidence = getPriceEvidence(signals.purchases, product);
+  return {
+    evidence,
+    qualified: evidence.nonLocalComparableBottles >= opportunityRules.specificPitchNonLocalBottles90Days
+      && evidence.localComparableBottles < opportunityRules.localIncumbentBottles90Days,
+  };
+}
+
+function accountFitCopy(signals: AccountOpportunitySignals, type: OpportunityType, retainedProduct?: AffinityProduct) {
+  const totalVolume = accountVolume90(signals);
+  const localVolume = localAccountVolume90(signals);
+  const evidence = retainedProduct ? productPitchQualified(signals, retainedProduct).evidence : null;
+  const localConflict = evidence && evidence.localComparableBottles >= opportunityRules.localIncumbentBottles90Days;
+  return {
+    pitchMode: 'ACCOUNT_FIT' as const,
+    title: type === OpportunityType.CROSS_SELL ? 'Portfolio expansion opportunity' : 'High-fit account',
+    recommendedAction: type === OpportunityType.CROSS_SELL ? 'Explore additional portfolio fit' : 'Explore portfolio fit',
+    explanation: [
+      `${totalVolume.toFixed(1)} non-tenant bottles purchased in 90 days across ${new Set(nonTenantPurchases(signals).map((item) => item.category).filter(Boolean)).size} categories`,
+      localVolume > 0 ? `${localVolume.toFixed(1)} bottles from verified Ohio-owned brands indicate craft affinity` : 'No verified Ohio-owned purchase volume is currently available',
+      localConflict
+        ? `${retainedProduct!.name} is not a recommended displacement pitch: ${evidence!.localComparableBottles.toFixed(1)} comparable bottles are from Ohio-owned incumbents`
+        : 'No specific product pitch currently meets the non-Ohio incumbent volume threshold',
+    ],
+  };
+}
+
+export function presentOpportunityHypothesis(hypothesis: OpportunityHypothesis, signals: AccountOpportunitySignals): OpportunityHypothesis {
+  if (!hypothesis.targetProduct || (hypothesis.type !== OpportunityType.CATEGORY_CONQUEST && hypothesis.type !== OpportunityType.CROSS_SELL)) return hypothesis;
+  const { qualified } = productPitchQualified(signals, hypothesis.targetProduct);
+  if (qualified) return { ...hypothesis, pitchMode: 'SPECIFIC_PRODUCT' };
+  return { ...hypothesis, ...accountFitCopy(signals, hypothesis.type, hypothesis.targetProduct) };
+}
 
 export function isNationalChainSignal(signals: AccountOpportunitySignals) {
   if (signals.isNationalChain !== null && signals.isNationalChain !== undefined) return signals.isNationalChain;
@@ -163,16 +202,27 @@ export function detectOpportunityHypotheses(signals: AccountOpportunitySignals):
   const targets = signals.portfolio === undefined
     ? (['BOURBON', 'RYE', 'RUM'] as PortfolioCategory[]).map(category => ({ category, product: undefined as AffinityProduct | undefined }))
     : signals.portfolio.filter(p => p.category && p.priority > 0).map(product => ({ category: product.category!, product }));
+  const existingEcho = signals.purchases.some((item) => item.isEcho && item.currentAnnualBottles > 0);
+  if (signals.portfolio !== undefined && accountVolume90(signals) >= opportunityRules.minimumCategoryBottles90Days) {
+    const type = existingEcho ? OpportunityType.CROSS_SELL : OpportunityType.CATEGORY_CONQUEST;
+    result.push({
+      type,
+      targetCategory: null,
+      cycleKey: 'account-fit',
+      ...accountFitCopy(signals, type),
+    });
+  }
   targets.forEach(({ category, product }) => {
     const categoryItems = allForCategory(signals, category);
     const categoryVolume = sum90(categoryItems);
     const echoItems = echoForCategory(signals, category);
     if (categoryVolume < opportunityRules.minimumCategoryBottles90Days || echoItems.some((item) => item.currentAnnualBottles > 0 && (!product || item.itemCode === product.itemCode))) return;
-    const existingEcho = signals.purchases.some((item) => item.isEcho && item.currentAnnualBottles > 0);
     const type = existingEcho ? OpportunityType.CROSS_SELL : OpportunityType.CATEGORY_CONQUEST;
+    if (product && !productPitchQualified(signals, product).qualified) return;
     result.push({
       type,
       targetProduct: product,
+      pitchMode: product ? 'SPECIFIC_PRODUCT' : undefined,
       targetCategory: category,
       cycleKey: `${type.toLowerCase()}:${product?.itemCode ?? category}:${categoryItems.map((item) => item.lastPurchaseAt ?? '').sort().at(-1) ?? 'observed'}`,
       title: product ? `${existingEcho ? 'Cross-sell' : 'Introduce'} ${product.name}` : existingEcho ? `Cross-sell ${opportunityCategoryMap[category].label}` : `${opportunityCategoryMap[category].label} buyer / Echo nonbuyer`,
@@ -215,37 +265,53 @@ export const noCurrentOpportunityRank = (): RankResult => ({
 export class RuleBasedOpportunityRanker implements OpportunityRanker {
   rank(opportunity: OpportunityHypothesis, signals: AccountOpportunitySignals): RankResult {
     const factors = [...opportunity.explanation];
+    const accountFit = opportunity.pitchMode === 'ACCOUNT_FIT';
     const categoryBottles = opportunity.targetCategory ? sum90(allForCategory(signals, opportunity.targetCategory)) : 0;
-    const categoryDemandScore = Math.min(15, categoryBottles * 0.25);
+    const categoryDemandScore = accountFit ? Math.min(30, accountVolume90(signals) * 0.25) : Math.min(15, categoryBottles * 0.25);
     const hasTargetComponents = [signals.targetPriceFitPercent, signals.targetTotalVolumePercentile, signals.targetConsistencyScore, signals.targetMomentumScore]
       .some((value) => value !== null && value !== undefined);
     const targetMarketScore = hasTargetComponents
       ? percent(signals.targetPriceFitPercent) * 0.08 + percent(signals.targetTotalVolumePercentile) * 0.07 + percent(signals.targetConsistencyScore) * 0.03 + percent(signals.targetMomentumScore) * 0.02
       : percent(signals.targetDataScore) * 0.2;
     const price = opportunity.targetProduct ? getPriceEvidence(signals.purchases, opportunity.targetProduct) : null;
-    const localCraftScore = price?.localScore ?? (((signals.ohioCraft9L ?? 0) > 0 || (signals.ohioCraftAffinity ?? 0) > 0) ? 1 : 0);
+    const portfolioMarketPriceScore = signals.portfolio?.length
+      ? Math.max(0, ...signals.portfolio.map((product) => getPriceEvidence(signals.purchases, product).marketPriceScore))
+      : 0;
+    const localVolume = localAccountVolume90(signals);
+    const localCraftScore = accountFit
+      ? (localVolume > 0 ? 2 + 8 * Math.min(1, localVolume / 24) : 0)
+      : price?.localScore ?? (((signals.ohioCraft9L ?? 0) > 0 || (signals.ohioCraftAffinity ?? 0) > 0) ? 1 : 0);
     const publicFitScore = Math.max(percent(signals.targetPublicFitScore) * 0.15, qualitativePublicScore(signals));
     const relationshipScore = Math.min(10, signals.echoBottles90 * 0.5);
     const relationshipOpportunity = new Set<OpportunityType>([OpportunityType.LAPSED_BUYER, OpportunityType.FIRST_ORDER_FOLLOW_UP, OpportunityType.NO_RECENT_TOUCH]).has(opportunity.type);
     const urgencyScore = relationshipOpportunity ? Math.min(5, (signals.daysSinceLastVisit ?? 90) / 18) : 0;
-    const peer = opportunity.targetProduct ? signals.peerEvidence?.[opportunity.targetProduct.itemCode] : null;
-    const learned = opportunity.targetProduct ? signals.learningAdjustment?.[opportunity.targetProduct.itemCode] ?? 0 : 0;
-    const priceScore = price ? price.priceScore : Math.min(8, targetMarketScore);
+    const peer = !accountFit && opportunity.targetProduct ? signals.peerEvidence?.[opportunity.targetProduct.itemCode] : null;
+    const learned = !accountFit && opportunity.targetProduct ? signals.learningAdjustment?.[opportunity.targetProduct.itemCode] ?? 0 : 0;
+    const priceScore = accountFit
+      ? Math.min(25, portfolioMarketPriceScore * 25 / 35)
+      : price ? price.priceScore : Math.min(8, targetMarketScore);
     const peerScore = peer?.score ?? 0;
     const learningScore = Math.max(-10, Math.min(10, learned));
     const worklistPenalty = Math.min(5, signals.openWorklistCount * 1.5);
     let score = categoryDemandScore + priceScore + localCraftScore + publicFitScore + relationshipScore + urgencyScore + peerScore + learningScore - worklistPenalty;
-    factors.push(`Score components: demand ${categoryDemandScore.toFixed(1)}, price ${priceScore.toFixed(1)}, Ohio affinity ${localCraftScore.toFixed(1)}, public fit ${publicFitScore.toFixed(1)}, relationship ${relationshipScore.toFixed(1)}, urgency ${urgencyScore.toFixed(1)}, peers ${peerScore.toFixed(1)}, learning ${learningScore.toFixed(1)}, worklist -${worklistPenalty.toFixed(1)}; no baseline points`);
+    factors.push(`Score components: ${accountFit ? 'account volume' : 'category demand'} ${categoryDemandScore.toFixed(1)}, price readiness ${priceScore.toFixed(1)}, Ohio craft affinity ${localCraftScore.toFixed(1)}, public fit ${publicFitScore.toFixed(1)}, relationship ${relationshipScore.toFixed(1)}, urgency ${urgencyScore.toFixed(1)}, peers ${peerScore.toFixed(1)}, learning ${learningScore.toFixed(1)}, worklist -${worklistPenalty.toFixed(1)}; no baseline points`);
 
-    if (price) {
+    if (accountFit) {
+      factors.push(`Account-wide volume: ${accountVolume90(signals).toFixed(1)} non-tenant bottles in 90 days; verified Ohio-owned volume ${localVolume.toFixed(1)} bottles`);
+      factors.push(`Best portfolio price readiness contribution ${priceScore.toFixed(1)}/25; this supports account priority without prescribing a product`);
+    } else if (price) {
       factors.push(`Target ${opportunity.targetProduct!.name} (${opportunity.targetProduct!.itemCode}): ${price.targetPrice750 ? `$${price.targetPrice750.toFixed(2)} retail per 750ml equivalent` : 'catalog price unavailable'}`);
-      factors.push(`Same-category price fit: ${(price.comparableShare * 100).toFixed(1)}% of priced volume; ${price.comparableBottles.toFixed(1)} comparable 750ml-equivalent bottles`);
+      factors.push(`Same-category market fit: ${price.nonLocalComparableBottles.toFixed(1)} comparable non-Ohio bottles and ${price.localComparableBottles.toFixed(1)} comparable Ohio-owned bottles`);
       factors.push(`Price coverage ${(price.coverage * 100).toFixed(0)}%; ${(price.cheapShare * 100).toFixed(1)}% of priced category volume is below 60% of target price`);
-      factors.push(`Ohio-brand contribution ${price.localScore.toFixed(1)}/10; full credit requires a comparable category and price`);
+      factors.push(`General Ohio-brand contribution ${price.localScore.toFixed(1)}/2; Ohio-owned same-lane volume does not support a displacement pitch`);
       if (!price.targetPrice750 || price.coverage < .7) factors.push('Insufficient catalog price coverage; price suitability is unconfirmed');
       if (peer) factors.push(`Existing buyers of this product: ${peer.buyers} comparable accounts; peer contribution ${peer.score.toFixed(1)}/5`);
       if (learned) factors.push(`Validated tenant outcome adjustment ${learned.toFixed(1)} points`);
       if (price.mismatch) { score = Math.min(30, score - 20); factors.push('Purchasing is concentrated well below this product’s price; 20-point penalty and acquisition priority capped at 30'); }
+      if (price.localComparableBottles >= opportunityRules.localIncumbentBottles90Days) {
+        score = Math.min(20, score - 25);
+        factors.push(`Ohio-owned incumbent protection: ${price.localComparableBottles.toFixed(1)} comparable bottles; 25-point penalty and this product pitch is capped at 20`);
+      }
     } else if ((signals.ohioCraft9L ?? 0) > 0) factors.push('Legacy Ohio-brand volume is unverified for category and price; contributes at most 1 point');
     if (signals.observedSince) factors.push(`Available purchase observations begin ${signals.observedSince}; windows may be incomplete`);
     if (signals.targetTotalVolumePercentile !== null && signals.targetTotalVolumePercentile !== undefined) factors.push(`Sales volume percentile ${Math.round(Number(signals.targetTotalVolumePercentile))}`);

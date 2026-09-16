@@ -2,7 +2,19 @@ import { normalizeOpportunityCategory, type PortfolioCategory } from './opportun
 
 export type AffinityProduct = { itemCode: string; name: string; category: PortfolioCategory | null; price750: number | null; isLocal: boolean; priority: number };
 export type AffinityPurchase = { itemCode: string; category: PortfolioCategory | null; price750?: number | null; liters?: number; bottles90: number; isEcho: boolean; isLocal?: boolean };
-export type PriceEvidence = { coverage: number; comparableShare: number; comparableBottles: number; cheapShare: number; localScore: number; priceScore: number; mismatch: boolean; targetPrice750: number | null };
+export type PriceEvidence = {
+  coverage: number;
+  comparableShare: number;
+  comparableBottles: number;
+  nonLocalComparableBottles: number;
+  localComparableBottles: number;
+  cheapShare: number;
+  localScore: number;
+  priceScore: number;
+  marketPriceScore: number;
+  mismatch: boolean;
+  targetPrice750: number | null;
+};
 
 // OHLQ productvolume is US fluid ounces, not liters. Snap the rounded catalog
 // values to standard sizes before comparing 750ml-equivalent bottle prices.
@@ -20,7 +32,7 @@ export function pricePer750(retail: unknown, ounces: unknown): number | null {
 // Brand-specific evidence; a distributor's entire catalog is not Ohio-owned.
 // This intentionally small registry can be extended with verified brand identities.
 export function isKnownOhioBrand(name: string) {
-  return /\b(ECHO SPIRITS|NOBLE CUT|BUCKEYE VODKA|CAPITAL CITY (VODKA|RUM|SPICED RUM))\b/i.test(name);
+  return /\b(ECHO SPIRITS|NOBLE CUT|BUCKEYE VODKA|CAPITAL CITY (VODKA|RUM|SPICED RUM)|VOHIO(?: VODKA)?)\b/i.test(name);
 }
 export function toAffinityProduct(item: { itemCode: string; name: string; category: string | null; retailPrice: unknown; productVolume: unknown }, priority = 1): AffinityProduct {
   return { itemCode: item.itemCode, name: item.name, category: normalizeOpportunityCategory(item.category, item.name), price750: pricePer750(item.retailPrice, item.productVolume), isLocal: isKnownOhioBrand(item.name), priority };
@@ -36,16 +48,24 @@ export function getPriceEvidence(purchases: AffinityPurchase[], target: Affinity
   const comparableVolume = comparable.reduce((n,p) => n + volume(p), 0);
   const comparableBottles = comparableVolume / .75;
   const comparableShare = knownVolume ? comparableVolume / knownVolume : 0;
+  const localComparableVolume = comparable.filter(p => p.isLocal).reduce((n,p) => n + volume(p), 0);
+  const nonLocalComparableVolume = comparable.filter(p => !p.isLocal).reduce((n,p) => n + volume(p), 0);
+  const localComparableBottles = localComparableVolume / .75;
+  const nonLocalComparableBottles = nonLocalComparableVolume / .75;
   const cheapVolume = known.filter(p => target.price750 && p.price750! < target.price750 * .6).reduce((n,p) => n + volume(p), 0);
   const cheapShare = knownVolume ? cheapVolume / knownVolume : 0;
   const coverage = total ? knownVolume / total : 0;
-  const localComparable = comparable.filter(p => p.isLocal).reduce((n,p) => n + volume(p) / .75, 0);
   const anyLocal = purchases.some(p => p.isLocal && !p.isEcho && p.bottles90 > 0);
   return {
-    coverage, comparableShare, comparableBottles, cheapShare,
-    // A small local preference bonus; the meaningful bonus requires category AND price alignment.
-    localScore: (anyLocal ? 2 : 0) + Math.min(8, localComparable / 3),
-    priceScore: target.price750 ? (20 * comparableShare + 15 * Math.min(1, comparableBottles / 24)) * coverage : 0,
+    coverage, comparableShare, comparableBottles, nonLocalComparableBottles, localComparableBottles, cheapShare,
+    // Ohio purchasing is useful account-level craft evidence, but it must not
+    // make a tenant's product look like a good displacement pitch against an
+    // Ohio-owned incumbent in the same category and price lane.
+    localScore: anyLocal ? 2 : 0,
+    priceScore: target.price750
+      ? (20 * (knownVolume ? nonLocalComparableVolume / knownVolume : 0) + 15 * Math.min(1, nonLocalComparableBottles / 24)) * coverage
+      : 0,
+    marketPriceScore: target.price750 ? (20 * comparableShare + 15 * Math.min(1, comparableBottles / 24)) * coverage : 0,
     mismatch: Boolean(target.price750 && coverage >= .7 && knownVolume / .75 >= 6 && cheapShare >= .8 && comparableBottles < 3),
     targetPrice750: target.price750,
   };

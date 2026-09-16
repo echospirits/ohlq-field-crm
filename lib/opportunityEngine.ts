@@ -7,7 +7,7 @@ import { learnedAdjustment, labelMatureOutcome, outcomeSegment, trainOutcomeMode
 import { buildDailyPurchaseEvents } from './opportunitySalesLedger';
 import { getDistilleryOnlyItemCodes, isOpportunityEligibleOhlqProduct } from './ohlqProductEligibility';
 import { normalizeOpportunityCategory, OPPORTUNITY_RANKING_VERSION, OPPORTUNITY_RULES_VERSION, OPPORTUNITY_SIGNAL_VERSION, opportunityRules } from './opportunityConfig';
-import { detectOpportunityHypotheses, noCurrentOpportunityRank, RuleBasedOpportunityRanker, selectPrimaryOpportunity, type AccountOpportunitySignals } from './opportunityIntelligence';
+import { detectOpportunityHypotheses, noCurrentOpportunityRank, presentOpportunityHypothesis, RuleBasedOpportunityRanker, selectPrimaryOpportunity, type AccountOpportunitySignals } from './opportunityIntelligence';
 import { isDismissedOpportunityMatch } from './opportunityWorkflow';
 import { readPublicRatings } from './accountResearchQueue';
 
@@ -70,6 +70,10 @@ export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = 
       : [];
   });
   const portfolioItemCodes = new Set(portfolio.map(product => product.itemCode));
+  const eligibleCatalogItemCodes = new Set(productDecisions.flatMap((product) => {
+    const master = masterByCode.get(product.externalItemCode);
+    return master && isOpportunityEligibleOhlqProduct(master, distilleryOnlyItemCodes) ? [product.externalItemCode] : [];
+  }));
   const oldestDetection = historic.length ? new Date(Math.min(...historic.map(h => h.detectedAt.getTime()))) : asOfDate;
   const [outcomePurchases, completedReports, ledgerDates] = historic.length ? await Promise.all([
     db.accountSalesEvent.findMany({ where: { organizationId, sourceKey: { startsWith: 'DAILY_V3:' }, wholesaleAccountId: { in: historic.map(h => h.wholesaleAccountId) }, reportDate: { gte: oldestDetection, lte: asOfDate } }, select: { wholesaleAccountId: true, itemCode: true, reportDate: true } }),
@@ -234,9 +238,11 @@ export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = 
         const currentTargetProduct = original?.targetProduct
           ? portfolio.find((product) => product.itemCode === original.targetProduct!.itemCode)
           : null;
-        const hypothesis = original && currentTargetProduct
-          ? { ...original, targetProduct: currentTargetProduct }
-          : !original ? primary?.hypothesis : null;
+        const hypothesis = original?.targetProduct && currentTargetProduct
+          ? presentOpportunityHypothesis({ ...original, targetProduct: currentTargetProduct }, signal)
+          : original && !original.targetProduct
+            ? presentOpportunityHypothesis(original, signal)
+            : !original ? primary?.hypothesis : null;
         const ranking = hypothesis ? ranker.rank(hypothesis, signal) : noCurrentOpportunityRank();
         await db.salesOpportunity.update({
           where: { id: opportunity.id },
@@ -288,8 +294,30 @@ export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = 
         const currentTargetProduct = original?.targetProduct
           ? portfolio.find(p => p.itemCode === original.targetProduct!.itemCode)
           : null;
+        if (original?.targetProduct && !currentTargetProduct && eligibleCatalogItemCodes.has(original.targetProduct.itemCode)) {
+          await db.salesOpportunity.update({
+            where: { id: opportunity.id },
+            data: { status: OpportunityStatus.RESOLVED, activeAccountKey: null, resolvedAt: asOfDate },
+          });
+          await db.opportunityEvent.create({
+            data: {
+              organizationId,
+              opportunityId: opportunity.id,
+              eventType: OpportunityEventType.RESOLVED,
+              eventKey: `RESOLVED:PRODUCT_UNAVAILABLE:${dateOnly(asOfDate)}`,
+              wholesaleAccountId: account.id,
+              metadata: { targetItemCode: original.targetProduct.itemCode },
+              occurredAt: asOfDate,
+            },
+          }).catch(() => undefined);
+          await db.worklistItem.updateMany({
+            where: { organizationId, salesOpportunityId: opportunity.id, status: { in: [WorklistStatus.OPEN, WorklistStatus.IN_PROGRESS] } },
+            data: { status: WorklistStatus.CANCELLED, cancelledAt: asOfDate },
+          });
+          continue;
+        }
         if (original?.targetProduct && currentTargetProduct) {
-          hypothesis = { ...original, targetProduct: currentTargetProduct };
+          hypothesis = presentOpportunityHypothesis({ ...original, targetProduct: currentTargetProduct }, signal);
           ranking = ranker.rank(hypothesis, signal);
         }
         // Detection features remain immutable for honest outcome learning. Current

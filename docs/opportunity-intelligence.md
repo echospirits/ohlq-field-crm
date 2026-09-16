@@ -1,24 +1,28 @@
-# Tenant opportunity intelligence V3
+# Tenant opportunity intelligence V5
 
 ## Product-specific fit
 
-Opportunities are scored for an individual active OWNED or REPRESENTED organization product. Discontinued products and products with strategicPriority zero are excluded from new prospect recommendations. All owned products, including Capital City within Echo's tenant, remain eligible by default. Category, item identity and price come from the shared OHLQ catalog; purchasing, contacts, suppression, assignment, opportunities and outcome models are organization scoped.
+Account priority and product pitches are separate decisions. The default opportunity ranks the account using overall non-tenant volume, price readiness across the tenant portfolio, verified Ohio-craft affinity, public research, tenant relationship, and workload. It recommends exploring portfolio fit rather than naming a product.
+
+A product is named only when at least 12 comparable 750ml-equivalent bottles from non-Ohio brands were purchased in that category and price lane during the retained 90-day window. Six comparable bottles from a verified Ohio-owned incumbent blocks that displacement pitch. The account can remain valuable for other categories even when one category is protected. Discontinued products and products with strategicPriority zero remain excluded. All owned products, including Capital City within Echo's tenant, remain eligible when the evidence supports them. Category, item identity and price come from the shared OHLQ catalog; purchasing, contacts, suppression, assignment, opportunities and outcome models are organization scoped.
 
 Prices are current OHLQ retail prices normalized to 750ml. `productVolume` is US fluid ounces (25.4 = 750ml, 33.8 = 1L, 59.2 = 1.75L), not liters. These prices are a market-position proxy, not historical invoice prices.
 
-Price fit contributes up to 35 points: same-category volume share in a comparable price band (75–175% of the target price), plus actual comparable purchasing volume saturating at 24 equivalent bottles. Missing prices reduce the contribution. A mostly inexpensive account can still have a meaningful premium niche.
+For a specific pitch, price fit contributes up to 35 points from non-Ohio same-category volume in a comparable price band (75–175% of the target price), plus actual comparable purchasing volume saturating at 24 equivalent bottles. Ohio-owned incumbent volume still demonstrates account-level price readiness, but it does not support displacing that product. Missing prices reduce the contribution. A mostly inexpensive account can still have a meaningful premium niche.
 
 When price coverage is at least 70%, at least 12 equivalent bottles were observed, 80% or more is below 60% of the target's price, and fewer than six comparable bottles were purchased, the acquisition score is capped at 30. Existing-customer follow-up opportunities are not subject to that acquisition cap.
 
-Verified Ohio-brand purchasing adds at most two general preference points. Up to eight additional points require Ohio-brand purchases in the target category at comparable prices. No aggregate Ohio-liter or workbook-affinity bonus can make budget vodka look like premium rum affinity. The initial conservative registry covers Echo Spirits, Noble Cut, Buckeye Vodka and Capital City. Unlisted brands have unknown local status; extend it with verified brand identities, not distributor-wide assumptions.
+Verified Ohio-brand purchasing contributes up to ten account-level craft-affinity points, but never boosts a same-lane product displacement pitch. No aggregate Ohio-liter or workbook-affinity bonus can make budget vodka look like premium rum affinity. The conservative registry covers Echo Spirits, Noble Cut, Buckeye Vodka, Capital City, and Vohio. Unlisted brands have unknown local status; extend it with verified brand identities, not distributor-wide assumptions.
 
-Other components: base 10, category demand up to 15, public research up to 15, tenant relationship up to 10, contact urgency up to 5, buyer comparison up to 5, workload deduction up to 5, and validated outcome adjustment bounded to ±10. National-chain priorities retain the 20-point cap. Scores are prioritization points, not probabilities.
+Default account-fit components are overall volume up to 30, portfolio price readiness up to 25, Ohio-craft affinity up to 10, public research up to 15, tenant relationship up to 10, contact urgency up to 5, and workload deduction up to 5. A qualified product pitch instead uses category demand up to 15, non-Ohio price fit up to 35, public research up to 15, tenant relationship up to 10, buyer comparison up to 5, workload deduction up to 5, and validated outcome adjustment bounded to ±10. National-chain priorities retain the 20-point cap. Scores are prioritization points, not probabilities.
 
 Catalog category takes precedence over name matching; Rumple Minze is a cordial. Whiskey names use whole-word subtype recognition. Missing subtype information is not invented. Historical workbook price fits and private target scores no longer supply the price component.
 
-## Existing buyers
+## Existing buyers and incumbent protection
 
 For each product, compare same-category, non-tenant-product baskets at accounts buying at least two bottles of that particular product. One account gets one vote; exclude the account being scored. Capital City customers are not the evidence for premium Echo bourbon. Ten comparable independent buyer accounts are required before this contributes up to five points. This is descriptive similarity, not causality.
+
+Vohio purchasing at Vohio's price point cannot make Capital City Vodka a recommended pitch. It instead contributes to the account's general craft and price-readiness evidence while the vodka displacement lane is protected. A different tenant with a different portfolio receives its own hypotheses, price lanes, incumbent checks, buyer cohorts, and learned adjustments.
 
 ## Daily source and retained history
 

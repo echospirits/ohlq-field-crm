@@ -1,6 +1,6 @@
-export const OPPORTUNITY_RULES_VERSION = 'RULES_V3';
+export const OPPORTUNITY_RULES_VERSION = 'RULES_V5';
 export const OPPORTUNITY_SIGNAL_VERSION = 'SIGNALS_V3';
-export const OPPORTUNITY_RANKING_VERSION = 'PRICE_AFFINITY_V4';
+export const OPPORTUNITY_RANKING_VERSION = 'ACCOUNT_FIT_V5';
 
 export const opportunityRules = {
   lapseLookbackDays: 90,
@@ -8,6 +8,8 @@ export const opportunityRules = {
   firstOrderWindowDays: 30,
   noTouchDays: 45,
   minimumCategoryBottles90Days: 6,
+  specificPitchNonLocalBottles90Days: 12,
+  localIncumbentBottles90Days: 6,
   activePurchaseBottles90Days: 6,
   conversionWindowDays: 90,
   expirationDays: 120,

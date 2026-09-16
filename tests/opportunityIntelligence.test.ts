@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { OpportunityType } from '@prisma/client';
-import { analyzeActivityToPurchases, detectOpportunityHypotheses, noCurrentOpportunityRank, rescoreHistoricalSnapshot, RuleBasedOpportunityRanker, selectPrimaryOpportunity, type AccountOpportunitySignals } from '../lib/opportunityIntelligence';
+import { analyzeActivityToPurchases, detectOpportunityHypotheses, noCurrentOpportunityRank, presentOpportunityHypothesis, rescoreHistoricalSnapshot, RuleBasedOpportunityRanker, selectPrimaryOpportunity, type AccountOpportunitySignals } from '../lib/opportunityIntelligence';
 
 const base = (overrides: Partial<AccountOpportunitySignals> = {}): AccountOpportunitySignals => ({
   asOfDate: '2026-08-14', accountStatus: 'ACTIVE', assignedUserId: null, daysSinceLastEchoPurchase: null, daysSinceLastVisit: 60,
@@ -42,12 +42,38 @@ it('has no automatic baseline and lets a clearly poor price fit score zero', () 
   assert.match(result.factors.join(' '), /20-point penalty/i);
 });
 
+it('does not recommend displacing a comparable Ohio-owned incumbent', () => {
+  const capitalCity = { itemCode: 'CAPCITY', name: 'Capital City Vodka', category: 'VODKA' as const, price750: 7.49, isLocal: true, priority: 1 };
+  const signals = base({
+    portfolio: [capitalCity],
+    purchases: [item({ category: 'VODKA', itemCode: '9755L', itemName: 'VOHIO VODKA', isEcho: false, isLocal: true, price750: 6.74, bottles90: 120, currentAnnualBottles: 120 })],
+  });
+  const hypotheses = detectOpportunityHypotheses(signals);
+  assert.ok(hypotheses.some((hypothesis) => hypothesis.pitchMode === 'ACCOUNT_FIT'));
+  assert.ok(!hypotheses.some((hypothesis) => hypothesis.targetProduct?.itemCode === capitalCity.itemCode));
+  const retained = presentOpportunityHypothesis({ type: OpportunityType.CATEGORY_CONQUEST, targetProduct: capitalCity, targetCategory: 'VODKA', cycleKey: 'legacy', title: 'Introduce Capital City Vodka', recommendedAction: 'Discuss Capital City Vodka', explanation: [] }, signals);
+  assert.equal(retained.pitchMode, 'ACCOUNT_FIT');
+  assert.equal(retained.title, 'High-fit account');
+  assert.match(retained.explanation.join(' '), /not a recommended displacement pitch/i);
+});
+
+it('names a product only when a non-Ohio incumbent has meaningful comparable volume', () => {
+  const capitalCity = { itemCode: 'CAPCITY', name: 'Capital City Vodka', category: 'VODKA' as const, price750: 7.49, isLocal: true, priority: 1 };
+  const signals = base({
+    portfolio: [capitalCity],
+    purchases: [item({ category: 'VODKA', itemCode: 'NONLOCAL', itemName: 'National Value Vodka', isEcho: false, isLocal: false, price750: 7.25, bottles90: 24, currentAnnualBottles: 24 })],
+  });
+  const specific = detectOpportunityHypotheses(signals).find((hypothesis) => hypothesis.targetProduct?.itemCode === capitalCity.itemCode);
+  assert.equal(specific?.pitchMode, 'SPECIFIC_PRODUCT');
+  assert.match(specific?.title ?? '', /Capital City Vodka/);
+});
+
 it('resets an opportunity with no current qualifying signals to zero', () => {
   assert.deepEqual(noCurrentOpportunityRank(), {
     score: 0,
     priorityBand: 'LOW',
     factors: ['No current qualifying opportunity signals', 'Score components: no baseline points'],
-    version: 'PRICE_AFFINITY_V4',
+    version: 'ACCOUNT_FIT_V5',
   });
 });
 

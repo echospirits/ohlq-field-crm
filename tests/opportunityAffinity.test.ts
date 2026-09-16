@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { it } from 'node:test';
-import { pricePer750, getPriceEvidence, compareWithBuyers, type AffinityProduct, type AffinityPurchase } from '../lib/opportunityAffinity';
+import { pricePer750, getPriceEvidence, compareWithBuyers, isKnownOhioBrand, type AffinityProduct, type AffinityPurchase } from '../lib/opportunityAffinity';
 import { normalizeOpportunityCategory } from '../lib/opportunityConfig';
 import { buildDailyPurchaseEvents } from '../lib/opportunitySalesLedger';
 import { trainOutcomeModel, learnedAdjustment, labelMatureOutcome, type OutcomeExample } from '../lib/opportunityLearning';
@@ -27,13 +27,17 @@ it('cheap Ohio vodka cannot provide category or price affinity for premium rum',
   assert.equal(evidence.priceScore, 0);
   assert.equal(evidence.mismatch, true);
 });
-it('regular comparable buying matters and comparable Ohio buying adds a bounded bonus', () => {
+it('regular comparable buying supports a product pitch while Ohio incumbents only support account-level affinity', () => {
   const ordinary = getPriceEvidence([purchase()], rum);
   const local = getPriceEvidence([purchase({ isLocal: true })], rum);
   assert.equal(ordinary.priceScore, 35);
-  assert.equal(local.localScore, 10);
-  assert.ok(ordinary.priceScore > local.localScore);
+  assert.equal(local.localScore, 2);
+  assert.equal(local.priceScore, 0);
+  assert.equal(local.marketPriceScore, 35);
+  assert.equal(local.localComparableBottles, 36);
+  assert.equal(local.nonLocalComparableBottles, 0);
 });
+it('recognizes Vohio as an Ohio-owned incumbent', () => assert.equal(isKnownOhioBrand('VOHIO VODKA'), true));
 it('a cheap-volume account with a real premium niche is not categorically disqualified', () => {
   const evidence = getPriceEvidence([purchase({ bottles90: 1000, price750: 5 }), purchase({ bottles90: 24, price750: 35 })], rum);
   assert.equal(evidence.mismatch, false);
