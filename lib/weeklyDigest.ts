@@ -12,6 +12,7 @@ import { APP_COMPANY, APP_NAME } from './appBrand';
 import { EASTERN_TIME_ZONE } from './dateTime';
 import { getEmailAppBaseUrl, sendEmail, type SendEmailFn } from './email/sendEmail';
 import { prisma } from './prisma';
+import { ECHO_ORGANIZATION_ID } from './organizations';
 import { formatWholesaleLicenseeIds } from './wholesaleAccounts';
 
 export const DEFAULT_DIGEST_TIME_ZONE = EASTERN_TIME_ZONE;
@@ -1196,14 +1197,18 @@ export async function sendAdminWeeklyDigestToUser(
   },
 ) {
   const window = options?.window ?? getWeeklyDigestWindow();
-  const [adminUser, digest] = await Promise.all([
-    prisma.user.findUnique({ where: { id: adminUserId }, select: { id: true, email: true, role: true, organizationId: true } }),
-    prisma.user.findUnique({ where: { id: adminUserId }, select: { organizationId: true } }).then((user) => user?.organizationId ? getAdminWeeklyDigest(window, user.organizationId) : Promise.reject(new Error('Admin organization not found'))),
-  ]);
+  const adminUser = await prisma.user.findUnique({
+    where: { id: adminUserId },
+    select: { id: true, email: true, role: true, organizationId: true },
+  });
+  const organizationId = adminUser?.role === UserRole.PLATFORM_ADMIN
+    ? ECHO_ORGANIZATION_ID
+    : adminUser?.organizationId;
 
-  if (!adminUser || adminUser.role !== UserRole.ADMIN || !adminUser.organizationId) {
+  if (!adminUser || (adminUser.role !== UserRole.ADMIN && adminUser.role !== UserRole.PLATFORM_ADMIN) || !organizationId) {
     throw new Error('Admin recipient not found');
   }
+  const digest = await getAdminWeeklyDigest(window, organizationId);
 
   const recipientEmail = options?.recipientEmail ?? adminUser.email;
 
@@ -1219,7 +1224,7 @@ export async function sendAdminWeeklyDigestToUser(
   return sendRenderedDigestWithLog({
     digestType: WeeklyDigestType.ADMIN_WEEKLY,
     recipientUserId: adminUser.id,
-    organizationId: adminUser.organizationId,
+    organizationId,
     recipientEmail,
     window,
     rendered: renderAdminWeeklyDigestEmail(digest, options?.appBaseUrl),
@@ -1255,7 +1260,15 @@ export async function sendWeeklyDigestForAllUsers(
   const window = options?.window ?? getWeeklyDigestWindow();
   const entitledOrganizations = await prisma.organizationFeature.findMany({ where: { featureKey: 'WEEKLY_DIGEST', enabled: true, organization: { active: true, accountStatus: { notIn: ['SUSPENDED', 'CANCELLED'] } } }, select: { organizationId: true } });
   const recipients = await prisma.user.findMany({
-    where: { organizationId: { in: entitledOrganizations.map((item) => item.organizationId) }, isActive: true, role: { notIn: [UserRole.TASTER, UserRole.PLATFORM_ADMIN] } },
+    where: {
+      isActive: true,
+      OR: [
+        { organizationId: { in: entitledOrganizations.map((item) => item.organizationId) }, role: { notIn: [UserRole.TASTER, UserRole.PLATFORM_ADMIN] } },
+        ...(entitledOrganizations.some((item) => item.organizationId === ECHO_ORGANIZATION_ID)
+          ? [{ role: UserRole.PLATFORM_ADMIN }]
+          : []),
+      ],
+    },
     orderBy: [{ organizationId: 'asc' }, { role: 'asc' }, { lastName: 'asc' }, { firstName: 'asc' }, { email: 'asc' }],
     select: { id: true, organizationId: true, email: true, firstName: true, lastName: true, name: true, role: true, isActive: true },
   });
@@ -1263,7 +1276,7 @@ export async function sendWeeklyDigestForAllUsers(
   const results: DigestSendResult[] = [];
 
   for (const recipient of usersWithEmail) {
-    if (recipient.role === UserRole.ADMIN) {
+    if (recipient.role === UserRole.ADMIN || recipient.role === UserRole.PLATFORM_ADMIN) {
       results.push(
         await sendAdminWeeklyDigestToUser(recipient.id, {
           window,
