@@ -51,6 +51,10 @@ async function main() {
       distinct: ['wholesaleAccountId'],
       select: { wholesaleAccountId: true },
     });
+    if (opportunities.length === 0) {
+      results.push({ organization: organization.displayName, organizationId: organization.id, skipped: 'no preserved-status opportunities' });
+      continue;
+    }
     const before = await workflowSnapshot(organization.id);
     const result = await evaluateOpportunityIntelligence({
       db,
