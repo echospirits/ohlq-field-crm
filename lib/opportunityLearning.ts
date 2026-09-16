@@ -1,6 +1,7 @@
 import { createHash } from 'crypto';
 import type { AccountOpportunitySignals, OpportunityHypothesis } from './opportunityIntelligence';
 import { getPriceEvidence } from './opportunityAffinity';
+import { opportunityRules } from './opportunityConfig';
 
 export type OutcomeExample = { accountId: string; detectedAt: string; converted: boolean; key: string };
 export type OutcomeModel = { version: string; trainingCount: number; holdoutCount: number; conversions: number; active: boolean; baseline: number; rates: Record<string, number>; brier: number | null; baselineBrier: number | null; reason: string };
@@ -8,7 +9,7 @@ export function outcomeSegment(signals: AccountOpportunitySignals, hypothesis: O
   if (!hypothesis.targetProduct) return null;
   const evidence = getPriceEvidence(signals.purchases, hypothesis.targetProduct);
   if (evidence.coverage < .7 || !evidence.targetPrice750) return null;
-  const incumbent = evidence.localComparableBottles >= 6
+  const incumbent = evidence.localComparableBottles >= opportunityRules.localIncumbentBottles90Days
     ? 'local-incumbent'
     : evidence.nonLocalComparableBottles >= 12
       ? 'nonlocal-opportunity'

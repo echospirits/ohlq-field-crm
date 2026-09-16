@@ -46,7 +46,10 @@ it('does not recommend displacing a comparable Ohio-owned incumbent', () => {
   const capitalCity = { itemCode: 'CAPCITY', name: 'Capital City Vodka', category: 'VODKA' as const, price750: 7.49, isLocal: true, priority: 1 };
   const signals = base({
     portfolio: [capitalCity],
-    purchases: [item({ category: 'VODKA', itemCode: '9755L', itemName: 'VOHIO VODKA', isEcho: false, isLocal: true, price750: 6.74, bottles90: 120, currentAnnualBottles: 120 })],
+    purchases: [
+      item({ category: 'VODKA', itemCode: '9755L', itemName: 'VOHIO VODKA', isEcho: false, isLocal: true, price750: 6.74, bottles90: 1, currentAnnualBottles: 1 }),
+      item({ category: 'VODKA', itemCode: 'NONLOCAL', itemName: 'National Value Vodka', isEcho: false, isLocal: false, price750: 7.25, bottles90: 24, currentAnnualBottles: 24 }),
+    ],
   });
   const hypotheses = detectOpportunityHypotheses(signals);
   assert.ok(hypotheses.some((hypothesis) => hypothesis.pitchMode === 'ACCOUNT_FIT'));

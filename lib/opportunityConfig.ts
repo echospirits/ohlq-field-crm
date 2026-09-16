@@ -9,7 +9,7 @@ export const opportunityRules = {
   noTouchDays: 45,
   minimumCategoryBottles90Days: 6,
   specificPitchNonLocalBottles90Days: 12,
-  localIncumbentBottles90Days: 6,
+  localIncumbentBottles90Days: 1,
   activePurchaseBottles90Days: 6,
   conversionWindowDays: 90,
   expirationDays: 120,
