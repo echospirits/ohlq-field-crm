@@ -12,6 +12,7 @@ import {
   type AccountResearchInputSnapshot,
 } from './accountResearchPilot';
 import { assertAccountResearchAutomationEnabled } from './accountResearchOpenAI';
+import { ACCOUNT_RESEARCH_ACTIONABLE_REVIEW_PREFIX } from './accountResearchFailures';
 import { pollAccountResearchPilot, submitQueuedPilotJobs } from './accountResearchPilotService';
 import { prisma } from './prisma';
 
@@ -23,7 +24,7 @@ const startOfUtcDay = (now: Date) => new Date(Date.UTC(now.getUTCFullYear(), now
 export async function getAutomaticAccountResearchStatus({ db = prisma, now = new Date() }: { db?: PrismaClient; now?: Date } = {}) {
   const today = startOfUtcDay(now);
   const automaticJobs = { pilot: { startedByUserId: ACCOUNT_RESEARCH_AUTOMATIC_RUN_ACTOR } };
-  const [queue, submittedToday, uniqueAccountRowsToday, todayStatusCounts, allTimeStatusCounts, outstandingJobs, latestRun] = await Promise.all([
+  const [queue, submittedToday, uniqueAccountRowsToday, todayStatusCounts, allTimeStatusCounts, actionableFailuresToday, actionableFailuresAllTime, outstandingJobs, latestRun] = await Promise.all([
     getPrioritizedAccountResearchQueue({ db, now, limit: null }),
     db.accountResearchJob.count({
       where: { submittedAt: { gte: today }, ...automaticJobs },
@@ -35,6 +36,12 @@ export async function getAutomaticAccountResearchStatus({ db = prisma, now = new
     }),
     db.accountResearchJob.groupBy({ by: ['status'], where: { submittedAt: { gte: today }, ...automaticJobs }, _count: { _all: true } }),
     db.accountResearchJob.groupBy({ by: ['status'], where: automaticJobs, _count: { _all: true } }),
+    db.accountResearchJob.count({
+      where: { submittedAt: { gte: today }, status: AccountResearchJobStatus.REJECTED, reviewNote: { startsWith: ACCOUNT_RESEARCH_ACTIONABLE_REVIEW_PREFIX }, ...automaticJobs },
+    }),
+    db.accountResearchJob.count({
+      where: { status: AccountResearchJobStatus.REJECTED, reviewNote: { startsWith: ACCOUNT_RESEARCH_ACTIONABLE_REVIEW_PREFIX }, ...automaticJobs },
+    }),
     db.accountResearchJob.count({
       where: { status: { in: [AccountResearchJobStatus.QUEUED, ...ACTIVE_JOB_STATUSES] }, pilot: { startedByUserId: ACCOUNT_RESEARCH_AUTOMATIC_RUN_ACTOR } },
     }),
@@ -56,10 +63,12 @@ export async function getAutomaticAccountResearchStatus({ db = prisma, now = new
     submittedToday,
     uniqueAccountsSubmittedToday: uniqueAccountRowsToday.length,
     approvedToday: todayCounts.APPROVED ?? 0,
-    failedToday: (todayCounts.FAILED ?? 0) + (todayCounts.BLOCKED_BUDGET ?? 0),
-    rejectedToday: todayCounts.REJECTED ?? 0,
-    failedAttempts: (allTimeCounts.FAILED ?? 0) + (allTimeCounts.BLOCKED_BUDGET ?? 0),
-    rejectedAttempts: allTimeCounts.REJECTED ?? 0,
+    failedToday: actionableFailuresToday,
+    unsuccessfulToday: (todayCounts.FAILED ?? 0) + (todayCounts.BLOCKED_BUDGET ?? 0),
+    rejectedToday: Math.max(0, (todayCounts.REJECTED ?? 0) - actionableFailuresToday),
+    failedAttempts: actionableFailuresAllTime,
+    unsuccessfulAttempts: (allTimeCounts.FAILED ?? 0) + (allTimeCounts.BLOCKED_BUDGET ?? 0),
+    rejectedAttempts: Math.max(0, (allTimeCounts.REJECTED ?? 0) - actionableFailuresAllTime),
     latestRun,
   };
 }

@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { it } from 'node:test';
-import { OpportunityStatus } from '@prisma/client';
-import { ACCOUNT_RESEARCH_TERMINAL_RETRY_COOLDOWN_DAYS, classifyResearchNeed, createResearchIdentitySnapshot, hasResearchIdentityChanged, readBusinessHours, readPublicRatings, type ResearchQueueCandidate } from '../lib/accountResearchQueue';
+import { AccountResearchJobStatus, OpportunityStatus } from '@prisma/client';
+import { ACCOUNT_RESEARCH_TERMINAL_RETRY_COOLDOWN_DAYS, classifyResearchNeed, createResearchIdentitySnapshot, hasResearchIdentityChanged, readBusinessHours, readPublicRatings, shouldDeferResearchRetry, type ResearchQueueCandidate } from '../lib/accountResearchQueue';
+import { accountResearchFailureReason, isActionableAccountResearchFailure, isUnsuccessfulAccountResearchAttempt } from '../lib/accountResearchFailures';
 import { opportunityTerritoryForCounty, territoryCoverageDeficits } from '../lib/opportunityTerritories';
 
 const now = new Date('2026-09-15T16:00:00.000Z');
@@ -80,12 +81,16 @@ it('refreshes research-driven opportunity scores independently for every entitle
   assert.match(scoring, /organizationId: scope\.id/);
 });
 
-it('keeps recent failures and validation declines out of the front of the research queue', () => {
+it('returns operational failures to the queue while deferring unchanged account-location failures', () => {
   assert.equal(ACCOUNT_RESEARCH_TERMINAL_RETRY_COOLDOWN_DAYS, 7);
-  const queue = readFileSync('lib/accountResearchQueue.ts', 'utf8');
-  assert.match(queue, /TERMINAL_RESEARCH_RETRY_STATUSES/);
-  assert.match(queue, /createdAt: \{ gte: ageCutoff\(now, ACCOUNT_RESEARCH_TERMINAL_RETRY_COOLDOWN_DAYS\) \}/);
-  assert.match(queue, /leftIsRetry - rightIsRetry/);
+  const usageFailure = { status: AccountResearchJobStatus.FAILED, error: 'You have no credits remaining.', reviewNote: null, createdAt: daysAgo(1), submittedAt: daysAgo(1), inputSnapshot: null };
+  const locationFailure = { status: AccountResearchJobStatus.REJECTED, error: null, reviewNote: 'Automatically declined: exact-location validation failed. Street address did not match.', createdAt: daysAgo(1), submittedAt: daysAgo(1), inputSnapshot: createResearchIdentitySnapshot(candidate()) };
+  assert.equal(isUnsuccessfulAccountResearchAttempt(usageFailure), true);
+  assert.equal(shouldDeferResearchRetry(candidate({ accountResearchJobs: [usageFailure] }), now), false);
+  assert.equal(isActionableAccountResearchFailure(locationFailure), true);
+  assert.equal(accountResearchFailureReason(locationFailure), 'Street address did not match.');
+  assert.equal(shouldDeferResearchRetry(candidate({ accountResearchJobs: [locationFailure] }), now), true);
+  assert.equal(shouldDeferResearchRetry(candidate({ address: '2 Main St', accountResearchJobs: [locationFailure] }), now), false);
 });
 
 it('stores and reads source-attributed public research without changing identity comparisons', () => {

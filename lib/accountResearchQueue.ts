@@ -1,6 +1,7 @@
 import { AccountResearchJobStatus, OpportunityStatus, WorklistStatus, type PrismaClient } from '@prisma/client';
 import { ACCOUNT_RESEARCH_MINIMUM_BOTTLES_30 } from './accountResearchPilot';
 import type { AccountResearchResult } from './accountResearchPilot';
+import { isActionableAccountResearchFailure } from './accountResearchFailures';
 import { opportunityTerritoryForCounty, territoryCoverageDeficits } from './opportunityTerritories';
 import { prisma } from './prisma';
 
@@ -44,7 +45,14 @@ export type ResearchQueueCandidate = {
   targetPublicResearch: { lastRefreshedAt: Date | null; identitySnapshot: unknown } | null;
   opportunities: Array<{ productionScore: number; status: OpportunityStatus; actionedAt: Date | null; lastDetectedAt: Date }>;
   upcomingWork: Array<{ dueDate: Date | null; createdAt: Date }>;
-  accountResearchJobs?: Array<{ status: AccountResearchJobStatus; submittedAt: Date | null; createdAt: Date }>;
+  accountResearchJobs?: Array<{
+    status: AccountResearchJobStatus;
+    submittedAt: Date | null;
+    createdAt: Date;
+    error?: string | null;
+    reviewNote?: string | null;
+    inputSnapshot?: unknown;
+  }>;
   bottles30: number;
 };
 
@@ -136,6 +144,20 @@ export const hasResearchIdentityChanged = (
     || normalized(candidate.zip) !== normalized(prior.zip);
 };
 
+export function shouldDeferResearchRetry(
+  candidate: Pick<ResearchQueueCandidate, 'name' | 'address' | 'city' | 'state' | 'zip' | 'accountResearchJobs'>,
+  now = new Date(),
+) {
+  const latestAttempt = candidate.accountResearchJobs?.[0];
+  if (!latestAttempt || latestAttempt.createdAt < ageCutoff(now, ACCOUNT_RESEARCH_TERMINAL_RETRY_COOLDOWN_DAYS)) return false;
+  // Provider, billing, rate-limit, and other operational failures are unsuccessful
+  // attempts, not account defects. They immediately return to queue eligibility.
+  if (!isActionableAccountResearchFailure(latestAttempt)) return false;
+  // Once the user corrects the submitted identity, do not make them wait for the
+  // normal cooldown before trying the account again.
+  return !hasResearchIdentityChanged(candidate, latestAttempt.inputSnapshot);
+}
+
 export function classifyResearchNeed(candidate: ResearchQueueCandidate, now = new Date()): ResearchQueueItem | null {
   const refreshedAt = candidate.targetPublicResearch?.lastRefreshedAt ?? null;
   const stale30 = isOlderThan(refreshedAt, ageCutoff(now, 30));
@@ -179,10 +201,6 @@ export async function getPrioritizedAccountResearchQueue({
       zip: { not: null },
       accountResearchJobs: { none: { OR: [
         { status: { in: ACTIVE_RESEARCH_JOB_STATUSES } },
-        {
-          status: { in: TERMINAL_RESEARCH_RETRY_STATUSES },
-          createdAt: { gte: ageCutoff(now, ACCOUNT_RESEARCH_TERMINAL_RETRY_COOLDOWN_DAYS) },
-        },
       ] } },
     },
     select: {
@@ -201,7 +219,7 @@ export async function getPrioritizedAccountResearchQueue({
         where: { status: { in: TERMINAL_RESEARCH_RETRY_STATUSES } },
         orderBy: { createdAt: 'desc' },
         take: 1,
-        select: { status: true, submittedAt: true, createdAt: true },
+        select: { status: true, submittedAt: true, createdAt: true, error: true, reviewNote: true, inputSnapshot: true },
       },
     },
   });
@@ -240,6 +258,7 @@ export async function getPrioritizedAccountResearchQueue({
   }
   const coverageDeficits = territoryCoverageDeficits(accounts);
   const queue = accounts
+    .filter((account) => !shouldDeferResearchRetry(account, now))
     .map((account) => classifyResearchNeed({
       ...account,
       upcomingWork: workByAccount.get(account.id) ?? [],
@@ -256,8 +275,8 @@ export async function getPrioritizedAccountResearchQueue({
       const leftScore = Math.max(0, ...left.opportunities.map((item) => item.productionScore));
       const rightScore = Math.max(0, ...right.opportunities.map((item) => item.productionScore));
       return left.priorityBucket - right.priorityBucket
-        || rightCoverageDeficit - leftCoverageDeficit
         || leftIsRetry - rightIsRetry
+        || rightCoverageDeficit - leftCoverageDeficit
         || leftRefresh - rightRefresh
         || rightScore - leftScore
         || left.name.localeCompare(right.name);

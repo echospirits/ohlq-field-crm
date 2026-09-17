@@ -9,8 +9,8 @@ import { buildPageMetadata } from '../../../lib/appBrand';
 import { requirePlatformAdmin } from '../../../lib/auth';
 import { ACCOUNT_RESEARCH_AUTOMATIC_DAILY_BUDGET_MICROS, ACCOUNT_RESEARCH_AUTOMATIC_DAILY_LIMIT, ACCOUNT_RESEARCH_MINIMUM_BOTTLES_30, ACCOUNT_RESEARCH_PILOT_BUDGET_MICROS, ACCOUNT_RESEARCH_PILOT_MAX_ACCOUNTS, ACCOUNT_RESEARCH_SUBMISSION_WAVE_SIZE, formatUsdMicros } from '../../../lib/accountResearchPilot';
 import { getAutomaticAccountResearchStatus } from '../../../lib/accountResearchAutomation';
-import { ACCOUNT_RESEARCH_TERMINAL_RETRY_COOLDOWN_DAYS } from '../../../lib/accountResearchQueue';
 import { getAccountResearchAutomationAvailability, getAccountResearchPilotAvailability } from '../../../lib/accountResearchOpenAI';
+import { ACCOUNT_RESEARCH_ACTIONABLE_REVIEW_PREFIX, accountResearchFailureReason, isActionableAccountResearchFailure, isUnsuccessfulAccountResearchAttempt } from '../../../lib/accountResearchFailures';
 import { deriveSettledPilotStatus, getLatestAccountResearchPilot } from '../../../lib/accountResearchPilotService';
 import { formatEasternDateTime } from '../../../lib/dateTime';
 import { prisma } from '../../../lib/prisma';
@@ -36,27 +36,31 @@ const statusMessage = (params: PageParams) => {
   if (params.status === 'invalid-file') return 'Upload a .csv file generated from the research queue.';
   if (params.status === 'pilot-started') return `Test run started. ${params.submitted ?? '0'} account research jobs were submitted in the background.`;
   if (params.status === 'pilot-continued') return `The next wave of ${params.submitted ?? '0'} account research jobs was submitted.`;
-  if (params.status === 'pilot-paused') return `Test run paused after ${params.submitted ?? '0'} submissions and ${params.failed ?? '0'} failure(s). ${params.remaining ?? '0'} queued accounts were not sent.`;
-  if (params.status === 'pilot-checked') return `Checked ${params.checked ?? '0'} jobs: ${params.applied ?? '0'} automatically applied, ${params.rejected ?? '0'} declined by validation, ${params.pending ?? '0'} still running, and ${params.failed ?? '0'} failed.`;
+  if (params.status === 'pilot-paused') return `Test run paused after ${params.submitted ?? '0'} submissions and ${params.failed ?? '0'} unsuccessful attempt(s). ${params.remaining ?? '0'} queued accounts were not sent.`;
+  if (params.status === 'pilot-checked') return `Checked ${params.checked ?? '0'} jobs: ${params.applied ?? '0'} automatically applied, ${params.rejected ?? '0'} declined by validation, ${params.pending ?? '0'} still running, and ${params.failed ?? '0'} unsuccessful.`;
   if (params.status === 'pilot-approved') return 'Research approved, saved to the account, and its opportunity score recalculated.';
   if (params.status === 'pilot-rejected') return 'Research rejected. No account research or opportunity score was changed.';
   if (params.status === 'pilot-failed') return 'The test run action could not be completed. No unvalidated research was applied.';
   return null;
 };
 
-const jobStatusLabel = (status: AccountResearchJobStatus) => status.replaceAll('_', ' ').toLowerCase();
+const jobStatusLabel = (job: { status: AccountResearchJobStatus; error?: string | null; reviewNote?: string | null }) => {
+  if (isActionableAccountResearchFailure(job)) return 'needs correction';
+  if (isUnsuccessfulAccountResearchAttempt(job)) return 'unsuccessful';
+  return job.status.replaceAll('_', ' ').toLowerCase();
+};
 const friendlyPilotError = (errors: Array<string | null>) => {
   const error = errors.find(Boolean) ?? '';
   if (/no credits remaining|insufficient_quota|billing quota|run out of credits/i.test(error)) {
     return 'OpenAI API credits were unavailable when this test ran. No research was applied. After adding credits, start a new test run below.';
   }
   if (/rate.limit|requests.per.minute|tokens.per.minute/i.test(error)) {
-    return 'OpenAI temporarily rate-limited this test run. No failed result was applied. Start a new test run when capacity is available.';
+    return 'OpenAI temporarily rate-limited this test run. No incomplete result was applied. Start a new test run when capacity is available.';
   }
   if (/401|invalid.api.key|authentication/i.test(error)) {
     return 'OpenAI could not authenticate the API key. No research was applied. Correct the key before starting a new test run.';
   }
-  return 'One or more research jobs failed. No failed result was applied. Review the job ledger for details, then start a new test run when the issue is resolved.';
+  return 'One or more research attempts were unsuccessful. No incomplete result was applied. Review the job ledger for details, then start a new test run when the issue is resolved.';
 };
 
 export default async function AccountResearchPage({ searchParams }: { searchParams?: Promise<PageParams> }) {
@@ -69,7 +73,7 @@ export default async function AccountResearchPage({ searchParams }: { searchPara
   // Public account research is shared reference data, so Platform Admin history
   // must include researched accounts even before a tenant opportunity exists.
   const researchWhere = { lastRefreshedAt: { not: null as null } };
-  const [automaticStatus, latestResearch, completedCount, pilot, researchHistoryCount, researchHistory] = await Promise.all([
+  const [automaticStatus, latestResearch, completedCount, pilot, researchHistoryCount, researchHistory, actionableFailureAttempts] = await Promise.all([
     getAutomaticAccountResearchStatus(),
     prisma.targetPublicResearch.findFirst({ where: researchWhere, orderBy: { updatedAt: 'desc' }, select: { updatedAt: true } }),
     prisma.targetPublicResearch.count({ where: { refreshStatus: 'COMPLETE' } }),
@@ -98,6 +102,31 @@ export default async function AccountResearchPage({ searchParams }: { searchPara
         } },
       },
     }),
+    prisma.accountResearchJob.findMany({
+      where: {
+        status: AccountResearchJobStatus.REJECTED,
+        reviewNote: { startsWith: ACCOUNT_RESEARCH_ACTIONABLE_REVIEW_PREFIX },
+      },
+      orderBy: [{ reviewedAt: 'desc' }, { updatedAt: 'desc' }],
+      select: {
+        id: true,
+        status: true,
+        error: true,
+        reviewNote: true,
+        inputSnapshot: true,
+        reviewedAt: true,
+        completedAt: true,
+        updatedAt: true,
+        wholesaleAccount: { select: {
+          id: true,
+          name: true,
+          licenseeId: true,
+          address: true,
+          city: true,
+          targetPublicResearch: { select: { lastRefreshedAt: true } },
+        } },
+      },
+    }),
   ]);
   const availability = getAccountResearchPilotAvailability();
   const automationAvailability = getAccountResearchAutomationAvailability();
@@ -107,9 +136,27 @@ export default async function AccountResearchPage({ searchParams }: { searchPara
   const reviewJobs = pilot?.jobs.filter((job) => job.status === AccountResearchJobStatus.NEEDS_REVIEW) ?? [];
   const queuedJobs = counts.get(AccountResearchJobStatus.QUEUED) ?? 0;
   const runningJobs = (counts.get(AccountResearchJobStatus.SUBMITTED) ?? 0) + (counts.get(AccountResearchJobStatus.RUNNING) ?? 0);
-  const failedJobs = (counts.get(AccountResearchJobStatus.FAILED) ?? 0) + (counts.get(AccountResearchJobStatus.BLOCKED_BUDGET) ?? 0);
+  const actionablePilotFailures = pilot?.jobs.filter(isActionableAccountResearchFailure) ?? [];
+  const unsuccessfulJobs = pilot?.jobs.filter(isUnsuccessfulAccountResearchAttempt) ?? [];
+  const failedJobs = actionablePilotFailures.length;
+  const unresolvedFailureMap = new Map<string, typeof actionableFailureAttempts[number]>();
+  for (const attempt of actionableFailureAttempts) {
+    const failedAt = attempt.reviewedAt ?? attempt.completedAt ?? attempt.updatedAt;
+    const refreshedAt = attempt.wholesaleAccount.targetPublicResearch?.lastRefreshedAt;
+    if (refreshedAt && refreshedAt > failedAt) continue;
+    if (!unresolvedFailureMap.has(attempt.wholesaleAccount.id)) unresolvedFailureMap.set(attempt.wholesaleAccount.id, attempt);
+  }
+  const unresolvedFailures = [...unresolvedFailureMap.values()];
   const settledStatus = pilot ? deriveSettledPilotStatus(Object.fromEntries(counts)) : null;
   const displayedPilotStatus = settledStatus ?? pilot?.status;
+  const displayedPilotStatusLabel = displayedPilotStatus === AccountResearchPilotStatus.FAILED && unsuccessfulJobs.length > 0 && failedJobs === 0
+    ? 'unsuccessful'
+    : displayedPilotStatus?.replaceAll('_', ' ').toLowerCase();
+  const automaticRunStatusLabel = automaticStatus.latestRun?.status === AccountResearchPilotStatus.FAILED
+    && automaticStatus.unsuccessfulToday > 0
+    && automaticStatus.failedToday === 0
+    ? 'unsuccessful'
+    : automaticStatus.latestRun?.status.replaceAll('_', ' ').toLowerCase();
   const canStartNewPilot = !pilot
     || displayedPilotStatus === AccountResearchPilotStatus.COMPLETE
     || displayedPilotStatus === AccountResearchPilotStatus.FAILED
@@ -124,7 +171,7 @@ export default async function AccountResearchPage({ searchParams }: { searchPara
       <div className="grid target-import-stats">
         <div className="card metric-card"><h3>Needing intelligence</h3><p className="metric-value">{automaticStatus.queueCount}</p><p className="muted">Prioritized across all tenant activity; oldest routine refreshes come last</p></div>
         <div className="card metric-card"><h3>Accounts researched</h3><p className="metric-value">{completedCount}</p><p className="muted">Completed public research across all accounts</p></div>
-        <div className="card metric-card"><h3>Failed attempts</h3><p className="metric-value">{automaticStatus.failedAttempts.toLocaleString()}</p><p className="muted">No research was saved. Failed and declined accounts wait {ACCOUNT_RESEARCH_TERMINAL_RETRY_COOLDOWN_DAYS} days before retry; {automaticStatus.rejectedAttempts.toLocaleString()} attempts were declined by validation.</p></div>
+        <div className="card metric-card"><h3>Failures to fix</h3><p className="metric-value">{unresolvedFailures.length.toLocaleString()}</p><p className="muted">Account identity or location issues that may need a correction. Operationally unsuccessful attempts return to the research queue.</p></div>
         <div className="card metric-card"><h3>Latest update</h3><p className="metric-value metric-date">{formatEasternDateTime(latestResearch?.updatedAt) || 'Never'}</p></div>
       </div>
 
@@ -134,7 +181,7 @@ export default async function AccountResearchPage({ searchParams }: { searchPara
           <div className="research-pilot-summary">
             <div><span className={`status-badge ${automationAvailability.available ? '' : 'muted'}`}>{automationAvailability.available ? 'Enabled' : 'Disabled here'}</span><strong>{automaticStatus.queueCount.toLocaleString()} accounts queued</strong><small>{automaticStatus.submittedToday.toLocaleString()} attempts today · {automaticStatus.uniqueAccountsSubmittedToday.toLocaleString()} unique accounts</small></div>
             <div><strong>Priority queue</strong><small>{automaticStatus.byPriority[1] ?? 0} unscored · {automaticStatus.byPriority[2] ?? 0} identity changes · {automaticStatus.byPriority[3] ?? 0} newly pursued · {automaticStatus.byPriority[4] ?? 0} due soon</small></div>
-            <div><strong>{automaticStatus.latestRun ? automaticStatus.latestRun.status.replaceAll('_', ' ').toLowerCase() : 'No automatic run yet'}</strong><small>{automaticStatus.approvedToday.toLocaleString()} applied · {automaticStatus.failedToday.toLocaleString()} failed · {automaticStatus.rejectedToday.toLocaleString()} declined today</small>{automaticStatus.latestRun ? <small>{formatUsdMicros(automaticStatus.latestRun.estimatedSpendMicros)} estimated · started {formatEasternDateTime(automaticStatus.latestRun.startedAt)}</small> : <small>The production scheduler will create the first run when enabled.</small>}</div>
+            <div><strong>{automaticStatus.latestRun ? automaticRunStatusLabel : 'No automatic run yet'}</strong><small>{automaticStatus.approvedToday.toLocaleString()} applied · {automaticStatus.failedToday.toLocaleString()} failed · {automaticStatus.unsuccessfulToday.toLocaleString()} unsuccessful · {automaticStatus.rejectedToday.toLocaleString()} declined today</small>{automaticStatus.latestRun ? <small>{formatUsdMicros(automaticStatus.latestRun.estimatedSpendMicros)} estimated · started {formatEasternDateTime(automaticStatus.latestRun.startedAt)}</small> : <small>The production scheduler will create the first run when enabled.</small>}</div>
           </div>
           {!automationAvailability.available ? <p className="muted">Automatic OpenAI research is intentionally disabled in this environment. Manual test runs remain available.</p> : null}
           <p className="muted">Accounts below {ACCOUNT_RESEARCH_MINIMUM_BOTTLES_30} bottles in the last 30 days are excluded unless recent tenant pursuit or work activity elevates them.</p>
@@ -154,11 +201,11 @@ export default async function AccountResearchPage({ searchParams }: { searchPara
         ) : (
           <article className="card research-workflow-card">
             <div className="research-pilot-summary">
-              <div><span className={`status-badge ${displayedPilotStatus === AccountResearchPilotStatus.FAILED ? 'warning' : ''}`}>{displayedPilotStatus?.replaceAll('_', ' ').toLowerCase()}</span><strong>{pilot.maxAccounts} account test</strong><small>Started {formatEasternDateTime(pilot.startedAt)}</small></div>
+              <div><span className={`status-badge ${displayedPilotStatus === AccountResearchPilotStatus.FAILED ? 'warning' : ''}`}>{displayedPilotStatusLabel}</span><strong>{pilot.maxAccounts} account test</strong><small>Started {formatEasternDateTime(pilot.startedAt)}</small></div>
               <div><strong>{formatUsdMicros(pilot.estimatedSpendMicros)} estimated</strong><small>{formatUsdMicros(pilot.reservedMicros)} still reserved · {formatUsdMicros(pilot.budgetLimitMicros)} ceiling</small></div>
-              <div><strong>{runningJobs} running · {reviewJobs.length} awaiting automatic application</strong><small>{queuedJobs} queued · {failedJobs} failed · {counts.get(AccountResearchJobStatus.APPROVED) ?? 0} applied · {counts.get(AccountResearchJobStatus.REJECTED) ?? 0} declined</small></div>
+              <div><strong>{runningJobs} running · {reviewJobs.length} awaiting automatic application</strong><small>{queuedJobs} queued · {failedJobs} failed · {unsuccessfulJobs.length} unsuccessful · {counts.get(AccountResearchJobStatus.APPROVED) ?? 0} applied · {Math.max(0, (counts.get(AccountResearchJobStatus.REJECTED) ?? 0) - failedJobs)} declined</small></div>
             </div>
-            {failedJobs > 0 ? <div className="research-pilot-failure" role="alert"><strong>{failedJobs} research job{failedJobs === 1 ? '' : 's'} failed</strong><p>{friendlyPilotError(pilot.jobs.map((job) => job.error))}</p></div> : null}
+            {unsuccessfulJobs.length > 0 ? <div className="research-pilot-failure" role="status"><strong>{unsuccessfulJobs.length} research attempt{unsuccessfulJobs.length === 1 ? ' was' : 's were'} unsuccessful</strong><p>{friendlyPilotError(unsuccessfulJobs.map((job) => job.error))} These accounts remain eligible for research.</p></div> : null}
             <div className="segmented-submit research-pilot-actions">
               {runningJobs > 0 || reviewJobs.length > 0 ? <form action={checkAccountResearchPilot}><input name="pilotId" type="hidden" value={pilot.id} /><SubmitButton type="submit">Check and apply research</SubmitButton></form> : null}
               {queuedJobs > 0 && runningJobs === 0 && reviewJobs.length === 0 ? <form action={continueAccountResearchPilot}><input name="pilotId" type="hidden" value={pilot.id} /><SubmitButton className="secondary" type="submit">Submit next {Math.min(ACCOUNT_RESEARCH_SUBMISSION_WAVE_SIZE, queuedJobs)} accounts</SubmitButton></form> : null}
@@ -170,8 +217,20 @@ export default async function AccountResearchPage({ searchParams }: { searchPara
         )}
       </section>
 
-      <section className="dashboard-section" id="research-history">
-        <SectionHeading description={`${researchHistoryCount.toLocaleString()} accounts have saved research. Automated costs are estimates from the associated API response.`} title="Account research history" />
+      <details className="dashboard-section dashboard-details" id="research-failures">
+        <summary><span><strong>Failures to fix</strong><small>{unresolvedFailures.length.toLocaleString()} account{unresolvedFailures.length === 1 ? '' : 's'} with a location match that may need correction</small></span><span className="pill">{unresolvedFailures.length.toLocaleString()}</span></summary>
+        <div className="dashboard-details-content">
+          {unresolvedFailures.length === 0 ? <div className="empty-state"><h3>No account failures need attention</h3><p>API limits, billing interruptions, and other operational issues are marked unsuccessful and returned to the research queue instead.</p></div> : <div className="card research-job-list">{unresolvedFailures.map((attempt) => {
+            const failedAt = attempt.reviewedAt ?? attempt.completedAt ?? attempt.updatedAt;
+            const snapshot = attempt.inputSnapshot && typeof attempt.inputSnapshot === 'object' ? attempt.inputSnapshot as { address?: string | null; city?: string | null; zip?: string | null } : null;
+            return <div key={attempt.id}><span><strong><Link href={`/wholesale/${attempt.wholesaleAccount.id}`}>{attempt.wholesaleAccount.name}</Link></strong><small>{[attempt.wholesaleAccount.city, attempt.wholesaleAccount.licenseeId].filter(Boolean).join(' · ')}</small><small>{accountResearchFailureReason(attempt)}</small>{snapshot ? <small className="muted">Submitted location: {[snapshot.address, snapshot.city, snapshot.zip].filter(Boolean).join(', ')}</small> : null}</span><span><strong>Needs correction</strong><small>{formatEasternDateTime(failedAt)}</small><Link href={`/wholesale/${attempt.wholesaleAccount.id}`}>Open wholesale account</Link></span></div>;
+          })}</div>}
+        </div>
+      </details>
+
+      <details className="dashboard-section dashboard-details" id="research-history">
+        <summary><span><strong>Account research history</strong><small>{researchHistoryCount.toLocaleString()} accounts with saved research · collapsed by default</small></span><span className="pill">{researchHistoryCount.toLocaleString()}</span></summary>
+        <div className="dashboard-details-content">
         {researchHistory.length === 0 ? <div className="card empty-state"><h3>No completed research yet</h3><p>Completed, validated account research will appear here.</p></div> : <div className="card research-job-list">{researchHistory.map((item) => {
           const latestJob = item.wholesaleAccount.accountResearchJobs[0];
           const cost = latestJob?.responseId === item.researchResponseId ? latestJob.estimatedCostMicros : undefined;
@@ -182,8 +241,9 @@ export default async function AccountResearchPage({ searchParams }: { searchPara
           <span>Page {historyPage} of {Math.ceil(researchHistoryCount / RESEARCH_HISTORY_PAGE_SIZE)}</span>
           {historyPage * RESEARCH_HISTORY_PAGE_SIZE < researchHistoryCount ? <Link className="btn secondary" href={`/admin/account-research?historyPage=${historyPage + 1}#research-history`}>Older updates</Link> : null}
         </nav> : null}
-        {pilot ? <details className="card research-evidence-disclosure research-job-ledger"><summary>View the latest run’s {pilot.jobs.length} jobs, errors, and costs</summary><div className="research-job-list">{pilot.jobs.map((job) => <div key={job.id}><span><strong>#{job.priority} {job.wholesaleAccount.name}</strong><small>{job.reason}</small>{job.error ? <small className="danger-text">{job.error}</small> : null}</span><span><strong>{jobStatusLabel(job.status)}</strong><small>{formatUsdMicros(job.estimatedCostMicros)} · {job.webSearchCalls} searches</small></span></div>)}</div></details> : null}
-      </section>
+        {pilot ? <details className="card research-evidence-disclosure research-job-ledger"><summary>View the latest run’s {pilot.jobs.length} jobs, errors, and costs</summary><div className="research-job-list">{pilot.jobs.map((job) => <div key={job.id}><span><strong>#{job.priority} {job.wholesaleAccount.name}</strong><small>{job.reason}</small>{job.error ? <small className="danger-text">{job.error}</small> : null}</span><span><strong>{jobStatusLabel(job)}</strong><small>{formatUsdMicros(job.estimatedCostMicros)} · {job.webSearchCalls} searches</small></span></div>)}</div></details> : null}
+        </div>
+      </details>
 
       <section className="dashboard-section">
         <SectionHeading description="Keep the reviewed CSV workflow available for corrections, third-party research, and recovery." title="Manual CSV fallback" />
