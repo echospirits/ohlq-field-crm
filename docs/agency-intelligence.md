@@ -68,3 +68,14 @@ Verify representative Agencies for healthy inventory, productive stockout, missi
 - Logged Agency visits are the conservative proxy for recent activation; a future explicit tasting event type can sharpen the tasting window.
 - Current raw sales retention limits the observed history used by V1. Longer persisted product outcomes will improve fit evaluation over time.
 - Future work can add category-wide sales, independent/chain classification, tasting before/after windows, external store context, and calibrated outcome-based model versions without replacing the persisted signal architecture.
+
+## Shadow Agency Market Profile V1
+
+The first predictive market-selection layer runs beside the operational engine and does not change the Agency Focus queue. After each successful daily sales import, it evaluates the retained 30-day retail window before raw-row pruning and persists:
+
+- `AgencyMarketProfile`: the current non-tenant market basket for each Agency, including category mix, price coverage, normalized retail volume, Ohio-local affinity, observation coverage, and confidence.
+- `AgencyProductMarketFit`: one shadow fit per active tenant product and Agency, classified as entry, expansion, or current placement. It stores category demand, comparable price-lane demand, Ohio-local evidence, product-specific peer-buyer evidence, an immutable initial snapshot, the current snapshot, confidence, and scoring version.
+
+Tenant-product sales are excluded from the category, price-lane, local-affinity, and market-depth components. This prevents current success from becoming circular evidence that an unplaced Agency is a strong prospect. Existing placement changes only the recommendation type; it does not increase fit.
+
+`AGENCY_MARKET_FIT_V1_SHADOW` remains shadow-only. It must accumulate complete forward outcomes and pass chronological, chain-aware validation before it can influence live recommendations. Missing report coverage produces lower confidence rather than a false zero. The next research layer can add verified ownership, chain/independent status, store format, demographics, and nearby-place context to the persisted snapshots without replacing the market-basket baseline.

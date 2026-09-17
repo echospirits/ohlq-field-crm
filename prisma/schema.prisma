@@ -159,6 +159,19 @@ enum AgencyIntelligenceBand {
   INSUFFICIENT_DATA
 }
 
+enum AgencyMarketRecommendationType {
+  ENTRY
+  EXPANSION
+  CURRENT_PLACEMENT
+}
+
+enum AgencyMarketConfidence {
+  HIGH
+  MEDIUM
+  LOW
+  INSUFFICIENT_DATA
+}
+
 enum WorklistCategory {
   AGENCY
   WHOLESALE
@@ -464,6 +477,8 @@ model Organization {
   agencyProducts        AgencyProductIntelligence[]
   agencySummaries       AgencyIntelligenceSummary[]
   agencyEvents          AgencyIntelligenceEvent[]
+  agencyMarketProfiles  AgencyMarketProfile[]
+  agencyProductFits     AgencyProductMarketFit[]
   opportunitySignals    OpportunityAccountSignal[]
   accountSalesEvents    AccountSalesEvent[]
   salesOpportunities    SalesOpportunity[]
@@ -1282,6 +1297,8 @@ model Agency {
   productIntelligence      AgencyProductIntelligence[]
   intelligenceSummaries    AgencyIntelligenceSummary[]
   intelligenceEvents       AgencyIntelligenceEvent[]
+  marketProfiles           AgencyMarketProfile[]
+  productMarketFits        AgencyProductMarketFit[]
 
   @@index([latitude, longitude])
   @@index([geocodeStatus])
@@ -2097,6 +2114,77 @@ model AgencyIntelligenceEvent {
   @@index([agencyProductIntelligenceId, occurredAt])
   @@index([itemCode, occurredAt])
   @@index([eventType, occurredAt])
+}
+
+model AgencyMarketProfile {
+  id                     String                 @id @default(cuid())
+  organizationId         String
+  agencyId               String
+  asOfDate               DateTime               @db.Date
+  observedSince          DateTime?              @db.Date
+  observedDayCount       Int                    @default(0)
+  totalRetailEqBottles     Float                  @default(0)
+  tenantRetailEqBottles    Float                  @default(0)
+  nonTenantRetailEqBottles Float                  @default(0)
+  categoryMix            Json                   @default("{}")
+  priceCoverage          Float                  @default(0)
+  medianPrice750         Float?
+  localRetailEqBottles     Float                  @default(0)
+  localShare             Float                  @default(0)
+  confidence             AgencyMarketConfidence
+  signalSnapshot         Json
+  scoringVersion         String
+  createdAt              DateTime               @default(now())
+  updatedAt              DateTime               @updatedAt
+  agency                 Agency                 @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  organization           Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, agencyId])
+  @@index([organizationId, confidence])
+  @@index([organizationId, asOfDate])
+  @@index([agencyId, asOfDate])
+  @@index([scoringVersion])
+}
+
+model AgencyProductMarketFit {
+  id                       String                         @id @default(cuid())
+  organizationId           String
+  agencyId                 String
+  itemCode                 String
+  itemName                 String
+  asOfDate                 DateTime                       @db.Date
+  recommendationType       AgencyMarketRecommendationType
+  currentPlacement         Boolean                        @default(false)
+  category                 String?
+  targetPrice750           Float?
+  categoryEqBottles        Float                          @default(0)
+  comparableEqBottles      Float                          @default(0)
+  comparableShare          Float                          @default(0)
+  localComparableEqBottles Float                          @default(0)
+  peerBuyerCount           Int                            @default(0)
+  peerComparableShare      Float?
+  fitScore                 Int
+  fitBand                  AgencyIntelligenceBand
+  confidence               AgencyMarketConfidence
+  reasons                  Json
+  initialSignalSnapshot    Json
+  signalSnapshot           Json
+  scoringVersion           String
+  shadow                   Boolean                        @default(true)
+  firstScoredAt            DateTime                       @default(now())
+  lastScoredAt             DateTime                       @default(now())
+  createdAt                DateTime                       @default(now())
+  updatedAt                DateTime                       @updatedAt
+  agency                   Agency                         @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  organization             Organization                   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, agencyId, itemCode], map: "AgencyProductMarketFit_org_agency_item_key")
+  @@index([organizationId, recommendationType, fitScore], map: "AgencyProductMarketFit_org_type_score_idx")
+  @@index([organizationId, itemCode, fitScore], map: "AgencyProductMarketFit_org_item_score_idx")
+  @@index([organizationId, confidence])
+  @@index([agencyId, fitScore])
+  @@index([asOfDate])
+  @@index([scoringVersion])
 }
 
 model OpportunityAccountSignal {

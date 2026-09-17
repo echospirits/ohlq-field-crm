@@ -31,6 +31,7 @@
     "backfill:ohlq-annual-sales": "tsx scripts/backfill-ohlq-annual-sales.ts",
     "seed:ohlq-wholesale-purchase-state": "tsx scripts/seed-ohlq-wholesale-purchase-state.ts",
     "refresh:agency-intelligence": "tsx scripts/refresh-agency-intelligence.ts",
+    "refresh:agency-market-intelligence": "tsx scripts/refresh-agency-market-intelligence.ts",
     "audit:ohlq-storage": "tsx scripts/audit-ohlq-storage.ts",
     "audit:opportunity-territories": "tsx scripts/audit-opportunity-territories.ts",
     "recalculate:opportunities:v5": "tsx scripts/recalculate-opportunity-scores.ts",
