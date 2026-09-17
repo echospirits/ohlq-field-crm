@@ -21,7 +21,7 @@ export function AgencyStoreSummary({ context, market, d8Permit, county }: { cont
     <dl>
       <div><dt>Store</dt><dd>{context?.store.format !== 'Unknown' && context?.store.format || 'Format unconfirmed'}</dd></div>
       <div><dt>Ownership</dt><dd>{context?.store.chainName || (context?.store.ownership !== 'Unknown' && context?.store.ownership) || 'Unconfirmed'}</dd></div>
-      <div><dt>Area</dt><dd>{context?.area.neighborhood || (county ? `${county} County` : 'Unconfirmed')}</dd></div>
+      <div><dt>Area</dt><dd>{context?.area.neighborhood || (county ? /county$/i.test(county.trim()) ? county : `${county} County` : 'Unconfirmed')}</dd></div>
       <div><dt>Retail strength</dt><dd>{category ? label(category) : 'Not yet available'}</dd></div>
       <div><dt>Tasting permit</dt><dd>{d8Permit ? 'D8 on record' : 'No D8 on record'}</dd></div>
     </dl>

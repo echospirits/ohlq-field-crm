@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { buyingOptions, emptyStoreContext, formatOptions, nearbyOptions, ownershipOptions, settingOptions, type StoreContext, type StoreContextInput } from '../../lib/agencyStoreContext';
 
@@ -11,6 +11,12 @@ export function AgencyStoreContextForm({ agencyId, context }: { agencyId: string
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState('');
   const [fields, setFields] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (pending) return;
+    const firstField = Object.keys(fields)[0];
+    const element = firstField ? formRef.current?.elements.namedItem(firstField) : null;
+    if (element instanceof HTMLElement) { element.closest('details')?.setAttribute('open', ''); element.focus(); }
+  }, [fields, pending]);
   const defaults = saved ?? emptyStoreContext();
   const valueAt = (key: string) => key.split('.').reduce<unknown>((value, part) => value && typeof value === 'object' ? (value as Record<string, unknown>)[part] : undefined, defaults);
   const error = (key: string) => fields[key] ? <small className="store-field-error" id={`error-${key}`}>{fields[key]}</small> : null;
@@ -41,9 +47,6 @@ export function AgencyStoreContextForm({ agencyId, context }: { agencyId: string
       if (!response.ok) {
         setMessage(result.error || 'Unable to save. Your entries are still here.');
         setFields(result.fields ?? {});
-        const firstField = Object.keys(result.fields ?? {})[0];
-        const element = firstField ? formRef.current?.elements.namedItem(firstField) : null;
-        if (element instanceof HTMLElement) { element.closest('details')?.setAttribute('open', ''); element.focus(); }
       } else { setSaved(result.context); setMessage('Store context saved.'); router.refresh(); }
     } catch { setMessage('Unable to save. Check your connection and try again; your entries are still here.'); }
     finally { setPending(false); }
