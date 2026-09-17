@@ -18,6 +18,9 @@ test('intelligence children retain anchors without duplicate top-level disclosur
   assert.match(store, /<section id="store-intelligence"/);
   assert.match(store, /<section id="retail-market"/);
   assert.doesNotMatch(store, /AnchoredDetails/);
+  assert.match(store, /fits=\{fits\.slice\(0, 5\)\}/);
+  assert.match(store, /<details className="store-fit-more"><summary>More products/);
+  assert.match(store, /fits=\{fits\.slice\(5\)\}/);
   assert.doesNotMatch(actions, /id="intelligence"/);
   const details = readFileSync('app/components/AnchoredDetails.tsx', 'utf8');
   assert.match(details, /ref\.current\?\.contains\(target\)/);

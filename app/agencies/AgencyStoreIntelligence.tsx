@@ -9,6 +9,13 @@ const percent = (value: number) => `${Math.round(value * 100)}%`;
 const label = (value: string) => value.toLowerCase().replaceAll('_', ' ').replace(/^./, (letter) => letter.toUpperCase());
 const confidence = (value: string) => value === 'INSUFFICIENT_DATA' ? 'Insufficient data' : `${label(value)} confidence`;
 
+function ProductFitRows({ fits }: { fits: AgencyProductMarketFit[] }) {
+  return <div className="store-fit-list">{fits.map((fit) => <details key={fit.id} className="store-fit-row">
+    <summary><span><strong>{fit.itemName}</strong><small>{label(fit.recommendationType)} · {confidence(fit.confidence)} · Through {formatDateOnly(fit.asOfDate)}</small></span><span className="store-fit-score">{fit.confidence === 'INSUFFICIENT_DATA' ? 'Collecting evidence' : `${fit.fitScore}/100`}</span></summary>
+    <div><p>{fit.category ? label(fit.category) : 'Category unknown'} · Product price {money(fit.targetPrice750)} / 750ml · {fit.peerBuyerCount} peer buyers</p><ul>{Array.isArray(fit.reasons) ? fit.reasons.filter((reason): reason is string => typeof reason === 'string').map((reason, index) => <li key={index}>{reason}</li>) : null}</ul></div>
+  </details>)}</div>;
+}
+
 function Evidence({ source }: { source: StoreContext['store']['source'] }) {
   if (!source.name) return <small className="muted">Not yet confirmed.</small>;
   return <small className="store-evidence">Source: {source.url ? <a href={source.url} target="_blank" rel="noreferrer">{source.name}</a> : source.name} · Observed {formatDateOnly(source.observedOn)}{contextSourceIsStale(source.observedOn) ? ' · Review due (over 6 months old)' : ''}</small>;
@@ -62,7 +69,10 @@ export function AgencyRetailMarketIntelligence({ market, fits }: { market: Agenc
       </div>
       <div className="store-intelligence-body retail-product-fit">
         <h3>Products to investigate</h3><p className="muted">Exploratory fit based on observed category, price, and peer demand. Scores are not a probability of success. Store context is available for review and is not yet included in scoring.</p>
-        {fits.length ? <div className="store-fit-list">{fits.map((fit) => <details key={fit.id} className="store-fit-row"><summary><span><strong>{fit.itemName}</strong><small>{label(fit.recommendationType)} · {confidence(fit.confidence)} · Through {formatDateOnly(fit.asOfDate)}</small></span><span className="store-fit-score">{fit.confidence === 'INSUFFICIENT_DATA' ? 'Collecting evidence' : `${fit.fitScore}/100`}</span></summary><div><p>{fit.category ? label(fit.category) : 'Category unknown'} · Product price {money(fit.targetPrice750)} / 750ml · {fit.peerBuyerCount} peer buyers</p><ul>{Array.isArray(fit.reasons) ? fit.reasons.filter((reason): reason is string => typeof reason === 'string').map((reason, index) => <li key={index}>{reason}</li>) : null}</ul></div></details>)}</div> : <p className="muted">Product-fit evidence is not available yet for your active portfolio.</p>}
+        {fits.length ? <>
+          <ProductFitRows fits={fits.slice(0, 5)} />
+          {fits.length > 5 ? <details className="store-fit-more"><summary>More products ({fits.length - 5})</summary><ProductFitRows fits={fits.slice(5)} /></details> : null}
+        </> : <p className="muted">Product-fit evidence is not available yet for your active portfolio.</p>}
       </div>
     </section>;
 }

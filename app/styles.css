@@ -5078,6 +5078,7 @@ legend {
 .store-category-list meter { width:100%; height:10px; }
 .store-category-list li > :last-child { font-variant-numeric:tabular-nums; }
 .store-fit-row { border-top:1px solid var(--line); }
+.store-fit-more > summary { min-height:44px; font-size:.85rem; color:var(--action); border-top:1px solid var(--line); }
 .store-fit-row > summary { display:flex; justify-content:space-between; align-items:center; gap:10px; min-height:56px; padding:8px 0; cursor:pointer; }
 .store-fit-row > summary::before { content:'▸'; flex:none; }
 .store-fit-row[open] > summary::before { content:'▾'; }
