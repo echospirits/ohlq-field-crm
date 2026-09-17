@@ -20,6 +20,8 @@ import { OpportunityAccountPanel } from '../../wholesale/OpportunityAccountPanel
 import { ContextualActions } from '../../components/ContextualActions';
 import { AccountMemoryPanel } from '../../account-memory/AccountMemoryPanel';
 import { getCommunicationTitle } from '../../../lib/accountMemory';
+import { readStoreContext } from '../../../lib/agencyStoreContext';
+import { AgencyStoreIntelligence, AgencyStoreSummary } from '../AgencyStoreIntelligence';
 
 const formatVisitDate = (date: Date | null | undefined) => formatEasternDate(date) || 'No visits yet';
 const tagStatusMessages: Record<string, string> = {
@@ -71,7 +73,7 @@ export default async function AgencyActivityPage({
     notFound();
   }
 
-  const [visits, tags, salesWindows, users, overlay, accountContacts, communicationActivities] = await Promise.all([
+  const [visits, tags, salesWindows, users, overlay, accountContacts, communicationActivities, marketProfile, marketFits] = await Promise.all([
     prisma.loggedVisit.findMany({
       where: {
         agencyId: id,
@@ -95,7 +97,7 @@ export default async function AgencyActivityPage({
     prisma.user.findMany({ where: { organizationId, isActive: true, role: { not: 'TASTER' } }, orderBy: [{ name: 'asc' }, { email: 'asc' }] }),
     prisma.organizationAccountOverlay.findUnique({
       where: { organizationId_accountType_externalAccountId: { organizationId, accountType: 'AGENCY', externalAccountId: id } },
-      select: { notes: true },
+      select: { notes: true, storeContext: true },
     }),
     prisma.locationContact.findMany({
       where: { organizationId, agencyId: id },
@@ -107,7 +109,10 @@ export default async function AgencyActivityPage({
       orderBy: { occurredAt: 'desc' },
       take: 50,
     }),
+    hasAgencyIntelligence ? prisma.agencyMarketProfile.findUnique({ where: { organizationId_agencyId: { organizationId, agencyId: id } } }) : null,
+    hasAgencyIntelligence ? prisma.agencyProductMarketFit.findMany({ where: { organizationId, agencyId: id }, orderBy: [{ fitScore: 'desc' }, { itemName: 'asc' }] }) : [],
   ]);
+  const storeContext = readStoreContext(overlay?.storeContext);
   const actionUsers = users.map((user) => ({ id: user.id, name: getUserDisplayName(user) }));
 
   const contacts = await prisma.locationContact.findMany({
@@ -137,6 +142,7 @@ export default async function AgencyActivityPage({
           </div></details>
         </div>
       </header>
+      {hasAgencyIntelligence ? <AgencyStoreSummary context={storeContext} market={marketProfile} d8Permit={agency.d8Permit} county={agency.county} /> : null}
       {query.status ? <p className="toast-notice" role="status">{statusMessages[query.status] ?? query.status}</p> : null}
       {query.tagStatus ? <p className="pill">{tagStatusMessages[query.tagStatus] ?? query.tagStatus}</p> : null}
       {query.memoryStatus ? <p className="toast-notice" role="status">{query.memoryStatus === 'notes-saved' ? 'Account notes saved.' : query.memoryStatus === 'contact-saved' ? 'Contact saved.' : 'Unable to save that account information.'}</p> : null}
@@ -194,9 +200,11 @@ export default async function AgencyActivityPage({
         <AgencyIntelligencePanel agencyId={agency.id} agencyName={agency.name} currentUserId={currentUser.id} organizationId={organizationId} users={actionUsers} />
       </AnchoredDetails> : null}
 
-      {hasWholesaleOpportunities ? <div className="account-workspace-section" id={hasAgencyIntelligence ? undefined : 'intelligence'}>
+      {hasAgencyIntelligence ? <AgencyStoreIntelligence agencyId={agency.id} context={storeContext} market={marketProfile} fits={marketFits} /> : null}
+
+      {hasWholesaleOpportunities ? <AnchoredDetails className="account-overview-details account-workspace-section" id={hasAgencyIntelligence ? 'wholesale-intelligence' : 'intelligence'} summary="Linked wholesale opportunity intelligence">
         <OpportunityAccountPanel agencyId={agency.agencyId} currentUserId={currentUser.id} returnTo={`/agencies/${agency.id}`} users={actionUsers} />
-      </div> : null}
+      </AnchoredDetails> : null}
 
       <AnchoredDetails className="account-overview-details account-workspace-section" id="sales" summary="Recent item sales">
         <AgencyRecentSalesCard salesWindows={salesWindows} />
