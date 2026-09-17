@@ -1,3 +1,5 @@
+BEGIN;
+
 -- CreateEnum
 CREATE TYPE "AgencyMarketRecommendationType" AS ENUM ('ENTRY', 'EXPANSION', 'CURRENT_PLACEMENT');
 
@@ -110,3 +112,5 @@ ALTER TABLE "AgencyProductMarketFit" ADD CONSTRAINT "AgencyProductMarketFit_orga
 
 -- AddForeignKey
 ALTER TABLE "AgencyProductMarketFit" ADD CONSTRAINT "AgencyProductMarketFit_agencyId_fkey" FOREIGN KEY ("agencyId") REFERENCES "Agency"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+COMMIT;
