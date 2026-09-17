@@ -5027,6 +5027,7 @@ legend {
 .retail-intelligence-content .dashboard-section { margin:0; }
 .retail-intelligence-content .agency-product-card { padding:12px 0; border:0; border-top:1px solid var(--line); border-radius:0; background:transparent; box-shadow:none; }
 .retail-intelligence-content .agency-product-card-heading { align-items:flex-start; }
+.retail-intelligence-content .agency-product-card-heading > .priority { flex:none; white-space:nowrap; }
 .retail-intelligence-content .activity-empty { padding:8px 0; margin:0; background:transparent; border:0; }
 .retail-intelligence-content .agency-wholesale-influence { border-top:1px solid var(--line); font-size:.85rem; }
 .retail-intelligence-section { border-top:1px solid var(--line); margin-top:24px; padding-top:20px; min-width:0; scroll-margin-top:24px; }
