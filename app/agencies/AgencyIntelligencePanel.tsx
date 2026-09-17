@@ -49,9 +49,9 @@ export async function AgencyIntelligencePanel({ agencyId, agencyName, currentUse
   ]);
 
   if (!summary) {
-    return <section className="card agency-intelligence-empty" id="intelligence">
-      <span className="page-eyebrow">Agency intelligence</span>
-      <h2>Decision support is waiting for the next complete OHLQ data run</h2>
+    return <section className="agency-intelligence-empty">
+      <h3>Next actions</h3>
+      <p>Decision support is waiting for the next complete OHLQ data run.</p>
       <p className="muted">The engine only publishes recommendations after sales, wholesale, and inventory inputs all complete successfully.</p>
     </section>;
   }
@@ -63,10 +63,10 @@ export async function AgencyIntelligencePanel({ agencyId, agencyName, currentUse
   const currentInventory = products.filter((product) => product.inventorySnapshotDate !== null);
   const focus = stringList(summary.recommendedFocus);
 
-  return <div className="agency-intelligence-stack" id="intelligence">
+  return <div className="agency-intelligence-stack">
     <section className="card agency-intelligence-overview">
       <div className="section-heading agency-intelligence-heading">
-        <div><span className="page-eyebrow">Agency opportunity</span><h2>What to do here next</h2></div>
+        <h3>What to do here next</h3>
         <DataFreshnessBadge datePrefix="As of" sourceDate={summary.asOfDate} />
       </div>
       <dl className="agency-intelligence-snapshot">
@@ -84,7 +84,7 @@ export async function AgencyIntelligencePanel({ agencyId, agencyName, currentUse
     </section>
 
     <section className="dashboard-section" id="product-opportunities">
-      <div className="section-heading"><div><span className="page-eyebrow">Agency × product</span><h2>Product opportunities</h2></div><Link className="btn secondary compact-btn" href={`/agency-focus?agencyId=${agencyId}`}>Open focus view</Link></div>
+      <div className="section-heading"><h3>Product opportunities</h3><Link className="btn secondary compact-btn" href={`/agency-focus?agencyId=${agencyId}`}>Open focus view</Link></div>
       <div className="agency-product-list">
         {activeProducts.slice(0, 5).map((product) => <article className="card agency-product-card" key={product.id}>
           <div className="agency-product-card-heading">
@@ -134,8 +134,8 @@ export async function AgencyIntelligencePanel({ agencyId, agencyName, currentUse
       </div>
     </details>
 
-    <section className="card agency-wholesale-influence" id="wholesale-influence">
-      <div className="section-heading"><div><span className="page-eyebrow">Connected business</span><h2>Wholesale influence</h2></div><span className={`priority priority-${summary.wholesaleInfluenceBand.toLowerCase()}`}>{titleCase(summary.wholesaleInfluenceBand)}</span></div>
+    <details className="compact-details agency-wholesale-influence" id="wholesale-influence">
+      <summary><strong>Wholesale influence</strong><span className={`priority priority-${summary.wholesaleInfluenceBand.toLowerCase()}`}>{titleCase(summary.wholesaleInfluenceBand)}</span></summary>
       <dl className="agency-intelligence-snapshot">
         <div><dt>Linked</dt><dd>{summary.linkedWholesaleCount}</dd></div>
         <div><dt>Active</dt><dd>{summary.activeWholesaleCount}</dd></div>
@@ -145,6 +145,6 @@ export async function AgencyIntelligencePanel({ agencyId, agencyName, currentUse
         <div><dt>Open opportunities</dt><dd>{summary.openWholesaleOpportunityCount}</dd></div>
       </dl>
       <ul className="agency-product-reasons">{stringList(summary.wholesaleReasons).map((reason) => <li key={reason}>{reason}</li>)}</ul>
-    </section>
+    </details>
   </div>;
 }

@@ -5,15 +5,19 @@ import { useEffect, useRef, type ReactNode } from 'react';
 export function AnchoredDetails({ id, className, summary, children, initialOpen = false }: { id: string; className?: string; summary: ReactNode; children: ReactNode; initialOpen?: boolean }) {
   const ref = useRef<HTMLDetailsElement>(null);
   useEffect(() => {
+    const containsAnchor = (hash: string) => {
+      const target = hash ? document.getElementById(hash.slice(1)) : null;
+      return target && ref.current?.contains(target);
+    };
     const reveal = () => {
-      if (window.location.hash === `#${id}` && ref.current) {
+      if (containsAnchor(window.location.hash) && ref.current) {
         ref.current.open = true;
-        ref.current.scrollIntoView({ block: 'start' });
+        document.getElementById(window.location.hash.slice(1))?.scrollIntoView({ block: 'start' });
       }
     };
     const onClick = (event: MouseEvent) => {
       const link = event.target instanceof Element ? event.target.closest('a') : null;
-      if (link?.hash === `#${id}` && link.pathname === window.location.pathname && ref.current) ref.current.open = true;
+      if (link?.origin === window.location.origin && link.pathname === window.location.pathname && containsAnchor(link.hash) && ref.current) ref.current.open = true;
     };
     reveal();
     window.addEventListener('hashchange', reveal);

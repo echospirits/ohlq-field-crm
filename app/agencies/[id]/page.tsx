@@ -21,7 +21,7 @@ import { ContextualActions } from '../../components/ContextualActions';
 import { AccountMemoryPanel } from '../../account-memory/AccountMemoryPanel';
 import { getCommunicationTitle } from '../../../lib/accountMemory';
 import { readStoreContext } from '../../../lib/agencyStoreContext';
-import { AgencyStoreIntelligence, AgencyStoreSummary } from '../AgencyStoreIntelligence';
+import { AgencyRetailMarketIntelligence, AgencyStoreIntelligence, AgencyStoreSummary } from '../AgencyStoreIntelligence';
 
 const formatVisitDate = (date: Date | null | undefined) => formatEasternDate(date) || 'No visits yet';
 const tagStatusMessages: Record<string, string> = {
@@ -149,9 +149,9 @@ export default async function AgencyActivityPage({
       <AccountWorkspaceNavigation sections={[
         { href: '#overview', label: 'Overview' },
         { href: '#account-memory', label: 'Notes + contacts' },
-        ...(hasAgencyIntelligence || hasWholesaleOpportunities ? [{ href: '#intelligence', label: 'Intelligence' }] : []),
         { href: '#sales', label: 'Sales' },
         { href: '#activity', label: 'Activity' },
+        ...(hasAgencyIntelligence ? [{ href: '#intelligence', label: 'Retail Intelligence' }] : hasWholesaleOpportunities ? [{ href: '#intelligence', label: 'Wholesale intelligence' }] : []),
       ]} />
 
       <AccountMemoryPanel accountId={agency.id} accountType="AGENCY" contacts={accountContacts} notes={overlay?.notes ?? null} returnTo={`/agencies/${agency.id}`} />
@@ -196,12 +196,6 @@ export default async function AgencyActivityPage({
       </div>
       </AnchoredDetails>
 
-      {hasAgencyIntelligence ? <AnchoredDetails className="account-overview-details account-workspace-section" id="intelligence" summary="Retail intelligence">
-        <AgencyIntelligencePanel agencyId={agency.id} agencyName={agency.name} currentUserId={currentUser.id} organizationId={organizationId} users={actionUsers} />
-      </AnchoredDetails> : null}
-
-      {hasAgencyIntelligence ? <AgencyStoreIntelligence agencyId={agency.id} context={storeContext} market={marketProfile} fits={marketFits} /> : null}
-
       {hasWholesaleOpportunities ? <AnchoredDetails className="account-overview-details account-workspace-section" id={hasAgencyIntelligence ? 'wholesale-intelligence' : 'intelligence'} summary="Linked wholesale opportunity intelligence">
         <OpportunityAccountPanel agencyId={agency.agencyId} currentUserId={currentUser.id} returnTo={`/agencies/${agency.id}`} users={actionUsers} />
       </AnchoredDetails> : null}
@@ -223,6 +217,14 @@ export default async function AgencyActivityPage({
           title: activity.activityType === 'EMAIL_INITIATED' ? 'Email initiated' : 'Call initiated',
         }))} />
       </section>
+      {hasAgencyIntelligence ? <AnchoredDetails className="account-overview-details account-workspace-section agency-retail-intelligence" id="intelligence" initialOpen summary="Retail Intelligence">
+        <div className="retail-intelligence-content">
+          <p className="retail-intelligence-intro muted">Next actions, what sells here, and the store behind the numbers.</p>
+          <AgencyIntelligencePanel agencyId={agency.id} agencyName={agency.name} currentUserId={currentUser.id} organizationId={organizationId} users={actionUsers} />
+          <AgencyRetailMarketIntelligence market={marketProfile} fits={marketFits} />
+          <AgencyStoreIntelligence agencyId={agency.id} context={storeContext} />
+        </div>
+      </AnchoredDetails> : null}
     </>
   );
 }

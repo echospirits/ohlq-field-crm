@@ -1,7 +1,6 @@
 import type { AgencyMarketProfile, AgencyProductMarketFit } from '@prisma/client';
 import { formatDateOnly } from '../../lib/dateTime';
 import { contextSourceIsStale, readCategoryMix, type StoreContext } from '../../lib/agencyStoreContext';
-import { AnchoredDetails } from '../components/AnchoredDetails';
 import { AgencyStoreContextForm } from './AgencyStoreContextForm';
 
 const number = (value: number) => value.toLocaleString('en-US', { maximumFractionDigits: 0 });
@@ -30,12 +29,10 @@ export function AgencyStoreSummary({ context, market, d8Permit, county }: { cont
   </section>;
 }
 
-export function AgencyStoreIntelligence({ agencyId, context, market, fits }: { agencyId: string; context: StoreContext | null; market: AgencyMarketProfile | null; fits: AgencyProductMarketFit[] }) {
-  const categories = readCategoryMix(market?.categoryMix);
-  const stale = market ? Date.now() - market.asOfDate.getTime() > 7 * 86_400_000 : false;
-  return <>
-    <AnchoredDetails id="store-intelligence" className="account-overview-details account-workspace-section" summary="Store & area intelligence">
+export function AgencyStoreIntelligence({ agencyId, context }: { agencyId: string; context: StoreContext | null }) {
+  return <section id="store-intelligence" className="retail-intelligence-section" aria-labelledby="store-context-heading">
       <div className="store-intelligence-body">
+        <h3 id="store-context-heading">Store & neighborhood</h3>
         {!context ? <p className="muted">Store ownership, format, and area context have not been recorded yet. Add confirmed details below to build this account’s profile.</p> : <div className="store-context-sections">
           <section><h3>Store & buying decisions</h3><dl className="store-facts">
             <div><dt>Ownership</dt><dd>{context.store.ownership}{context.store.chainName ? ` · ${context.store.chainName}` : ''}</dd></div>
@@ -48,18 +45,24 @@ export function AgencyStoreIntelligence({ agencyId, context, market, fits }: { a
         </div>}
         <AgencyStoreContextForm agencyId={agencyId} context={context} />
       </div>
-    </AnchoredDetails>
-    <AnchoredDetails id="retail-market" className="account-overview-details account-workspace-section" summary="Retail market & product fit">
-      <div className="store-intelligence-body">
+    </section>;
+}
+
+export function AgencyRetailMarketIntelligence({ market, fits }: { market: AgencyMarketProfile | null; fits: AgencyProductMarketFit[] }) {
+  const categories = readCategoryMix(market?.categoryMix);
+  const stale = market ? Date.now() - market.asOfDate.getTime() > 7 * 86_400_000 : false;
+  return <section id="retail-market" className="retail-intelligence-section retail-market-grid" aria-label="Retail market and product fit">
+      <div className="store-intelligence-body retail-market-evidence">
         {market ? <>
           <div className="section-heading"><h3>What sells here</h3><small>Through {formatDateOnly(market.asOfDate)}{stale ? ' · Data is over 7 days old' : ''}</small></div>
           <p className="muted">{market.observedDayCount} of 30 days observed · {confidence(market.confidence)}. Category, price, and Ohio-brand signals exclude your portfolio. Volumes are 750ml equivalents.</p>
           <dl className="store-market-metrics"><div><dt>Other-brand retail volume</dt><dd>{market.observedDayCount ? number(market.nonTenantRetailEqBottles) : 'Unavailable'}</dd></div><div><dt>Typical price / 750ml</dt><dd>{money(market.medianPrice750)}</dd></div><div><dt>Known Ohio-brand share</dt><dd>{market.nonTenantRetailEqBottles > 0 ? percent(market.localShare) : 'Unavailable'}</dd></div><div><dt>Price coverage</dt><dd>{market.nonTenantRetailEqBottles > 0 ? percent(market.priceCoverage) : 'Unavailable'}</dd></div></dl>
           {categories.length ? <ul className="store-category-list" aria-label="Category retail mix">{categories.map(([name, volume]) => <li key={name}><span>{label(name)}</span><meter aria-label={`${label(name)} share`} min={0} max={market.nonTenantRetailEqBottles || 1} value={volume} /><span>{number(volume)} · {percent(volume / (market.nonTenantRetailEqBottles || 1))}</span></li>)}</ul> : <p className="muted">No category evidence in the observed window.</p>}
-        </> : <p className="muted">Retail market data is not available yet. It is prepared after a completed sales import.</p>}
+        </> : <><h3>What sells here</h3><p className="muted">Retail market data is not available yet. It is prepared after a completed sales import.</p></>}
+      </div>
+      <div className="store-intelligence-body retail-product-fit">
         <h3>Products to investigate</h3><p className="muted">Exploratory fit based on observed category, price, and peer demand. Scores are not a probability of success. Store context is available for review and is not yet included in scoring.</p>
         {fits.length ? <div className="store-fit-list">{fits.map((fit) => <details key={fit.id} className="store-fit-row"><summary><span><strong>{fit.itemName}</strong><small>{label(fit.recommendationType)} · {confidence(fit.confidence)} · Through {formatDateOnly(fit.asOfDate)}</small></span><span className="store-fit-score">{fit.confidence === 'INSUFFICIENT_DATA' ? 'Collecting evidence' : `${fit.fitScore}/100`}</span></summary><div><p>{fit.category ? label(fit.category) : 'Category unknown'} · Product price {money(fit.targetPrice750)} / 750ml · {fit.peerBuyerCount} peer buyers</p><ul>{Array.isArray(fit.reasons) ? fit.reasons.filter((reason): reason is string => typeof reason === 'string').map((reason, index) => <li key={index}>{reason}</li>) : null}</ul></div></details>)}</div> : <p className="muted">Product-fit evidence is not available yet for your active portfolio.</p>}
       </div>
-    </AnchoredDetails>
-  </>;
+    </section>;
 }

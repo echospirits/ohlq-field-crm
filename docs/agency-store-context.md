@@ -1,6 +1,6 @@
 # Agency store context
 
-Agency accounts expose a compact store summary above the workspace navigation, then Store & area intelligence and Retail market & product fit disclosures alongside the existing retail and linked wholesale intelligence.
+Agency accounts expose a compact store summary above the workspace navigation and one **Retail Intelligence** disclosure at the bottom of the account page, open by default. Its reading order is next actions and current inventory, retail market and product-fit evidence, then store and neighborhood context. Quiet headings and dividers replace separate top-level intelligence dropdowns. Product evidence, wholesale influence, and store editing remain secondary disclosures. Market and fit evidence share two columns on wide screens and stack on phones. Existing store/market anchor links reveal the parent panel if it has been closed. Linked wholesale opportunity intelligence remains separate.
 
 Store context is a versioned JSON document in `OrganizationAccountOverlay.storeContext`, scoped by organization, account type, and internal Agency ID. It records ownership and chain, store format, buying authority, neighborhood and nearby business mix, and optional area demographics. Each section carries its source and observation date. Sources older than six months are flagged for review. Unknown values remain explicit; names and addresses are not used to guess ownership or customer demographics.
 

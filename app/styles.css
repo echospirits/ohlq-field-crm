@@ -5009,6 +5009,41 @@ legend {
 }
 
 /* Agency context: compact facts first, sourced detail on demand. */
+.agency-retail-intelligence { background:var(--panel); border:1px solid var(--line); border-radius:12px; overflow-wrap:anywhere; }
+.agency-retail-intelligence > summary { padding:14px 18px; font-size:1.05rem; }
+.retail-intelligence-content { padding:0 16px 20px; min-width:0; }
+.retail-intelligence-intro { margin:0 0 20px; font-size:.85rem; }
+.retail-intelligence-content h3 { font-size:1rem; margin:0 0 8px; }
+.retail-intelligence-content .section-heading { align-items:center; gap:8px 16px; flex-wrap:wrap; margin-bottom:10px; }
+.retail-intelligence-content .section-heading h3 { margin:0; }
+.retail-intelligence-content .agency-intelligence-stack { gap:20px; }
+.retail-intelligence-content .agency-intelligence-overview,
+.retail-intelligence-content .agency-wholesale-influence,
+.retail-intelligence-content .agency-inventory-details { padding:0; border:0; border-radius:0; background:transparent; box-shadow:none; }
+.retail-intelligence-content .agency-intelligence-snapshot { gap:12px 16px; }
+.retail-intelligence-content .agency-intelligence-snapshot > div { padding:0; background:transparent; border:0; }
+.retail-intelligence-content .agency-focus-summary { border:0; padding:12px 14px; background:var(--panel-2); border-radius:8px; }
+.retail-intelligence-content .agency-focus-summary h3 { font-size:.75rem; }
+.retail-intelligence-content .dashboard-section { margin:0; }
+.retail-intelligence-content .agency-product-card { padding:12px 0; border:0; border-top:1px solid var(--line); border-radius:0; background:transparent; box-shadow:none; }
+.retail-intelligence-content .agency-product-card-heading { align-items:flex-start; }
+.retail-intelligence-content .activity-empty { padding:8px 0; margin:0; background:transparent; border:0; }
+.retail-intelligence-content .agency-wholesale-influence { border-top:1px solid var(--line); font-size:.85rem; }
+.retail-intelligence-section { border-top:1px solid var(--line); margin-top:24px; padding-top:20px; min-width:0; scroll-margin-top:24px; }
+.retail-intelligence-content .store-intelligence-body { padding:0; }
+.retail-intelligence-content .store-context-sections { margin-top:16px; }
+.retail-intelligence-content .store-context-sections h3 { font-size:.85rem; }
+.retail-market-grid { display:grid; gap:20px; }
+.retail-intelligence-content .store-market-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.retail-intelligence-content .store-market-metrics dd { font-weight:600; font-variant-numeric:tabular-nums; }
+.retail-intelligence-content .store-category-list { margin-bottom:0; }
+.retail-intelligence-content .store-category-list meter { accent-color:var(--action); }
+@media (min-width:1100px) {
+  .retail-intelligence-content { padding:0 24px 24px; }
+  .agency-retail-intelligence > summary { padding-inline:24px; }
+  .retail-market-grid { grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:28px; }
+  .retail-intelligence-content .retail-product-fit { border-left:1px solid var(--line); padding-left:28px; }
+}
 .store-quick-context { border:1px solid var(--line); border-radius:12px; padding:12px 16px; }
 .store-quick-context dl,.store-market-metrics { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px 18px; margin:0 0 8px; }
 .store-quick-context dt,.store-market-metrics dt,.store-facts dt { color:var(--muted); font-size:.75rem; }
