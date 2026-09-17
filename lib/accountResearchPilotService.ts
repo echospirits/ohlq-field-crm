@@ -127,6 +127,38 @@ export async function createAccountResearchPilot({
   });
 }
 
+// Recover during polling as well as submission: an interrupted claim otherwise
+// blocks the active-wave gate forever. Conditional updates make overlapping
+// cron workflows release each reservation only once.
+export async function recoverInterruptedResearchSubmissions({
+  pilotId, organizationId, db = prisma, now = new Date(),
+}: { pilotId: string; organizationId: string; db?: PrismaClient; now?: Date }) {
+  const staleClaimCutoff = new Date(now.getTime() - 15 * 60_000);
+  const where = {
+    pilotId, organizationId, status: AccountResearchJobStatus.SUBMITTED,
+    responseId: null, submittedAt: { lt: staleClaimCutoff },
+  };
+  const staleClaims = await db.accountResearchJob.findMany({
+    where, select: { id: true, reservedMicros: true },
+  });
+  let recovered = 0;
+  for (const stale of staleClaims) {
+    recovered += await db.$transaction(async (tx) => {
+      const claim = await tx.accountResearchJob.updateMany({
+        where: { ...where, id: stale.id },
+        data: { status: AccountResearchJobStatus.FAILED, reservedMicros: 0, error: 'Submission was interrupted before an OpenAI response ID was saved.' },
+      });
+      if (claim.count !== 1) return 0;
+      await tx.accountResearchPilot.update({
+        where: { id: pilotId }, data: { reservedMicros: { decrement: stale.reservedMicros } },
+      });
+      return 1;
+    });
+  }
+  if (recovered > 0) console.warn('account-research.interrupted-submissions-recovered', { pilotId, recovered });
+  return recovered;
+}
+
 export async function submitQueuedPilotJobs({ pilotId, organizationId, db = prisma, mode = 'manual', take = ACCOUNT_RESEARCH_SUBMISSION_WAVE_SIZE }: { pilotId: string; organizationId: string; db?: PrismaClient; mode?: AccountResearchExecutionMode; take?: number }) {
   assertResearchMode(mode);
   const pilot = await db.accountResearchPilot.findFirst({
@@ -136,17 +168,7 @@ export async function submitQueuedPilotJobs({ pilotId, organizationId, db = pris
   if (!pilot) throw new Error('The active pilot could not be found.');
   if (pilot.estimatedSpendMicros + pilot.reservedMicros > pilot.budgetLimitMicros) throw new Error('The pilot budget reservation is invalid; no jobs were submitted.');
 
-  const staleClaimCutoff = new Date(Date.now() - 15 * 60_000);
-  const staleClaims = await db.accountResearchJob.findMany({
-    where: { pilotId, organizationId, status: AccountResearchJobStatus.SUBMITTED, responseId: null, submittedAt: { lt: staleClaimCutoff } },
-    select: { id: true, reservedMicros: true },
-  });
-  for (const stale of staleClaims) {
-    await db.$transaction([
-      db.accountResearchJob.update({ where: { id: stale.id }, data: { status: AccountResearchJobStatus.FAILED, reservedMicros: 0, error: 'Submission was interrupted before an OpenAI response ID was saved.' } }),
-      db.accountResearchPilot.update({ where: { id: pilotId }, data: { reservedMicros: { decrement: stale.reservedMicros } } }),
-    ]);
-  }
+  await recoverInterruptedResearchSubmissions({ pilotId, organizationId, db });
 
   const activeJobs = await db.accountResearchJob.count({
     where: { pilotId, organizationId, status: { in: [AccountResearchJobStatus.SUBMITTED, AccountResearchJobStatus.RUNNING] } },
@@ -268,6 +290,7 @@ export async function autoResolveAccountResearchJobs({
   mode?: AccountResearchExecutionMode;
 }) {
   assertResearchMode(mode);
+  await recoverInterruptedResearchSubmissions({ pilotId, organizationId, db });
   const jobs = await db.accountResearchJob.findMany({
     where: { pilotId, organizationId, status: AccountResearchJobStatus.NEEDS_REVIEW },
     orderBy: { priority: 'asc' },
@@ -377,6 +400,7 @@ export async function autoResolveAccountResearchJobs({
 
 export async function pollAccountResearchPilot({ pilotId, organizationId, db = prisma, mode = 'manual' }: { pilotId: string; organizationId: string; db?: PrismaClient; mode?: AccountResearchExecutionMode }) {
   assertResearchMode(mode);
+  await recoverInterruptedResearchSubmissions({ pilotId, organizationId, db });
   const jobs = await db.accountResearchJob.findMany({
     where: { pilotId, organizationId, status: { in: [AccountResearchJobStatus.SUBMITTED, AccountResearchJobStatus.RUNNING] }, responseId: { not: null } },
     orderBy: { priority: 'asc' },
