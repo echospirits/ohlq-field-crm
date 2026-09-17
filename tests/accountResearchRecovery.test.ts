@@ -62,4 +62,3 @@ it('recovery excludes fresh or response-backed claims and releases reservations 
   assert.equal(await recoverInterruptedResearchSubmissions(args), 0);
   assert.equal(releases, 1);
 });
-
