@@ -11,6 +11,7 @@ import { ACCOUNT_RESEARCH_AUTOMATIC_DAILY_BUDGET_MICROS, ACCOUNT_RESEARCH_AUTOMA
 import { getAutomaticAccountResearchStatus } from '../../../lib/accountResearchAutomation';
 import { getAccountResearchAutomationAvailability, getAccountResearchPilotAvailability } from '../../../lib/accountResearchOpenAI';
 import { ACCOUNT_RESEARCH_ACTIONABLE_REVIEW_PREFIX, accountResearchFailureReason, isActionableAccountResearchFailure, isUnsuccessfulAccountResearchAttempt } from '../../../lib/accountResearchFailures';
+import { hasResearchIdentityChanged } from '../../../lib/accountResearchQueue';
 import { deriveSettledPilotStatus, getLatestAccountResearchPilot } from '../../../lib/accountResearchPilotService';
 import { formatEasternDateTime } from '../../../lib/dateTime';
 import { prisma } from '../../../lib/prisma';
@@ -123,6 +124,8 @@ export default async function AccountResearchPage({ searchParams }: { searchPara
           licenseeId: true,
           address: true,
           city: true,
+          state: true,
+          zip: true,
           targetPublicResearch: { select: { lastRefreshedAt: true } },
         } },
       },
@@ -144,6 +147,7 @@ export default async function AccountResearchPage({ searchParams }: { searchPara
     const failedAt = attempt.reviewedAt ?? attempt.completedAt ?? attempt.updatedAt;
     const refreshedAt = attempt.wholesaleAccount.targetPublicResearch?.lastRefreshedAt;
     if (refreshedAt && refreshedAt > failedAt) continue;
+    if (hasResearchIdentityChanged(attempt.wholesaleAccount, attempt.inputSnapshot)) continue;
     if (!unresolvedFailureMap.has(attempt.wholesaleAccount.id)) unresolvedFailureMap.set(attempt.wholesaleAccount.id, attempt);
   }
   const unresolvedFailures = [...unresolvedFailureMap.values()];

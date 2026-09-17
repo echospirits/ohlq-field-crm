@@ -177,6 +177,7 @@ it('keeps manual tests Platform Admin protected and schedules a production-gated
   assert.match(page, /Account research history/);
   assert.match(page, /Open wholesale account/);
   assert.match(page, /unsuccessful/);
+  assert.match(page, /hasResearchIdentityChanged\(attempt\.wholesaleAccount, attempt\.inputSnapshot\)/);
   assert.match(page, /uniqueAccountsSubmittedToday/);
   const dailyWorkflow = readFileSync('lib/accountResearchDailyWorkflow.ts', 'utf8');
   assert.match(dailyWorkflow, /submittedThisRun/);

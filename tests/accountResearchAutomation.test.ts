@@ -90,7 +90,15 @@ it('returns operational failures to the queue while deferring unchanged account-
   assert.equal(isActionableAccountResearchFailure(locationFailure), true);
   assert.equal(accountResearchFailureReason(locationFailure), 'Street address did not match.');
   assert.equal(shouldDeferResearchRetry(candidate({ accountResearchJobs: [locationFailure] }), now), true);
-  assert.equal(shouldDeferResearchRetry(candidate({ address: '2 Main St', accountResearchJobs: [locationFailure] }), now), false);
+  for (const correctedIdentity of [
+    { name: 'Corrected Bar' },
+    { address: '2 Main St' },
+    { city: 'Cleveland' },
+    { state: 'KY' },
+    { zip: '44113' },
+  ]) {
+    assert.equal(shouldDeferResearchRetry(candidate({ ...correctedIdentity, accountResearchJobs: [locationFailure] }), now), false);
+  }
 });
 
 it('stores and reads source-attributed public research without changing identity comparisons', () => {
