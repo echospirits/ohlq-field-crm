@@ -72,7 +72,7 @@ export function AgencyRetailMarketIntelligence({ market, fits }: { market: Agenc
         {fits.length ? <>
           <ProductFitRows fits={fits.slice(0, 5)} />
           {fits.length > 5 ? <details className="store-fit-more"><summary>More products ({fits.length - 5})</summary><ProductFitRows fits={fits.slice(5)} /></details> : null}
-        </> : <p className="muted">Product-fit evidence is not available yet for your active portfolio.</p>}
+        </> : <p className="muted">No eligible store products have product-fit evidence yet. Delisted and distillery-only items are excluded.</p>}
       </div>
     </section>;
 }

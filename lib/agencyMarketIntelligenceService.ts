@@ -8,7 +8,7 @@ import {
   getAgencyMarketRecommendationType,
 } from './agencyMarketIntelligence';
 import { toAffinityProduct, type BuyerBasket } from './opportunityAffinity';
-import { getDistilleryOnlyItemCodes, isOpportunityEligibleOhlqProduct } from './ohlqProductEligibility';
+import { getAgencyMarketEligibleItemCodes } from './agencyMarketEligibility';
 import { normalizeOhlqId } from './ohlqSalesData';
 import { prisma } from './prisma';
 
@@ -16,6 +16,36 @@ const DAY = 86_400_000;
 const addDays = (date: Date, days: number) => new Date(date.getTime() + days * DAY);
 const placementKey = (agencyNumber: string, itemCode: string) => `${agencyNumber}|${itemCode}`;
 const asJson = (value: unknown) => value as Prisma.InputJsonValue;
+
+/** Recheck saved scores against today's catalog and tenant portfolio before presenting them. */
+export async function getAgencyMarketFitsForDisplay({ agencyId, organizationId, db = prisma }: {
+  agencyId: string;
+  organizationId: string;
+  db?: PrismaClient;
+}) {
+  const fits = await db.agencyProductMarketFit.findMany({
+    where: { organizationId, agencyId },
+    orderBy: [{ fitScore: 'desc' }, { itemName: 'asc' }],
+  });
+  if (!fits.length) return [];
+  const itemCodes = fits.map((fit) => fit.itemCode);
+  const [catalog, listings, latestImport, decisions] = await Promise.all([
+    db.ohlqBrandMasterItem.findMany({ where: { itemCode: { in: itemCodes } }, select: { itemCode: true, solItemStatusCode: true } }),
+    db.ohlqAgencyInventoryCurrent.findMany({
+      where: { organizationId, itemCode: { in: itemCodes } },
+      distinct: ['itemCode', 'detailCodeDescription', 'status'],
+      select: { itemCode: true, detailCodeDescription: true, status: true },
+    }),
+    db.ohlqTenantInventoryImportStatus.findFirst({ where: { organizationId, status: 'COMPLETED' }, orderBy: { reportDate: 'desc' }, select: { diagnostics: true } }),
+    db.organizationProduct.findMany({
+      where: { organizationId, market: 'OH', active: true, discontinued: false, status: { in: ['OWNED', 'REPRESENTED'] }, externalItemCode: { in: itemCodes } },
+      select: { externalItemCode: true },
+    }),
+  ]);
+  const eligible = getAgencyMarketEligibleItemCodes({ catalog, listings, diagnostics: latestImport?.diagnostics });
+  const active = new Set(decisions.map((decision) => decision.externalItemCode));
+  return fits.filter((fit) => active.has(fit.itemCode) && eligible.has(fit.itemCode));
+}
 
 export async function refreshAgencyMarketIntelligence({
   asOfDate,
@@ -49,7 +79,7 @@ export async function refreshAgencyMarketIntelligence({
     }),
     db.ohlqAgencyInventoryCurrent.findMany({
       where: { organizationId },
-      select: { agencyNumber: true, itemCode: true },
+      select: { agencyNumber: true, itemCode: true, detailCodeDescription: true, status: true },
     }),
     db.ohlqTenantInventoryImportStatus.findFirst({
       where: { organizationId, status: OhlqReportRunStatus.COMPLETED },
@@ -76,14 +106,14 @@ export async function refreshAgencyMarketIntelligence({
   ]);
 
   const catalogByCode = new Map(catalog.map((item) => [item.itemCode, item]));
-  const distilleryOnlyItemCodes = getDistilleryOnlyItemCodes(latestInventoryImport?.diagnostics);
+  const eligibleItemCodes = getAgencyMarketEligibleItemCodes({ catalog, listings: currentInventory, diagnostics: latestInventoryImport?.diagnostics });
   const portfolio = productDecisions.flatMap((decision) => {
     const master = catalogByCode.get(decision.externalItemCode);
-    if (!master || !isOpportunityEligibleOhlqProduct(master, distilleryOnlyItemCodes)) return [];
+    if (!master || !eligibleItemCodes.has(master.itemCode)) return [];
     const product = toAffinityProduct(master, decision.strategicPriority ?? 1);
     return [{ ...product, name: decision.displayName?.trim() || product.name }];
   });
-  const tenantItemCodes = new Set(portfolio.map((product) => product.itemCode));
+  const tenantItemCodes = new Set(productDecisions.map((product) => product.externalItemCode));
   const purchasesByAgency = aggregateAgencyMarketPurchases({ catalog, rows: salesRows, tenantItemCodes });
   const normalizedAgencies = agencies.flatMap((agency) => {
     const agencyNumber = normalizeOhlqId(agency.agencyId);

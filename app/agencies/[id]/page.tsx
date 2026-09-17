@@ -21,6 +21,7 @@ import { ContextualActions } from '../../components/ContextualActions';
 import { AccountMemoryPanel } from '../../account-memory/AccountMemoryPanel';
 import { getCommunicationTitle } from '../../../lib/accountMemory';
 import { readStoreContext } from '../../../lib/agencyStoreContext';
+import { getAgencyMarketFitsForDisplay } from '../../../lib/agencyMarketIntelligenceService';
 import { AgencyRetailMarketIntelligence, AgencyStoreIntelligence, AgencyStoreSummary } from '../AgencyStoreIntelligence';
 
 const formatVisitDate = (date: Date | null | undefined) => formatEasternDate(date) || 'No visits yet';
@@ -110,7 +111,7 @@ export default async function AgencyActivityPage({
       take: 50,
     }),
     hasAgencyIntelligence ? prisma.agencyMarketProfile.findUnique({ where: { organizationId_agencyId: { organizationId, agencyId: id } } }) : null,
-    hasAgencyIntelligence ? prisma.agencyProductMarketFit.findMany({ where: { organizationId, agencyId: id }, orderBy: [{ fitScore: 'desc' }, { itemName: 'asc' }] }) : [],
+    hasAgencyIntelligence ? getAgencyMarketFitsForDisplay({ organizationId, agencyId: id }) : [],
   ]);
   const storeContext = readStoreContext(overlay?.storeContext);
   const actionUsers = users.map((user) => ({ id: user.id, name: getUserDisplayName(user) }));
