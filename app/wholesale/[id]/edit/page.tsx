@@ -2,6 +2,9 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 import { SubmitButton } from '../../../components/SubmitButton';
+import { ActionForm } from '../../../components/ActionForm';
+import { StateField } from '../../../components/StateField';
+import { normalizeUsState, stateScopedLicenseeIds } from '../../../../lib/usStates';
 import { revalidatePath } from 'next/cache';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
@@ -113,9 +116,11 @@ async function updateWholesaleAccount(formData: FormData) {
   await requireUser();
 
   const id = toOptional(formData.get('id'));
-  const submittedLicenseeIds = parseWholesaleLicenseeIds(
+  const state = normalizeUsState(String(formData.get('state') ?? 'OH'));
+  if (!state) return { error: 'Enter a valid US state name or two-letter abbreviation.' };
+  const submittedLicenseeIds = stateScopedLicenseeIds(parseWholesaleLicenseeIds(
     String(formData.get('licenseeIds') ?? formData.get('licenseeId') ?? ''),
-  );
+  ), state);
   const submittedLicenseeId = getPrimaryWholesaleLicenseeId(submittedLicenseeIds);
   const name = toOptional(formData.get('name'));
 
@@ -154,7 +159,7 @@ async function updateWholesaleAccount(formData: FormData) {
 
   const existingLicenseeIds = getWholesaleLicenseeIdValues(existingAccount);
   const licenseeIdsChanged = !wholesaleLicenseeIdListsMatch(existingLicenseeIds, submittedLicenseeIds);
-  const shouldRefreshOfficialAccount = licenseeIdsChanged || Boolean(existingAccount.officialAccountId);
+  const shouldRefreshOfficialAccount = state === 'OH' && (licenseeIdsChanged || Boolean(existingAccount.officialAccountId));
   const officialAccount = shouldRefreshOfficialAccount
     ? await findOfficialWholesaleAccountByLicenseeIds({
         existingLicenseeId: existingAccount.licenseeId,
@@ -194,7 +199,7 @@ async function updateWholesaleAccount(formData: FormData) {
     name,
     ownership: toOptional(formData.get('ownership')),
     phone: toOptional(formData.get('phone')),
-    state: toOptional(formData.get('state')) ?? 'OH',
+    state,
     zip: toOptional(formData.get('zip')),
   };
   const officialAccountChanged = Boolean(officialAccount && officialAccount.id !== existingAccount.officialAccountId);
@@ -231,7 +236,7 @@ async function updateWholesaleAccount(formData: FormData) {
       data: {
         licenseeId,
         isActive: true,
-        officialAccountId: officialAccount?.id ?? (licenseeIdsChanged ? null : existingAccount.officialAccountId),
+        officialAccountId: state !== 'OH' ? null : officialAccount?.id ?? (licenseeIdsChanged ? null : existingAccount.officialAccountId),
         name: accountValues.name,
         agencyId: accountValues.agencyId,
         ownership: accountValues.ownership,
@@ -302,7 +307,7 @@ export default async function EditWholesaleAccountPage({
       {query.status ? <p className="toast-notice page-status">{statusMessages[query.status] ?? query.status}</p> : null}
 
       <div className="workflow-shell"><div className="card admin-panel">
-        <form action={updateWholesaleAccount}>
+        <ActionForm action={updateWholesaleAccount}>
           <input name="id" type="hidden" value={account.id} />
           <div className="form-grid">
             <label>
@@ -333,10 +338,7 @@ export default async function EditWholesaleAccountPage({
               County
               <input name="county" defaultValue={account.county ?? ''} />
             </label>
-            <label>
-              State
-              <input name="state" defaultValue={account.state ?? 'OH'} />
-            </label>
+            <StateField defaultValue={normalizeUsState(account.state) ?? 'OH'} />
             <label>
               Zip
               <input name="zip" defaultValue={account.zip ?? ''} />
@@ -355,7 +357,7 @@ export default async function EditWholesaleAccountPage({
             </label>
           </div>
           <SubmitButton type="submit">Save wholesale account</SubmitButton>
-        </form>
+        </ActionForm>
       </div></div>
     </>
   );

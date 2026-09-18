@@ -85,6 +85,8 @@ it('requires exact street number, city, ZIP, model verdict, and location evidenc
   const parsed = parseAccountResearchResult(result);
   assert.equal(validateExactResearchLocation(input, parsed).exact, true);
   assert.equal(validateExactResearchLocation(input, { ...parsed, identity: { ...parsed.identity, matchedZip: '43000' } }).exact, false);
+  assert.equal(validateExactResearchLocation(input, { ...parsed, identity: { ...parsed.identity, matchedState: 'KY' } }).exact, false);
+  assert.equal(validateExactResearchLocation(input, { ...parsed, identity: { ...parsed.identity, matchedState: 'Ohio' } }).exact, true);
   assert.equal(validateExactResearchLocation(input, { ...parsed, evidence: parsed.evidence.map((item) => ({ ...item, exactLocation: false })) }).exact, false);
 });
 

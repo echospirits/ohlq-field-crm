@@ -22,6 +22,8 @@ import { requireOrganizationContext } from '../../../lib/organizations';
 export const metadata = buildPageMetadata('Log Visit');
 
 const statusMessages: Record<string, string> = {
+  'invalid-state': 'Enter a valid US state name or two-letter abbreviation.',
+  'conflicting-state': 'That Licensee ID belongs to an account in another state. Leave the ID blank to create a separate account.',
   'invalid-agency': 'Select an agency before logging an agency visit.',
   'invalid-wholesale': 'Select an existing wholesale account or create one before logging a wholesale visit.',
   'invalid-contact': 'Select a contact tied to the selected account.',

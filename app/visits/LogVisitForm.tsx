@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { StateField } from '../components/StateField';
 import { addEasternCalendarDays, EASTERN_TIME_ZONE } from '../../lib/dateTime';
 import { formatDistanceMiles } from '../../lib/location/distance';
 import type { NearbyAccount } from '../../lib/location/nearbyAccounts';
@@ -688,7 +689,10 @@ export function LogVisitForm({
                 <input name="newWholesaleName" placeholder="Account name" value={newWholesaleName} onChange={(event) => setNewWholesaleName(event.target.value)} />
                 <input name="newWholesaleLicenseeId" placeholder="Licensee ID (optional)" />
                 <input name="newWholesalePhone" placeholder="Phone (optional)" />
-                <input name="newWholesaleCity" placeholder="City (optional)" />
+                <label>Street address<input name="newWholesaleAddress" autoComplete="street-address" /></label>
+                <label>City<input name="newWholesaleCity" autoComplete="address-level2" /></label>
+                <StateField name="newWholesaleState" />
+                <label>ZIP code<input name="newWholesaleZip" autoComplete="postal-code" /></label>
               </div>
               {tags.length > 0 ? (
                 <div className="tag-checkbox-grid">

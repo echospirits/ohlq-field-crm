@@ -4,6 +4,7 @@ import type { AccountResearchResult } from './accountResearchPilot';
 import { isActionableAccountResearchFailure } from './accountResearchFailures';
 import { opportunityTerritoryForCounty, territoryCoverageDeficits } from './opportunityTerritories';
 import { prisma } from './prisma';
+import { isOutsideOhio, normalizeUsState } from './usStates';
 
 const DAY = 86_400_000;
 const ACTIVE_RESEARCH_JOB_STATUSES = [
@@ -140,7 +141,7 @@ export const hasResearchIdentityChanged = (
   return normalized(candidate.name) !== normalized(prior.accountName)
     || normalized(candidate.address) !== normalized(prior.address)
     || normalized(candidate.city) !== normalized(prior.city)
-    || normalized(candidate.state) !== normalized(prior.state)
+    || (normalizeUsState(candidate.state) ?? normalized(candidate.state)) !== (normalizeUsState(prior.state) ?? normalized(prior.state))
     || normalized(candidate.zip) !== normalized(prior.zip);
 };
 
@@ -172,7 +173,7 @@ export function classifyResearchNeed(candidate: ResearchQueueCandidate, now = ne
   // Identity changes, missing scores, and routine staleness alone do not justify
   // public research for accounts with very little recent wholesale activity.
   const tenantActionOverride = stale30 && (recentPursuit || upcomingTwoDayWork || otherUpcomingWork || recentTenantActivity);
-  if (candidate.bottles30 < ACCOUNT_RESEARCH_MINIMUM_BOTTLES_30 && !tenantActionOverride) return null;
+  if (candidate.bottles30 < ACCOUNT_RESEARCH_MINIMUM_BOTTLES_30 && !tenantActionOverride && !isOutsideOhio(candidate.state)) return null;
 
   if (candidate.opportunities.length === 0 && !refreshedAt) return { ...candidate, priorityBucket: 1, researchReason: 'New account without an opportunity score or research' };
   if (hasResearchIdentityChanged(candidate, candidate.targetPublicResearch?.identitySnapshot)) return { ...candidate, priorityBucket: 2, researchReason: 'Account name or address changed since research' };
@@ -256,7 +257,7 @@ export async function getPrioritizedAccountResearchQueue({
       Math.max(bottlesByAccount.get(item.wholesaleAccountId) ?? 0, item._sum.bottles ?? 0),
     );
   }
-  const coverageDeficits = territoryCoverageDeficits(accounts);
+  const coverageDeficits = territoryCoverageDeficits(accounts.filter((account) => !isOutsideOhio(account.state)));
   const queue = accounts
     .filter((account) => !shouldDeferResearchRetry(account, now))
     .map((account) => classifyResearchNeed({
@@ -266,8 +267,8 @@ export async function getPrioritizedAccountResearchQueue({
     }, now))
     .filter((item): item is ResearchQueueItem => Boolean(item))
     .sort((left, right) => {
-      const leftCoverageDeficit = coverageDeficits.get(opportunityTerritoryForCounty(left.county)) ?? 0;
-      const rightCoverageDeficit = coverageDeficits.get(opportunityTerritoryForCounty(right.county)) ?? 0;
+      const leftCoverageDeficit = isOutsideOhio(left.state) ? 0 : coverageDeficits.get(opportunityTerritoryForCounty(left.county)) ?? 0;
+      const rightCoverageDeficit = isOutsideOhio(right.state) ? 0 : coverageDeficits.get(opportunityTerritoryForCounty(right.county)) ?? 0;
       const leftRefresh = left.targetPublicResearch?.lastRefreshedAt?.getTime() ?? 0;
       const rightRefresh = right.targetPublicResearch?.lastRefreshedAt?.getTime() ?? 0;
       const leftIsRetry = left.accountResearchJobs?.length ? 1 : 0;

@@ -11,6 +11,7 @@ import { getCurrentUser } from '../../lib/auth';
 import { getOrganizationContext, hasFeature } from '../../lib/organizations';
 import { getOrganizationTenantConfig } from '../../lib/tenantConfig';
 import { readPublicRatings, readResearchEvidence } from '../../lib/accountResearchQueue';
+import { isOutsideOhio } from '../../lib/usStates';
 
 const activeStatuses = [OpportunityStatus.OPEN, OpportunityStatus.ACTIONED, OpportunityStatus.SNOOZED];
 
@@ -26,7 +27,7 @@ function ScoreBreakdown({ explanation, score, scoringVersion, scoredAt }: { expl
   return <div className="opportunity-score-detail">
     <div className="opportunity-score-summary">
       <div><strong>{Math.round(score)}</strong><span>out of 100</span></div>
-      <p>This score is calculated for your organization using its active products, purchases, activity, public research, and learned outcomes.</p>
+      <p>{scoringVersion === 'RESEARCH_FIT_V1' ? 'Provisional research-only score for your organization’s portfolio. Sales and bottle-price evidence are unavailable. Compare with other research-only accounts and confirm local distribution before pitching.' : 'This score is calculated for your organization using its active products, purchases, activity, public research, and learned outcomes.'}</p>
     </div>
     {components.length > 0 ? <>
       <h4>Point contributions</h4>
@@ -90,9 +91,9 @@ function SourceLine({ names }: { names: string[] }) {
   return <small className="muted">Source: {names.length ? names.join(', ') : 'Not recorded'}</small>;
 }
 
-function ResearchSummary({ research }: { research: AccountResearch | null }) {
+function ResearchSummary({ research, researchOnly = false }: { research: AccountResearch | null; researchOnly?: boolean }) {
   if (!research) return <section className="account-research-summary is-empty" aria-label="Account research summary">
-    <div><h3>Public research</h3><p className="muted">This account has not been researched yet. Its opportunity score currently relies on available sales and activity signals.</p></div>
+    <div><h3>Public research</h3><p className="muted">{researchOnly ? 'Research is needed before a provisional fit score can be calculated. Add a complete street address, city, state and ZIP to make this account eligible. Purchase data is not available for this state.' : 'This account has not been researched yet. Its opportunity score currently relies on available sales and activity signals.'}</p></div>
   </section>;
   const brands = opportunityFactors(research.localBrandsOnMenu);
   const sources = opportunityFactors(research.sourceUrls);
@@ -170,7 +171,7 @@ function OpportunityRow({
         {accountHref && accountName ? <span aria-hidden="true">·</span> : null}
         {accountHref && accountName ? <span className="sr-only">Opportunity: </span> : null}
         <strong>{title}</strong>
-        {productionScore !== undefined ? <span aria-label={`Opportunity score ${Math.round(productionScore)} out of 100`} className="account-opportunity-score"><strong>{Math.round(productionScore)}</strong> score</span> : null}
+        {productionScore !== undefined ? <span aria-label={`Opportunity score ${Math.round(productionScore)} out of 100`} className="account-opportunity-score"><strong>{Math.round(productionScore)}</strong> {scoringVersion === 'RESEARCH_FIT_V1' ? 'provisional' : 'score'}</span> : null}
       </div>
       <span className="account-opportunity-next"><strong>Next</strong> {recommendedAction}</span>
     </div>
@@ -285,7 +286,7 @@ export async function OpportunityAccountPanel({ agencyId, wholesaleAccountId, cu
 
   if (!wholesaleAccountId) return null;
 
-  const [opportunities, sales, visits, worklist, research] = await Promise.all([
+  const [opportunities, sales, visits, worklist, research, account] = await Promise.all([
     prisma.salesOpportunity.findMany({
       where: opportunityWhere,
       include: { scores: { orderBy: { scoredAt: 'desc' }, select: { factors: true, scoredAt: true }, take: 1 }, wholesaleAccount: { select: { id: true, name: true } } },
@@ -303,7 +304,9 @@ export async function OpportunityAccountPanel({ agencyId, wholesaleAccountId, cu
       where: { wholesaleAccountId },
       select: { buyerStructure: true, cocktailMenuUrl: true, cocktailProgram: true, events: true, googleRating: true, googleReviewCount: true, identitySnapshot: true, isNationalChain: true, localBrandsOnMenu: true, notes: true, openStatus: true, ownershipVerification: true, patioOutdoor: true, popularitySignal: true, privateDining: true, researchConfidence: true, sourceUrls: true, updatedAt: true, websiteUrl: true, yelpRating: true, yelpReviewCount: true },
     }),
+    prisma.wholesaleAccount.findUnique({ where: { id: wholesaleAccountId }, select: { state: true } }),
   ]);
+  const researchOnly = isOutsideOhio(account?.state);
   const timeline = [
     ...sales.map((event) => ({ at: event.reportDate, kind: 'purchase', title: `${event.itemCode} - ${event.itemName}`, detail: `${event.bottles} bottle${event.bottles === 1 ? '' : 's'} purchased` })),
     ...visits.map((visit) => ({ at: visit.visitAt, kind: 'visit', title: `${visit.createdBy ?? 'Team member'} visited`, detail: visit.summary ?? 'Visit logged' })),
@@ -314,11 +317,11 @@ export async function OpportunityAccountPanel({ agencyId, wholesaleAccountId, cu
     <section className="card account-opportunity-panel"><div className="section-heading account-opportunity-heading"><div><span className="page-eyebrow">Why care right now?</span><h2>Opportunity intelligence</h2></div><Link className="btn secondary compact-btn" href="/opportunities">View inbox</Link></div>
       <IntelligenceFacts facts={[
         { label: 'Active', value: opportunities.length },
-        { label: `${tenantConfig.productLabel} bottles / 90d`, value: tenantBottles90 },
+        { label: `${tenantConfig.productLabel} bottles / 90d`, value: researchOnly ? 'Unavailable' : tenantBottles90 },
         { label: 'Last visit', value: visits[0] ? formatEasternDate(visits[0].visitAt) : 'Never' },
         { label: 'Follow-ups', value: worklist.length },
       ]} />
-      <ResearchSummary research={research} />
+      <ResearchSummary research={research} researchOnly={researchOnly} />
       {opportunities.slice(0, 3).map((item) => <OpportunityRow
         explanation={item.scores[0]?.factors ?? item.explanation}
         key={item.id}

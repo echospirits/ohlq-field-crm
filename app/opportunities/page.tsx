@@ -16,27 +16,29 @@ import { updateOpportunity } from './actions';
 import { ContextualActions } from '../components/ContextualActions';
 import { DataFreshnessBadge } from '../components/DataFreshnessBadge';
 import { OpportunitySearch } from './OpportunitySearch';
+import { normalizeUsState } from '../../lib/usStates';
 
 export const metadata = buildPageMetadata('Wholesale Opportunities');
 
 const labels: Record<OpportunityType, string> = { LAPSED_BUYER: 'Reactivation', FIRST_ORDER_FOLLOW_UP: 'First Reorder', CATEGORY_CONQUEST: 'Category Opportunity', CROSS_SELL: 'Cross-Sell', NO_RECENT_TOUCH: 'Needs Attention' };
 const TERRITORY_RESULT_LIMIT = 12;
 const opportunityInclude = {
-  wholesaleAccount: { select: { name: true, city: true, county: true } },
+  wholesaleAccount: { select: { name: true, city: true, county: true, state: true } },
   worklistItems: { where: { status: { in: ['OPEN', 'IN_PROGRESS'] as const } }, orderBy: [{ dueDate: 'asc' as const }, { createdAt: 'asc' as const }], take: 1, select: { id: true } },
 } satisfies Prisma.SalesOpportunityInclude;
 type OpportunityRow = Prisma.SalesOpportunityGetPayload<{ include: typeof opportunityInclude }>;
-type OpportunityQuery = { type?: string; priority?: string; q?: string; sort?: string; territory?: string; view?: string };
+type OpportunityQuery = { type?: string; priority?: string; q?: string; state?: string; sort?: string; territory?: string; view?: string };
 
 const reasonsFor = (item: OpportunityRow) => opportunityEvidence(Array.isArray(item.explanation) ? item.explanation.map(String) : []);
 
-function opportunityWhere({ organizationId, priority, search, territory, type }: { organizationId: string; priority?: string; search?: string; territory?: OpportunityTerritorySlug; type?: OpportunityType }): Prisma.SalesOpportunityWhereInput {
+function opportunityWhere({ organizationId, priority, search, state, territory, type }: { organizationId: string; priority?: string; search?: string; state?: string; territory?: OpportunityTerritorySlug; type?: OpportunityType }): Prisma.SalesOpportunityWhereInput {
   return {
     organizationId,
     status: OpportunityStatus.OPEN,
     ...(type ? { type } : {}),
     ...(priority ? { priorityBand: priority.toUpperCase() } : {}),
     ...(territory ? { wholesaleAccount: { is: opportunityTerritoryAccountWhere(territory) } } : {}),
+    ...(state ? { AND: [{ wholesaleAccount: { is: { state: { equals: state, mode: 'insensitive' } } } }] } : {}),
     ...(search ? { OR: [
       { title: { contains: search, mode: 'insensitive' as const } },
       { recommendedAction: { contains: search, mode: 'insensitive' as const } },
@@ -56,12 +58,13 @@ export default async function OpportunityInbox({ searchParams }: { searchParams?
   const query = (await searchParams) ?? {};
   const type = Object.values(OpportunityType).includes(query.type as OpportunityType) ? query.type as OpportunityType : undefined;
   const search = query.q?.trim() ?? '';
-  const territory = isOpportunityTerritorySlug(query.territory) ? query.territory : undefined;
-  const territoryView = query.view === 'territories';
+  const state = normalizeUsState(query.state) ?? undefined;
+  const territory = (!state || state === 'OH') && isOpportunityTerritorySlug(query.territory) ? query.territory : undefined;
+  const territoryView = (!state || state === 'OH') && query.view === 'territories';
   const lowestFirst = query.sort === 'lowest' && !territoryView;
   const priority = query.priority?.toLowerCase() === 'high' ? 'HIGH' : undefined;
-  const baseWhere = opportunityWhere({ organizationId, priority, search, type });
-  const filteredWhere = opportunityWhere({ organizationId, priority, search, territory, type });
+  const baseWhere = opportunityWhere({ organizationId, priority, search, state: territoryView ? 'OH' : state, type });
+  const filteredWhere = opportunityWhere({ organizationId, priority, search, state, territory, type });
 
   const [opportunityCount, assignees, opportunities, territoryGroups] = await Promise.all([
     prisma.salesOpportunity.count({ where: territoryView ? baseWhere : filteredWhere }),
@@ -83,15 +86,15 @@ export default async function OpportunityInbox({ searchParams }: { searchParams?
   const buildHref = (updates: Partial<OpportunityQuery>) => {
     const next = { ...query, ...updates };
     const params = new URLSearchParams();
-    for (const key of ['type', 'priority', 'q', 'sort', 'territory', 'view'] as const) if (next[key]) params.set(key, next[key]!);
+    for (const key of ['type', 'priority', 'q', 'state', 'sort', 'territory', 'view'] as const) if (next[key]) params.set(key, next[key]!);
     return `/opportunities${params.size ? `?${params}` : ''}`;
   };
   const renderOpportunity = (item: OpportunityRow) => {
     const reasons = reasonsFor(item);
     return <article aria-labelledby={`opportunity-${item.id}`} className="opportunity-row" key={item.id}>
-      <div className="opportunity-row-identity"><h2 id={`opportunity-${item.id}`}><Link href={`/wholesale/${item.wholesaleAccountId}`}>{item.wholesaleAccount.name}</Link></h2><p className="muted">{[item.wholesaleAccount.city, item.wholesaleAccount.county].filter(Boolean).join(' · ') || 'Location unavailable'}</p><div className="opportunity-row-state"><span className={`priority priority-${item.priorityBand.toLowerCase()}`}>{item.priorityBand}</span><span>{labels[item.type]}</span></div></div>
+      <div className="opportunity-row-identity"><h2 id={`opportunity-${item.id}`}><Link href={`/wholesale/${item.wholesaleAccountId}`}>{item.wholesaleAccount.name}</Link></h2><p className="muted">{[item.wholesaleAccount.city, item.wholesaleAccount.state ?? 'OH', item.wholesaleAccount.county].filter(Boolean).join(' · ')}</p><div className="opportunity-row-state"><span className={`priority priority-${item.priorityBand.toLowerCase()}`}>{item.priorityBand}</span><span>{labels[item.type]}</span></div></div>
       <div className="opportunity-row-recommendation"><strong>{item.title}</strong>{item.targetCategory ? <small>{item.targetCategory}</small> : null}<p><strong>Next:</strong> {item.recommendedAction}</p></div>
-      <dl className="opportunity-row-metrics"><div><dt>Score</dt><dd>{Math.round(item.productionScore)}</dd></div><div><dt>Intelligence updated</dt><dd>{formatEasternDateTime(item.lastDetectedAt)}</dd></div></dl>
+      <dl className="opportunity-row-metrics"><div><dt>{item.scoringVersion === 'RESEARCH_FIT_V1' ? 'Research-only score (provisional)' : 'Score'}</dt><dd>{Math.round(item.productionScore)}</dd></div><div><dt>Intelligence updated</dt><dd>{formatEasternDateTime(item.lastDetectedAt)}</dd></div></dl>
       {item.status === OpportunityStatus.ACTIONED ? <p className="opportunity-pursuing" role="status"><strong>Pursuing</strong>{item.actionedAt ? ` since ${formatEasternDate(item.actionedAt)}` : ''}</p> : null}
       <ul aria-label="Opportunity evidence" className="opportunity-row-reasons">{reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>
       <div className="opportunity-row-actions"><ContextualActions context={{ accountName: item.wholesaleAccount.name, opportunityId: item.id, reason: reasons.join(' '), returnTo: buildHref({}), sourceLabel: item.title, sourceType: item.type, wholesaleAccountId: item.wholesaleAccountId }} currentUserId={currentUser.id} existingFollowUpId={item.worklistItems[0]?.id} followUpLabel="Create Follow-up" users={actionUsers} />
@@ -106,14 +109,15 @@ export default async function OpportunityInbox({ searchParams }: { searchParams?
   return <div className="opportunities-page">
     <header className="page-heading page-header opportunities-header"><div><span className="page-eyebrow">Intelligence · Wholesale</span><h1>Wholesale Opportunities</h1><p className="muted">Prioritized recommendations. Geography changes what you see, never how an account scores.</p></div><div className="page-actions"><DataFreshnessBadge datePrefix="Signals through" sourceDate={latestSignalAt} /><Link className="btn secondary" href="/alerts?view=pursuing">View pursuing</Link>{currentUser.role === UserRole.ADMIN ? <Link className="btn secondary" href="/admin/opportunity-performance">Performance</Link> : null}</div></header>
     <nav aria-label="Opportunity views" className="opportunity-filters">
-      <Link aria-current={!territoryView && !territory && !type && !priority && !lowestFirst ? 'page' : undefined} className={!territoryView && !territory && !type && !priority && !lowestFirst ? 'active' : undefined} href="/opportunities">Best statewide</Link>
-      <Link aria-current={territoryView ? 'page' : undefined} className={territoryView ? 'active' : undefined} href={buildHref({ territory: undefined, view: 'territories', sort: undefined })}>Best by territory</Link>
+      <Link aria-current={!territoryView && !territory && !type && !priority && !lowestFirst ? 'page' : undefined} className={!territoryView && !territory && !type && !priority && !lowestFirst ? 'active' : undefined} href="/opportunities">Best overall</Link>
+      <Link aria-current={territoryView ? 'page' : undefined} className={territoryView ? 'active' : undefined} href={buildHref({ territory: undefined, view: 'territories', sort: undefined, state: undefined })}>Best by Ohio territory</Link>
       <Link aria-current={priority ? 'page' : undefined} className={priority ? 'active' : undefined} href={buildHref({ priority: 'high', sort: undefined })}>High priority</Link>
       <Link aria-current={lowestFirst ? 'page' : undefined} className={lowestFirst ? 'active' : undefined} href={buildHref({ sort: 'lowest', territory: undefined, view: undefined })}>Lowest scores</Link>
       {Object.values(OpportunityType).map((value) => <Link aria-current={type === value ? 'page' : undefined} className={type === value ? 'active' : undefined} href={buildHref({ type: value })} key={value}>{labels[value]}</Link>)}
     </nav>
-    {!territoryView ? <nav aria-label="Opportunity territories" className="opportunity-filters opportunity-territory-filters"><Link aria-current={!territory ? 'page' : undefined} className={!territory ? 'active' : undefined} href={buildHref({ territory: undefined })}>All Ohio</Link>{OPPORTUNITY_TERRITORIES.map((item) => <Link aria-current={territory === item.slug ? 'page' : undefined} className={territory === item.slug ? 'active' : undefined} href={buildHref({ territory: item.slug, view: undefined })} key={item.slug}>{item.shortLabel}</Link>)}</nav> : null}
-    <div className="opportunity-toolbar"><OpportunitySearch value={search}/><p className="opportunity-result-count">{territoryView ? `Up to ${TERRITORY_RESULT_LIMIT} top opportunities per territory across ${opportunityCount.toLocaleString()} matches.` : `${opportunities.length.toLocaleString()} of ${opportunityCount.toLocaleString()} matching opportunities · ${lowestFirst ? 'Lowest' : 'Highest'} score first`}</p>{search ? <Link href={buildHref({ q: undefined })}>Clear search</Link> : null}</div>
+    {!territoryView ? <nav aria-label="Opportunity territories" className="opportunity-filters opportunity-territory-filters"><Link aria-current={!territory ? 'page' : undefined} className={!territory ? 'active' : undefined} href={buildHref({ territory: undefined })}>All territories</Link>{OPPORTUNITY_TERRITORIES.map((item) => <Link aria-current={territory === item.slug ? 'page' : undefined} className={territory === item.slug ? 'active' : undefined} href={buildHref({ territory: item.slug, view: undefined, state: 'OH' })} key={item.slug}>{item.shortLabel}</Link>)}</nav> : null}
+    <div className="opportunity-toolbar"><OpportunitySearch value={search} state={state ?? ''}/><p className="opportunity-result-count">{territoryView ? `Up to ${TERRITORY_RESULT_LIMIT} top opportunities per Ohio territory across ${opportunityCount.toLocaleString()} matches.` : `${opportunities.length.toLocaleString()} of ${opportunityCount.toLocaleString()} matching opportunities · ${lowestFirst ? 'Lowest' : 'Highest'} score first`}</p>{search || state ? <Link href={buildHref({ q: undefined, state: undefined, territory: undefined })}>Clear search and state</Link> : null}</div>
+    <p className="muted">Research-only scores are provisional discovery ratings. Compare them with other research-only accounts; sales-backed scores use additional purchase and price evidence.</p>
     {territoryView ? <div className="opportunity-territory-groups">{territoryGroups.map((group) => <section aria-labelledby={`territory-${group.slug}`} className="opportunity-territory-group" key={group.slug}>
       <div className="section-heading opportunity-territory-heading"><div><span className="page-eyebrow">Sales territory</span><h2 id={`territory-${group.slug}`}>{group.label}</h2><p className="muted">{group.count.toLocaleString()} matching open {group.count === 1 ? 'opportunity' : 'opportunities'}</p></div>{group.count > 0 ? <Link className="btn secondary" href={buildHref({ territory: group.slug, view: undefined })}>View all</Link> : null}</div>
       {group.opportunities.length ? <div className="opportunity-results">{group.opportunities.map(renderOpportunity)}</div> : <p className="card muted">No open opportunities match this territory and filter.</p>}

@@ -2,6 +2,7 @@
 
 import { AccountType, OpportunityEventType, PhotoType, UserRole, WorklistCategory, WorklistSource, WorklistStatus } from '@prisma/client';
 import { revalidatePath } from 'next/cache';
+import { normalizeUsState, stateScopedLicenseeIds } from '../../lib/usStates';
 import { redirect, unstable_rethrow } from 'next/navigation';
 import { getUserDisplayName, requireUser } from '../../lib/auth';
 import {
@@ -338,10 +339,13 @@ async function createVisitWithDiagnostics(formData: FormData, diagnostics: Visit
     let wholesaleAccountId = selectedWholesaleAccountId;
 
     if (locationType === 'wholesale' && !wholesaleAccountId && (newWholesaleLicenseeId || newWholesaleName)) {
-      const licenseeId =
-        normalizeWholesaleLicenseeId(newWholesaleLicenseeId) ?? toManualLicenseeId(newWholesaleName ?? 'Wholesale account');
+      const state = normalizeUsState(String(formData.get('newWholesaleState') ?? 'OH'));
+      if (!state) redirectVisitWithStatus(formOrigin, 'invalid-state', locationType);
+      const licenseeId = stateScopedLicenseeIds([
+        normalizeWholesaleLicenseeId(newWholesaleLicenseeId) ?? toManualLicenseeId(newWholesaleName ?? 'Wholesale account'),
+      ], state!)[0];
       const name = newWholesaleName ?? `Wholesale ${licenseeId}`;
-      const officialAccount = newWholesaleLicenseeId
+      const officialAccount = newWholesaleLicenseeId && state === 'OH'
         ? await tx.account.findFirst({
             where: {
               licenseeId: { equals: licenseeId, mode: 'insensitive' },
@@ -364,7 +368,13 @@ async function createVisitWithDiagnostics(formData: FormData, diagnostics: Visit
             },
           })
         : await tx.wholesaleAccount.findFirst({
-            where: { name: { equals: name, mode: 'insensitive' } },
+            where: {
+              name: { equals: name, mode: 'insensitive' },
+              state,
+              address: toOptional(formData.get('newWholesaleAddress')) ?? '__missing_address_do_not_merge__',
+              city: toOptional(formData.get('newWholesaleCity')) ?? '__missing_city_do_not_merge__',
+              mergedIntoId: null,
+            },
             select: {
               id: true,
               licenseeId: true,
@@ -376,6 +386,9 @@ async function createVisitWithDiagnostics(formData: FormData, diagnostics: Visit
             },
           });
 
+      if (existingAccount && (normalizeUsState(existingAccount.state) ?? 'OH') !== state) {
+        redirectVisitWithStatus(formOrigin, 'conflicting-state', locationType);
+      }
       const wholesaleAccount = existingAccount
         ? existingAccount
         : await tx.wholesaleAccount.create({
@@ -385,6 +398,7 @@ async function createVisitWithDiagnostics(formData: FormData, diagnostics: Visit
               officialAccountId: officialAccount?.id,
               isActive: true,
               name,
+              state,
               agencyId: toOptional(formData.get('newWholesaleAgencyId')),
               address: toOptional(formData.get('newWholesaleAddress')),
               city: toOptional(formData.get('newWholesaleCity')),
@@ -402,7 +416,7 @@ async function createVisitWithDiagnostics(formData: FormData, diagnostics: Visit
         const nextAddress = {
           address: toOptional(formData.get('newWholesaleAddress')) ?? existingAccount.address,
           city: toOptional(formData.get('newWholesaleCity')) ?? existingAccount.city,
-          state: existingAccount.state ?? 'OH',
+          state,
           zip: toOptional(formData.get('newWholesaleZip')) ?? existingAccount.zip,
         };
         await tx.wholesaleAccount.update({
@@ -411,6 +425,7 @@ async function createVisitWithDiagnostics(formData: FormData, diagnostics: Visit
             isActive: true,
             officialAccountId: officialAccount?.id ?? undefined,
             name,
+            state,
             agencyId: toOptional(formData.get('newWholesaleAgencyId')) ?? undefined,
             address: toOptional(formData.get('newWholesaleAddress')) ?? undefined,
             city: toOptional(formData.get('newWholesaleCity')) ?? undefined,

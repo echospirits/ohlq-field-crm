@@ -29,8 +29,11 @@ export const opportunityTerritoryLabel = (slug: OpportunityTerritorySlug) =>
 
 export function opportunityTerritoryAccountWhere(slug: OpportunityTerritorySlug): Prisma.WholesaleAccountWhereInput {
   const territory = OPPORTUNITY_TERRITORIES.find((item) => item.slug === slug)!;
-  if (territory.counties) return { county: { in: [...territory.counties], mode: 'insensitive' } };
-  return { OR: [{ county: null }, { county: { notIn: [...knownCountyNames], mode: 'insensitive' } }] };
+  const ohio: Prisma.WholesaleAccountWhereInput = { OR: [{ state: { in: ['OH', 'Ohio'], mode: 'insensitive' } }, { state: null }, { state: '' }] };
+  return { AND: [ohio, territory.counties
+    ? { county: { in: [...territory.counties], mode: 'insensitive' } }
+    : { OR: [{ county: null }, { county: { notIn: [...knownCountyNames], mode: 'insensitive' } }] },
+  ] };
 }
 
 export function territoryCoverageDeficits(accounts: Array<{ county: string | null; targetPublicResearch: { lastRefreshedAt: Date | null } | null }>) {

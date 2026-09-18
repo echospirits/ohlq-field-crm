@@ -2,6 +2,10 @@
 export const runtime = 'nodejs';
 
 import { SubmitButton } from '../components/SubmitButton';
+import { randomUUID } from 'node:crypto';
+import { ActionForm } from '../components/ActionForm';
+import { StateField } from '../components/StateField';
+import { normalizeUsState, stateScopedLicenseeIds } from '../../lib/usStates';
 import { revalidatePath } from 'next/cache';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
@@ -295,14 +299,17 @@ async function createWholesale(formData: FormData) {
 
   const user = await requireUser();
   const { organizationId } = await requireOrganizationContext(user);
-  const licenseeIds = parseWholesaleLicenseeIds(
+  const state = normalizeUsState(String(formData.get('state') ?? 'OH'));
+  if (!state) return { error: 'Enter a valid US state name or two-letter abbreviation.' };
+  const licenseeIds = stateScopedLicenseeIds(parseWholesaleLicenseeIds(
     String(formData.get('licenseeIds') ?? formData.get('licenseeId') ?? ''),
-  );
+  ), state);
+  if (!licenseeIds.length) licenseeIds.push(`MANUAL-${randomUUID()}`);
   const licenseeId = getPrimaryWholesaleLicenseeId(licenseeIds);
   const name = String(formData.get('name') ?? '').trim();
 
   if (!licenseeId || !name) {
-    redirect('/wholesale?status=invalid');
+    return { error: 'An account name is required.' };
   }
 
   const requestedTagIds = getSelectedTagIds(formData);
@@ -315,19 +322,23 @@ async function createWholesale(formData: FormData) {
     take: 2,
   });
   const matchingAccountIds = Array.from(new Set(matchingAccounts.map((account) => account.id)));
+  if (matchingAccounts.some((account) => (normalizeUsState(account.state) ?? 'OH') !== state)) {
+    return { error: 'This Licensee ID belongs to an account in another state. Leave Licensee IDs blank to create a separate account.' };
+  }
 
   if (matchingAccountIds.length > 1) {
     redirect('/wholesale?status=duplicate-licensee');
   }
 
-  const officialAccount = await prisma.account.findFirst({
+  const officialAccount = state === 'OH' ? await prisma.account.findFirst({
     where: {
       licenseeId: { equals: licenseeId, mode: 'insensitive' },
       type: AccountType.BAR_RESTAURANT,
     },
     select: { id: true },
-  });
+  }) : null;
   const accountData = {
+    state,
     isActive: true,
     name,
     officialAccountId: officialAccount?.id,
@@ -353,7 +364,7 @@ async function createWholesale(formData: FormData) {
           ...getGeocodeResetForAddressChange(existingAccount, {
             address: accountData.address,
             city: accountData.city,
-            state: 'OH',
+            state,
             zip: accountData.zip,
           }),
           licenseeId,
@@ -400,6 +411,8 @@ const wholesaleSearchWhere = (q: string, organizationId: string, includeIntellig
     ...getWholesaleLicenseeIdTextSearchWhere(q),
     { agencyId: { contains: q, mode: 'insensitive' } },
     { address: { contains: q, mode: 'insensitive' } },
+    { city: { contains: q, mode: 'insensitive' } },
+    { state: { equals: normalizeUsState(q) ?? q, mode: 'insensitive' } },
     { phone: { contains: q, mode: 'insensitive' } },
     { tags: { some: { organizationId, tag: { name: { contains: q, mode: 'insensitive' } } } } },
     { menuPlacements: { some: { organizationId, product: { contains: q, mode: 'insensitive' } } } },
@@ -498,7 +511,7 @@ export default async function WholesalePage({
       actionLabel: 'Log visit',
       address: account.address,
       agencyId: account.agencyId,
-      city: account.city,
+      city: [account.city, account.state].filter(Boolean).join(', ') || null,
       id: account.id,
       licenseeIdsText: formatWholesaleLicenseeIds(account),
       mostRecentVisit: lastVisitAt,
@@ -557,20 +570,22 @@ export default async function WholesalePage({
 
       <details className="card compact-details admin-panel">
         <summary>Create non-official wholesale account</summary>
-        <form action={createWholesale}>
+        <ActionForm action={createWholesale}>
           <div className="form-grid">
-            <textarea name="licenseeIds" placeholder="Licensee IDs" required rows={3} />
-            <input name="name" placeholder="Name" required />
-            <input name="phone" placeholder="Phone" />
-            <input name="city" placeholder="City" />
+            <label>Account name<input name="name" required /></label>
+            <label>Street address<input name="address" autoComplete="street-address" /></label>
+            <label>City<input name="city" autoComplete="address-level2" /></label>
+            <StateField />
+            <label>ZIP code<input name="zip" autoComplete="postal-code" /></label>
+            <label>Phone<input name="phone" type="tel" /></label>
           </div>
+          <p className="muted">Add a street address, city, state and ZIP for location research. Outside Ohio, research can assess fit without sales data; scores are labeled provisional.</p>
           <details className="compact-details nested-details">
             <summary>More account details</summary>
             <div className="form-grid">
               <input name="agencyId" placeholder="Agency ID" />
-              <input name="address" placeholder="Address" />
+              <label>Licensee IDs (optional)<textarea name="licenseeIds" rows={2} /></label>
               <input name="county" placeholder="County" />
-              <input name="zip" placeholder="Zip" />
               <input name="ownership" placeholder="Ownership" />
               <input name="districtId" placeholder="District ID" />
               <input name="deliveryDay" placeholder="Delivery Day" />
@@ -591,7 +606,7 @@ export default async function WholesalePage({
             </details>
           ) : null}
           <SubmitButton type="submit">Save wholesale account</SubmitButton>
-        </form>
+        </ActionForm>
       </details>
 
       <div className="section-heading">

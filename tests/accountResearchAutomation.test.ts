@@ -18,6 +18,17 @@ const candidate = (overrides: Partial<ResearchQueueCandidate> = {}): ResearchQue
   ...overrides,
 });
 
+it('researches new out-of-state accounts without inventing sales, while retaining normal freshness and correction handling', () => {
+  const outside = candidate({ state: 'Kentucky', bottles30: 0, opportunities: [], targetPublicResearch: null });
+  assert.equal(classifyResearchNeed(outside, now)?.priorityBucket, 1);
+  assert.equal(classifyResearchNeed({ ...outside, state: 'OH' }, now), null);
+  assert.equal(classifyResearchNeed({ ...outside, state: 'INVALID' }, now), null);
+  const fresh = { ...outside, targetPublicResearch: { lastRefreshedAt: daysAgo(5), identitySnapshot: createResearchIdentitySnapshot(outside) } };
+  assert.equal(classifyResearchNeed(fresh, now), null);
+  assert.equal(classifyResearchNeed({ ...fresh, city: 'New city' }, now)?.priorityBucket, 2);
+  assert.equal(hasResearchIdentityChanged({ ...outside, state: 'KY' }, createResearchIdentitySnapshot(outside)), false);
+});
+
 it('maps Ohio metros and only favors outside territories while their research coverage trails Central Ohio', () => {
   assert.equal(opportunityTerritoryForCounty('Franklin'), 'central-ohio');
   assert.equal(opportunityTerritoryForCounty('CUYAHOGA'), 'cleveland');

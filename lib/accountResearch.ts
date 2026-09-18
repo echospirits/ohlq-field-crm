@@ -3,6 +3,7 @@ import Papa from 'papaparse';
 import { createResearchIdentitySnapshot, readBusinessHours } from './accountResearchQueue';
 import { refreshTenantOpportunityScoresForAccounts } from './accountResearchScoring';
 import { prisma } from './prisma';
+import { US_STATES } from './usStates';
 
 const DAY = 86_400_000;
 export const PURSUED_RESEARCH_DAYS = 30;
@@ -159,7 +160,10 @@ export async function getAccountResearchQueue({ db = prisma, now = new Date(), l
     where: {
       isActive: true,
       mergedIntoId: null,
-      opportunities: { some: { ...opportunityScope, status: { in: activeStatuses } } },
+      OR: [
+        { opportunities: { some: { ...opportunityScope, status: { in: activeStatuses } } } },
+        { state: { in: US_STATES.filter(({ code }) => code !== 'OH').map(({ code }) => code) }, address: { not: null }, city: { not: null }, zip: { not: null } },
+      ],
       ...(!includeFresh ? { AND: [{ OR: [
         { targetPublicResearch: { is: null } },
         { targetPublicResearch: { is: { lastRefreshedAt: null } } },

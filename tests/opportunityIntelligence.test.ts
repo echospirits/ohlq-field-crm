@@ -10,6 +10,36 @@ const base = (overrides: Partial<AccountOpportunitySignals> = {}): AccountOpport
 });
 const item = (overrides: Partial<AccountOpportunitySignals['purchases'][number]> = {}) => ({ category: 'BOURBON' as const, itemCode: '2804B', itemName: 'Echo Bourbon', isEcho: true, lastPurchaseAt: '2026-07-05', bottles30: 0, bottles60: 4, bottles90: 4, currentAnnualBottles: 4, ...overrides });
 
+it('assesses researched prospects without sales and separates tenant fit from unavailable sales evidence', () => {
+  const rum = { itemCode: 'RUM', name: 'Tenant Rum', category: 'RUM' as const, price750: 30, isLocal: true, priority: 1 };
+  const signal = base({ salesDataAvailable: false, researchCurrent: true, researchConfidence: 'HIGH', openStatus: 'Open',
+    portfolio: [rum], cocktailProgram: 'Strong', popularitySignal: 'High', patioOutdoor: 'Yes',
+    isNationalChain: false, buyerStructure: 'Independent owner', localBrandsOnMenu: ['Local Rum'],
+    publicRatings: [{ sourceName: 'Yelp', rating: 4.7, reviewCount: 1100 }],
+    researchEvidence: [{ field: 'menuCategories', claim: 'The current menu lists rum cocktails.', exactLocation: true }],
+  });
+  const result = selectPrimaryOpportunity(detectOpportunityHypotheses(signal), signal)!;
+  assert.equal(result.ranking.version, 'RESEARCH_FIT_V1');
+  assert.equal(result.ranking.score, 100);
+  assert.equal(result.hypothesis.targetProduct, undefined);
+  const oldPitch = { ...result.hypothesis, title: 'Introduce Tenant Rum', targetProduct: rum, pitchMode: 'SPECIFIC_PRODUCT' as const };
+  assert.equal(presentOpportunityHypothesis(oldPitch, signal).targetProduct, undefined);
+  assert.equal(presentOpportunityHypothesis(oldPitch, signal).pitchMode, 'RESEARCH_ONLY');
+  assert.match(result.ranking.factors.join(' '), /not equivalent to a sales-backed V5/);
+  const vodka = { ...signal, portfolio: [{ ...rum, category: 'VODKA' as const }] };
+  assert.equal(selectPrimaryOpportunity(detectOpportunityHypotheses(vodka), vodka)!.ranking.score, 80);
+  const unknown = { ...signal, cocktailProgram: 'Unknown', popularitySignal: 'Unknown', patioOutdoor: 'Unknown', isNationalChain: null,
+    buyerStructure: null, localBrandsOnMenu: [], publicRatings: [], researchEvidence: [] };
+  assert.equal(selectPrimaryOpportunity(detectOpportunityHypotheses(unknown), unknown)!.ranking.score, 0);
+  const closed = { ...signal, openStatus: 'Closed' };
+  assert.equal(selectPrimaryOpportunity(detectOpportunityHypotheses(closed), closed)!.ranking.score, 0);
+  const chain = { ...signal, isNationalChain: true };
+  assert.ok(selectPrimaryOpportunity(detectOpportunityHypotheses(chain), chain)!.ranking.score <= 20);
+  assert.deepEqual(detectOpportunityHypotheses({ ...signal, researchCurrent: false }), []);
+  assert.deepEqual(detectOpportunityHypotheses({ ...signal, accountStatus: 'DO_NOT_PURSUE' }), []);
+  assert.deepEqual(detectOpportunityHypotheses({ ...signal, portfolio: [] }), []);
+});
+
 describe('opportunity detectors', () => {
   it('detects lapsed buyer with item code and name explanation', () => { const found = detectOpportunityHypotheses(base({ echoBottles90: 4, lastEchoPurchaseAt: '2026-07-05', daysSinceLastEchoPurchase: 40, purchases: [item()] })); assert.equal(found[0].type, OpportunityType.LAPSED_BUYER); assert.match(found[0].explanation.join(' '), /2804B - Echo Bourbon/); });
   it('detects first-order follow-up only with complete history', () => { const signal = base({ echoBottles30: 2, echoBottles90: 2, echoPurchaseEvents90: 1, firstEchoPurchaseAt: '2026-08-05', lastEchoPurchaseAt: '2026-08-05', purchases: [item({ bottles30: 2, bottles90: 2 })] }); assert.ok(detectOpportunityHypotheses(signal).some((o) => o.type === OpportunityType.FIRST_ORDER_FOLLOW_UP)); assert.ok(!detectOpportunityHypotheses({ ...signal, historyComplete: false }).some((o) => o.type === OpportunityType.FIRST_ORDER_FOLLOW_UP)); });

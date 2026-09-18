@@ -18,6 +18,11 @@ export type PurchaseSignal = {
 };
 
 export type AccountOpportunitySignals = {
+  salesDataAvailable?: boolean;
+  researchCurrent?: boolean;
+  researchConfidence?: string | null;
+  openStatus?: string | null;
+  researchEvidence?: Array<{ field: string; claim: string; exactLocation: boolean }>;
   accountName?: string;
   organizationId?: string;
   productLabel?: string;
@@ -70,7 +75,7 @@ export type AccountOpportunitySignals = {
 
 export type OpportunityHypothesis = {
   targetProduct?: AffinityProduct;
-  pitchMode?: 'ACCOUNT_FIT' | 'SPECIFIC_PRODUCT';
+  pitchMode?: 'ACCOUNT_FIT' | 'SPECIFIC_PRODUCT' | 'RESEARCH_ONLY';
   cycleKey: string;
   explanation: string[];
   recommendedAction: string;
@@ -121,6 +126,7 @@ function accountFitCopy(signals: AccountOpportunitySignals, type: OpportunityTyp
 }
 
 export function presentOpportunityHypothesis(hypothesis: OpportunityHypothesis, signals: AccountOpportunitySignals): OpportunityHypothesis {
+  if (signals.salesDataAvailable === false) return researchOnlyHypothesis(signals);
   if (!hypothesis.targetProduct || (hypothesis.type !== OpportunityType.CATEGORY_CONQUEST && hypothesis.type !== OpportunityType.CROSS_SELL)) return hypothesis;
   const { qualified } = productPitchQualified(signals, hypothesis.targetProduct);
   if (qualified) return { ...hypothesis, pitchMode: 'SPECIFIC_PRODUCT' };
@@ -157,8 +163,21 @@ const qualitativePublicScore = (signals: AccountOpportunitySignals) => {
   return Math.min(15, score);
 };
 
+function researchOnlyHypothesis(signals: AccountOpportunitySignals): OpportunityHypothesis {
+    return {
+      type: OpportunityType.CATEGORY_CONQUEST, pitchMode: 'RESEARCH_ONLY', targetCategory: null,
+      cycleKey: 'research-fit', title: 'Research-based account fit',
+      recommendedAction: signals.openStatus === 'Closed' ? 'Verify closure before pursuing' : 'Qualify buyer, price fit and local distribution',
+      explanation: ['Provisional research-only assessment; purchase volume, bottle-price affinity and buying outcomes are unavailable.'],
+    };
+}
+
 export function detectOpportunityHypotheses(signals: AccountOpportunitySignals): OpportunityHypothesis[] {
   if (signals.accountStatus === 'DO_NOT_PURSUE') return [];
+  if (signals.salesDataAvailable === false) {
+    if (!signals.researchCurrent || !signals.portfolio?.length) return [];
+    return [researchOnlyHypothesis(signals)];
+  }
   const result: OpportunityHypothesis[] = [];
   const lastEcho = signals.purchases.filter((item) => item.isEcho).sort((a, b) =>
     (b.lastPurchaseAt ?? '').localeCompare(a.lastPurchaseAt ?? ''))[0];
@@ -264,6 +283,7 @@ export const noCurrentOpportunityRank = (): RankResult => ({
 
 export class RuleBasedOpportunityRanker implements OpportunityRanker {
   rank(opportunity: OpportunityHypothesis, signals: AccountOpportunitySignals): RankResult {
+    if (signals.salesDataAvailable === false || opportunity.pitchMode === 'RESEARCH_ONLY') return rankResearchOnly(signals);
     const factors = [...opportunity.explanation];
     const accountFit = opportunity.pitchMode === 'ACCOUNT_FIT';
     const categoryBottles = opportunity.targetCategory ? sum90(allForCategory(signals, opportunity.targetCategory)) : 0;
@@ -333,6 +353,44 @@ export class RuleBasedOpportunityRanker implements OpportunityRanker {
     score = Math.round(Math.max(0, Math.min(100, score)) * 10) / 10;
     return { score, priorityBand: score >= 75 ? 'HIGH' : score >= 45 ? 'MEDIUM' : 'LOW', factors, version: OPPORTUNITY_RANKING_VERSION };
   }
+}
+
+export const RESEARCH_FIT_VERSION = 'RESEARCH_FIT_V1';
+
+function rankResearchOnly(signals: AccountOpportunitySignals): RankResult {
+  // This is a separate discovery score, not a sales prediction or a rescaled V5 score.
+  const publicFit = qualitativePublicScore(signals) * 4; // 0–60: menu, popularity, reputation, patio
+  const craft = signals.localBrandsOnMenu?.length ? 10 : 0;
+  const menu = (signals.researchEvidence ?? []).filter(item => item.exactLocation && /menu|cocktail/i.test(item.field)).map(item => item.claim).join(' ');
+  const categories = [...new Set((signals.portfolio ?? []).filter(item => item.priority > 0).map(item => item.category).filter(Boolean))];
+  const matched = categories.filter(category => new RegExp(`\\b${category!.toLowerCase()}\\b`, 'i').test(menu));
+  const portfolioFit = matched.length ? 20 : 0;
+  const independent = signals.isNationalChain === false && hasText(signals.buyerStructure, /\blocal\b|\bindependent\b|\bowner\b/) ? 10 : 0;
+  const factors = [
+    'Provisional research-only score. Compare with other research-only accounts; it is not equivalent to a sales-backed V5 score.',
+    'Sales volume, bottle-price affinity, purchase history, peer sales and conversion learning are unavailable; no purchase or product-displacement claims are inferred.',
+    `Score components: public fit ${publicFit.toFixed(1)}, local menu evidence ${craft.toFixed(1)}, portfolio category fit ${portfolioFit.toFixed(1)}, independent buying ${independent.toFixed(1)}; no baseline points`,
+    `Public fit: cocktail program ${signals.cocktailProgram ?? 'unknown'}, popularity ${signals.popularitySignal ?? 'unknown'}, patio ${signals.patioOutdoor ?? 'unknown'}`,
+    matched.length ? `Verified menu categories overlap this tenant's portfolio: ${matched.join(', ')}` : 'Menu overlap with this tenant’s portfolio is unconfirmed.',
+    'Confirm state distribution and buyer price expectations before proposing a specific product.',
+  ];
+  if (signals.localBrandsOnMenu?.length) factors.push(`Local brands on menu: ${signals.localBrandsOnMenu.join(', ')}. Existing local placements are not displacement targets.`);
+  for (const rating of signals.publicRatings ?? []) factors.push(`${rating.sourceName}: ${rating.rating.toFixed(1)} from ${rating.reviewCount ?? 'unknown'} reviews`);
+  let score = publicFit + craft + portfolioFit + independent;
+  if (isNationalChainSignal(signals)) {
+    score = Math.min(20, score - 25);
+    factors.push('National chain: 25-point penalty; research-only score capped at 20.');
+  }
+  if (signals.researchConfidence !== 'HIGH' || signals.openStatus !== 'Open') {
+    score = Math.min(score, signals.researchConfidence === 'MEDIUM' ? 60 : 40);
+    factors.push('Incomplete research confidence or operating status limits provisional priority.');
+  }
+  if (!signals.researchCurrent || signals.openStatus === 'Closed') {
+    score = 0;
+    factors.push(signals.openStatus === 'Closed' ? 'Account reported closed: score is zero.' : 'Current-location research is unavailable: score is zero.');
+  }
+  score = Math.round(Math.max(0, Math.min(100, score)) * 10) / 10;
+  return { score, priorityBand: score >= 75 ? 'HIGH' : score >= 45 ? 'MEDIUM' : 'LOW', factors, version: RESEARCH_FIT_VERSION };
 }
 
 export function selectPrimaryOpportunity(hypotheses: OpportunityHypothesis[], signals: AccountOpportunitySignals, ranker: OpportunityRanker = new RuleBasedOpportunityRanker()) {

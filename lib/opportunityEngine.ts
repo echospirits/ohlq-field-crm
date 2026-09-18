@@ -7,9 +7,10 @@ import { learnedAdjustment, labelMatureOutcome, outcomeSegment, trainOutcomeMode
 import { buildDailyPurchaseEvents } from './opportunitySalesLedger';
 import { getDistilleryOnlyItemCodes, isOpportunityEligibleOhlqProduct } from './ohlqProductEligibility';
 import { normalizeOpportunityCategory, OPPORTUNITY_RANKING_VERSION, OPPORTUNITY_RULES_VERSION, OPPORTUNITY_SIGNAL_VERSION, opportunityRules } from './opportunityConfig';
-import { detectOpportunityHypotheses, noCurrentOpportunityRank, presentOpportunityHypothesis, RuleBasedOpportunityRanker, selectPrimaryOpportunity, type AccountOpportunitySignals } from './opportunityIntelligence';
+import { detectOpportunityHypotheses, noCurrentOpportunityRank, presentOpportunityHypothesis, RESEARCH_FIT_VERSION, RuleBasedOpportunityRanker, selectPrimaryOpportunity, type AccountOpportunitySignals } from './opportunityIntelligence';
 import { isDismissedOpportunityMatch } from './opportunityWorkflow';
-import { readPublicRatings } from './accountResearchQueue';
+import { hasResearchIdentityChanged, readPublicRatings, readResearchEvidence } from './accountResearchQueue';
+import { isOutsideOhio, isOhioAccount } from './usStates';
 
 const DAY = 86400000;
 const dateOnly = (date: Date) => date.toISOString().slice(0, 10);
@@ -26,7 +27,7 @@ export async function captureWholesaleSalesEvents({ db = prisma, reportDate, org
   config.productFilter.mode = 'item-list';
   const [currentRows, accounts, masters] = await Promise.all([
     db.ohlqAnnualSalesByWholesaleRow.findMany({ where: { reportDate } }),
-    db.wholesaleAccount.findMany({ where: { mergedIntoId: null }, select: { id: true, licenseeId: true, licenseeIds: { select: { licenseeId: true } } } }),
+    db.wholesaleAccount.findMany({ where: { mergedIntoId: null, OR: [{ state: { in: ['OH', 'Ohio'], mode: 'insensitive' } }, { state: null }, { state: '' }] }, select: { id: true, licenseeId: true, licenseeIds: { select: { licenseeId: true } } } }),
     db.ohlqBrandMasterItem.findMany({ select: { itemCode: true, name: true, category: true } }),
   ]);
   const data = buildDailyPurchaseEvents(currentRows, accounts, masters, config);
@@ -54,7 +55,7 @@ export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = 
       distinct: ['itemCode'],
       select: { itemCode: true },
     }),
-    db.wholesaleAccount.findMany({ where: { mergedIntoId: null }, select: { id: true, licenseeId: true, licenseeIds: { select: { licenseeId: true } } } }),
+    db.wholesaleAccount.findMany({ where: { mergedIntoId: null, OR: [{ state: { in: ['OH', 'Ohio'], mode: 'insensitive' } }, { state: null }, { state: '' }] }, select: { id: true, licenseeId: true, licenseeIds: { select: { licenseeId: true } } } }),
     db.ohlqAnnualSalesByWholesaleRow.findMany({ where: { reportDate: { gte: start90, lte: asOfDate } }, select: { reportDate: true, permitNumber: true, agencyId: true, vendor: true, brand: true, wholesaleBottlesSold: true } }),
     db.salesOpportunity.findMany({ where: { organizationId, rulesVersion: OPPORTUNITY_RULES_VERSION, detectedAt: { lte: new Date(asOfDate.getTime() - 90 * DAY) } }, select: { wholesaleAccountId: true, detectedAt: true, convertedAt: true, type: true, signalSnapshot: true, events: { where: { eventType: 'DETECTED' }, select: { metadata: true }, take: 1 } } }),
     db.organizationAccountOverlay.findMany({ where: { organizationId, accountType: 'WHOLESALE' } }),
@@ -100,8 +101,9 @@ export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = 
         select: {
           id: true,
           name: true,
+          state: true, address: true, city: true, zip: true,
           targetProfiles: { where: { organizationId }, take: 1, select: { assignedUserId: true, researchStatus: true, ownershipGroup: { select: { name: true } } } },
-          targetPublicResearch: { select: { patioOutdoor: true, cocktailProgram: true, popularitySignal: true, ownershipVerification: true, buyerStructure: true, isNationalChain: true, googleRating: true, googleReviewCount: true, yelpRating: true, yelpReviewCount: true, localBrandsOnMenu: true, sourceUrls: true, identitySnapshot: true } },
+          targetPublicResearch: { select: { lastRefreshedAt: true, researchConfidence: true, openStatus: true, patioOutdoor: true, cocktailProgram: true, popularitySignal: true, ownershipVerification: true, buyerStructure: true, isNationalChain: true, googleRating: true, googleReviewCount: true, yelpRating: true, yelpReviewCount: true, localBrandsOnMenu: true, sourceUrls: true, identitySnapshot: true } },
           tags: { where: { organizationId }, select: { tag: { select: { name: true } } } },
           opportunitySignals: { where: { organizationId }, take: 1 },
         },
@@ -154,7 +156,7 @@ export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = 
   const previews: { accountId: string; name: string; primary: ReturnType<typeof selectPrimaryOpportunity>; alternatives: { item: string; score: number; peers: unknown; factors: string[] }[]; purchases: AccountOpportunitySignals['purchases'] }[] = [];
 
   const modelName = `${organizationId}:PriceAffinityRanker`;
-  const modelVersion = `${OPPORTUNITY_RANKING_VERSION}:${hash(JSON.stringify(portfolio)).slice(0,12)}:${learning.version}`;
+  const modelVersion = `${OPPORTUNITY_RANKING_VERSION}:${RESEARCH_FIT_VERSION}:${hash(JSON.stringify(portfolio)).slice(0,12)}:${learning.version}`;
   let model = dryRun ? null : await db.opportunityModelVersion.findFirst({ where: { name: modelName, version: modelVersion, mode: OpportunityRankingMode.ACTIVE } });
   if (!dryRun) {
     model ??= await db.opportunityModelVersion.create({ data: { name: modelName, version: modelVersion, mode: OpportunityRankingMode.ACTIVE, configuration: { organizationId, portfolio, learning }, evaluation: learning, activatedAt: asOfDate } });
@@ -206,7 +208,12 @@ export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = 
     const research = account.targetPublicResearch;
     const normalizedTags = new Set(account.tags.map(({ tag }) => tag.name.toUpperCase().replace(/[\s-]+/g, '_')));
     const signal: AccountOpportunitySignals = {
-      organizationId, productLabel: config.productLabel, portfolio, observedSince: events[0] ? dateOnly(events[0].reportDate) : null,
+      salesDataAvailable: isOhioAccount(account.state),
+      researchCurrent: Boolean(research?.lastRefreshedAt && research.identitySnapshot && !hasResearchIdentityChanged(account, research.identitySnapshot)),
+      researchConfidence: research?.researchConfidence,
+      openStatus: research?.openStatus,
+      researchEvidence: readResearchEvidence(research?.identitySnapshot),
+      organizationId, productLabel: config.productLabel, portfolio, observedSince: !isOutsideOhio(account.state) && events[0] ? dateOnly(events[0].reportDate) : null,
       peerEvidence: Object.fromEntries(portfolio.map(p => [p.itemCode, compareWithBuyers(account.id, purchases, p, buyerCohorts.get(p.itemCode) ?? [])])),
       accountName: account.name, asOfDate: dateOnly(asOfDate), accountStatus: normalizedTags.has('DO_NOT_PURSUE') || overlay?.opportunitySuppressed || overlay?.active === false ? 'DO_NOT_PURSUE' : 'ACTIVE',
       assignedUserId: overlay?.assignedUserId ?? targetProfile?.assignedUserId ?? null, daysSinceLastEchoPurchase: daysBetween(asOfDate, lastEcho), daysSinceLastVisit: daysBetween(asOfDate, lastVisit),
@@ -296,7 +303,7 @@ export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = 
         const currentTargetProduct = original?.targetProduct
           ? portfolio.find(p => p.itemCode === original.targetProduct!.itemCode)
           : null;
-        if (original?.targetProduct && !currentTargetProduct && eligibleCatalogItemCodes.has(original.targetProduct.itemCode)) {
+        if (signal.salesDataAvailable !== false && original?.targetProduct && !currentTargetProduct && eligibleCatalogItemCodes.has(original.targetProduct.itemCode)) {
           await db.salesOpportunity.update({
             where: { id: opportunity.id },
             data: { status: OpportunityStatus.RESOLVED, activeAccountKey: null, resolvedAt: asOfDate },
@@ -362,7 +369,11 @@ export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = 
         await db.opportunityEvent.create({ data: { organizationId, opportunityId: opportunity.id, eventType: OpportunityEventType.WORKLIST_CREATED, eventKey: eventKey(OpportunityEventType.WORKLIST_CREATED, task.id), wholesaleAccountId: account.id, worklistItemId: task.id, occurredAt: asOfDate } }); worklistCreated++;
       }
     } else {
-      const ranking = noCurrentOpportunityRank();
+      const researchHypothesis = signal.salesDataAvailable === false ? presentOpportunityHypothesis({
+        type: 'CATEGORY_CONQUEST', cycleKey: 'research-fit', targetCategory: null,
+        title: 'Research needed', recommendedAction: 'Verify account location', explanation: [],
+      }, signal) : null;
+      const ranking = researchHypothesis ? ranker.rank(researchHypothesis, signal) : noCurrentOpportunityRank();
       const active = await db.salesOpportunity.findMany({
         where: { organizationId, wholesaleAccountId: account.id, status: { in: activeOpportunityStatuses } },
         select: { id: true },
@@ -374,7 +385,7 @@ export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = 
         });
         const targetItemCode = (detection?.metadata as unknown as { hypothesis?: { targetProduct?: { itemCode?: string } } } | null)
           ?.hypothesis?.targetProduct?.itemCode;
-        if (targetItemCode && !portfolioItemCodes.has(targetItemCode)) {
+        if (signal.salesDataAvailable !== false && targetItemCode && !portfolioItemCodes.has(targetItemCode)) {
           await db.salesOpportunity.update({
             where: { id: opportunity.id },
             data: { status: OpportunityStatus.RESOLVED, activeAccountKey: null, resolvedAt: asOfDate },
@@ -398,7 +409,7 @@ export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = 
         }
         await db.salesOpportunity.update({
           where: { id: opportunity.id },
-          data: { scoringVersion: ranking.version, productionScore: ranking.score, priorityBand: ranking.priorityBand, explanation: ranking.factors, lastDetectedAt: asOfDate },
+          data: { ...(researchHypothesis ? { title: 'Current-location research needed', recommendedAction: 'Verify location and refresh research before pursuing', targetCategory: null } : {}), scoringVersion: ranking.version, productionScore: ranking.score, priorityBand: ranking.priorityBand, explanation: ranking.factors, lastDetectedAt: asOfDate },
         });
         await db.opportunityScore.upsert({
           where: { opportunityId_modelVersionId: { opportunityId: opportunity.id, modelVersionId: model!.id } },
