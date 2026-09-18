@@ -276,3 +276,65 @@ summary { cursor: pointer; min-height: 44px; padding-block: 10px; }
   gap: 12px;
   box-shadow: 0 4px 20px #0002;
 }
+
+/* Intelligence: discoverable navigation and dense, always-visible agency evidence. */
+.app-intelligence-links { border-left: 1px solid var(--line); margin: 3px 0 3px 12px; padding-left: 6px; }
+.app-intelligence-links .app-nav-link { font-size: 12px; }
+.app-intelligence-menu > summary { min-height: 44px; }
+.mobile-more-menu .app-intelligence-menu { margin: 0 0 6px; padding: 0 0 6px; border-top: 0; border-bottom: 1px solid var(--line); }
+.mobile-more-menu .app-intelligence-menu > summary { font-size: 13px; }
+.agency-focus-page { min-width: 0; }
+.agency-focus-header { margin-bottom: 12px; gap: 8px; }
+.agency-focus-header h1 { font-size: clamp(23px, 3vw, 30px); margin: 3px 0; }
+.agency-focus-header p { font-size: 13px; margin: 4px 0; }
+.agency-focus-page .opportunity-filters { gap: 5px; margin-bottom: 10px; }
+.agency-focus-page .opportunity-filters a { min-height: 44px; display: inline-flex; align-items: center; padding: 6px 10px; font-size: 12px; }
+.agency-focus-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; margin-bottom: 12px; font-size: 12px; }
+.agency-focus-search { flex: 1 1 280px; max-width: 440px; display: grid; gap: 3px; margin: 0; }
+.agency-focus-search label { font-size: 12px; font-weight: 600; }
+.agency-focus-search input { width: 100%; min-width: 0; font-size: 16px; }
+.agency-focus-search .live-filter-status { font-size: 11px; }
+.agency-focus-count { color: var(--muted); margin: 0; }
+.agency-focus-scope { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.agency-focus-toolbar > a, .agency-focus-scope a { min-height: 44px; display: inline-flex; align-items: center; }
+.agency-focus-results { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); min-width: 0; }
+.agency-focus-row { display: grid; gap: 9px 14px; padding: 12px; min-width: 0; }
+.agency-focus-row + .agency-focus-row { border-top: 1px solid var(--line); }
+.agency-focus-row > * { min-width: 0; }
+.agency-focus-identity h2 { font-size: 15px; line-height: 1.35; margin: 0; overflow-wrap: anywhere; }
+.agency-focus-identity h2 a { display: inline-flex; align-items: center; min-height: 44px; }
+.agency-focus-identity p { font-size: 12px; margin: 0 0 5px; }
+.agency-focus-state { display: flex; align-items: center; gap: 7px; font-size: 12px; }
+.agency-focus-state .priority { display: inline-flex; align-self: center; border-radius: 4px; min-height: 0; padding: 2px 6px; font-size: 10px; line-height: 1.5; }
+.agency-focus-product { display: flex; flex-direction: column; gap: 3px; overflow-wrap: anywhere; }
+.agency-focus-product > strong { font-size: 13px; line-height: 1.4; }
+.agency-focus-product > small { color: var(--muted); font-size: 11px; }
+.agency-focus-product p { margin: 1px 0 0; font-size: 12px; }
+.agency-focus-metrics { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px 12px; margin: 0; padding-block: 8px; border-block: 1px solid var(--line); }
+.agency-focus-metrics div { min-width: 0; }
+.agency-focus-metrics dt { font-size: 10px; color: var(--muted); font-weight: 600; }
+.agency-focus-metrics dd { margin: 2px 0 0; font-size: 14px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.agency-focus-metrics dd small { font-size: 10px; font-weight: 400; }
+.agency-focus-reasons { display: flex; flex-wrap: wrap; gap: 3px 18px; padding: 0 0 0 14px; margin: 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.agency-focus-row-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; }
+.agency-focus-row-actions > form { margin: 0; }
+.agency-focus-row-actions .contextual-actions { gap: 5px; }
+.agency-focus-row-actions > form > button, .agency-focus-row-actions > .contextual-actions > .compact-btn { padding: 6px 9px; font-size: 11px; min-height: 44px; }
+.agency-focus-row-actions .agency-focus-dismiss { margin: 0; }
+.agency-focus-row-actions .agency-focus-dismiss summary { min-height: 44px; display: flex; align-items: center; padding: 6px 9px; font-size: 11px; text-decoration: underline; }
+.agency-focus-row-actions .agency-focus-dismiss[open] { flex-basis: 100%; }
+.agency-focus-row-actions .agency-focus-dismiss form { display: flex; flex-wrap: wrap; width: auto; align-items: center; gap: 6px; margin: 0; }
+.agency-focus-row-actions .agency-focus-dismiss select { flex: 1; width: auto; min-width: 0; }
+.agency-focus-row-actions .agency-focus-dismiss button { width: auto; }
+@media (min-width: 760px) {
+  .agency-focus-row { grid-template-columns: minmax(150px,1fr) minmax(170px,1.15fr) minmax(250px,1.4fr); gap: 8px 18px; padding: 12px 16px; align-items: start; }
+  .agency-focus-identity h2 a { min-height: 0; }
+  .agency-focus-metrics { border: 0; padding: 0; }
+  .agency-focus-reasons { grid-column: 1 / -1; }
+  .agency-focus-row-actions { grid-column: 1 / -1; }
+}
+@media (min-width: 1400px) {
+  .agency-focus-row { grid-template-columns: minmax(170px,1fr) minmax(200px,1.2fr) minmax(380px,1.8fr); }
+  .agency-focus-metrics { grid-template-columns: repeat(6,minmax(0,1fr)); }
+  .agency-focus-metrics dd small { display: block; }
+}

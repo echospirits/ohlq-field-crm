@@ -50,9 +50,9 @@ test('organization setup access separates tenant configuration from platform dat
   assert.equal(tenantAdminItems.some((item) => item.href === '/admin/data-status'), false);
   assert.equal(getNavigationItems('admin', ['ADVANCED_INTELLIGENCE'], false).some((item) => item.href === '/admin/account-research'), false);
   assert.equal(tenantAdminItems.some((item) => item.href === '/admin/opportunity-performance'), false);
-  assert.equal(getNavigationItems('admin', ['WHOLESALE_OPPORTUNITIES'], false).some((item) => item.href === '/admin/opportunity-performance'), true);
+  assert.equal(getNavigationItems('intelligence', ['WHOLESALE_OPPORTUNITIES'], false).some((item) => item.href === '/admin/opportunity-performance'), true);
   assert.equal(getNavigationItems('utility', [], false).some((item) => item.href === '/admin/data-status'), true);
-  assert.equal(getNavigationItems('admin', ['ADVANCED_INTELLIGENCE'], true).some((item) => item.href === '/admin/account-research'), true);
+  assert.equal(getNavigationItems('intelligence', ['ADVANCED_INTELLIGENCE'], true).some((item) => item.href === '/admin/account-research'), true);
 
   const organizationPage = readFileSync('app/admin/organization/page.tsx', 'utf8');
   const credentialSave = organizationPage.slice(organizationPage.indexOf('async function saveOhlqCredentials'), organizationPage.indexOf('async function removeOhlqCredentials'));

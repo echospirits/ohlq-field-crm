@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   getAdministrationNavigationGroups,
+  getIntelligenceNavigationItems,
   getMobileNavigationItems,
   getMoreNavigationItems,
   getNavigationItems,
@@ -10,7 +11,7 @@ import {
 test('desktop navigation keeps work and account areas intentionally grouped', () => {
   assert.deepEqual(
     getNavigationItems('work').map((item) => item.key),
-    ['home', 'worklist', 'opportunities', 'my-week', 'visits'],
+    ['home', 'worklist', 'my-week', 'visits'],
   );
   assert.deepEqual(
     getNavigationItems('accounts').map((item) => item.key),
@@ -41,8 +42,25 @@ test('desktop administration consolidates organization, data, and platform desti
   const groups = getAdministrationNavigationGroups(['WHOLESALE_OPPORTUNITIES', 'ADVANCED_INTELLIGENCE'], true);
   assert.deepEqual(groups.map((group) => group.label), ['Organization', 'Data & insights', 'Platform']);
   assert.deepEqual(groups[0].items.map((item) => item.key), ['users', 'organization-setup', 'weekly-digest']);
-  assert.deepEqual(groups[1].items.map((item) => item.key), ['data-health', 'account-research', 'opportunity-performance']);
+  assert.deepEqual(groups[1].items.map((item) => item.key), ['data-health']);
   assert.deepEqual(groups[2].items.map((item) => item.key), ['environment', 'platform-administration']);
+});
+
+test('Intelligence is feature gated and separates rep and administrative tools', () => {
+  const features = ['AGENCY_INTELLIGENCE', 'WHOLESALE_OPPORTUNITIES', 'ADVANCED_INTELLIGENCE'];
+  assert.deepEqual(getIntelligenceNavigationItems([], true, true), []);
+  assert.deepEqual(getIntelligenceNavigationItems(features, false, false).map((item) => [item.href, item.label]), [
+    ['/opportunities', 'Wholesale Opportunities'], ['/agency-focus', 'Agency Intelligence'],
+  ]);
+  assert.deepEqual(getIntelligenceNavigationItems(features, false, true).map((item) => item.key), [
+    'opportunities', 'agency-intelligence', 'account-research', 'opportunity-performance',
+  ]);
+  assert.deepEqual(getIntelligenceNavigationItems(features, true, false).map((item) => item.key), [
+    'opportunities', 'agency-intelligence', 'opportunity-performance',
+  ]);
+  assert.deepEqual(getIntelligenceNavigationItems(['AGENCY_INTELLIGENCE'], false, false).map((item) => item.key), ['agency-intelligence']);
+  assert.equal(getMoreNavigationItems(true, features, true).some((item) => item.section === 'intelligence'), false);
+  assert.equal(getAdministrationNavigationGroups(features, true).flatMap((group) => group.items).some((item) => item.section === 'intelligence'), false);
 });
 
 test('organization admins do not see platform administration', () => {

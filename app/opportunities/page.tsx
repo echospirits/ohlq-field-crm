@@ -15,7 +15,7 @@ import { updateOpportunity } from './actions';
 import { ContextualActions } from '../components/ContextualActions';
 import { DataFreshnessBadge } from '../components/DataFreshnessBadge';
 
-export const metadata = buildPageMetadata('Opportunities');
+export const metadata = buildPageMetadata('Wholesale Opportunities');
 
 const labels: Record<OpportunityType, string> = { LAPSED_BUYER: 'Reactivation', FIRST_ORDER_FOLLOW_UP: 'First Reorder', CATEGORY_CONQUEST: 'Category Opportunity', CROSS_SELL: 'Cross-Sell', NO_RECENT_TOUCH: 'Needs Attention' };
 const TERRITORY_RESULT_LIMIT = 12;
@@ -91,7 +91,7 @@ export default async function OpportunityInbox({ searchParams }: { searchParams?
 
   await prisma.opportunityEvent.createMany({ skipDuplicates: true, data: shownOpportunities.map((item) => ({ organizationId, opportunityId: item.id, eventType: OpportunityEventType.SHOWN, eventKey: 'SHOWN:INBOX', wholesaleAccountId: item.wholesaleAccountId, occurredAt: new Date() })) });
   return <>
-    <header className="page-heading page-header"><div><span className="page-eyebrow">Next best work</span><h1>Opportunity Inbox</h1><p className="muted">Prioritized recommendations with statewide and territory views. Geography changes what you see, never how an account scores.</p></div><div className="page-actions"><DataFreshnessBadge datePrefix="Signals through" sourceDate={latestSignalAt} /><Link className="btn secondary" href="/alerts?view=pursuing">View pursuing</Link>{currentUser.role === UserRole.ADMIN ? <Link className="btn secondary" href="/admin/opportunity-performance">Performance</Link> : null}</div></header>
+    <header className="page-heading page-header"><div><span className="page-eyebrow">Intelligence · Wholesale</span><h1>Wholesale Opportunities</h1><p className="muted">Prioritized recommendations with statewide and territory views. Geography changes what you see, never how an account scores.</p></div><div className="page-actions"><DataFreshnessBadge datePrefix="Signals through" sourceDate={latestSignalAt} /><Link className="btn secondary" href="/alerts?view=pursuing">View pursuing</Link>{currentUser.role === UserRole.ADMIN ? <Link className="btn secondary" href="/admin/opportunity-performance">Performance</Link> : null}</div></header>
     <nav aria-label="Opportunity views" className="opportunity-filters">
       <Link aria-current={!territoryView && !territory && !type && !priority && !lowestFirst ? 'page' : undefined} className={!territoryView && !territory && !type && !priority && !lowestFirst ? 'active' : undefined} href="/opportunities">Best statewide</Link>
       <Link aria-current={territoryView ? 'page' : undefined} className={territoryView ? 'active' : undefined} href={buildHref({ territory: undefined, view: 'territories', sort: undefined })}>Best by territory</Link>

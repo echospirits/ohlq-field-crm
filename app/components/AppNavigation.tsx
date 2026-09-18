@@ -5,6 +5,7 @@ import { NavigationIcon } from './NavigationIcon';
 import { usePathname } from 'next/navigation';
 import {
   getAdministrationNavigationGroups,
+  getIntelligenceNavigationItems,
   getMobileNavigationItems,
   getMoreNavigationItems,
   getNavigationItems,
@@ -64,7 +65,7 @@ function NavGroupLinks({ group, pathname }: { group: NavGroup; pathname: string 
 
 function AdministrationMenu({ enabledFeatures, hasOrganizationAdminAccess, isPlatformAdmin, pathname }: { enabledFeatures: string[]; hasOrganizationAdminAccess: boolean; isPlatformAdmin: boolean; pathname: string }) {
   const groups = getAdministrationNavigationGroups(enabledFeatures, isPlatformAdmin, hasOrganizationAdminAccess);
-  const isActive = pathname === '/users' || pathname === '/platform' || pathname.startsWith('/admin/') || pathname.startsWith('/platform/');
+  const isActive = groups.some((group) => group.items.some((item) => isActivePath(pathname, item)));
 
   return <details className={`app-nav-disclosure${isActive ? ' is-active' : ''}`} open={isActive || undefined}>
     <summary><span>Administration</span><span aria-hidden="true" className="app-nav-disclosure-arrow">›</span></summary>
@@ -75,6 +76,18 @@ function AdministrationMenu({ enabledFeatures, hasOrganizationAdminAccess, isPla
           {group.items.map((item) => <NavLink item={item} key={item.href} pathname={pathname} />)}
         </section>)}
       </div>
+    </div>
+  </details>;
+}
+
+function IntelligenceMenu({ enabledFeatures, isAdmin, isPlatformAdmin, pathname }: { enabledFeatures: string[]; isAdmin: boolean; isPlatformAdmin: boolean; pathname: string }) {
+  const items = getIntelligenceNavigationItems(enabledFeatures, isAdmin, isPlatformAdmin);
+  if (!items.length) return null;
+  const isActive = items.some((item) => isActivePath(pathname, item));
+  return <details className={`app-nav-disclosure app-intelligence-menu${isActive ? ' is-active' : ''}`} open key={pathname}>
+    <summary><span>Intelligence</span><span aria-hidden="true" className="app-nav-disclosure-arrow">›</span></summary>
+    <div className="app-intelligence-links">
+      {items.map((item) => <NavLink item={item} key={item.href} pathname={pathname} />)}
     </div>
   </details>;
 }
@@ -108,6 +121,7 @@ export function AppSidebarNavigation({ enabledFeatures, isAdmin, isPlatformAdmin
 
       <NavGroupLinks group={{ label: 'My work', items: workItems }} pathname={pathname} />
       <NavGroupLinks group={{ label: 'Accounts', items: accountItems }} pathname={pathname} />
+      <IntelligenceMenu enabledFeatures={enabledFeatures} isAdmin={isAdmin} isPlatformAdmin={isPlatformAdmin} pathname={pathname} />
       {!isAdmin && !isPlatformAdmin ? <NavLink item={{ href: '/admin/data-status', key: 'data-health', label: 'Data Status', section: 'utility' }} pathname={pathname} /> : null}
 
       {isAdmin || isPlatformAdmin ? <AdministrationMenu enabledFeatures={enabledFeatures} hasOrganizationAdminAccess={isAdmin} isPlatformAdmin={isPlatformAdmin} pathname={pathname} /> : null}
@@ -126,7 +140,8 @@ const getBreadcrumbs = (pathname: string): BreadcrumbItem[] => {
     { prefix: '/visits/confirmed', crumbs: [{ href: '/visits', label: 'Visits' }, { href: pathname, label: 'Confirmed' }] },
     { prefix: '/visits', crumbs: [{ href: '/visits', label: 'Visit History' }] },
     { prefix: '/alerts', crumbs: [{ href: '/alerts', label: 'Worklist' }] },
-    { prefix: '/opportunities', crumbs: [{ href: '/opportunities', label: 'Opportunities' }] },
+    { prefix: '/opportunities', crumbs: [{ href: '/opportunities', label: 'Wholesale Opportunities' }] },
+    { prefix: '/agency-focus', crumbs: [{ href: '/agency-focus', label: 'Agency Intelligence' }] },
     { prefix: '/my-week', crumbs: [{ href: '/alerts', label: 'My Work' }, { href: '/my-week', label: 'My Week' }] },
     { prefix: '/agencies/', crumbs: [{ href: '/search', label: 'Accounts' }, { href: '/agencies', label: 'Agencies' }, { href: pathname, label: 'Agency' }] },
     { prefix: '/agencies', crumbs: [{ href: '/search', label: 'Accounts' }, { href: '/agencies', label: 'Agencies' }] },
@@ -137,11 +152,11 @@ const getBreadcrumbs = (pathname: string): BreadcrumbItem[] => {
     { prefix: '/search', crumbs: [{ href: '/search', label: 'Accounts' }] },
     { prefix: '/accounts', crumbs: [{ href: '/search', label: 'Accounts' }] },
     { prefix: '/users', crumbs: [{ href: '/users', label: 'Administration' }, { href: '/users', label: 'Users' }] },
-    { prefix: '/admin/account-research', crumbs: [{ href: '/users', label: 'Administration' }, { href: pathname, label: 'Account Research' }] },
+    { prefix: '/admin/account-research', crumbs: [{ href: pathname, label: 'Account Research' }] },
     { prefix: '/admin/organization', crumbs: [{ href: '/users', label: 'Administration' }, { href: pathname, label: 'Organization Setup' }] },
     { prefix: '/admin/data-status', crumbs: [{ href: '/users', label: 'Administration' }, { href: pathname, label: 'Data Health' }] },
     { prefix: '/admin/weekly-digest', crumbs: [{ href: '/users', label: 'Administration' }, { href: pathname, label: 'Weekly Digest' }] },
-    { prefix: '/admin/opportunity-performance', crumbs: [{ href: '/users', label: 'Administration' }, { href: pathname, label: 'Opportunity Performance' }] },
+    { prefix: '/admin/opportunity-performance', crumbs: [{ href: pathname, label: 'Opportunity Performance' }] },
     { prefix: '/settings/calendar', crumbs: [{ href: '/profile', label: 'Profile' }, { href: '/settings/calendar', label: 'Calendar' }] },
     { prefix: '/profile', crumbs: [{ href: '/profile', label: 'Profile' }] },
   ];
@@ -185,6 +200,7 @@ export function MobileTabbar({ enabledFeatures, isAdmin, isPlatformAdmin, isTast
       <details className="mobile-more" key={pathname} onClick={(event) => { if ((event.target as HTMLElement).closest("a")) event.currentTarget.open = false; }}>
         <summary><NavigationIcon name="more" /><span>More</span></summary>
         <div className="mobile-more-menu">
+          <IntelligenceMenu enabledFeatures={enabledFeatures} isAdmin={isAdmin} isPlatformAdmin={isPlatformAdmin} pathname={pathname} />
           {moreItems.map((item) => (
             <NavLink item={item} key={item.key} pathname={pathname} />
           ))}

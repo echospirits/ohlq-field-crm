@@ -84,7 +84,7 @@ export async function AgencyIntelligencePanel({ agencyId, agencyName, currentUse
     </section>
 
     <section className="dashboard-section" id="product-opportunities">
-      <div className="section-heading"><h3>Product opportunities</h3><Link className="btn secondary compact-btn" href={`/agency-focus?agencyId=${agencyId}`}>Open focus view</Link></div>
+      <div className="section-heading"><h3>Product opportunities</h3><Link className="btn secondary compact-btn" href={`/agency-focus?agencyId=${agencyId}`}>Open Agency Intelligence</Link></div>
       <div className="agency-product-list">
         {activeProducts.slice(0, 5).map((product) => <article className="card agency-product-card" key={product.id}>
           <div className="agency-product-card-heading">
