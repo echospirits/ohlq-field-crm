@@ -4,19 +4,12 @@ import { redirect } from 'next/navigation';
 import { requireAdminSession } from '../../../lib/auth';
 import { requireOrganizationContext } from '../../../lib/organizations';
 import {
-  getAdminWeeklyDigest,
-  getUserWeeklyDigest,
+  getTenantWeeklyDigest,
   getWeeklyDigestWindow,
-  renderAdminWeeklyDigestEmail,
-  renderUserWeeklyDigestEmail,
+  renderTenantWeeklyDigestEmail,
   sendTestWeeklyDigestEmail,
   sendWeeklyDigestForAllUsers,
 } from '../../../lib/weeklyDigest';
-
-const toOptional = (value: FormDataEntryValue | null | undefined) => {
-  const trimmed = String(value ?? '').trim();
-  return trimmed.length > 0 ? trimmed : null;
-};
 
 const redirectWithStatus = (status: string, params?: Record<string, string | number>): never => {
   const query = new URLSearchParams({ status });
@@ -28,47 +21,42 @@ const redirectWithStatus = (status: string, params?: Record<string, string | num
   redirect(`/admin/weekly-digest?${query.toString()}`);
 };
 
-export async function sendWeeklyDigestTestAction(formData: FormData) {
+export async function sendWeeklyDigestTestAction() {
   const session = await requireAdminSession();
   const { organizationId } = await requireOrganizationContext(session.user);
-  const digestType = String(formData.get('digestType') ?? 'user') === 'admin' ? 'admin' : 'user';
-  const selectedUserId = toOptional(formData.get('userId')) ?? session.user.id;
   const recipientEmail = session.user.email;
 
   if (!recipientEmail) {
     redirectWithStatus('missing-admin-email');
   }
 
+  let suppressed = false;
   try {
     const window = getWeeklyDigestWindow();
-    const rendered =
-      digestType === 'admin'
-        ? renderAdminWeeklyDigestEmail(await getAdminWeeklyDigest(window, organizationId))
-        : renderUserWeeklyDigestEmail(await getUserWeeklyDigest(selectedUserId, window));
+    const rendered = renderTenantWeeklyDigestEmail(await getTenantWeeklyDigest(organizationId, window));
 
     const delivery = await sendTestWeeklyDigestEmail({
       recipientEmail,
       rendered,
     });
-    if (delivery.suppressed) redirectWithStatus('test-suppressed');
+    suppressed = Boolean(delivery.suppressed);
   } catch (error) {
     redirectWithStatus('test-failed', {
       message: error instanceof Error ? error.message.slice(0, 120) : 'Unknown failure',
     });
   }
 
-  redirectWithStatus('test-sent', {
-    digestType,
-    userId: selectedUserId,
-  });
+  redirectWithStatus(suppressed ? 'test-suppressed' : 'test-sent');
 }
 
 export async function sendWeeklyDigestManualAction() {
-  await requireAdminSession();
+  const session = await requireAdminSession();
+  const { organizationId } = await requireOrganizationContext(session.user);
   let result: Awaited<ReturnType<typeof sendWeeklyDigestForAllUsers>> | null = null;
 
   try {
     result = await sendWeeklyDigestForAllUsers({
+      organizationId,
       window: getWeeklyDigestWindow(),
     });
   } catch (error) {

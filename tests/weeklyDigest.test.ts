@@ -1,197 +1,76 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { UserRole, WeeklyDigestStatus, WorklistCategory, WorklistSource, WorklistStatus } from '@prisma/client';
+import { WeeklyDigestStatus } from '@prisma/client';
 import { GET as weeklyDigestCronGET } from '../app/api/cron/weekly-digest/route';
-import {
-  bucketWorklistItems,
-  canPreviewWeeklyDigest,
-  getWeeklyDigestWindow,
-  isCompletedInPastWindow,
-  isWeeklyDigestCronSendWindow,
-  renderAdminWeeklyDigestEmail,
-  renderUserWeeklyDigestEmail,
-  shouldSkipExistingDigestLog,
-  type AdminWeeklyDigest,
-  type DigestWorklistItem,
-  type UserWeeklyDigest,
-} from '../lib/weeklyDigest';
+import { getWeeklyDigestWindow, isWeeklyDigestCronSendWindow, renderTenantWeeklyDigestEmail, shouldSkipExistingDigestLog } from '../lib/weeklyDigest';
+import { makeTenantDigest } from './fixtures/weeklyDigest';
+import { fallbackWeeklyDigestNarrative, generateWeeklyDigestNarrative, parseWeeklyDigestNarrative } from '../lib/weeklyDigestNarrative';
 
-const digestWindow = getWeeklyDigestWindow(new Date('2026-05-08T12:00:00.000Z'));
-
-const makeWorkItem = (overrides: Partial<DigestWorklistItem>): DigestWorklistItem => ({
-  id: overrides.id ?? 'work-1',
-  title: overrides.title ?? 'Follow up',
-  detail: overrides.detail ?? null,
-  status: overrides.status ?? WorklistStatus.OPEN,
-  source: overrides.source ?? WorklistSource.MANUAL,
-  category: overrides.category ?? WorklistCategory.GENERAL,
-  dueDate: overrides.dueDate ?? null,
-  completedAt: overrides.completedAt ?? null,
-  location: overrides.location ?? { name: 'General', href: null },
-  assignedToName: overrides.assignedToName ?? 'Rep One',
-  completedByName: overrides.completedByName ?? null,
-  createdByName: overrides.createdByName ?? 'Admin',
+test('fixed calendar week is stable across Friday triggers and following weekdays', () => {
+  const first = getWeeklyDigestWindow(new Date('2026-09-18T12:00:00Z'));
+  assert.equal(first.pastStart.toISOString(), '2026-09-11T04:00:00.000Z');
+  assert.equal(first.pastEnd.toISOString(), '2026-09-18T04:00:00.000Z');
+  for (const at of ['2026-09-18T13:42:00Z', '2026-09-22T15:00:00Z']) {
+    assert.equal(getWeeklyDigestWindow(new Date(at)).pastEnd.toISOString(), first.pastEnd.toISOString());
+  }
+  const dst = getWeeklyDigestWindow(new Date('2026-03-13T13:00:00Z'));
+  assert.equal(dst.pastStart.toISOString(), '2026-03-06T05:00:00.000Z');
+  assert.equal(dst.pastEnd.toISOString(), '2026-03-13T04:00:00.000Z');
 });
 
-const baseUser = {
-  organizationId: 'org_test',
-  id: 'user-1',
-  email: 'rep@example.com',
-  firstName: 'Rep',
-  lastName: 'One',
-  name: 'Rep One',
-  role: UserRole.USER,
-  isActive: true,
-};
-
-const makeUserDigest = (): UserWeeklyDigest => {
-  const overdue = makeWorkItem({
-    id: 'overdue',
-    dueDate: new Date(digestWindow.now.getTime() - 60_000),
-  });
-  const upcoming = makeWorkItem({
-    id: 'upcoming',
-    dueDate: new Date(digestWindow.now.getTime() + 2 * 24 * 60 * 60 * 1000),
-  });
-
-  return {
-    kind: 'user',
-    user: baseUser,
-    userName: 'Rep One',
-    window: digestWindow,
-    visits: [],
-    completedWork: [],
-    upcomingWork: [upcoming],
-    noDueDateWork: [],
-    workBuckets: {
-      overdue: [overdue],
-      dueToday: [],
-      dueThisWeekend: [upcoming],
-      dueNextWeek: [],
-      noDueDate: [],
-    },
-    metrics: {
-      visitsLogged: 0,
-      photosUploaded: 0,
-      completedWork: 0,
-      upcomingAssigned: 1,
-      overdue: 1,
-    },
-    focusSentence: 'You have 1 overdue item and 1 upcoming follow-up.',
-  };
-};
-
-test('weekly digest window uses a 7 day past and future range', () => {
-  const now = new Date('2026-01-02T13:00:00.000Z');
-  const window = getWeeklyDigestWindow(now);
-
-  assert.equal(window.now, now);
-  assert.equal(window.pastStart.toISOString(), '2025-12-26T13:00:00.000Z');
-  assert.equal(window.pastEnd.toISOString(), '2026-01-02T13:00:00.000Z');
-  assert.equal(window.upcomingStart.toISOString(), '2026-01-02T13:00:00.000Z');
-  assert.equal(window.upcomingEnd.toISOString(), '2026-01-09T13:00:00.000Z');
+test('Friday cron respects Eastern daylight saving time', () => {
+  assert.equal(isWeeklyDigestCronSendWindow(new Date('2026-01-02T13:00:00Z')), true);
+  assert.equal(isWeeklyDigestCronSendWindow(new Date('2026-07-03T13:00:00Z')), true);
+  assert.equal(isWeeklyDigestCronSendWindow(new Date('2026-07-03T11:00:00Z')), false);
 });
 
-test('cron send window matches Friday morning America/New_York across DST', () => {
-  assert.equal(isWeeklyDigestCronSendWindow(new Date('2026-01-02T13:00:00.000Z')), true);
-  assert.equal(isWeeklyDigestCronSendWindow(new Date('2026-07-03T13:00:00.000Z')), true);
-  assert.equal(isWeeklyDigestCronSendWindow(new Date('2026-07-03T11:00:00.000Z')), false);
+test('tenant brief uses configured branding, sales and escaped evidence in HTML and text', () => {
+  const digest = makeTenantDigest('other', 'Other <Distillery>');
+  digest.organization.brandPrimaryColor = '#ffffff';
+  digest.organization.brandAccentColor = '#ffff00';
+  digest.narrative.wins[0].title = '<script>alert(1)</script>';
+  const email = renderTenantWeeklyDigestEmail(digest, 'https://crm.example.com');
+  assert.match(email.subject, /^Other <Distillery> \| Neat weekly brief/);
+  assert.match(email.html, /Other &lt;Distillery&gt;/);
+  assert.doesNotMatch(email.html, /<script>|Echo Spirits|Per-user|User digest/);
+  assert.match(email.html, /background:#ffffff;color:#142c32/);
+  for (const text of ['Retail bottles sold', 'Wholesale bottles sold', '412', '186', 'Big wins', 'Major progress', 'Next week', 'Standardized Brewing']) assert.ok(email.html.includes(text), text);
+  for (const text of ['412', '186', 'RISKS', 'NEXT WEEK']) assert.ok(email.text.includes(text), text);
+  assert.match(email.html, /https:\/\/crm.example.com\/wholesale\/standardized/);
 });
 
-test('worklist buckets exclude completed and cancelled items from open sections', () => {
-  const buckets = bucketWorklistItems(
-    [
-      makeWorkItem({ id: 'open', dueDate: new Date(digestWindow.now.getTime() + 60_000) }),
-      makeWorkItem({ id: 'done', status: WorklistStatus.COMPLETED, dueDate: new Date(digestWindow.now.getTime() + 60_000) }),
-      makeWorkItem({ id: 'cancelled', status: WorklistStatus.CANCELLED, dueDate: new Date(digestWindow.now.getTime() - 60_000) }),
-    ],
-    digestWindow,
-  );
-
-  assert.equal(buckets.dueToday.length, 1);
-  assert.equal(buckets.overdue.length, 0);
+test('missing, partial, empty and AI fallback states never imply a complete zero', () => {
+  const digest = makeTenantDigest();
+  digest.sales = { ...digest.sales, retailBottles: null, wholesaleBottles: null, status: 'unavailable', coveredDays: 0, throughDate: null };
+  digest.evidence = []; digest.metrics = { visitsLogged: 0, completedWork: 0, overdue: 0, unassignedOverdue: 0, upcoming: 0, unassignedUpcoming: 0 };
+  digest.narrative = fallbackWeeklyDigestNarrative(digest);
+  const missing = renderTenantWeeklyDigestEmail(digest);
+  assert.match(missing.text, /Retail bottles sold: Unavailable/);
+  assert.match(missing.html, /Summary unavailable this time/);
+  digest.sales.status = 'partial'; digest.sales.coveredDays = 5; digest.sales.throughDate = '2026-09-16'; digest.sales.retailBottles = 0;
+  assert.match(renderTenantWeeklyDigestEmail(digest).text, /Partial: 5\/7 days imported/);
 });
 
-test('completed work is included only when completedAt falls in the past window', () => {
-  assert.equal(
-    isCompletedInPastWindow(
-      makeWorkItem({ status: WorklistStatus.COMPLETED, completedAt: new Date(digestWindow.now.getTime() - 60_000) }),
-      digestWindow,
-    ),
-    true,
-  );
-  assert.equal(
-    isCompletedInPastWindow(
-      makeWorkItem({
-        status: WorklistStatus.COMPLETED,
-        completedAt: new Date(digestWindow.pastStart.getTime() - 60_000),
-      }),
-      digestWindow,
-    ),
-    false,
-  );
+test('narrative validates provenance and length; failures degrade to counts', async () => {
+  const digest = makeTenantDigest();
+  assert.throws(() => parseWeeklyDigestNarrative({ ...digest.narrative, wins: [{ title: 'Invalid', body: 'Invented', evidenceIds: ['other-tenant'] }] }, digest));
+  const env: NodeJS.ProcessEnv = { NODE_ENV: 'test', APP_ENV: 'test', OPENAI_API_KEY: 'fake-unit-test-key' };
+  const result = await generateWeeklyDigestNarrative(digest, { env, fetchImpl: async (_url, init) => {
+    const body = JSON.parse(String(init?.body));
+    assert.equal(body.store, false); assert.equal(body.text.format.strict, true);
+    assert.equal(JSON.parse(body.input).tenant, 'Echo Spirits');
+    return new Response(JSON.stringify({ status: 'completed', output: [{ content: [{ type: 'output_text', text: JSON.stringify(digest.narrative) }] }] }), { status: 200 });
+  } });
+  assert.equal(result.mode, 'ai');
+  for (const response of [new Response('{}', { status: 429 }), new Response('{"status":"incomplete"}'), new Response('{"status":"completed","output":[]}')]) {
+    assert.equal((await generateWeeklyDigestNarrative(digest, { env, fetchImpl: async () => response })).mode, 'fallback');
+  }
+  assert.equal((await generateWeeklyDigestNarrative(digest, { env, fetchImpl: async () => { throw new Error('timeout'); } })).mode, 'fallback');
 });
 
-test('successful digest logs are skipped on duplicate triggers', () => {
+test('successful digest logs are skipped and unauthorized cron calls are rejected', async () => {
   assert.equal(shouldSkipExistingDigestLog({ status: WeeklyDigestStatus.SENT }), true);
   assert.equal(shouldSkipExistingDigestLog({ status: WeeklyDigestStatus.FAILED }), false);
-  assert.equal(shouldSkipExistingDigestLog(null), false);
-});
-
-test('preview authorization allows admins and blocks cross-user standard preview', () => {
-  assert.equal(canPreviewWeeklyDigest({ id: 'admin', role: UserRole.ADMIN }, 'other'), true);
-  assert.equal(canPreviewWeeklyDigest({ id: 'rep', role: UserRole.USER }, 'rep'), true);
-  assert.equal(canPreviewWeeklyDigest({ id: 'rep', role: UserRole.USER }, 'other'), false);
-});
-
-test('user and admin digest renderers produce distinct email shapes', () => {
-  const userDigest = makeUserDigest();
-  const adminDigest: AdminWeeklyDigest = {
-    kind: 'admin',
-    window: digestWindow,
-    users: [userDigest],
-    unassigned: { overdue: [], upcoming: [], noDueDate: [] },
-    totals: {
-      activeUsers: 1,
-      visitsLogged: 0,
-      photosUploaded: 0,
-      completedWork: 0,
-      upcomingAssigned: 1,
-      overdue: 1,
-      unassignedUpcoming: 0,
-      unassignedOverdue: 0,
-    },
-    noActivityUsers: [baseUser],
-  };
-
-  const userEmail = renderUserWeeklyDigestEmail(userDigest, 'https://crm.example.com');
-  const adminEmail = renderAdminWeeklyDigestEmail(adminDigest, 'https://crm.example.com');
-
-  assert.match(userEmail.subject, /^Your Neat weekly summary:/);
-  assert.match(adminEmail.subject, /^Neat team weekly summary:/);
-  assert.match(userEmail.html, /View My Week in Neat/);
-  assert.match(adminEmail.html, /Neat · Echo Spirits/);
-  assert.match(userEmail.html, /Visit activity/);
-  assert.match(adminEmail.html, /Per-user scoreboard/);
-});
-
-test('weekly digest cron rejects unauthorized calls', async () => {
-  const previousSecret = process.env.CRON_SECRET;
-  process.env.CRON_SECRET = 'test-secret';
-
-  try {
-    const response = await weeklyDigestCronGET(
-      new Request('http://localhost/api/cron/weekly-digest', {
-        headers: { authorization: 'Bearer wrong-secret' },
-      }),
-    );
-
-    assert.equal(response.status, 401);
-  } finally {
-    if (previousSecret === undefined) {
-      delete process.env.CRON_SECRET;
-    } else {
-      process.env.CRON_SECRET = previousSecret;
-    }
-  }
+  const response = await weeklyDigestCronGET(new Request('http://localhost/api/cron/weekly-digest', { headers: { authorization: 'Bearer invalid' } }));
+  assert.equal(response.status, 401);
 });

@@ -1,5 +1,6 @@
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
+export const maxDuration = 300;
 
 import { SubmitButton } from '../../components/SubmitButton';
 import { WeeklyDigestStatus } from '@prisma/client';
@@ -8,13 +9,7 @@ import { getUserDisplayName, requireAdminSession } from '../../../lib/auth';
 import { requireOrganizationContext } from '../../../lib/organizations';
 import { formatEasternDateTime } from '../../../lib/dateTime';
 import { prisma } from '../../../lib/prisma';
-import {
-  getAdminWeeklyDigest,
-  getUserWeeklyDigest,
-  getWeeklyDigestWindow,
-  renderAdminWeeklyDigestEmail,
-  renderUserWeeklyDigestEmail,
-} from '../../../lib/weeklyDigest';
+import { getTenantWeeklyDigest, getWeeklyDigestWindow, renderTenantWeeklyDigestEmail } from '../../../lib/weeklyDigest';
 import { sendWeeklyDigestManualAction, sendWeeklyDigestTestAction } from './actions';
 import { PageHeader, SectionHeading } from '../../components/PageChrome';
 
@@ -29,14 +24,10 @@ const statusMessages: Record<string, string> = {
   'missing-admin-email': 'Your admin account needs an email address before test sends can run.',
 };
 
-const getPreviewMode = (value: string | undefined) => (value === 'admin' ? 'admin' : 'user');
-
 export default async function WeeklyDigestAdminPage({
   searchParams,
 }: {
   searchParams?: Promise<{
-    digestType?: string;
-    userId?: string;
     status?: string;
     message?: string;
     attempted?: string;
@@ -48,45 +39,24 @@ export default async function WeeklyDigestAdminPage({
   const session = await requireAdminSession();
   const { organizationId } = await requireOrganizationContext(session.user);
   const params = (await searchParams) ?? {};
-  const previewMode = getPreviewMode(params.digestType);
   const window = getWeeklyDigestWindow();
-  const [activeUsers, recentLogs] = await Promise.all([
-    prisma.user.findMany({
-      where: { organizationId, isActive: true, role: { not: 'PLATFORM_ADMIN' } },
-      orderBy: [{ role: 'asc' }, { lastName: 'asc' }, { firstName: 'asc' }, { email: 'asc' }],
-      select: {
-        id: true,
-        email: true,
-        firstName: true,
-        lastName: true,
-        name: true,
-        role: true,
-      },
-    }),
-    prisma.weeklyDigestLog.findMany({
-      where: { organizationId },
-      orderBy: [{ createdAt: 'desc' }],
-      take: 20,
-      include: { recipientUser: true },
-    }),
+  const [digest, recentLogs, recipientCount] = await Promise.all([
+    getTenantWeeklyDigest(organizationId, window),
+    prisma.weeklyDigestLog.findMany({ where: { organizationId }, orderBy: [{ createdAt: 'desc' }], take: 20, include: { recipientUser: true } }),
+    prisma.user.count({ where: { organizationId, isActive: true, email: { not: '' } } }),
   ]);
-  const selectedUserId =
-    activeUsers.some((user) => user.id === params.userId) && params.userId ? params.userId : session.user.id;
-  const rendered =
-    previewMode === 'admin'
-      ? renderAdminWeeklyDigestEmail(await getAdminWeeklyDigest(window, organizationId))
-      : renderUserWeeklyDigestEmail(await getUserWeeklyDigest(selectedUserId, window));
+  const rendered = renderTenantWeeklyDigestEmail(digest);
 
   return (
     <>
       <PageHeader
-        description={<>Preview and send controls for the Friday 8:00 AM Eastern {APP_NAME} weekly email.</>}
+        description={<>Preview and send controls for the Friday morning {APP_NAME} weekly email.</>}
         eyebrow="Administration"
         title="Weekly Digest"
       />
 
       {params.status ? (
-        <p className="toast-notice page-status">
+        <p role="status" className="toast-notice page-status">
           {statusMessages[params.status] ?? params.status}
           {params.attempted
             ? ` Attempted ${params.attempted}, sent ${params.sent ?? 0}, skipped ${params.skipped ?? 0}, failed ${
@@ -98,39 +68,19 @@ export default async function WeeklyDigestAdminPage({
       ) : null}
 
       <section className="dashboard-section">
-        <SectionHeading actions={<span className="pill">{previewMode === 'admin' ? 'Team digest' : 'User digest'}</span>} description="Validate content with live Neat data before sending." title="Preview" />
+        <SectionHeading actions={<span className="pill">Tenant brief</span>} description="The same tenant-wide brief goes to every active user with an email address, including Tasters." title="Preview" />
 
         <div className="card admin-panel digest-admin-panel">
-          <form className="digest-control-form">
-            <label>
-              Digest
-              <select name="digestType" defaultValue={previewMode}>
-                <option value="user">User digest</option>
-                <option value="admin">Admin team digest</option>
-              </select>
-            </label>
-            <label>
-              User preview
-              <select name="userId" defaultValue={selectedUserId} disabled={previewMode === 'admin'}>
-                {activeUsers.map((user) => (
-                  <option key={user.id} value={user.id}>
-                    {getUserDisplayName(user)} ({user.email ?? 'no email'})
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button type="submit">Preview digest</button>
-          </form>
-
+          <p>{digest.organization.displayName} &middot; {recipientCount} active users with email</p>
+          <p className="muted">Test sends go only to you. Sending to the tenant skips recipients who already received this week's digest.</p>
+          {!session.user.email ? <p>Your account needs an email address before you can send a test.</p> : null}
           <div className="digest-action-row">
             <form action={sendWeeklyDigestTestAction}>
-              <input name="digestType" type="hidden" value={previewMode} />
-              <input name="userId" type="hidden" value={selectedUserId} />
-              <SubmitButton type="submit">Send test to me</SubmitButton>
+              <SubmitButton type="submit" disabled={!session.user.email}>Send test to me</SubmitButton>
             </form>
             <form action={sendWeeklyDigestManualAction}>
               <SubmitButton className="secondary" type="submit">
-                Send current digest to all recipients
+                Send this brief to tenant
               </SubmitButton>
             </form>
           </div>
@@ -141,7 +91,7 @@ export default async function WeeklyDigestAdminPage({
             <strong>{rendered.subject}</strong>
             <span className="muted">Rendered with current Neat data. Test sends use your admin email.</span>
           </div>
-          <iframe className="digest-preview-frame" srcDoc={rendered.html} title="Weekly digest email preview" />
+          <iframe sandbox="allow-popups allow-popups-to-escape-sandbox" className="digest-preview-frame" srcDoc={rendered.html} title="Weekly digest email preview" />
           <details className="compact-details cardless-details">
             <summary>Plain text version</summary>
             <pre className="digest-text-preview">{rendered.text}</pre>
@@ -163,13 +113,14 @@ export default async function WeeklyDigestAdminPage({
             </tr>
           </thead>
           <tbody>
+            {recentLogs.length === 0 ? <tr><td colSpan={6}>No digest deliveries recorded for this tenant yet.</td></tr> : null}
             {recentLogs.map((log) => (
               <tr key={log.id}>
                 <td data-label="Recipient">
                   {log.recipientUser ? getUserDisplayName(log.recipientUser) : 'Unknown user'}
                   <div className="muted">{log.recipientEmail}</div>
                 </td>
-                <td data-label="Type">{log.digestType === 'ADMIN_WEEKLY' ? 'Admin team' : 'User'}</td>
+                <td data-label="Type">{log.digestType === 'ADMIN_WEEKLY' ? 'Tenant brief' : 'Legacy user digest'}</td>
                 <td data-label="Period">
                   {formatEasternDateTime(log.periodStart)} - {formatEasternDateTime(log.periodEnd)}
                 </td>

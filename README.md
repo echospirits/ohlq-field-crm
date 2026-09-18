@@ -78,9 +78,12 @@ Reusable inventory reads live in `lib/ohlqAgencyInventory.ts`. They query the co
 ## Weekly digest email
 - Vercel cron calls `/api/cron/weekly-digest` at 13:00 UTC on Fridays. The route only sends when the current `America/New_York` local hour is 8 or 9, so daylight saving time is handled by the app while staying compatible with Vercel Hobby cron limits.
 - The cron route requires `Authorization: Bearer $CRON_SECRET`.
-- Standard active users receive their own weekly digest. Active admins receive the team digest for all active users.
-- Digest sends are logged in `WeeklyDigestLog` and are idempotent per recipient, digest type, and period.
-- Admins can preview and send tests at `/admin/weekly-digest`.
+- Every active user with an email address receives the same tenant-wide brief, including admins and Tasters. Tenant membership controls delivery; platform admins without a home tenant retain Echo delivery. Disabled/suspended tenants and tenants without WEEKLY_DIGEST remain excluded.
+- Digest sends are logged in `WeeklyDigestLog` using the existing ADMIN_WEEKLY storage type (legacy USER_WEEKLY logs are retained). A fixed Friday-to-Friday calendar period, atomic delivery claims and tenant-aware provider idempotency prevent duplicate sends. Legacy successful sends for that Friday are also recognized.
+- Admins can preview and send tests at `/admin/weekly-digest`. Manual sends are limited to the current tenant. Test sends only target the signed-in admin.
+- The brief uses tenant names, logo and colors. Retail and wholesale bottle tiles sum daily Annual Sales Summary rows for every configured Ohio item, with no active, ownership-status, delisting, discontinued or distribution filter and no vendor fallback. Missing import days are labeled partial/unavailable, not zero. Sales and activity cover the same seven completed calendar days in the tenant timezone.
+- AI interpretation uses the existing `OPENAI_API_KEY` with `store: false`, once per tenant per run. `WEEKLY_DIGEST_MODEL` optionally overrides the default `gpt-5.6-luna`; `WEEKLY_DIGEST_AI_ENABLED=false` disables it. Local development requires an explicit `WEEKLY_DIGEST_AI_ENABLED=true`. Model errors fall back to clearly labeled verified counts. No schema migration is needed.
+- Narrative evidence is bounded to 300 visits, 150 completions and 150 due tasks, with clipped notes; the email discloses limited evidence. Metric counts remain exact and tenant-wide. Interest and reported commitments are not presented as confirmed sales.
 
 Local commands:
 ```bash
