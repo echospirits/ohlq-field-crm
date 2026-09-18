@@ -9,7 +9,7 @@ export function StateField({ name = 'state', defaultValue = 'OH', required = tru
   useEffect(() => {
     if (input.current && document.activeElement !== input.current) input.current.value = defaultValue;
   }, [defaultValue]);
-  return <label>State<input ref={input} name={name} defaultValue={defaultValue} list={id} required={required} autoComplete="address-level1" placeholder={required ? 'OH or Ohio' : 'All states'} />
+  return <><label>State<input ref={input} name={name} defaultValue={defaultValue} list={id} required={required} autoComplete="address-level1" placeholder={required ? 'OH or Ohio' : 'All states'} /></label>
     <datalist id={id}>{US_STATES.map(({ code, name: label }) => <option key={code} value={code}>{label}</option>)}</datalist>
-  </label>;
+  </>;
 }

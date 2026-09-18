@@ -4,7 +4,7 @@ export const runtime = 'nodejs';
 import { SubmitButton } from '../components/SubmitButton';
 import { randomUUID } from 'node:crypto';
 import { ActionForm } from '../components/ActionForm';
-import { StateField } from '../components/StateField';
+import { WholesaleAddressFields } from '../components/WholesaleAddressFields';
 import { normalizeUsState, stateScopedLicenseeIds } from '../../lib/usStates';
 import { revalidatePath } from 'next/cache';
 import Link from 'next/link';
@@ -342,14 +342,12 @@ async function createWholesale(formData: FormData) {
     isActive: true,
     name,
     officialAccountId: officialAccount?.id,
-    agencyId: toOptional(String(formData.get('agencyId') ?? '')),
     address: toOptional(String(formData.get('address') ?? '')),
     city: toOptional(String(formData.get('city') ?? '')),
     county: toOptional(String(formData.get('county') ?? '')),
     zip: toOptional(String(formData.get('zip') ?? '')),
     phone: toOptional(String(formData.get('phone') ?? '')),
     ownership: toOptional(String(formData.get('ownership') ?? '')),
-    districtId: toOptional(String(formData.get('districtId') ?? '')),
     deliveryDay: toOptional(String(formData.get('deliveryDay') ?? '')),
   };
   const account = await prisma.$transaction(async (tx) => {
@@ -563,37 +561,33 @@ export default async function WholesalePage({
         </select>
       </LiveFilterForm>
       {params.status === 'saved' ? <p className="pill">Wholesale account saved.</p> : null}
-      {params.status === 'invalid' ? <p className="pill">Name and at least one Licensee ID are required.</p> : null}
+      {params.status === 'invalid' ? <p className="pill">An account name and valid state are required.</p> : null}
       {params.status === 'duplicate-licensee' ? (
         <p className="pill">Those Licensee IDs are already split across multiple wholesale accounts.</p>
       ) : null}
 
       <details className="card compact-details admin-panel">
-        <summary>Create non-official wholesale account</summary>
-        <ActionForm action={createWholesale}>
-          <div className="form-grid">
-            <label>Account name<input name="name" required /></label>
-            <label>Street address<input name="address" autoComplete="street-address" /></label>
-            <label>City<input name="city" autoComplete="address-level2" /></label>
-            <StateField />
-            <label>ZIP code<input name="zip" autoComplete="postal-code" /></label>
-            <label>Phone<input name="phone" type="tel" /></label>
-          </div>
-          <p className="muted">Add a street address, city, state and ZIP for location research. Outside Ohio, research can assess fit without sales data; scores are labeled provisional.</p>
-          <details className="compact-details nested-details">
-            <summary>More account details</summary>
-            <div className="form-grid">
-              <input name="agencyId" placeholder="Agency ID" />
-              <label>Licensee IDs (optional)<textarea name="licenseeIds" rows={2} /></label>
-              <input name="county" placeholder="County" />
-              <input name="ownership" placeholder="Ownership" />
-              <input name="districtId" placeholder="District ID" />
-              <input name="deliveryDay" placeholder="Delivery Day" />
+        <summary>Create wholesale account</summary>
+        <ActionForm action={createWholesale} className="wholesale-create-form">
+          <fieldset className="wholesale-create-section">
+            <legend>Account</legend>
+            <div className="wholesale-create-grid">
+              <label>Account name<input name="name" required autoComplete="organization" /></label>
+              <label>Phone (optional)<input name="phone" type="tel" autoComplete="tel" /></label>
             </div>
-          </details>
+          </fieldset>
+          <WholesaleAddressFields />
+          <fieldset className="wholesale-create-section">
+            <legend>Additional details (optional)</legend>
+            <div className="wholesale-create-grid wholesale-create-extras">
+              <label>Licensee IDs<input name="licenseeIds" placeholder="Separate multiple IDs with commas" /></label>
+              <label>Ownership<input name="ownership" /></label>
+              <label>Delivery day<input name="deliveryDay" /></label>
+            </div>
+          </fieldset>
           {tags.length > 0 ? (
-            <details className="compact-details nested-details">
-              <summary>Tags</summary>
+            <fieldset className="wholesale-create-section">
+              <legend>Tags (optional)</legend>
               <div className="tag-checkbox-grid">
                 {tags.map((tag) => (
                   <label className="tag-checkbox" key={tag.id}>
@@ -603,7 +597,7 @@ export default async function WholesalePage({
                   </label>
                 ))}
               </div>
-            </details>
+            </fieldset>
           ) : null}
           <SubmitButton type="submit">Save wholesale account</SubmitButton>
         </ActionForm>

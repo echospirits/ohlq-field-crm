@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { StateField } from '../components/StateField';
+import { WholesaleAddressFields } from '../components/WholesaleAddressFields';
 import { addEasternCalendarDays, EASTERN_TIME_ZONE } from '../../lib/dateTime';
 import { formatDistanceMiles } from '../../lib/location/distance';
 import type { NearbyAccount } from '../../lib/location/nearbyAccounts';
@@ -685,15 +685,15 @@ export function LogVisitForm({
           {mode === 'create' && locationType === 'wholesale' && !wholesaleAccountId ? (
             <details className="compact-details nested-details">
               <summary>Create a wholesale account</summary>
-              <div className="form-grid">
-                <input name="newWholesaleName" placeholder="Account name" value={newWholesaleName} onChange={(event) => setNewWholesaleName(event.target.value)} />
-                <input name="newWholesaleLicenseeId" placeholder="Licensee ID (optional)" />
-                <input name="newWholesalePhone" placeholder="Phone (optional)" />
-                <label>Street address<input name="newWholesaleAddress" autoComplete="street-address" /></label>
-                <label>City<input name="newWholesaleCity" autoComplete="address-level2" /></label>
-                <StateField name="newWholesaleState" />
-                <label>ZIP code<input name="newWholesaleZip" autoComplete="postal-code" /></label>
-              </div>
+              <fieldset className="wholesale-create-section">
+                <legend>Account</legend>
+                <div className="wholesale-create-grid">
+                  <label>Account name<input name="newWholesaleName" autoComplete="organization" value={newWholesaleName} onChange={(event) => setNewWholesaleName(event.target.value)} /></label>
+                  <label>Phone (optional)<input name="newWholesalePhone" type="tel" autoComplete="tel" /></label>
+                </div>
+              </fieldset>
+              <WholesaleAddressFields visit />
+              <label>Licensee ID (optional)<input name="newWholesaleLicenseeId" /></label>
               {tags.length > 0 ? (
                 <div className="tag-checkbox-grid">
                   {tags.map((tag) => (
