@@ -69,12 +69,11 @@ export function renderTenantWeeklyDigestEmail(digest: TenantWeeklyDigest, appBas
         </tr></table>
         <p style="font-size:11px;line-height:1.6;color:${secondary};margin:8px 5px 10px;">${escape(salesCoverage)}</p>
       </td></tr>
-      ${section('Big wins', narrative.wins, narrative.mode === 'fallback' ? 'Account wins could not be summarized this time. Review the recorded activity in Neat.' : 'No major win was identified in the available records this week.')}
-      ${section('Major progress', narrative.progress, 'No major progress was identified in the available records this week.')}
-      ${section('Risks / needs attention', narrative.risks, narrative.mode === 'fallback' ? 'Account risks could not be summarized this time. Review the worklist for details.' : 'No additional risk was identified in the available records. Continue routine follow-up.', true)}
-      <tr><td class="content" style="padding:12px 32px;"><table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr><td style="background:${light(accent)};padding:20px;border-radius:5px;">
-      <h2 style="font-size:12px;letter-spacing:1.3px;text-transform:uppercase;margin:0;color:${dark(accent)};">Next week / recommended focus</h2>
-      ${narrative.nextWeek.length ? narrative.nextWeek.map(entryHtml).join('') : `<p style="font-size:14px;line-height:1.6;">Review the worklist and agree on the next account priorities.</p>`}</td></tr></table></td></tr>
+      ${section('Wholesale / Big wins', narrative.wins, narrative.mode === 'fallback' ? 'Wholesale wins could not be summarized this time.' : 'No major wholesale win was identified in the available records this week.')}
+      ${section('Wholesale / Risks to watch', narrative.risks, narrative.mode === 'fallback' ? 'Wholesale risks could not be summarized this time.' : 'No material wholesale risk was identified in the available records.', true)}
+      ${section('Retail / Big wins', narrative.retailWins, narrative.mode === 'fallback' ? 'Retail wins could not be summarized this time.' : 'No major retail win was identified in the available records this week.')}
+      ${section('Retail / Risks to watch', narrative.retailRisks, narrative.mode === 'fallback' ? 'Retail risks could not be summarized this time.' : 'No material retail risk was identified in the available records.', true)}
+      <tr><td class="content" style="padding:4px 32px 10px;"><p style="font-size:11px;line-height:1.6;color:${secondary};margin:0;">${escape(sales.retail ? `Retail sales recorded at ${sales.retail.sellingAgencies} agencies in the covered dates. ${sales.retail.comparable ? 'Agency comparisons use two complete weeks.' : 'Week-over-week retail comparisons are unavailable because both weeks are not fully covered.'}` : 'Agency-level retail sales insights are unavailable for this period.')}</p></td></tr>
       <tr><td class="content" style="padding:14px 32px 28px;">
       <a target="_blank" rel="noopener noreferrer" href="${escape(worklistUrl)}" style="display:inline-block;background:${accent};color:${foreground(accent)};font-weight:700;font-size:14px;line-height:22px;padding:12px 18px;text-decoration:none;border-radius:4px;">Open team worklist &rarr;</a>
       <p style="font-size:11px;line-height:1.6;color:${secondary};margin:18px 0 0;">${escape(organization.appName)} &middot; ${escape(organization.displayName)}<br>One shared brief for your tenant. Based on recorded activity; customer interest is not a confirmed sale.
@@ -84,10 +83,11 @@ export function renderTenantWeeklyDigestEmail(digest: TenantWeeklyDigest, appBas
   const textSection = (label: string, entries: DigestHighlight[], empty: string) => [label, ...(entries.length ? entries.map((item) => `${item.title}\n${item.body}${item.evidenceIds.flatMap((id) => { const source = evidenceById.get(id); return source?.href ? [`\n${source.account}: ${baseUrl}${source.href}`] : []; }).join('')}`) : [empty]), ''].join('\n');
   const text = [subject, narrative.headline, '', `Retail bottles sold: ${number(sales.retailBottles)}`, `Wholesale bottles sold: ${number(sales.wholesaleBottles)}`, salesNote, salesCoverage,
     `Visits logged: ${metrics.visitsLogged}`, `Tasks completed: ${metrics.completedWork}`, `Overdue tasks: ${metrics.overdue} (${metrics.unassignedOverdue} without an owner)`, `Upcoming tasks: ${metrics.upcoming}`, '',
-    textSection('BIG WINS', narrative.wins, narrative.mode === 'fallback' ? 'Account wins could not be summarized this time.' : 'No major win identified in the available records.'),
-    textSection('MAJOR PROGRESS', narrative.progress, 'No major progress identified in the available records.'),
-    textSection('RISKS', narrative.risks, narrative.mode === 'fallback' ? 'Account risks could not be summarized this time.' : 'No additional risk identified in the available records.'),
-    textSection('NEXT WEEK / RECOMMENDED FOCUS', narrative.nextWeek, 'Review the worklist and agree on priorities.'),
+    textSection('WHOLESALE / BIG WINS', narrative.wins, narrative.mode === 'fallback' ? 'Wholesale wins could not be summarized this time.' : 'No major wholesale win identified in the available records.'),
+    textSection('WHOLESALE / RISKS TO WATCH', narrative.risks, narrative.mode === 'fallback' ? 'Wholesale risks could not be summarized this time.' : 'No material wholesale risk identified in the available records.'),
+    textSection('RETAIL / BIG WINS', narrative.retailWins, narrative.mode === 'fallback' ? 'Retail wins could not be summarized this time.' : 'No major retail win identified in the available records.'),
+    textSection('RETAIL / RISKS TO WATCH', narrative.retailRisks, narrative.mode === 'fallback' ? 'Retail risks could not be summarized this time.' : 'No material retail risk identified in the available records.'),
+    sales.retail ? `Retail sales recorded at ${sales.retail.sellingAgencies} agencies. ${sales.retail.comparable ? 'Agency comparisons use two complete weeks.' : 'Week-over-week retail comparisons unavailable: both weeks are not fully covered.'}` : 'Agency-level retail sales insights unavailable for this period.',
     `Open team worklist: ${worklistUrl}`, `${organization.appName} / ${organization.displayName}`,
     'Based on recorded activity; customer interest is not a confirmed sale.',
     ...(narrative.mode === 'fallback' ? ['Summary unavailable this time; showing verified activity totals.'] : []),

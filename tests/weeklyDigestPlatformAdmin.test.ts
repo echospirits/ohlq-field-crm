@@ -102,3 +102,27 @@ test('a concurrent send claim and legacy successful log each prevent delivery', 
   legacy = true;
   assert.equal((await sendWeeklyDigestForAllUsers(options)).skipped, 1);
 });
+
+test('agency visits and agency sales reach the narrative as retail evidence with source links', async (t) => {
+  const fixture = makeTenantDigest();
+  stub(t, prisma.organization, 'findUnique', async () => fixture.organization);
+  stub(t, prisma.organizationProduct, 'findMany', async () => [{ externalItemCode: 'DELISTED' }]);
+  stub(t, prisma.ohlqReportImportStatus, 'findMany', async (args) => Array.from({ length: 7 }, (_, i) => ({ reportDate: new Date(args.where.reportDate.gte.getTime() + i * 86400000) })));
+  stub(t, prisma.ohlqAnnualSalesRow, 'aggregate', async () => ({ _sum: { retailBottlesSold: 50, wholesaleBottlesSold: 0 } }));
+  stub(t, prisma.ohlqAnnualSalesRow, 'groupBy', async () => [{ agencyId: '100', _sum: { retailBottlesSold: 50 } }]);
+  stub(t, prisma.loggedVisit, 'findMany', async () => [{ id: 'retail-visit', locationType: 'agency', agencyId: 'agency-one', visitAt: new Date('2026-09-15T12:00:00Z'), summary: 'Invented shelf placement confirmed.', createdByUser: null, photos: [] }]);
+  stub(t, prisma.loggedVisit, 'count', async () => 1);
+  stub(t, prisma.worklistItem, 'findMany', async () => []);
+  stub(t, prisma.worklistItem, 'count', async () => 0);
+  stub(t, prisma.agency, 'findMany', async () => [{ id: 'agency-one', agencyId: '100', name: 'Invented Retail Store', city: 'Demo' }]);
+  stub(t, prisma.wholesaleAccount, 'findMany', async () => []);
+  stub(t, prisma.locationContact, 'findMany', async () => []);
+  const digest = await getTenantWeeklyDigest(fixture.organization.id, fixture.window, async (input) => {
+    assert.equal(input.evidence.find((item) => item.id === 'visit:retail-visit')?.channel, 'retail');
+    const sales = input.evidence.find((item) => item.id === 'retail:agency:100');
+    assert.equal(sales?.channel, 'retail'); assert.equal(sales?.href, '/agencies/agency-one');
+    assert.match(sales!.text, /50 retail bottles/);
+    return fallbackWeeklyDigestNarrative(input);
+  });
+  assert.equal(digest.evidence.length, 2);
+});

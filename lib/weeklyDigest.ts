@@ -344,7 +344,7 @@ export async function getTenantWeeklyDigest(organizationId: string, requestedWin
   const evidence: DigestEvidence[] = [
     ...visits.map((record): DigestEvidence => {
       const visit = visitToDigestVisit(record, lookups);
-      return { id: `visit:${visit.id}`, kind: 'visit', account: visit.location.name, href: visit.location.href,
+      return { id: `visit:${visit.id}`, kind: 'visit', channel: visit.locationType === 'agency' ? 'retail' : 'wholesale', account: visit.location.name, href: visit.location.href,
         date: visit.visitAt.toISOString(), owner: visit.createdByName,
         text: clip([visit.summary, visit.outcomes && `Reported outcomes: ${visit.outcomes}`, visit.nextStep && `Next step: ${visit.nextStep}`,
           visit.followUpDate && `Follow-up date: ${visit.followUpDate.toISOString().slice(0, 10)}`].filter(Boolean).join('\n')) };
@@ -352,9 +352,13 @@ export async function getTenantWeeklyDigest(organizationId: string, requestedWin
     ...[...work.completedWork, ...work.openWork].map((record): DigestEvidence => {
       const item = workItemToDigestItem(record, lookups);
       return { id: `task:${item.id}`, kind: item.status === WorklistStatus.COMPLETED ? 'completed' : item.dueDate! < dueStart ? 'overdue' : 'upcoming',
+        channel: item.category === WorklistCategory.AGENCY ? 'retail' : item.category === WorklistCategory.WHOLESALE ? 'wholesale' : 'general',
         account: item.location.name, href: item.location.href, date: (item.completedAt ?? item.dueDate!).toISOString(),
         owner: item.assignedToName, text: clip([item.title, item.detail].filter(Boolean).join('\n')) };
     }),
+    ...(sales.retail?.highlights ?? []).map((row): DigestEvidence => ({ id: `retail:agency:${row.agencyNumber}`, kind: 'sales', channel: 'retail', account: row.name, href: row.href,
+      date: sales.endDate, owner: null,
+      text: `${row.bottles} retail bottles sold across this tenant's configured Ohio items during ${sales.startDate} through ${sales.endDate}. Coverage: ${sales.coveredDays}/${sales.expectedDays} days.${row.previousBottles !== null ? ` Previous complete week: ${row.previousBottles} bottles.${row.change !== null ? ` Change: ${row.change} bottles.` : ' Negative net sales may reflect corrections; no demand comparison is supplied.'}` : ' Prior-week comparison unavailable; do not infer a trend.'} Sales declines alone do not establish a cause or predict future demand.` })),
   ];
   const input = { organization, window, sales, metrics: { visitsLogged, completedWork, overdue, unassignedOverdue, upcoming, unassignedUpcoming }, evidence,
     evidenceLimited: visitsLogged > visits.length || completedWork > work.completedWork.length || overdue + upcoming > work.openWork.length };
