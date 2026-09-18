@@ -34,9 +34,10 @@ test('tenant brief uses configured branding, sales and escaped evidence in HTML 
   assert.match(email.html, /Other &lt;Distillery&gt;/);
   assert.doesNotMatch(email.html, /<script>|Echo Spirits|Per-user|User digest/);
   assert.match(email.html, /background:#ffffff;color:#142c32/);
-  for (const text of ['Retail bottles sold', 'Wholesale bottles sold', '412', '186', 'Big wins', 'Major progress', 'Next week', 'Standardized Brewing']) assert.ok(email.html.includes(text), text);
+  for (const text of ['Retail bottles sold', 'Wholesale bottles sold', '412', '186', 'Big wins', 'Major progress', 'Next week', 'Harbor Cafe']) assert.ok(email.html.includes(text), text);
   for (const text of ['412', '186', 'RISKS', 'NEXT WEEK']) assert.ok(email.text.includes(text), text);
-  assert.match(email.html, /https:\/\/crm.example.com\/wholesale\/standardized/);
+  assert.match(email.html, /target="_blank" rel="noopener noreferrer"/);
+  assert.match(email.html, /https:\/\/crm.example.com\/wholesale\/harbor/);
 });
 
 test('missing, partial, empty and AI fallback states never imply a complete zero', () => {

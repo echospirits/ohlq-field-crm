@@ -43,7 +43,7 @@ export function renderTenantWeeklyDigestEmail(digest: TenantWeeklyDigest, appBas
     const links = [...new Map(entry.evidenceIds.flatMap((id) => { const item = evidenceById.get(id); return item?.href && /^\/(agencies|wholesale)\/[a-zA-Z0-9_-]+$/.test(item.href) ? [[item.href, item] as const] : []; })).values()].slice(0, 2);
     return `<h3 style="font-size:19px;line-height:1.3;margin:12px 0 7px;color:${ink};">${escape(entry.title)}</h3>
       <p style="font-size:15px;line-height:1.6;margin:0 0 8px;color:${ink};">${escape(entry.body)}</p>
-      ${links.length ? `<p style="margin:0 0 12px;font-size:12px;line-height:1.6;">${links.map((item) => `<a style="color:${dark(accent)};text-decoration:underline;" href="${escape(baseUrl + item.href)}">${escape(item.account)}</a>`).join(' &middot; ')}</p>` : ''}`;
+      ${links.length ? `<p style="margin:0 0 12px;font-size:12px;line-height:1.6;">${links.map((item) => `<a target="_blank" rel="noopener noreferrer" style="color:${dark(accent)};text-decoration:underline;" href="${escape(baseUrl + item.href)}">${escape(item.account)}</a>`).join(' &middot; ')}</p>` : ''}`;
   };
   const section = (label: string, entries: DigestHighlight[], empty: string, warning = false) => `<tr><td class="content" style="padding:12px 32px 10px;">
     <h2 style="font-size:12px;letter-spacing:1.3px;text-transform:uppercase;margin:0;color:${warning ? '#963f23' : dark(accent)};">${escape(label)}</h2>
@@ -76,7 +76,7 @@ export function renderTenantWeeklyDigestEmail(digest: TenantWeeklyDigest, appBas
       <h2 style="font-size:12px;letter-spacing:1.3px;text-transform:uppercase;margin:0;color:${dark(accent)};">Next week / recommended focus</h2>
       ${narrative.nextWeek.length ? narrative.nextWeek.map(entryHtml).join('') : `<p style="font-size:14px;line-height:1.6;">Review the worklist and agree on the next account priorities.</p>`}</td></tr></table></td></tr>
       <tr><td class="content" style="padding:14px 32px 28px;">
-      <a href="${escape(worklistUrl)}" style="display:inline-block;background:${accent};color:${foreground(accent)};font-weight:700;font-size:14px;line-height:22px;padding:12px 18px;text-decoration:none;border-radius:4px;">Open team worklist &rarr;</a>
+      <a target="_blank" rel="noopener noreferrer" href="${escape(worklistUrl)}" style="display:inline-block;background:${accent};color:${foreground(accent)};font-weight:700;font-size:14px;line-height:22px;padding:12px 18px;text-decoration:none;border-radius:4px;">Open team worklist &rarr;</a>
       <p style="font-size:11px;line-height:1.6;color:${secondary};margin:18px 0 0;">${escape(organization.appName)} &middot; ${escape(organization.displayName)}<br>One shared brief for your tenant. Based on recorded activity; customer interest is not a confirmed sale.
       ${narrative.mode === 'fallback' ? '<br>Summary unavailable this time; showing verified activity totals.' : ''}
       ${digest.evidenceLimited ? '<br>Highlights use a limited selection of records. Activity totals include all matching records.' : ''}</p>
