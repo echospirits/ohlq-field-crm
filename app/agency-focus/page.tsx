@@ -13,7 +13,7 @@ import { ContextualActions } from '../components/ContextualActions';
 import { DataFreshnessBadge } from '../components/DataFreshnessBadge';
 import { requireFeatureForUser } from '../../lib/organizations';
 import { AgencyFocusSearch } from './AgencyFocusSearch';
-import { formatEasternDate } from '../../lib/dateTime';
+import { formatDateOnly } from '../../lib/dateTime';
 import { agencyFocusHref } from '../../lib/agencyFocusView';
 
 export const metadata = buildPageMetadata('Agency Intelligence');
@@ -114,7 +114,7 @@ export default async function AgencyFocusPage({
         </div>
         <div className="agency-focus-product">
           <strong>{item.itemName}</strong>
-          <small>Item {item.itemCode} · Through {formatEasternDate(item.asOfDate)}</small>
+          <small>Item {item.itemCode} · Through {formatDateOnly(item.asOfDate)}</small>
           <p><strong>Next:</strong> {titleCase(item.recommendedAction)}</p>
         </div>
         <dl className="agency-focus-metrics">

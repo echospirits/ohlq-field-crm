@@ -2,6 +2,12 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { agencyFocusHref } from '../lib/agencyFocusView';
+import { formatDateOnly } from '../lib/dateTime';
+
+test('source report dates do not shift backward in Eastern time', () => {
+  assert.equal(formatDateOnly(new Date('2026-09-18T00:00:00Z')), '9/18/2026');
+  assert.match(readFileSync('app/agency-focus/page.tsx', 'utf8'), /formatDateOnly\(item.asOfDate\)/);
+});
 
 test('agency action filter URLs retain account and search context with safe encoding', () => {
   const query = { agencyId: 'agency-1', q: 'Rum & rye', state: 'RESTOCK' };
