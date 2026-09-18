@@ -40,6 +40,56 @@ const base = (overrides: Partial<AgencyProductSignals> = {}): AgencyProductSigna
 });
 
 describe('Agency inventory and opportunity states', () => {
+  for (const minimum of [null, 0, 6]) {
+    for (const retailSales30 of [0, 1, 2, 9]) {
+      test(`reported zero is a stockout with minimum ${minimum} and ${retailSales30} recent sales`, () => {
+        const result = analyzeAgencyProduct(base({ onHand: 0, minimum, retailSales30, historicalRetailSales: 0 }));
+        assert.equal(result.inventoryState, 'STOCKOUT');
+        assert.equal(result.opportunityState, 'STOCKOUT');
+        assert.equal(result.recommendedAction, 'RESTOCK');
+        assert.equal(getNextAgencyOpportunityStatus({
+          actionable: true, changed: true, asOfDate: new Date('2026-09-18'),
+          previous: { status: OpportunityStatus.RESOLVED, snoozedUntil: null },
+        }), OpportunityStatus.OPEN);
+      });
+    }
+  }
+
+  test('sales affect stockout priority, not inclusion', () => {
+    const quiet = analyzeAgencyProduct(base({ onHand: 0, minimum: 0, retailSales30: 0 }));
+    const selling = analyzeAgencyProduct(base({ onHand: 0, minimum: 0, retailSales30: 9 }));
+    assert.ok(selling.priorityScore > quiet.priorityScore);
+    assert.ok(quiet.reasons.some((reason) => reason.includes('confirm replenishment needs')));
+  });
+
+  test('below-minimum inventory does not require recent sales', () => {
+    assert.equal(analyzeAgencyProduct(base({ onHand: 2, minimum: 6, retailSales30: 0, daysSinceLastSale: null })).inventoryState, 'UNDERSTOCKED');
+  });
+
+  for (const minimum of [null, 0]) {
+    test(`low days of supply remains actionable without a minimum (${minimum})`, () => {
+      const result = analyzeAgencyProduct(base({ onHand: 2, minimum, retailSales30: 10 }));
+      assert.equal(result.inventoryState, 'UNDERSTOCKED');
+      assert.ok(result.reasons.includes('About 6.0 days of supply at recent sales pace'));
+      assert.ok(!result.reasons.some((reason) => reason.includes('versus minimum 0')));
+    });
+  }
+
+  test('missing placement and unknown quantity never become confirmed stockouts', () => {
+    for (const retailSales30 of [0, 1, 9]) {
+      assert.notEqual(analyzeAgencyProduct(base({ currentPlacement: false, onHand: 0, retailSales30 })).inventoryState, 'STOCKOUT');
+      assert.equal(analyzeAgencyProduct(base({ onHand: null, minimum: 0, retailSales30 })).inventoryState, 'INSUFFICIENT_DATA');
+    }
+  });
+
+  for (const inventoryStatus of ['Delisted', 'Inactive', 'Discontinued']) {
+    test(`${inventoryStatus} inventory is investigated rather than replenished`, () => {
+      const result = analyzeAgencyProduct(base({ inventoryStatus, onHand: 0, retailSales30: 0 }));
+      assert.equal(result.inventoryState, 'AT_RISK');
+      assert.equal(result.recommendedAction, 'INVESTIGATE');
+    });
+  }
+
   test('detects a productive stockout and recommends restocking', () => {
     const result = analyzeAgencyProduct(base({ onHand: 0, minimum: 6, retailSales30: 9 }));
     assert.equal(result.inventoryState, 'STOCKOUT');

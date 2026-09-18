@@ -204,8 +204,9 @@ export function detectInventoryState(signals: AgencyProductSignals, fitBand: Int
     if (fitBand === 'HIGH') return signals.previousPlacement ? 'AT_RISK' : 'MISSING_PLACEMENT';
     return 'INSUFFICIENT_DATA';
   }
-  if (onHand === 0 && signals.retailSales30 >= rules.stockoutDemandBottles30) return 'STOCKOUT';
-  if (onHand === 0) return 'INSUFFICIENT_DATA';
+  // A reported zero is a stockout even without recent sales or a replenishment
+  // minimum. Demand affects priority, not whether the inventory issue exists.
+  if (onHand === 0) return 'STOCKOUT';
   if (
     onHand > 0 &&
     ((signals.minimum !== null && onHand < signals.minimum) ||
@@ -275,8 +276,16 @@ export function analyzeAgencyProduct(signals: AgencyProductSignals): AgencyProdu
   const daysOfSupply = signals.retailSales30 > 0 && onHand > 0 ? (onHand / signals.retailSales30) * 30 : null;
   const stateReasons: string[] = [];
 
-  if (inventoryState === 'STOCKOUT') stateReasons.push(`0 on hand with ${signals.retailSales30} sold in 30 days`);
-  if (inventoryState === 'UNDERSTOCKED') stateReasons.push(`${onHand} on hand${signals.minimum !== null ? ` versus minimum ${signals.minimum}` : ''}`);
+  if (inventoryState === 'STOCKOUT') {
+    stateReasons.push(`0 on hand with ${signals.retailSales30} sold in 30 days`);
+    if (signals.retailSales30 === 0) stateReasons.push('No recent sales observed; confirm replenishment needs with the store');
+  }
+  if (inventoryState === 'UNDERSTOCKED') {
+    if (signals.minimum !== null && onHand < signals.minimum) stateReasons.push(`${onHand} on hand versus minimum ${signals.minimum}`);
+    if (daysOfSupply !== null && daysOfSupply < agencyIntelligenceConfig.inventory.understockedDaysOfSupply) {
+      stateReasons.push(`About ${daysOfSupply.toFixed(1)} days of supply at recent sales pace`);
+    }
+  }
   if (inventoryState === 'MISSING_PLACEMENT') stateReasons.push('High fit with no current placement');
   if (inventoryState === 'DEAD_INVENTORY') stateReasons.push(`${onHand} on hand with no recent sell-through`);
   if (tastingOpportunity) stateReasons.push('Inventory is available and no recent Agency visit is recorded');

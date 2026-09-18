@@ -14,7 +14,7 @@ import { DataFreshnessBadge } from '../components/DataFreshnessBadge';
 import { requireFeatureForUser } from '../../lib/organizations';
 import { AgencyFocusSearch } from './AgencyFocusSearch';
 import { formatDateOnly } from '../../lib/dateTime';
-import { agencyFocusHref } from '../../lib/agencyFocusView';
+import { AGENCY_FOCUS_PAGE_SIZE, agencyFocusHref, agencyFocusPageNumber } from '../../lib/agencyFocusView';
 
 export const metadata = buildPageMetadata('Agency Intelligence');
 
@@ -47,12 +47,13 @@ const stringList = (value: unknown) => Array.isArray(value) ? value.map(String) 
 export default async function AgencyFocusPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ agencyId?: string; state?: string; q?: string }>;
+  searchParams?: Promise<{ agencyId?: string; state?: string; q?: string; page?: string }>;
 }) {
   const currentUser = await requireUser();
   const { organizationId } = await requireFeatureForUser(currentUser, 'AGENCY_INTELLIGENCE');
   const query = (await searchParams) ?? {};
   const search = query.q?.trim() ?? '';
+  const page = agencyFocusPageNumber(query.page);
   const state = Object.values(AgencyProductOpportunityState).includes(query.state as AgencyProductOpportunityState)
     ? query.state as AgencyProductOpportunityState
     : undefined;
@@ -79,12 +80,14 @@ export default async function AgencyFocusPage({
         select: { id: true },
       },
     },
-    orderBy: [{ priorityScore: 'desc' }, { lastDetectedAt: 'desc' }],
-    take: 251,
+    orderBy: [{ priorityScore: 'desc' }, { lastDetectedAt: 'desc' }, { id: 'asc' }],
+    skip: (page - 1) * AGENCY_FOCUS_PAGE_SIZE,
+    take: AGENCY_FOCUS_PAGE_SIZE + 1,
   }), prisma.user.findMany({ where: { organizationId, isActive: true, role: { notIn: ['TASTER', 'PLATFORM_ADMIN'] } }, orderBy: [{ name: 'asc' }, { email: 'asc' }] })]);
   const actionUsers = users.map((user) => ({ id: user.id, name: getUserDisplayName(user) }));
-  const visibleOpportunities = opportunities.slice(0, 250);
-  const returnTo = agencyFocusHref({ agencyId: query.agencyId, state, q: search });
+  const visibleOpportunities = opportunities.slice(0, AGENCY_FOCUS_PAGE_SIZE);
+  const hasMore = opportunities.length > AGENCY_FOCUS_PAGE_SIZE;
+  const returnTo = agencyFocusHref({ agencyId: query.agencyId, state, q: search, page });
   const latestSourceDate = visibleOpportunities.reduce<Date | null>(
     (latest, item) => !latest || item.asOfDate > latest ? item.asOfDate : latest,
     null,
@@ -96,12 +99,12 @@ export default async function AgencyFocusPage({
       <DataFreshnessBadge sourceDate={latestSourceDate} />
     </header>
     <nav aria-label="Agency opportunity filters" className="opportunity-filters">
-      <Link aria-current={!state ? 'page' : undefined} className={!state ? 'active' : undefined} href={agencyFocusHref({ ...query, state: undefined })}>All actions</Link>
-      {actionableStates.map((value) => <Link aria-current={state === value ? 'page' : undefined} className={state === value ? 'active' : undefined} href={agencyFocusHref({ ...query, state: value })} key={value}>{stateLabels[value]}</Link>)}
+      <Link aria-current={!state ? 'page' : undefined} className={!state ? 'active' : undefined} href={agencyFocusHref({ ...query, state: undefined, page: 1 })}>All actions</Link>
+      {actionableStates.map((value) => <Link aria-current={state === value ? 'page' : undefined} className={state === value ? 'active' : undefined} href={agencyFocusHref({ ...query, state: value, page: 1 })} key={value}>{stateLabels[value]}</Link>)}
     </nav>
     <div className="agency-focus-toolbar">
       <AgencyFocusSearch value={search} />
-      <p className="agency-focus-count">{opportunities.length > 250 ? 'Top 250 matching actions — narrow your search for more.' : `${opportunities.length} matching ${opportunities.length === 1 ? 'action' : 'actions'}`} · Highest priority first</p>
+      <p className="agency-focus-count">{page > 1 || hasMore ? `Page ${page} · ${visibleOpportunities.length} actions${hasMore ? ' · More on next page' : ''}` : `${visibleOpportunities.length} matching ${visibleOpportunities.length === 1 ? 'action' : 'actions'}`} · Highest priority first</p>
       {query.agencyId ? <span className="agency-focus-scope">Single agency view <Link href={agencyFocusHref({ state, q: search })}>Show all agencies</Link></span> : null}
       {state || search ? <Link href={agencyFocusHref({ agencyId: query.agencyId })}>Clear filters</Link> : null}
     </div>
@@ -139,5 +142,10 @@ export default async function AgencyFocusPage({
       </article>)}
       {opportunities.length === 0 ? <div className="empty-state"><h2>No matching agency actions</h2><p>{state || search || query.agencyId ? 'Try another action type, clear your search, or show all agencies.' : 'No active recommendations are available yet. Check data freshness or browse your agencies.'}</p><Link href={state || search || query.agencyId ? '/agency-focus' : '/agencies'}>{state || search || query.agencyId ? 'Show all actions' : 'Browse agencies'}</Link></div> : null}
     </section>
+    {page > 1 || hasMore ? <nav aria-label="Agency intelligence pages" className="pagination-row">
+      {page > 1 ? <Link className="btn compact-btn secondary" href={agencyFocusHref({ ...query, page: page - 1 })}>Previous page</Link> : null}
+      <span>Page {page}</span>
+      {hasMore ? <Link className="btn compact-btn secondary" href={agencyFocusHref({ ...query, page: page + 1 })}>Next page</Link> : null}
+    </nav> : null}
   </div>;
 }

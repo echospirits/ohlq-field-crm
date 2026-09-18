@@ -1,9 +1,8 @@
-export const AGENCY_INTELLIGENCE_RULES_VERSION = 'AGENCY_RULES_V1';
+export const AGENCY_INTELLIGENCE_RULES_VERSION = 'AGENCY_RULES_V2';
 export const AGENCY_INTELLIGENCE_SCORING_VERSION = 'AGENCY_RETAIL_FIT_V1';
 
 export const agencyIntelligenceConfig = {
   inventory: {
-    stockoutDemandBottles30: 2,
     understockedDaysOfSupply: 14,
     deadInventoryDaysWithoutSale: 45,
     deadInventoryMinimumOnHand: 3,

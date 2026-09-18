@@ -4,6 +4,7 @@ import { prisma } from '../lib/prisma';
 import { ECHO_ORGANIZATION_ID } from '../lib/organizations';
 
 async function main() {
+  const organizationId = process.argv[2] || ECHO_ORGANIZATION_ID;
   const completed = await prisma.ohlqReportImportStatus.findMany({
     where: { status: OhlqReportRunStatus.COMPLETED },
     orderBy: { reportDate: 'desc' },
@@ -18,15 +19,16 @@ async function main() {
     row.dataSource === OhlqReportDataSource.ANNUAL_SALES_SUMMARY_BY_WHOLESALE &&
     annualDates.has(row.reportDate.toISOString().slice(0, 10)),
   )?.reportDate;
-  const inventoryReportDate = completed.find((row) =>
-    row.dataSource === OhlqReportDataSource.AGENCY_INVENTORY_REPORT,
-  )?.reportDate;
+  const inventoryReportDate = (await prisma.ohlqTenantInventoryImportStatus.findFirst({
+    where: { organizationId, status: OhlqReportRunStatus.COMPLETED },
+    orderBy: { reportDate: 'desc' },
+    select: { reportDate: true },
+  }))?.reportDate;
 
   if (!salesReportDate || !inventoryReportDate) {
     throw new Error('No complete matching sales and inventory inputs are available for Agency intelligence.');
   }
 
-  const organizationId = process.argv[2] || ECHO_ORGANIZATION_ID;
   const result = await refreshAgencyIntelligence({ inventoryReportDate, organizationId, salesReportDate });
   console.log(JSON.stringify({ inventoryReportDate, salesReportDate, ...result }, null, 2));
 }
