@@ -8,12 +8,26 @@ export type DigestNarrative = { headline: string; wins: DigestHighlight[]; progr
 export type DigestNarrativeInput = Pick<TenantWeeklyDigest, 'organization' | 'window' | 'metrics' | 'sales' | 'evidence' | 'evidenceLimited'>;
 const highlight = z.object({ title: z.string().min(1).max(100), body: z.string().min(1).max(500), evidenceIds: z.array(z.string()).min(1).max(4) });
 const narrativeSchema = z.object({ headline: z.string().min(1).max(220), wins: z.array(highlight).max(2), progress: z.array(highlight).max(2), risks: z.array(highlight).max(3), nextWeek: z.array(highlight).max(3) });
-const highlightJson = { type: 'object', additionalProperties: false, required: ['title', 'body', 'evidenceIds'], properties: {
-  title: { type: 'string' }, body: { type: 'string' }, evidenceIds: { type: 'array', items: { type: 'string' } },
-} };
-const jsonSchema = { type: 'object', additionalProperties: false, required: ['headline', 'wins', 'progress', 'risks', 'nextWeek'], properties: {
-  headline: { type: 'string' }, ...Object.fromEntries(['wins', 'progress', 'risks', 'nextWeek'].map((key) => [key, { type: 'array', items: highlightJson }])),
-} };
+function allowedEvidenceIds(input: DigestNarrativeInput): string[] {
+  return [...new Set(['metrics', 'sales', ...input.evidence.map((item) => item.id)])];
+}
+
+function narrativeJsonSchema(input: DigestNarrativeInput) {
+  const ids = allowedEvidenceIds(input);
+  // At most 600 evidence records are supplied by the digest collector. Define
+  // the allowed IDs once so four sections do not multiply the API enum count.
+  // Small enum groups also avoid the string-size limit for enums over 250 IDs.
+  const groups = Array.from({ length: Math.ceil(ids.length / 200) }, (_, index) => ({ type: 'string', enum: ids.slice(index * 200, (index + 1) * 200) }));
+  const highlightJson = { type: 'object', additionalProperties: false, required: ['title', 'body', 'evidenceIds'], properties: {
+    title: { type: 'string' }, body: { type: 'string' }, evidenceIds: { type: 'array', items: { $ref: '#/$defs/evidenceId' } },
+  } };
+  return { type: 'object', additionalProperties: false, required: ['headline', 'wins', 'progress', 'risks', 'nextWeek'],
+    $defs: { evidenceId: { anyOf: groups }, highlight: highlightJson },
+    properties: {
+      headline: { type: 'string' }, ...Object.fromEntries(['wins', 'progress', 'risks', 'nextWeek'].map((key) => [key, { type: 'array', items: { $ref: '#/$defs/highlight' } }])),
+    },
+  };
+}
 
 class DigestSummaryError extends Error {
   constructor(readonly reason: string) { super(reason); }
@@ -39,7 +53,7 @@ export function fallbackWeeklyDigestNarrative(input: DigestNarrativeInput): Dige
 
 export function parseWeeklyDigestNarrative(value: unknown, input: DigestNarrativeInput): DigestNarrative {
   const result = narrativeSchema.parse(value);
-  const allowed = new Set(['metrics', 'sales', ...input.evidence.map((item) => item.id)]);
+  const allowed = new Set(allowedEvidenceIds(input));
   for (const entry of [...result.wins, ...result.progress, ...result.risks, ...result.nextWeek]) {
     if (entry.evidenceIds.some((id) => !allowed.has(id))) throw new DigestSummaryError('unknown_evidence');
   }
@@ -73,7 +87,7 @@ Find meaningful outcomes in visit notes and completed tasks, not a list of activ
 Prioritize actionable account risks and next steps, with owner and date when known. Clearly frame proposed actions as recommendations, not existing commitments. Avoid personnel judgments or sensitive personal details. Do not repeat the same facts across sections. Do not merge similarly named accounts; their source IDs distinguish them. Evidence can be bounded: when evidenceLimited, do not make exhaustive claims. The metrics are exact tenant-wide counts and override any apparent count in the evidence snippets.`,
         input: JSON.stringify({ tenant: input.organization.displayName, periodStart: input.window.pastStart, periodEndExclusive: input.window.pastEnd, timeZone: input.window.timeZone,
           metrics: input.metrics, sales: input.sales, evidenceLimited: input.evidenceLimited, evidence: input.evidence }),
-        text: { format: { type: 'json_schema', name: 'tenant_weekly_brief', strict: true, schema: jsonSchema } },
+        text: { format: { type: 'json_schema', name: 'tenant_weekly_brief', strict: true, schema: narrativeJsonSchema(input) } },
       }),
     });
     diagnostic.httpStatus = response.status;
