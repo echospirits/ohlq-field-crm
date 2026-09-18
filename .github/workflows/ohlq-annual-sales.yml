@@ -60,7 +60,7 @@ jobs:
     name: Download and import OHLQ reports
     environment: ${{ github.event_name == 'schedule' && (github.repository == 'echospirits/neat-tst' && 'test' || 'production') || inputs.deploymentEnvironment }}
     runs-on: ubuntu-latest
-    timeout-minutes: 150
+    timeout-minutes: 240
 
     env:
       APP_ENV: ${{ github.event_name == 'schedule' && (github.repository == 'echospirits/neat-tst' && 'test' || 'production') || inputs.deploymentEnvironment }}
@@ -164,6 +164,7 @@ jobs:
         run: npm run sync:ohlq-brand-master -- --environment "$APP_ENV" --apply
 
       - name: Run OHLQ annual sales import
+        id: sales_import
         if: steps.schedule_window.outputs.should_run == 'true'
         timeout-minutes: 40
         shell: bash
@@ -191,15 +192,25 @@ jobs:
               npm run seed:ohlq-wholesale-purchase-state -- --days "$days"
             fi
           elif [[ -n "$report_date" ]]; then
-            npm run backfill:ohlq-annual-sales -- --date "$report_date"
+            npm run backfill:ohlq-annual-sales -- --date "$report_date" --import-only
           else
-            npm run backfill:ohlq-annual-sales -- --days "$days"
+            npm run backfill:ohlq-annual-sales -- --days "$days" --import-only
           fi
 
       - name: Download and import tenant OHLQ inventory
-        if: steps.schedule_window.outputs.should_run == 'true' && (github.event_name == 'schedule' || inputs.purchaseStateOnly != true)
+        if: ${{ !cancelled() && steps.sales_import.outcome != 'skipped' && steps.schedule_window.outputs.should_run == 'true' && (github.event_name == 'schedule' || inputs.purchaseStateOnly != true) }}
         timeout-minutes: 30
         run: npm run sync:ohlq-tenant-inventory -- --environment "$APP_ENV"
+
+      - name: Refresh post-import intelligence and retention
+        if: ${{ !cancelled() && steps.sales_import.outcome == 'success' && (github.event_name == 'schedule' || inputs.purchaseStateOnly != true) }}
+        timeout-minutes: 100
+        shell: bash
+        env:
+          REPORT_DATE: ${{ steps.sales_import.outputs.report_date }}
+        run: |
+          test -n "$REPORT_DATE"
+          npm run backfill:ohlq-annual-sales -- --date "$REPORT_DATE" --intelligence-only
 
       - name: Upload OHLQ debug artifacts
         if: always() && steps.schedule_window.outputs.should_run == 'true'

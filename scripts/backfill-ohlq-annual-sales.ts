@@ -1,7 +1,12 @@
 import path from 'path';
+import { appendFileSync } from 'node:fs';
 import { loadLocalEnvironmentFile } from '../lib/environmentFile';
 import { runOhlqAnnualSalesWorkflow } from '../lib/ohlqAnnualSalesWorkflow';
 import { prisma } from '../lib/prisma';
+import { runOpportunityIntelligenceAfterImport } from '../lib/opportunityEngine';
+import { runAgencyMarketIntelligenceAfterImport } from '../lib/agencyMarketIntelligenceService';
+import { pruneOhlqAnnualSalesRows } from '../lib/ohlqAnnualSalesRetention';
+import { toOhlqDateOnlyUtc } from '../lib/ohlqDataStatus';
 
 const easternTimeZone = 'America/New_York';
 
@@ -57,7 +62,23 @@ async function main() {
 
   const explicitDate = getArgValue('--date');
   const days = Number(getArgValue('--days') ?? '7');
+  if (!Number.isInteger(days) || days < 1 || days > 30) throw new Error('--days must be between 1 and 30.');
   const dates = explicitDate ? [assertIsoDate(explicitDate)] : getLastCompleteReportDates(days);
+  const importOnly = process.argv.includes('--import-only');
+  const intelligenceOnly = process.argv.includes('--intelligence-only');
+  if (importOnly && intelligenceOnly) throw new Error('Choose either --import-only or --intelligence-only.');
+
+  if (intelligenceOnly) {
+    // Evaluation rebuilds the retained sales ledger. Evaluate once at the latest
+    // date after all backfill dates and inventory have loaded, then prune.
+    const reportDate = dates.at(-1)!;
+    console.log(`Starting post-import opportunity intelligence for ${reportDate}.`);
+    console.log(JSON.stringify(await runOpportunityIntelligenceAfterImport({ reportDate: toOhlqDateOnlyUtc(reportDate) })));
+    console.log(`Starting post-import Agency market intelligence for ${reportDate}.`);
+    console.log(JSON.stringify(await runAgencyMarketIntelligenceAfterImport({ asOfDate: toOhlqDateOnlyUtc(reportDate) })));
+    console.log(JSON.stringify(await pruneOhlqAnnualSalesRows({ reportDate })));
+    return;
+  }
 
   for (const reportDate of dates) {
     console.log(`Starting OHLQ annual sales backfill for ${reportDate}.`);
@@ -69,6 +90,7 @@ async function main() {
         useServerlessChromium: false,
       },
       reportDate,
+      deferIntelligence: importOnly,
     });
 
     console.log(
@@ -83,6 +105,9 @@ async function main() {
         2,
       ),
     );
+  }
+  if (importOnly && process.env.GITHUB_OUTPUT) {
+    appendFileSync(process.env.GITHUB_OUTPUT, `report_date=${dates.at(-1)}\n`);
   }
 }
 

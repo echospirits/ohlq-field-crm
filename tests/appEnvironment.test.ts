@@ -123,7 +123,7 @@ test('GitHub OHLQ workflow isolates production and test secrets with GitHub Envi
   assert.match(workflow, /repairTenantCredentials:/);
   assert.match(workflow, /repair:ohlq-tenant-credentials -- --environment "\$APP_ENV" --organization/);
   assert.match(workflow, /Run OHLQ annual sales import[\s\S]+Download and import tenant OHLQ inventory/);
-  assert.match(workflow, /timeout-minutes: 150/);
+  assert.match(workflow, /timeout-minutes: 240/);
   assert.match(workflow, /Download and import current OHLQ Account Master[\s\S]+timeout-minutes: 50/);
   assert.match(workflow, /Download and import current OHLQ Brand Master[\s\S]+timeout-minutes: 15/);
   assert.match(packageJson, /"sync:ohlq-account-master": "tsx scripts\/sync-ohlq-account-master\.ts"/);

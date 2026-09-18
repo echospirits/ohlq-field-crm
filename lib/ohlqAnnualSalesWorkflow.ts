@@ -28,6 +28,7 @@ export type OhlqAnnualSalesWorkflowOptions = {
   downloadOptions?: OhlqAnnualSalesDownloadOptions;
   logger?: Logger;
   reportDate?: string;
+  deferIntelligence?: boolean;
 };
 
 const defaultDownloadOptions = (): OhlqAnnualSalesDownloadOptions => ({
@@ -136,25 +137,28 @@ export async function runOhlqAnnualSalesWorkflow(options: OhlqAnnualSalesWorkflo
     });
     completedSources.add(OhlqReportDataSource.ANNUAL_SALES_SUMMARY_BY_WHOLESALE);
 
-    const opportunityIntelligence = await runOpportunityIntelligenceAfterImport({
+    if (options.deferIntelligence) {
+      logger.log(`Sales reports for ${reportDate} imported; intelligence and retention will run after inventory.`);
+    }
+    const opportunityIntelligence = options.deferIntelligence ? null : await runOpportunityIntelligenceAfterImport({
       reportDate: toOhlqDateOnlyUtc(reportDate),
     });
-    logger.log(
+    if (opportunityIntelligence) logger.log(
       `Opportunity intelligence captured ${opportunityIntelligence.salesEvents.created} purchase event(s), ` +
         `detected ${opportunityIntelligence.intelligence.detected} opportunity instance(s), and ` +
         `converted ${opportunityIntelligence.intelligence.converted} opportunity instance(s).`,
     );
 
-    const agencyMarketIntelligence = await runAgencyMarketIntelligenceAfterImport({
+    const agencyMarketIntelligence = options.deferIntelligence ? null : await runAgencyMarketIntelligenceAfterImport({
       asOfDate: toOhlqDateOnlyUtc(reportDate),
     });
-    logger.log(
+    if (agencyMarketIntelligence) logger.log(
       `Shadow Agency market intelligence refreshed ${agencyMarketIntelligence.profilesProcessed} profile(s) and ` +
         `${agencyMarketIntelligence.productFitsProcessed} product fit(s) with ${agencyMarketIntelligence.scoringVersion}.`,
     );
 
-    const retention = await pruneOhlqAnnualSalesRows({ reportDate });
-    logger.log(
+    const retention = options.deferIntelligence ? null : await pruneOhlqAnnualSalesRows({ reportDate });
+    if (retention) logger.log(
       `OHLQ annual sales retention kept ${retention.retentionDays} day(s) from ${retention.cutoffDate}; ` +
         `deleted ${retention.deletedRows.annualSalesSummary} annual row(s) and ` +
         `${retention.deletedRows.annualSalesSummaryByWholesale} wholesale row(s).`,

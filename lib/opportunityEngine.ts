@@ -190,7 +190,9 @@ export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = 
     }
   }
 
+  let accountsStarted = 0;
   for (const account of accounts) {
+    if (accountsStarted++ % 1000 === 0) console.log(`Opportunity intelligence ${organizationId}: ${accountsStarted - 1}/${accounts.length} accounts processed.`);
     const overlay = overlays.find(o => o.externalAccountId === account.id);
     const targetProfile = account.targetProfiles[0];
     const opportunitySignal = account.opportunitySignals[0];
@@ -437,6 +439,7 @@ export async function runOpportunityIntelligenceAfterImport({ db = prisma, repor
   if (!organizations.length) return { salesEvents: { created: 0, skippedWithoutBaseline: false }, intelligence: { accountsEvaluated: 0, detected: 0, converted: 0, worklistCreated: 0, rulesVersion: OPPORTUNITY_RULES_VERSION, scoringVersion: OPPORTUNITY_RANKING_VERSION }, skipped: true, reason: 'WHOLESALE_OPPORTUNITIES disabled' };
   const results = [];
   for (const organization of organizations) {
+    console.log(`Starting opportunity intelligence for ${organization.id} at ${reportDate.toISOString()}.`);
     const salesEvents = await captureWholesaleSalesEvents({ db, reportDate, organizationId: organization.id });
     const intelligence = await evaluateOpportunityIntelligence({ db, asOfDate: reportDate, organizationId: organization.id });
     results.push({ organizationId: organization.id, salesEvents, intelligence });
