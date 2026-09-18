@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { generateWeeklyDigestNarrative } from '../lib/weeklyDigestNarrative';
+import { generateWeeklyDigestNarrative, parseWeeklyDigestNarrative } from '../lib/weeklyDigestNarrative';
 import { makeTenantDigest } from './fixtures/weeklyDigest';
 
 test('citation choices are scoped to each request, including empty and maximum-size weeks', async () => {
@@ -22,7 +22,13 @@ test('citation choices are scoped to each request, including empty and maximum-s
       assert.ok(!ids.includes('visit:another-tenant'));
       for (const section of ['wins', 'progress', 'risks', 'nextWeek']) {
         assert.deepEqual(schema.properties[section].items, { $ref: '#/$defs/highlight' });
+        assert.equal(schema.properties[section].maxItems, section === 'wins' || section === 'progress' ? 2 : 3);
       }
+      assert.deepEqual(schema.properties.headline, { type: 'string', minLength: 1, maxLength: 220 });
+      assert.deepEqual(schema.$defs.highlight.properties.title, { type: 'string', minLength: 1, maxLength: 100 });
+      assert.deepEqual(schema.$defs.highlight.properties.body, { type: 'string', minLength: 1, maxLength: 500 });
+      assert.equal(schema.$defs.highlight.properties.evidenceIds.minItems, 1);
+      assert.equal(schema.$defs.highlight.properties.evidenceIds.maxItems, 4);
       assert.deepEqual(schema.$defs.highlight.properties.evidenceIds.items, { $ref: '#/$defs/evidenceId' });
       checked = true;
       return new Response(JSON.stringify({ status: 'completed', output: [{ content: [{ type: 'output_text', text: JSON.stringify({ headline: 'Brief', wins: [], progress: [{ title: 'Activity', body: 'Recorded activity.', evidenceIds: [ids.at(-1)] }], risks: [], nextWeek: [] }) }] }] }));
@@ -30,6 +36,16 @@ test('citation choices are scoped to each request, including empty and maximum-s
     assert.ok(checked);
     assert.equal(result.mode, 'ai');
   }
+});
+
+test('four valid citations pass but five valid citations still fail local validation', () => {
+  const input = makeTenantDigest();
+  input.evidence = Array.from({ length: 5 }, (_, index) => ({ ...input.evidence[0], id: `visit:synthetic-${index}` }));
+  const risk = { title: 'Follow up', body: 'Review recorded next steps.', evidenceIds: input.evidence.slice(0, 4).map((item) => item.id) };
+  const narrative = { headline: 'Weekly brief', wins: [], progress: [], risks: [risk], nextWeek: [] };
+  assert.equal(parseWeeklyDigestNarrative(narrative, input).mode, 'ai');
+  risk.evidenceIds.push(input.evidence[4].id);
+  assert.throws(() => parseWeeklyDigestNarrative(narrative, input));
 });
 
 test('summary diagnostics classify failures without logging tenant content or credentials', async (t) => {

@@ -19,12 +19,12 @@ function narrativeJsonSchema(input: DigestNarrativeInput) {
   // Small enum groups also avoid the string-size limit for enums over 250 IDs.
   const groups = Array.from({ length: Math.ceil(ids.length / 200) }, (_, index) => ({ type: 'string', enum: ids.slice(index * 200, (index + 1) * 200) }));
   const highlightJson = { type: 'object', additionalProperties: false, required: ['title', 'body', 'evidenceIds'], properties: {
-    title: { type: 'string' }, body: { type: 'string' }, evidenceIds: { type: 'array', items: { $ref: '#/$defs/evidenceId' } },
+    title: { type: 'string', minLength: 1, maxLength: 100 }, body: { type: 'string', minLength: 1, maxLength: 500 }, evidenceIds: { type: 'array', minItems: 1, maxItems: 4, items: { $ref: '#/$defs/evidenceId' } },
   } };
   return { type: 'object', additionalProperties: false, required: ['headline', 'wins', 'progress', 'risks', 'nextWeek'],
     $defs: { evidenceId: { anyOf: groups }, highlight: highlightJson },
     properties: {
-      headline: { type: 'string' }, ...Object.fromEntries(['wins', 'progress', 'risks', 'nextWeek'].map((key) => [key, { type: 'array', items: { $ref: '#/$defs/highlight' } }])),
+      headline: { type: 'string', minLength: 1, maxLength: 220 }, ...Object.fromEntries(['wins', 'progress', 'risks', 'nextWeek'].map((key) => [key, { type: 'array', maxItems: key === 'wins' || key === 'progress' ? 2 : 3, items: { $ref: '#/$defs/highlight' } }])),
     },
   };
 }
