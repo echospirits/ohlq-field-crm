@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { opportunityEvidence, parseOpportunityScoreComponents } from '../lib/opportunityPresentation';
 
@@ -25,4 +26,14 @@ test('parses stored opportunity component math including penalties', () => {
 
 test('returns no component chart for older explanations without stored component math', () => {
   assert.deepEqual(parseOpportunityScoreComponents(['Review current sales']), []);
+});
+
+test('wholesale opportunities use the compact intelligence row and live search pattern', () => {
+  const page = readFileSync('app/opportunities/page.tsx', 'utf8');
+  const search = readFileSync('app/opportunities/OpportunitySearch.tsx', 'utf8');
+  assert.match(page, /className="opportunity-results"/);
+  assert.match(page, /className="opportunity-row"/);
+  assert.match(page, /className="opportunity-row-reasons"/);
+  assert.doesNotMatch(page, /className="card opportunity-card"/);
+  assert.match(search, /LiveFilterForm/);
 });
