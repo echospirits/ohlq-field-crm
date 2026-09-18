@@ -17,6 +17,7 @@ import {
   type IntelligenceBand,
   type WholesaleInfluenceAnalysis,
 } from './agencyIntelligence';
+import { AGENCY_INTELLIGENCE_RULES_VERSION, AGENCY_INTELLIGENCE_SCORING_VERSION } from './agencyIntelligenceConfig';
 import { getTenantAgencyInventoryWhere } from './ohlqAgencyInventory';
 import { getTenantSalesWhere, getTenantWholesaleSalesWhere } from './ohlqSalesData';
 import { getOhlqLicenseeMatchKeys, normalizeOhlqId } from './ohlqWholesaleMatching';
@@ -612,8 +613,8 @@ export async function refreshAgencyIntelligence({
         retailReasons: asJson(openProducts.sort((a, b) => b.analysis.priorityScore - a.analysis.priorityScore).flatMap((product) => product.analysis.reasons).slice(0, 4)),
         wholesaleReasons: asJson(wholesale.reasons),
         signalSnapshot: asJson({ products: productResults.map((product) => ({ analysis: product.analysis, signals: product.signals })), wholesale }),
-        rulesVersion: productResults[0]?.analysis.rulesVersion ?? 'AGENCY_RULES_V1',
-        scoringVersion: productResults[0]?.analysis.scoringVersion ?? 'AGENCY_RETAIL_FIT_V1',
+        rulesVersion: AGENCY_INTELLIGENCE_RULES_VERSION,
+        scoringVersion: AGENCY_INTELLIGENCE_SCORING_VERSION,
       },
       update: {
         asOfDate: inventoryReportDate,
@@ -637,8 +638,8 @@ export async function refreshAgencyIntelligence({
         retailReasons: asJson(openProducts.sort((a, b) => b.analysis.priorityScore - a.analysis.priorityScore).flatMap((product) => product.analysis.reasons).slice(0, 4)),
         wholesaleReasons: asJson(wholesale.reasons),
         signalSnapshot: asJson({ products: productResults.map((product) => ({ analysis: product.analysis, signals: product.signals })), wholesale }),
-        rulesVersion: productResults[0]?.analysis.rulesVersion ?? 'AGENCY_RULES_V1',
-        scoringVersion: productResults[0]?.analysis.scoringVersion ?? 'AGENCY_RETAIL_FIT_V1',
+        rulesVersion: AGENCY_INTELLIGENCE_RULES_VERSION,
+        scoringVersion: AGENCY_INTELLIGENCE_SCORING_VERSION,
       },
     });
       summariesProcessed += 1;
@@ -649,8 +650,8 @@ export async function refreshAgencyIntelligence({
     agenciesProcessed: summariesProcessed,
     eventsCreated,
     productsProcessed,
-    rulesVersion: 'AGENCY_RULES_V1',
-    scoringVersion: 'AGENCY_RETAIL_FIT_V1',
+    rulesVersion: AGENCY_INTELLIGENCE_RULES_VERSION,
+    scoringVersion: AGENCY_INTELLIGENCE_SCORING_VERSION,
   };
 }
 
