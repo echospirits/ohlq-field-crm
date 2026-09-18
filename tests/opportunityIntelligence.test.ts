@@ -38,6 +38,9 @@ it('assesses researched prospects without sales and separates tenant fit from un
   assert.deepEqual(detectOpportunityHypotheses({ ...signal, researchCurrent: false }), []);
   assert.deepEqual(detectOpportunityHypotheses({ ...signal, accountStatus: 'DO_NOT_PURSUE' }), []);
   assert.deepEqual(detectOpportunityHypotheses({ ...signal, portfolio: [] }), []);
+  const ranker = new RuleBasedOpportunityRanker();
+  assert.equal(ranker.rank(result.hypothesis, { ...signal, portfolio: [] }).score, 0);
+  assert.equal(ranker.rank(result.hypothesis, { ...signal, accountStatus: 'DO_NOT_PURSUE' }).score, 0);
 });
 
 describe('opportunity detectors', () => {

@@ -389,6 +389,10 @@ function rankResearchOnly(signals: AccountOpportunitySignals): RankResult {
     score = 0;
     factors.push(signals.openStatus === 'Closed' ? 'Account reported closed: score is zero.' : 'Current-location research is unavailable: score is zero.');
   }
+  if (signals.accountStatus === 'DO_NOT_PURSUE' || !signals.portfolio?.some(product => product.priority > 0)) {
+    score = 0;
+    factors.push('No current qualifying fit: this tenant has suppressed pursuit or has no eligible priority products.');
+  }
   score = Math.round(Math.max(0, Math.min(100, score)) * 10) / 10;
   return { score, priorityBand: score >= 75 ? 'HIGH' : score >= 45 ? 'MEDIUM' : 'LOW', factors, version: RESEARCH_FIT_VERSION };
 }

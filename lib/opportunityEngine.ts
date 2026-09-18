@@ -409,7 +409,7 @@ export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = 
         }
         await db.salesOpportunity.update({
           where: { id: opportunity.id },
-          data: { ...(researchHypothesis ? { title: 'Current-location research needed', recommendedAction: 'Verify location and refresh research before pursuing', targetCategory: null } : {}), scoringVersion: ranking.version, productionScore: ranking.score, priorityBand: ranking.priorityBand, explanation: ranking.factors, lastDetectedAt: asOfDate },
+          data: { ...(researchHypothesis ? { title: 'No current qualifying research-based fit', recommendedAction: 'Review location research, tenant portfolio and pursuit eligibility', targetCategory: null } : {}), scoringVersion: ranking.version, productionScore: ranking.score, priorityBand: ranking.priorityBand, explanation: ranking.factors, lastDetectedAt: asOfDate },
         });
         await db.opportunityScore.upsert({
           where: { opportunityId_modelVersionId: { opportunityId: opportunity.id, modelVersionId: model!.id } },
