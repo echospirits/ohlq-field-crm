@@ -22,6 +22,7 @@ export const navigationItems: NavigationItem[] = [
   { key: 'agency-intelligence', href: '/agency-focus', label: 'Agency Intelligence', section: 'intelligence', featureKey: 'AGENCY_INTELLIGENCE' },
   { key: 'my-week', href: '/my-week', label: 'My Week', section: 'work', moreOrder: 2 },
   { key: 'visits', href: '/visits', label: 'Visit History', mobileLabel: 'Visits', section: 'work', mobileOrder: 4 },
+  { key: 'analytics', href: '/analytics', label: 'Analytics', section: 'work', moreOrder: 1 },
   {
     key: 'accounts',
     href: '/search',
