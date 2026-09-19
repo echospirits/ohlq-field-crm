@@ -103,6 +103,8 @@ test('organizations with no configured products still see their CRM activity, wi
   } };
   const r = await loadAnalytics('org-no-products', filters(), db, [adapter]);
   assert.equal(r.visits, 2); assert.equal(r.visitedAccounts, 2); assert.equal(r.quantity, null); assert.equal(r.groupCounts.purchasing, null); assert.equal(r.groupCounts.lapsed, null);
+  const exported = analyticsCsv(r, filters(), 'org-no-products', 'accounts').split('\r\n');
+  assert.ok(exported[1].includes('"Unavailable","Unavailable","Unavailable","Unavailable"')); // bottles, prior, change, product count
 });
 test('Ohio adapter scopes every CRM query, uses only selected item codes, and rejects ambiguous permits', async () => {
   const scope = (args: any) => assert.equal(args.where.organizationId, 'org-a');
