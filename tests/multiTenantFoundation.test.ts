@@ -18,10 +18,11 @@ test('feature registry has stable unique keys and explicit dependency metadata',
 test('feature packages keep Core mandatory and group every intelligence capability', () => {
   assert.deepEqual(DEFAULT_FEATURE_KEYS, CORE_PACKAGE_FEATURE_KEYS);
   assert.deepEqual(INTELLIGENCE_PACKAGE_FEATURE_KEYS, ['AGENCY_INTELLIGENCE', 'WHOLESALE_OPPORTUNITIES', 'ADVANCED_INTELLIGENCE']);
-  assert.deepEqual(OPTIONAL_FEATURE_KEYS, ['OHIO_DIRECT_WHOLESALE_ORDERS']);
+  assert.deepEqual(OPTIONAL_FEATURE_KEYS, ['OHIO_DIRECT_WHOLESALE_ORDERS', 'ANALYTICS']);
   assert.deepEqual(getPackageFeatureKeys(false), CORE_PACKAGE_FEATURE_KEYS);
-  assert.deepEqual(getPackageFeatureKeys(true), FEATURE_KEYS.filter((key) => key !== 'OHIO_DIRECT_WHOLESALE_ORDERS'));
-  assert.deepEqual(getPackageFeatureKeys(true, true), FEATURE_KEYS);
+  assert.deepEqual(getPackageFeatureKeys(true), FEATURE_KEYS.filter((key) => key !== 'OHIO_DIRECT_WHOLESALE_ORDERS' && key !== 'ANALYTICS'));
+  assert.deepEqual(getPackageFeatureKeys(true, true), FEATURE_KEYS.filter((key) => key !== 'ANALYTICS'));
+  assert.deepEqual(getPackageFeatureKeys(true, true, true), FEATURE_KEYS);
   assert.equal(hasIntelligencePackage(['AGENCY_INTELLIGENCE']), true);
   assert.equal(hasIntelligencePackage(CORE_PACKAGE_FEATURE_KEYS), false);
 });
@@ -32,6 +33,33 @@ test('invalid entitlement combinations report every missing dependency', () => {
     { feature: 'WHOLESALE_OPPORTUNITIES', dependency: 'WHOLESALE_ACCOUNTS' },
     { feature: 'WHOLESALE_OPPORTUNITIES', dependency: 'OHLQ_SALES_DATA' },
   ]);
+});
+
+test('Analytics is an independent opt-in pilot with no automatic tenant grants', () => {
+  assert.equal(DEFAULT_FEATURE_KEYS.includes('ANALYTICS'), false);
+  assert.equal(new Set<string>(ECHO_FEATURE_KEYS).has('ANALYTICS'), false);
+  assert.equal(FEATURE_REGISTRY.ANALYTICS.defaultEnabled, false);
+  for (const intelligence of [false, true]) {
+    for (const orders of [false, true]) {
+      const without = getPackageFeatureKeys(intelligence, orders);
+      const withAnalytics = getPackageFeatureKeys(intelligence, orders, true);
+      assert.equal(without.includes('ANALYTICS'), false);
+      assert.deepEqual(withAnalytics, [...without, 'ANALYTICS']);
+      assert.deepEqual(validateFeatureSelection(withAnalytics).missing, []);
+    }
+  }
+  assert.equal(getNavigationItems('work', []).some((item) => item.key === 'analytics'), false);
+  assert.equal(getNavigationItems('work', ['ANALYTICS']).some((item) => item.key === 'analytics'), true);
+  for (const path of ['app/analytics/page.tsx', 'app/analytics/export/route.ts']) {
+    const source = readFileSync(path, 'utf8');
+    assert.match(source, /requireFeatureForUser\(user, 'ANALYTICS'\)/);
+    assert.ok(source.indexOf("requireFeatureForUser(user, 'ANALYTICS')") < source.indexOf('await getAnalytics('));
+  }
+  for (const path of ['app/platform/organizations/new/page.tsx', 'app/platform/organizations/[id]/page.tsx']) {
+    const source = readFileSync(path, 'utf8');
+    assert.match(source, /getPackageFeatureKeys\(intelligenceEnabled, directWholesaleOrdersEnabled, analyticsEnabled\)/);
+    assert.match(source, /name="analytics" type="checkbox"/);
+  }
 });
 
 test('Wholesale Opportunities uses one entitlement in navigation and server access', () => {

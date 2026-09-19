@@ -2,7 +2,7 @@
 
 ## Completed checkpoints 1–8; staging release verified
 
-- Target: tst → staging/tst (echospirits/neat-tst). Starting HEAD 76817f9e. Never publish to origin/main.
+- Initial target: tst → staging/tst (echospirits/neat-tst), starting HEAD 76817f9e. Follow-up user authorization expands the release to origin/main after adding the Analytics pilot.
 - User selected option 2: preserve retention; disclose unavailable historical metrics. No schema, migration, importer, retention or deployment-configuration changes.
 - Authenticated Organization context → owned/represented products (including inactive historical products) → market adapter → shared summaries/drill-downs/CSV. No vendor fallback or customer-specific product constants.
 - Ohio adapter reuses daily Agency retail and wholesale-by-permit rows. SQL verifies physically retained counts against completed, unskipped imports. Queries share a repeatable-read snapshot. No per-account queries or browser-side sales-history calculation.
@@ -33,3 +33,11 @@
 - This follow-up keeps unknown product counts unavailable in account rows/CSV and hides empty trend/distribution sections. Its focused 51 tests, typecheck and production build passed before publication.
 - Tenant/query audit complete: private reads scoped; shared facts restricted by Organization products; batched queries; no raw history serialized to browser. Temporary connection file removed.
 - No further V1 implementation outstanding. Preserved retention means historical comparisons and 90-day lapse metrics may remain unavailable. First-observed purchases are not lifetime acquisitions. Longer history/backfill and additional markets remain future work, as requested.
+
+## Analytics pilot and production promotion
+
+- Analytics is an independent opt-in Pilot in Product access / Plan for both new and existing organizations. No default, Core, Intelligence, or legacy Echo bootstrap grant.
+- Navigation, the Analytics page, and CSV exports require the current tenant's ANALYTICS entitlement. Existing platform-admin plan saves persist and audit the selection.
+- Uses existing string-based OrganizationFeature records; no schema migration or import/retention changes.
+- Focused Analytics, entitlement, navigation, and provisioning tests: 36 passed. Typecheck passed.
+- Promote only the two Analytics implementation commits and this pilot change to a clean origin/main checkout; preserve unrelated production behavior. Tenants can opt in using their Plan control after deployment.

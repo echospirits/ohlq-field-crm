@@ -1,5 +1,5 @@
 import { requireUser } from '../../lib/auth';
-import { requireOrganizationContext } from '../../lib/organizations';
+import { requireFeatureForUser } from '../../lib/organizations';
 import { formatDateInputValue } from '../../lib/dateTime';
 import { parseFilters } from '../../lib/analytics/model';
 import { getAnalytics } from '../../lib/analytics/service';
@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Analytics' };
 export default async function AnalyticsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const user = await requireUser();
-  const { organizationId, organization } = await requireOrganizationContext(user);
+  const { organizationId, organization } = await requireFeatureForUser(user, 'ANALYTICS');
   const query = await searchParams;
   let filters;
   try { filters = parseFilters(query, formatDateInputValue(new Date(), organization.timezone)); }

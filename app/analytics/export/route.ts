@@ -1,5 +1,5 @@
 import { requireUser } from '../../../lib/auth';
-import { requireOrganizationContext } from '../../../lib/organizations';
+import { requireFeatureForUser } from '../../../lib/organizations';
 import { formatDateInputValue } from '../../../lib/dateTime';
 import { parseFilters } from '../../../lib/analytics/model';
 import { getAnalytics } from '../../../lib/analytics/service';
@@ -8,7 +8,7 @@ import { analyticsCsv } from '../../../lib/analytics/csv';
 export const dynamic = 'force-dynamic';
 export async function GET(request: Request) {
   const user = await requireUser();
-  const { organizationId, organization } = await requireOrganizationContext(user);
+  const { organizationId, organization } = await requireFeatureForUser(user, 'ANALYTICS');
   const params = new URL(request.url).searchParams;
   let filters;
   try { filters = parseFilters(Object.fromEntries(params), formatDateInputValue(new Date(), organization.timezone)); }
