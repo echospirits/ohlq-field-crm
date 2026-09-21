@@ -7,7 +7,7 @@ import { AccountResearchJobStatus, AccountResearchPilotStatus } from '@prisma/cl
 import Link from 'next/link';
 import { buildPageMetadata } from '../../../lib/appBrand';
 import { requirePlatformAdmin } from '../../../lib/auth';
-import { ACCOUNT_RESEARCH_AUTOMATIC_DAILY_BUDGET_MICROS, ACCOUNT_RESEARCH_AUTOMATIC_DAILY_LIMIT, ACCOUNT_RESEARCH_MINIMUM_BOTTLES_30, ACCOUNT_RESEARCH_PILOT_BUDGET_MICROS, ACCOUNT_RESEARCH_PILOT_MAX_ACCOUNTS, ACCOUNT_RESEARCH_SUBMISSION_WAVE_SIZE, formatUsdMicros } from '../../../lib/accountResearchPilot';
+import { ACCOUNT_RESEARCH_AUTOMATIC_DAILY_BUDGET_MICROS, ACCOUNT_RESEARCH_AUTOMATIC_DAILY_LIMIT, ACCOUNT_RESEARCH_PILOT_BUDGET_MICROS, ACCOUNT_RESEARCH_PILOT_MAX_ACCOUNTS, ACCOUNT_RESEARCH_SUBMISSION_WAVE_SIZE, formatUsdMicros } from '../../../lib/accountResearchPilot';
 import { getAutomaticAccountResearchStatus } from '../../../lib/accountResearchAutomation';
 import { getAccountResearchAutomationAvailability, getAccountResearchPilotAvailability } from '../../../lib/accountResearchOpenAI';
 import { ACCOUNT_RESEARCH_ACTIONABLE_REVIEW_PREFIX, accountResearchFailureReason, isActionableAccountResearchFailure, isUnsuccessfulAccountResearchAttempt } from '../../../lib/accountResearchFailures';
@@ -188,7 +188,7 @@ export default async function AccountResearchPage({ searchParams }: { searchPara
             <div><strong>{automaticStatus.latestRun ? automaticRunStatusLabel : 'No automatic run yet'}</strong><small>{automaticStatus.approvedToday.toLocaleString()} applied · {automaticStatus.failedToday.toLocaleString()} failed · {automaticStatus.unsuccessfulToday.toLocaleString()} unsuccessful · {automaticStatus.rejectedToday.toLocaleString()} declined today</small>{automaticStatus.latestRun ? <small>{formatUsdMicros(automaticStatus.latestRun.estimatedSpendMicros)} estimated · started {formatEasternDateTime(automaticStatus.latestRun.startedAt)}</small> : <small>The production scheduler will create the first run when enabled.</small>}</div>
           </div>
           {!automationAvailability.available ? <p className="muted">Automatic OpenAI research is intentionally disabled in this environment. Manual test runs remain available.</p> : null}
-          <p className="muted">Accounts below {ACCOUNT_RESEARCH_MINIMUM_BOTTLES_30} bottles in the last 30 days are excluded unless recent tenant pursuit or work activity elevates them.</p>
+          <p className="muted">All active wholesale accounts with a complete address can enter the research queue. Priority still favors unscored accounts, identity changes and near-term tenant activity.</p>
         </article>
       </section>
 

@@ -14,15 +14,13 @@ const candidate = (overrides: Partial<ResearchQueueCandidate> = {}): ResearchQue
   targetPublicResearch: { lastRefreshedAt: daysAgo(40), identitySnapshot: { accountName: 'Example Bar', address: '1 Main St', city: 'Columbus', state: 'OH', zip: '43215' } },
   opportunities: [{ productionScore: 50, status: OpportunityStatus.OPEN, actionedAt: null, lastDetectedAt: daysAgo(1) }],
   upcomingWork: [],
-  bottles30: 100,
   ...overrides,
 });
 
 it('researches new out-of-state accounts without inventing sales, while retaining normal freshness and correction handling', () => {
-  const outside = candidate({ state: 'Kentucky', bottles30: 0, opportunities: [], targetPublicResearch: null });
+  const outside = candidate({ state: 'Kentucky', opportunities: [], targetPublicResearch: null });
   assert.equal(classifyResearchNeed(outside, now)?.priorityBucket, 1);
-  assert.equal(classifyResearchNeed({ ...outside, state: 'OH' }, now), null);
-  assert.equal(classifyResearchNeed({ ...outside, state: 'INVALID' }, now), null);
+  assert.equal(classifyResearchNeed({ ...outside, state: 'OH' }, now)?.priorityBucket, 1);
   const fresh = { ...outside, targetPublicResearch: { lastRefreshedAt: daysAgo(5), identitySnapshot: createResearchIdentitySnapshot(outside) } };
   assert.equal(classifyResearchNeed(fresh, now), null);
   assert.equal(classifyResearchNeed({ ...fresh, city: 'New city' }, now)?.priorityBucket, 2);
@@ -73,17 +71,15 @@ it('uses other upcoming activity before the routine 90-day refresh', () => {
   assert.equal(classifyResearchNeed(candidate({ targetPublicResearch: { lastRefreshedAt: daysAgo(60), identitySnapshot: createResearchIdentitySnapshot(candidate()) } }), now), null);
 });
 
-it('excludes low-volume accounts unless tenant actions specifically elevate them', () => {
-  assert.equal(classifyResearchNeed(candidate({ bottles30: 39, opportunities: [], targetPublicResearch: null }), now), null);
-  assert.equal(classifyResearchNeed(candidate({ bottles30: 39, name: 'Renamed Bar' }), now), null);
-  assert.equal(classifyResearchNeed(candidate({ bottles30: 39, targetPublicResearch: { lastRefreshedAt: daysAgo(91), identitySnapshot: createResearchIdentitySnapshot(candidate()) } }), now), null);
-
+it('queues accounts regardless of recent bottle volume', () => {
+  assert.equal(classifyResearchNeed(candidate({ opportunities: [], targetPublicResearch: null }), now)?.priorityBucket, 1);
+  assert.equal(classifyResearchNeed(candidate({ name: 'Renamed Bar' }), now)?.priorityBucket, 2);
+  assert.equal(classifyResearchNeed(candidate({ targetPublicResearch: { lastRefreshedAt: daysAgo(91), identitySnapshot: createResearchIdentitySnapshot(candidate()) } }), now)?.priorityBucket, 6);
   const pursued = candidate({
-    bottles30: 0,
     opportunities: [{ productionScore: 50, status: OpportunityStatus.ACTIONED, actionedAt: daysAgo(0.5), lastDetectedAt: daysAgo(0.5) }],
   });
   assert.equal(classifyResearchNeed(pursued, now)?.priorityBucket, 3);
-  assert.equal(classifyResearchNeed(candidate({ bottles30: 0, upcomingWork: [{ dueDate: new Date(now.getTime() + 86_400_000), createdAt: daysAgo(5) }] }), now)?.priorityBucket, 4);
+  assert.equal(classifyResearchNeed(candidate({ upcomingWork: [{ dueDate: new Date(now.getTime() + 86_400_000), createdAt: daysAgo(5) }] }), now)?.priorityBucket, 4);
 });
 
 it('refreshes research-driven opportunity scores independently for every entitled tenant', () => {

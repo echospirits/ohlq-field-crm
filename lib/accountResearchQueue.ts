@@ -1,5 +1,4 @@
 import { AccountResearchJobStatus, OpportunityStatus, WorklistStatus, type PrismaClient } from '@prisma/client';
-import { ACCOUNT_RESEARCH_MINIMUM_BOTTLES_30 } from './accountResearchPilot';
 import type { AccountResearchResult } from './accountResearchPilot';
 import { isActionableAccountResearchFailure } from './accountResearchFailures';
 import { opportunityTerritoryForCounty, territoryCoverageDeficits } from './opportunityTerritories';
@@ -54,7 +53,6 @@ export type ResearchQueueCandidate = {
     reviewNote?: string | null;
     inputSnapshot?: unknown;
   }>;
-  bottles30: number;
 };
 
 export type ResearchQueueItem = ResearchQueueCandidate & {
@@ -169,12 +167,6 @@ export function classifyResearchNeed(candidate: ResearchQueueCandidate, now = ne
   const upcomingTwoDayWork = candidate.upcomingWork.some((item) => item.dueDate && item.dueDate >= now && item.dueDate <= nextTwoDays);
   const otherUpcomingWork = candidate.upcomingWork.some((item) => (item.dueDate && item.dueDate >= now && item.dueDate <= nextSevenDays) || (!item.dueDate && item.createdAt >= ageCutoff(now, 1)));
 
-  // Tenant actions are an explicit commercial signal and override the volume gate.
-  // Identity changes, missing scores, and routine staleness alone do not justify
-  // public research for accounts with very little recent wholesale activity.
-  const tenantActionOverride = stale30 && (recentPursuit || upcomingTwoDayWork || otherUpcomingWork || recentTenantActivity);
-  if (candidate.bottles30 < ACCOUNT_RESEARCH_MINIMUM_BOTTLES_30 && !tenantActionOverride && !isOutsideOhio(candidate.state)) return null;
-
   if (candidate.opportunities.length === 0 && !refreshedAt) return { ...candidate, priorityBucket: 1, researchReason: 'New account without an opportunity score or research' };
   if (hasResearchIdentityChanged(candidate, candidate.targetPublicResearch?.identitySnapshot)) return { ...candidate, priorityBucket: 2, researchReason: 'Account name or address changed since research' };
   if (stale30 && recentPursuit) return { ...candidate, priorityBucket: 3, researchReason: 'Pursued by a tenant in the last day; research is over 30 days old' };
@@ -225,22 +217,14 @@ export async function getPrioritizedAccountResearchQueue({
     },
   });
   if (accounts.length === 0) return [];
-  const salesWindowStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) - 29 * DAY);
-  const [work, sales] = await Promise.all([db.worklistItem.findMany({
+  const work = await db.worklistItem.findMany({
     where: {
       wholesaleAccountId: { in: accounts.map((item) => item.id) },
       status: { in: [WorklistStatus.OPEN, WorklistStatus.IN_PROGRESS] },
       OR: [{ dueDate: { lte: new Date(now.getTime() + 7 * DAY) } }, { dueDate: null, createdAt: { gte: ageCutoff(now, 1) } }],
     },
     select: { wholesaleAccountId: true, dueDate: true, createdAt: true },
-  }), db.accountSalesEvent.groupBy({
-    by: ['organizationId', 'wholesaleAccountId'],
-    where: {
-      wholesaleAccountId: { in: accounts.map((item) => item.id) },
-      reportDate: { gte: salesWindowStart },
-    },
-    _sum: { bottles: true },
-  })]);
+  });
   const workByAccount = new Map<string, Array<{ dueDate: Date | null; createdAt: Date }>>();
   for (const item of work) {
     if (!item.wholesaleAccountId) continue;
@@ -248,22 +232,12 @@ export async function getPrioritizedAccountResearchQueue({
     current.push({ dueDate: item.dueDate, createdAt: item.createdAt });
     workByAccount.set(item.wholesaleAccountId, current);
   }
-  // Sales ledgers are tenant-scoped copies of the same OHLQ market activity.
-  // Taking the largest tenant total avoids multiplying volume by tenant count.
-  const bottlesByAccount = new Map<string, number>();
-  for (const item of sales) {
-    bottlesByAccount.set(
-      item.wholesaleAccountId,
-      Math.max(bottlesByAccount.get(item.wholesaleAccountId) ?? 0, item._sum.bottles ?? 0),
-    );
-  }
   const coverageDeficits = territoryCoverageDeficits(accounts.filter((account) => !isOutsideOhio(account.state)));
   const queue = accounts
     .filter((account) => !shouldDeferResearchRetry(account, now))
     .map((account) => classifyResearchNeed({
       ...account,
       upcomingWork: workByAccount.get(account.id) ?? [],
-      bottles30: bottlesByAccount.get(account.id) ?? 0,
     }, now))
     .filter((item): item is ResearchQueueItem => Boolean(item))
     .sort((left, right) => {
