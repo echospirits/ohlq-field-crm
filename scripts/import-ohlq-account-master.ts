@@ -10,10 +10,16 @@ import {
   groupAccountMasterRowsByLocation,
   hasAccountMasterWholesaleChanges,
   parseAccountMasterCsv,
-  rowMatchesWholesaleImportIdentity,
   type AccountMasterRow,
   type ExistingAccountIdentity,
 } from '../lib/ohlqAccountMasterImport';
+import {
+  accountMasterRowsBelongToOwner,
+  getAccountMasterAliasTransfers,
+  getAccountMasterOwnershipConflicts,
+  partitionAccountMasterLocationByOwner,
+  resolveAccountMasterWholesaleOwner,
+} from '../lib/ohlqAccountMasterOwnership';
 import {
   recordOhlqReportRunCompleted,
   recordOhlqReportRunErrored,
@@ -173,7 +179,8 @@ async function runImport() {
   );
   const wholesaleByLicenseeId = new Map<string, typeof wholesaleAccounts[number]>();
   const wholesaleByMatchKey = new Map<string, Map<string, typeof wholesaleAccounts[number]>>();
-  const conflictingWholesaleIds = new Set<string>();
+  const ownershipConflicts = getAccountMasterOwnershipConflicts(wholesaleAccounts, officialLicenseeIdById);
+  const conflictingWholesaleIds = new Set(ownershipConflicts.map(conflict => conflict.licenseeId));
   wholesaleAccounts.forEach((account) => {
     const officialLicenseeId = account.officialAccountId
       ? officialLicenseeIdById.get(account.officialAccountId)
@@ -185,8 +192,7 @@ async function runImport() {
     knownLicenseeIds.forEach((licenseeId) => {
       const key = licenseeId.trim().toUpperCase();
       const existing = wholesaleByLicenseeId.get(key);
-      if (existing && existing.id !== account.id) conflictingWholesaleIds.add(key);
-      else wholesaleByLicenseeId.set(key, account);
+      if (!existing) wholesaleByLicenseeId.set(key, account);
       getOhlqLicenseeMatchKeys(licenseeId).forEach((matchKey) => {
         const candidates = wholesaleByMatchKey.get(matchKey) ?? new Map();
         candidates.set(account.id, account);
@@ -204,25 +210,16 @@ async function runImport() {
   const resolvedWholesaleByLicenseeId = new Map<string, typeof wholesaleAccounts[number]>();
   selection.selected.forEach((row) => {
     const exact = wholesaleByLicenseeId.get(row.licenseeId);
-    if (exact && rowMatchesWholesaleImportIdentity(row, exact)) {
-      resolvedWholesaleByLicenseeId.set(row.licenseeId, exact);
-      return;
-    }
     const candidates = new Map<string, typeof wholesaleAccounts[number]>();
     getOhlqLicenseeMatchKeys(row.licenseeId).forEach((matchKey) =>
       wholesaleByMatchKey.get(matchKey)?.forEach((account) => candidates.set(account.id, account)),
     );
-    const strongMatches = Array.from(candidates.values()).filter((account) => rowMatchesWholesaleImportIdentity(row, account));
     const sourceKeyIsUnique = getOhlqLicenseeMatchKeys(row.licenseeId).some(
       (matchKey) => sourceRowsByMatchKey.get(matchKey)?.size === 1,
     );
-    const resolved = strongMatches.length === 1
-      ? strongMatches[0]
-      : exact
-        ? exact
-      : sourceKeyIsUnique && candidates.size === 1
-        ? Array.from(candidates.values())[0]
-        : null;
+    const resolved = resolveAccountMasterWholesaleOwner({
+      row, exact, candidates: Array.from(candidates.values()), sourceKeyIsUnique,
+    });
     if (resolved) resolvedWholesaleByLicenseeId.set(row.licenseeId, resolved);
   });
 
@@ -237,7 +234,8 @@ async function runImport() {
     ...blockedWholesaleConflicts.map((row) => row.licenseeId),
   ]);
   const importRows = selection.selected.filter((row) => !blockedIds.has(row.licenseeId));
-  const importLocationGroups = groupAccountMasterRowsByLocation(importRows);
+  const importLocationGroups = groupAccountMasterRowsByLocation(importRows)
+    .flatMap(rows => partitionAccountMasterLocationByOwner(rows, wholesaleByLicenseeId));
   const resolvedAccountsForGroup = (rows: AccountMasterRow[]) => {
     const resolved = new Map(
       rows
@@ -246,6 +244,11 @@ async function runImport() {
       .map((account) => [account!.id, account!]),
     );
     if (resolved.size <= 1) return resolved;
+    const existingOwners = new Map(rows.flatMap(row => {
+      const owner = wholesaleByLicenseeId.get(row.licenseeId);
+      return owner ? [[owner.id, owner] as const] : [];
+    }));
+    if (existingOwners.size > 0) return existingOwners;
     const sourceAddressMatches = new Map(
       Array.from(resolved.values())
         .filter((account) => rows.some((row) => areOhlqAddressesSame(row, account)))
@@ -272,6 +275,7 @@ async function runImport() {
   plansByWholesaleId.forEach((plans) => {
     if (plans.length <= 1) return;
     const account = plans[0].account!;
+    if (plans.every(plan => accountMasterRowsBelongToOwner(plan.rows, account.id, wholesaleByLicenseeId))) return;
     const addressMatches = plans.filter(({ rows }) => rows.some((row) => areOhlqAddressesSame(row, account)));
     if (addressMatches.length === plans.length) return;
     const primaryIdMatches = plans.filter(({ rows }) =>
@@ -290,6 +294,7 @@ async function runImport() {
       if (plan !== destinationPlan) plan.account = null;
     });
   });
+  const blockedAliasTransfers = getAccountMasterAliasTransfers(locationPlans, wholesaleByLicenseeId);
   const newWholesaleLocationPlans = locationPlans.filter(({ account, accounts }) => !account && accounts.size <= 1);
   const existingWholesaleIds = new Set(locationPlans.map(({ account }) => account?.id).filter(Boolean) as string[]);
   const closedOfficialAccounts = wholesaleAccounts.filter(
@@ -325,6 +330,8 @@ async function runImport() {
     ambiguousLicenseeIds: selection.ambiguous.length,
     blockedTypeConflicts: blockedTypeConflicts.length,
     blockedWholesaleConflicts: blockedWholesaleConflicts.length,
+    ownershipConflicts,
+    blockedAliasTransfers,
     blockedLocationConflicts: blockedLocationPlans.length,
     unresolvedAccountReuseConflicts: new Set(unresolvedAccountReuse.map(({ account }) => account?.id).filter(Boolean)).size,
     sourceLocationGroups: importLocationGroups.length,
@@ -365,8 +372,13 @@ async function runImport() {
   console.log(JSON.stringify(summary, null, 2));
   if (!APPLY) return;
   assertSideEffectEnabled('ohlqImport');
-  if (selection.ambiguous.length || blockedIds.size || blockedLocationPlans.length || unresolvedAccountReuse.length) {
-    throw new Error('Apply refused because ambiguous Licensee IDs or conflicting wholesale locations remain. Resolve them before importing.');
+  if (selection.ambiguous.length || ownershipConflicts.length || blockedIds.size || blockedLocationPlans.length || unresolvedAccountReuse.length || blockedAliasTransfers.length) {
+    const licenseeIds = [...new Set([
+      ...ownershipConflicts.map(conflict => conflict.licenseeId),
+      ...blockedAliasTransfers.map(transfer => transfer.licenseeId),
+      ...blockedIds,
+    ])];
+    throw new Error(`Apply refused because ambiguous Licensee IDs or conflicting wholesale locations remain. Resolve them before importing.${licenseeIds.length ? ` Conflicting Licensee IDs: ${licenseeIds.slice(0, 20).join(', ')}.` : ''}`);
   }
   if (newWholesaleLocationPlans.length > maximumNewLocations) {
     throw new Error(
@@ -513,12 +525,17 @@ async function runImport() {
         id: true,
         name: true,
         licenseeId: true,
+        officialAccountId: true,
         address: true,
         licenseeIds: { select: { licenseeId: true } },
       },
     }),
   ]);
   const representedLicenseeIds = new Set(finalWholesaleAccounts.flatMap((account) => getWholesaleLicenseeIdValues(account)));
+  const finalOwnershipConflicts = getAccountMasterOwnershipConflicts(finalWholesaleAccounts, new Map([
+    ...officialLicenseeIdById,
+    ...Array.from(officialIdsByLicenseeId, ([licenseeId, id]) => [id, licenseeId] as const),
+  ]));
   const missingImportedLicenseeIds = importRows.filter((row) => !representedLicenseeIds.has(row.licenseeId));
   const activeNameChanges = finalWholesaleAccounts.filter(
     (account) => namesToPreserve.has(account.id) && namesToPreserve.get(account.id) !== account.name,
@@ -532,11 +549,12 @@ async function runImport() {
     missingImportedLicenseeIds: missingImportedLicenseeIds.length,
     preservedActiveNameChanges: activeNameChanges.length,
     activeAccountsMissingAddress,
+    ownershipConflicts: finalOwnershipConflicts,
   };
   logEnvironmentEvent('ohlq.account-master.completed', { sourceHash, ...verification });
   console.log(JSON.stringify({ applied: true, ...verification }, null, 2));
-  if (missingImportedLicenseeIds.length || activeNameChanges.length) {
-    throw new Error('Post-import verification failed. Review missing Licensee IDs or changed active names.');
+  if (missingImportedLicenseeIds.length || activeNameChanges.length || finalOwnershipConflicts.length) {
+    throw new Error('Post-import verification failed. Review missing Licensee IDs, changed active names, or conflicting Licensee ID ownership.');
   }
   await recordOhlqReportRunCompleted({
     downloadResult: {
