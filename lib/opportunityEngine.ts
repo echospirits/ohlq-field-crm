@@ -1,4 +1,5 @@
 import { createHash } from 'crypto';
+import { forEachInBatches } from './forEachInBatches';
 import { OpportunityEventType, OpportunityRankingMode, OpportunityStatus, WorklistCategory, WorklistSource, WorklistStatus, type PrismaClient } from '@prisma/client';
 import { prisma } from './prisma';
 import { getOrganizationTenantConfig, matchesTenantProduct } from './tenantConfig';
@@ -193,7 +194,9 @@ export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = 
   }
 
   let accountsStarted = 0;
-  for (const account of accounts) {
+  // Full imports load unique accounts in one query. Keep previews and targeted
+  // refreshes serial (including repeated IDs across targeted query batches).
+  await forEachInBatches(accounts, dryRun || accountIds?.length ? 1 : 4, async (account) => {
     if (accountsStarted++ % 1000 === 0) console.log(`Opportunity intelligence ${organizationId}: ${accountsStarted - 1}/${accounts.length} accounts processed.`);
     const overlay = overlays.find(o => o.externalAccountId === account.id);
     const targetProfile = account.targetProfiles[0];
@@ -239,7 +242,7 @@ export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = 
     const hypotheses = detectOpportunityHypotheses(signal);
     signal.learningAdjustment = Object.fromEntries(hypotheses.flatMap(h => h.targetProduct ? [[h.targetProduct.itemCode, learnedAdjustment(learning, outcomeSegment(signal, h))]] : []));
     const primary = selectPrimaryOpportunity(hypotheses, signal, ranker);
-    if (dryRun) { previews.push({ accountId: account.id, name: account.name, primary, alternatives: hypotheses.filter(h => h.targetProduct).map(h => ({ item: h.targetProduct!.name, score: ranker.rank(h,signal).score, peers: signal.peerEvidence?.[h.targetProduct!.itemCode], factors: ranker.rank(h,signal).factors })), purchases }); continue; }
+    if (dryRun) { previews.push({ accountId: account.id, name: account.name, primary, alternatives: hypotheses.filter(h => h.targetProduct).map(h => ({ item: h.targetProduct!.name, score: ranker.rank(h,signal).score, peers: signal.peerEvidence?.[h.targetProduct!.itemCode], factors: ranker.rank(h,signal).factors })), purchases }); return; }
     await db.opportunityAccountSignal.upsert({ where: { organizationId_wholesaleAccountId: { organizationId, wholesaleAccountId: account.id } }, create: { organizationId, wholesaleAccountId: account.id, asOfDate, signalVersion: OPPORTUNITY_SIGNAL_VERSION, features: signal, firstEchoPurchaseAt: firstObserved, lastEchoPurchaseAt: lastEcho, historyComplete: false }, update: { asOfDate, signalVersion: OPPORTUNITY_SIGNAL_VERSION, features: signal, firstEchoPurchaseAt: firstObserved, lastEchoPurchaseAt: lastEcho } });
     if (scoreExistingOnly) {
       for (const opportunity of scoreOnlyByAccount.get(account.id) ?? []) {
@@ -276,7 +279,7 @@ export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = 
           update: { score: ranking.score, priorityBand: ranking.priorityBand, factors: ranking.factors, scoredAt: asOfDate },
         });
       }
-      continue;
+      return;
     }
     if (primary) {
       let { hypothesis, ranking } = primary;
@@ -323,7 +326,7 @@ export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = 
             where: { organizationId, salesOpportunityId: opportunity.id, status: { in: [WorklistStatus.OPEN, WorklistStatus.IN_PROGRESS] } },
             data: { status: WorklistStatus.CANCELLED, cancelledAt: asOfDate },
           });
-          continue;
+          return;
         }
         if (original?.targetProduct && currentTargetProduct) {
           hypothesis = presentOpportunityHypothesis({ ...original, targetProduct: currentTargetProduct }, signal);
@@ -353,12 +356,12 @@ export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = 
             },
           },
         });
-        if (isDismissedOpportunityMatch(hypothesis, dismissed)) continue;
+        if (isDismissedOpportunityMatch(hypothesis, dismissed)) return;
         const previouslyClosed = await db.salesOpportunity.findFirst({
           where: { organizationId, wholesaleAccountId: account.id, type: hypothesis.type, cycleKey: hypothesis.cycleKey },
           select: { id: true },
         });
-        if (previouslyClosed) continue;
+        if (previouslyClosed) return;
         opportunity = await db.salesOpportunity.create({ data: { organizationId, wholesaleAccountId: account.id, activeAccountKey: `${organizationId}:${account.id}`, type: hypothesis.type, cycleKey: hypothesis.cycleKey, targetCategory: hypothesis.targetCategory, title: hypothesis.title, recommendedAction: hypothesis.recommendedAction, explanation: ranking.factors, signalSnapshot: signal, rulesVersion: OPPORTUNITY_RULES_VERSION, scoringVersion: ranking.version, productionScore: ranking.score, priorityBand: ranking.priorityBand, assignedToUserId: signal.assignedUserId, detectedAt: asOfDate, lastDetectedAt: asOfDate } });
         detected++;
         await db.opportunityEvent.create({ data: { organizationId, opportunityId: opportunity.id, eventType: OpportunityEventType.DETECTED, eventKey: eventKey(OpportunityEventType.DETECTED, hypothesis.cycleKey), wholesaleAccountId: account.id, metadata: { explanation: ranking.factors, rulesVersion: OPPORTUNITY_RULES_VERSION, signalVersion: OPPORTUNITY_SIGNAL_VERSION, hypothesis }, occurredAt: asOfDate } });
@@ -438,7 +441,7 @@ export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = 
         await db.opportunityEvent.create({ data: { organizationId, opportunityId: opportunity.id, eventType: OpportunityEventType.EXPIRED, eventKey: eventKey(OpportunityEventType.EXPIRED, dateOnly(asOfDate)), wholesaleAccountId: account.id, occurredAt: asOfDate } }).catch(() => undefined);
       }
     }
-  }
+  });
   return { accountsEvaluated: accounts.length, detected, converted, worklistCreated, rulesVersion: OPPORTUNITY_RULES_VERSION, scoringVersion: OPPORTUNITY_RANKING_VERSION, learning, ...(dryRun ? { previews } : {}) };
 }
 
