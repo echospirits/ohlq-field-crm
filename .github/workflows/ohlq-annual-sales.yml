@@ -166,7 +166,8 @@ jobs:
       - name: Run OHLQ annual sales import
         id: sales_import
         if: steps.schedule_window.outputs.should_run == 'true'
-        timeout-minutes: 40
+        # Multi-day recovery needs a larger budget than the daily import.
+        timeout-minutes: ${{ github.event_name == 'workflow_dispatch' && inputs.reportDate == '' && inputs.days != '1' && 120 || 40 }}
         shell: bash
         run: |
           report_date="${{ github.event.inputs.reportDate || '' }}"
