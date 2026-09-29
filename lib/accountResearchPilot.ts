@@ -77,6 +77,11 @@ const commonResearchShape = {
   cocktailMenuUrl: nullableUrl,
   localBrandsOnMenu: z.array(z.string().min(1).max(160)).max(30),
   patioOutdoor: z.enum(['Strong', 'Yes', 'No', 'Unknown']),
+  privateDining: z.enum(['Strong', 'Yes', 'No', 'Unknown']).default('Unknown'),
+  venueType: z.enum(['Hotel bar/restaurant', 'Restaurant', 'Bar', 'Other', 'Unknown']).default('Unknown'),
+  footTrafficSignal: z.enum(['Very High', 'High', 'Medium', 'Low', 'Unknown']).default('Unknown'),
+  footTrafficEvidence: z.string().min(1).max(800).nullable().default(null),
+  meetingSpaceSquareFeet: z.number().int().min(0).max(20_000_000).nullable().default(null),
   cocktailProgram: z.enum(['Strong', 'Moderate', 'Limited', 'None', 'Unknown']),
   events: z.string().max(500).nullable(),
   popularitySignal: z.enum(['High', 'Medium', 'Low', 'Unknown']),
@@ -110,7 +115,8 @@ export const ACCOUNT_RESEARCH_JSON_SCHEMA = {
   type: 'object',
   additionalProperties: false,
   required: [
-    'identity', 'researchedAt', 'websiteUrl', 'cocktailMenuUrl', 'localBrandsOnMenu', 'patioOutdoor',
+    'identity', 'researchedAt', 'websiteUrl', 'cocktailMenuUrl', 'localBrandsOnMenu', 'patioOutdoor', 'privateDining',
+    'venueType', 'footTrafficSignal', 'footTrafficEvidence', 'meetingSpaceSquareFeet',
     'cocktailProgram', 'events', 'popularitySignal', 'openStatus', 'publicRatings', 'businessHours',
     'isNationalChain', 'ownershipVerification', 'buyerStructure', 'notes',
     'confidence', 'evidence',
@@ -130,6 +136,11 @@ export const ACCOUNT_RESEARCH_JSON_SCHEMA = {
     websiteUrl: { type: ['string', 'null'] }, cocktailMenuUrl: { type: ['string', 'null'] },
     localBrandsOnMenu: { type: 'array', items: { type: 'string' } },
     patioOutdoor: { type: 'string', enum: ['Strong', 'Yes', 'No', 'Unknown'] },
+    privateDining: { type: 'string', enum: ['Strong', 'Yes', 'No', 'Unknown'] },
+    venueType: { type: 'string', enum: ['Hotel bar/restaurant', 'Restaurant', 'Bar', 'Other', 'Unknown'] },
+    footTrafficSignal: { type: 'string', enum: ['Very High', 'High', 'Medium', 'Low', 'Unknown'] },
+    footTrafficEvidence: { type: ['string', 'null'] },
+    meetingSpaceSquareFeet: { type: ['integer', 'null'], minimum: 0, maximum: 20000000 },
     cocktailProgram: { type: 'string', enum: ['Strong', 'Moderate', 'Limited', 'None', 'Unknown'] },
     events: { type: ['string', 'null'] },
     popularitySignal: { type: 'string', enum: ['High', 'Medium', 'Low', 'Unknown'] },
@@ -232,19 +243,22 @@ export function estimateResearchCostMicros({ inputTokens, outputTokens, webSearc
 export function chooseResearchTier(opportunities: Array<{ status: string; productionScore: number }>) {
   const pursued = opportunities.some((item) => item.status === 'ACTIONED');
   const highestScore = Math.max(0, ...opportunities.map((item) => item.productionScore));
-  if (pursued) return { tier: 'DEEP' as const, reason: 'Pursued account; complete commercial refresh.' };
+  if (pursued) return { tier: 'DEEP' as const, reason: 'Opportunity in progress; complete commercial refresh.' };
   if (highestScore >= 70) return { tier: 'DEEP' as const, reason: `High provisional opportunity score (${Math.round(highestScore)}).` };
   return { tier: 'LIGHTWEIGHT' as const, reason: `Initial identity and public-fit pass for score ${Math.round(highestScore)}.` };
 }
 
 export function buildAccountResearchPrompt(input: AccountResearchInputSnapshot, tier: 'LIGHTWEIGHT' | 'DEEP') {
   const scope = tier === 'DEEP'
-    ? 'Perform exact-location commercial research, including the official site, current cocktail/drinks menu, named Ohio or local spirits, patio/rooftop, events/private dining, popularity, ownership, buyer structure, open status, public ratings, review counts, and business hours when supported.'
-    : 'Perform a bounded exact-location identity and public-fit pass. Prioritize official website, open status, chain status, public ratings/review counts, current weekly business hours, and obvious cocktail-menu or patio evidence.';
+    ? 'Perform exact-location commercial research, including the official site, current cocktail/drinks menu, named Ohio or local spirits, patio/rooftop, private dining, direct foot-traffic or capacity evidence, popularity, ownership, buyer structure, open status, public ratings, review counts, and business hours when supported. If this exact bar or restaurant is inside a hotel, verify the hotel property meeting-space square footage from an official hotel or convention source.'
+    : 'Perform a bounded exact-location identity and public-fit pass. Prioritize official website, open status, venue type, chain status, public review counts, direct foot-traffic or capacity evidence, current weekly business hours, and obvious cocktail-menu, patio, or private-dining evidence. If this exact bar or restaurant is inside a hotel, check official hotel meeting-space square footage.';
   return `${scope}
 
 Source rules:
 - Research the specified US state. Local means local to that account's market, not necessarily Ohio. For a cocktail menu, record explicit spirit categories in evidence (field: menuCategories). Do not infer sales volume, bottle pricing, or a tenant product's state distribution from reviews or cocktail prices.
+- Treat review count as an objective popularity/traffic proxy; star rating is subjective and must not drive footTrafficSignal. Use footTrafficSignal only when exact-location sources provide direct volume, attendance, capacity, reservation-demand, or sustained crowd evidence. Put the concise evidence in footTrafficEvidence and add its source to evidence with field footTraffic. Return Unknown and null rather than guessing.
+- Record patio/rooftop evidence with field patioOutdoor and private dining or reservable event-room evidence with field privateDining.
+- Set venueType to Hotel bar/restaurant only when this exact account operates inside the matched hotel property. Only then return meetingSpaceSquareFeet, supported by an official hotel, convention, or venue source in evidence with field hotelMeetingSpace. For every other venue type, meetingSpaceSquareFeet must be null.
 - Prefer the official business website, then exact-location Apple Maps or Google Maps listings, then Yelp or another reputable exact-location directory.
 - Return each verified rating in publicRatings with the source that directly displayed it. Never label a third-party score as Google merely because that page says it originated with Google.
 - Return businessHours from the best current exact-location source available, including Apple Maps. Include one schedule entry for each listed day and Closed when applicable. Return null only when no exact-location source provides hours.

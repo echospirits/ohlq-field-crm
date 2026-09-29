@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
+import { SubmitButton } from '../components/SubmitButton';
 import { WholesaleOrderFiledSource } from '@prisma/client';
 import Link from 'next/link';
 import { buildPageMetadata } from '../../lib/appBrand';
@@ -23,7 +24,7 @@ function ChecklistControl({ order, field }: { order: Order; field: 'sent' | 'pai
   if (automatic) return <button aria-checked="true" aria-label="Filed, confirmed automatically by OHLQ sales data" className="wholesale-order-check checked automatic" disabled role="checkbox" title="Confirmed automatically by OHLQ sales data" type="button">✓</button>;
   return <form action={toggleOrderChecklistAction} className="wholesale-order-check-form">
     <input name="orderId" type="hidden" value={order.id} /><input name="field" type="hidden" value={field} /><input name="checked" type="hidden" value={String(!checked)} />
-    <button aria-checked={checked} aria-label={`${checked ? 'Uncheck' : 'Check'} ${field} for ${order.customer.dba || order.customer.name}`} className={`wholesale-order-check${checked ? ' checked' : ''}`} role="checkbox" type="submit">{checked ? '✓' : ''}</button>
+    <SubmitButton pendingLabel="…" aria-checked={checked} aria-label={`${checked ? 'Uncheck' : 'Check'} ${field} for ${order.customer.dba || order.customer.name}`} className={`wholesale-order-check${checked ? ' checked' : ''}`} role="checkbox" type="submit">{checked ? '✓' : ''}</SubmitButton>
   </form>;
 }
 

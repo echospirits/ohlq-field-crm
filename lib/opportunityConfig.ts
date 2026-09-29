@@ -1,6 +1,6 @@
 export const OPPORTUNITY_RULES_VERSION = 'RULES_V5';
 export const OPPORTUNITY_SIGNAL_VERSION = 'SIGNALS_V3';
-export const OPPORTUNITY_RANKING_VERSION = 'ACCOUNT_FIT_V5';
+export const OPPORTUNITY_RANKING_VERSION = 'ACCOUNT_FIT_V6';
 
 export const opportunityRules = {
   lapseLookbackDays: 90,

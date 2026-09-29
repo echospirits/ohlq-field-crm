@@ -110,6 +110,9 @@ type LogVisitFormProps = {
   initialValues?: VisitFormInitialValues;
   mode?: 'create' | 'edit';
   submitLabel?: string;
+  salesStatusOptions?: Array<{ label: string; value: string }>;
+  targetedAgencyIds?: string[];
+  targetedWholesaleAccountIds?: string[];
 };
 
 const normalize = (value: string | null | undefined) => (value ?? '').trim().toLowerCase();
@@ -146,6 +149,9 @@ export function LogVisitForm({
   initialValues,
   mode = 'create',
   submitLabel = 'Save visit',
+  salesStatusOptions = [],
+  targetedAgencyIds = [],
+  targetedWholesaleAccountIds = [],
 }: LogVisitFormProps) {
   const [locationType, setLocationType] = useState<VisitLocationType>(initialValues?.locationType ?? 'wholesale');
   const [agencyId, setAgencyId] = useState(initialValues?.agencyId ?? '');
@@ -657,6 +663,22 @@ export function LogVisitForm({
           </div>
         </fieldset>
       ) : null}
+
+      {mode === 'create' && salesStatusOptions.length > 0 ? <fieldset className="visit-step visit-sales-status-step">
+        <legend>Sales status changed?</legend>
+        <p className="field-note">Optional. Keep No change selected unless this visit moved the relationship.</p>
+        <div className="visit-outcome-grid sales-status-visit-choices">
+          <label className="visit-outcome-chip"><input defaultChecked name="salesStatus" type="radio" value="" /><span>No change</span></label>
+          {salesStatusOptions.map((option) => <label className="visit-outcome-chip" key={option.value}><input name="salesStatus" type="radio" value={option.value} /><span>{option.label}</span></label>)}
+        </div>
+      </fieldset> : null}
+
+      {hasLocation && mode === 'create' ? <fieldset className="visit-step visit-target-account-step">
+        <legend>Account focus <span className="optional-label">Optional</span></legend>
+        {(locationType === 'agency' ? targetedAgencyIds.includes(agencyId) : targetedWholesaleAccountIds.includes(wholesaleAccountId))
+          ? <p className="visit-target-state"><strong className="target-account-marker">TARGET ACCOUNT</strong><span>We’re actively working this account.</span></p>
+          : <label className="visit-target-choice"><input name="targetAccount" type="checkbox" value="true" /><span><strong>Target Account</strong><small>Mark this account for active work and refresh its research.</small></span></label>}
+      </fieldset> : null}
 
       <details className="visit-details">
         <summary>Add details <span>Contact, voice note, photo, or new account</span></summary>

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { it } from 'node:test';
 import { AccountResearchJobStatus, OpportunityStatus } from '@prisma/client';
-import { ACCOUNT_RESEARCH_TERMINAL_RETRY_COOLDOWN_DAYS, classifyResearchNeed, createResearchIdentitySnapshot, hasResearchIdentityChanged, readBusinessHours, readPublicRatings, shouldDeferResearchRetry, type ResearchQueueCandidate } from '../lib/accountResearchQueue';
+import { ACCOUNT_RESEARCH_TERMINAL_RETRY_COOLDOWN_DAYS, classifyResearchNeed, createResearchIdentitySnapshot, hasResearchIdentityChanged, readBusinessHours, readPublicRatings, readResearchSignals, shouldDeferResearchRetry, type ResearchQueueCandidate } from '../lib/accountResearchQueue';
 import { accountResearchFailureReason, isActionableAccountResearchFailure, isUnsuccessfulAccountResearchAttempt } from '../lib/accountResearchFailures';
 import { opportunityTerritoryForCounty, territoryCoverageDeficits } from '../lib/opportunityTerritories';
 
@@ -113,8 +113,14 @@ it('stores and reads source-attributed public research without changing identity
     publicRatings: [{ sourceName: 'Apple Maps', sourceUrl: 'https://maps.apple.com/example', rating: 4.6, reviewCount: 400 }],
     businessHours: { sourceName: 'Apple Maps', sourceUrl: 'https://maps.apple.com/example', schedule: [{ day: 'Monday', hours: '11:00 AM–10:00 PM' }] },
     evidence: [{ field: 'businessHours', claim: 'Hours listed.', sourceUrl: 'https://maps.apple.com/example', sourceTitle: 'Apple Maps', exactLocation: true }],
+    privateDining: 'Yes', venueType: 'Hotel bar/restaurant', footTrafficSignal: 'High',
+    footTrafficEvidence: 'Published capacity supports high traffic.', meetingSpaceSquareFeet: 100_000,
   });
   assert.deepEqual(readBusinessHours(snapshot)?.schedule, [{ day: 'Monday', hours: '11:00 AM–10:00 PM' }]);
   assert.equal(readPublicRatings(snapshot)[0].sourceName, 'Apple Maps');
+  assert.deepEqual(readResearchSignals(snapshot), {
+    privateDining: 'Yes', venueType: 'Hotel bar/restaurant', footTrafficSignal: 'High',
+    footTrafficEvidence: 'Published capacity supports high traffic.', meetingSpaceSquareFeet: 100_000,
+  });
   assert.equal(hasResearchIdentityChanged(candidate(), snapshot), false);
 });

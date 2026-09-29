@@ -52,6 +52,9 @@ const toGoogleEvent = (input: CalendarEventInput) => ({
   extendedProperties: { private: input.privateMetadata },
 });
 
+export const buildGoogleCalendarUpdateHeaders = (expectedEtag?: string | null): Record<string, string> =>
+  expectedEtag ? { 'If-Match': expectedEtag } : {};
+
 const getNextDate = (date: string) => {
   const value = new Date(`${date}T12:00:00.000Z`);
   value.setUTCDate(value.getUTCDate() + 1);
@@ -136,9 +139,9 @@ export const googleCalendarProvider: CalendarProvider = {
     });
     return toResult((await response.json()) as GoogleEvent);
   },
-  async updateEvent(connection, eventId, input) {
+  async updateEvent(connection, eventId, input, expectedEtag) {
     const response = await googleFetch(connection, `/calendars/${encodeURIComponent(connection.selectedCalendarId)}/events/${encodeURIComponent(eventId)}`, {
-      method: 'PATCH', body: JSON.stringify(toGoogleEvent(input)),
+      method: 'PATCH', body: JSON.stringify(toGoogleEvent(input)), headers: buildGoogleCalendarUpdateHeaders(expectedEtag),
     });
     if (response.status === 404 || response.status === 410) throw new CalendarProviderError('Calendar event was removed.', 'event_removed');
     return toResult((await response.json()) as GoogleEvent);

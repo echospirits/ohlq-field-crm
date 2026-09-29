@@ -9,6 +9,7 @@ import { redirect } from 'next/navigation';
 import { buildPageMetadata } from '../../lib/appBrand';
 import { getUserDisplayName, requireUser } from '../../lib/auth';
 import { formatDateOnlyInputValue, formatTimeMinutesInput, formatWorklistDue, parseTimeInputToMinutes } from '../../lib/dateTime';
+import { getOperatingHoursConflict } from '../../lib/operatingHours';
 import { scheduleWorklistSync } from '../../lib/calendar/scheduleWorklistSync';
 import { splitReactivationPurchasedAgainDetail } from '../../lib/ohlqWholesaleReactivation';
 import { prisma } from '../../lib/prisma';
@@ -24,6 +25,7 @@ import { RecordPicker } from '../components/RecordPicker';
 import { DatePickerField } from '../components/DatePickerField';
 import { LiveFilterForm } from '../components/LiveFilterForm';
 import { WorkViewNavigation } from '../components/WorkViewNavigation';
+import { TargetAccountMarker } from '../components/TargetAccountMarker';
 import { createVisit } from '../visits/actions';
 import { WorklistActions } from './WorklistActions';
 import { getWorklistGroup, worklistGroups } from '../../lib/worklistPresentation';
@@ -332,6 +334,8 @@ export default async function Alerts({
   ]);
 
   const worklistLocations = await getWorklistLocations(items);
+  const targetOverlays = await prisma.organizationAccountOverlay.findMany({ where: { organizationId, isTargeting: true, OR: [{ accountType: 'AGENCY', externalAccountId: { in: items.map((item) => item.agencyId).filter((id): id is string => Boolean(id)) } }, { accountType: 'WHOLESALE', externalAccountId: { in: items.map((item) => item.wholesaleAccountId).filter((id): id is string => Boolean(id)) } }] }, select: { accountType: true, externalAccountId: true } });
+  const targetedAccountKeys = new Set(targetOverlays.map((item) => `${item.accountType}:${item.externalAccountId}`));
 
   const groups = worklistGroups.map((title) => ({
     title,
@@ -432,9 +436,15 @@ export default async function Alerts({
                 {group.items.map((item) => {
                   const parsedDetail = splitReactivationPurchasedAgainDetail(item.detail);
                   const location = worklistLocations.get(item.id);
+                  const hoursConflict = item.status === WorklistStatus.OPEN || item.status === WorklistStatus.IN_PROGRESS ? getOperatingHoursConflict({
+                    accountType: location?.type,
+                    schedule: location?.businessHours,
+                    date: formatDateOnlyInputValue(item.dueDate),
+                    startMinutes: item.dueTimeMinutes,
+                  }) : null;
 
                   return (
-                    <tr id={`worklist-${item.id}`} key={item.id}>
+                    <tr className={hoursConflict ? `worklist-hours-row--${hoursConflict.accountType}` : undefined} id={`worklist-${item.id}`} key={item.id}>
                       <td data-label="Item">
                         <strong>{item.title}</strong>
                         <details className="task-context"><summary>Task details</summary><div className="inline-meta">
@@ -451,13 +461,17 @@ export default async function Alerts({
                       </td>
                       <td data-label="Location / Due">
                         {location ? (
+                          <>
                           <Link className="table-link" href={location.href}>
                             {location.name}
                           </Link>
+                          {targetedAccountKeys.has(`${location.type === 'agency' ? 'AGENCY' : 'WHOLESALE'}:${location.id}`) ? <TargetAccountMarker /> : null}
+                          </>
                         ) : (
                           <strong>{getWorklistLocationFallbackLabel(item)}</strong>
                         )}
                         <div className="muted">{formatWorklistDue(item.dueDate, item.dueTimeMinutes) || 'No due date'}</div>
+                        {hoursConflict ? <span className={`worklist-hours-indicator worklist-hours-indicator--${hoursConflict.accountType}`}>{hoursConflict.label}</span> : null}
                       </td>
                       <td data-label="Owner">{item.assignedToUser ? getUserDisplayName(item.assignedToUser) : item.assignedTo || 'Unassigned'}</td>
                       <td data-label="Actions">

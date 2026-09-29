@@ -1,3 +1,4 @@
+import { AddressLink, PhoneLink } from '../../components/AccountContactLinks';
 import { AnchoredDetails } from '../../components/AnchoredDetails';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -23,6 +24,13 @@ import { getCommunicationTitle } from '../../../lib/accountMemory';
 import { readStoreContext } from '../../../lib/agencyStoreContext';
 import { getAgencyMarketFitsForDisplay } from '../../../lib/agencyMarketIntelligenceService';
 import { AgencyRetailMarketIntelligence, AgencyStoreIntelligence, AgencyStoreSummary } from '../AgencyStoreIntelligence';
+import { SalesAccountType } from '@prisma/client';
+import { getAccountSalesStatusSummary, SALES_STATUS_LABELS } from '../../../lib/accountSalesStatus';
+import { AccountSalesStatusPanel } from '../../components/AccountSalesStatusPanel';
+import { TargetAccountControl } from '../../components/TargetAccountControl';
+import { AgencyOperatingHoursEditor } from './AgencyOperatingHoursEditor';
+import { readOperatingHoursDetails } from '../../../lib/operatingHours';
+import { getAccountResearchPilotAvailability } from '../../../lib/accountResearchOpenAI';
 
 const formatVisitDate = (date: Date | null | undefined) => formatEasternDate(date) || 'No visits yet';
 const tagStatusMessages: Record<string, string> = {
@@ -47,13 +55,14 @@ export default async function AgencyActivityPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams?: Promise<{ status?: string; tagStatus?: string; memoryStatus?: string }>;
+  searchParams?: Promise<{ status?: string; tagStatus?: string; memoryStatus?: string; targetStatus?: string }>;
 }) {
   const currentUser = await requireUser();
   const { organizationId } = await requireOrganizationContext(currentUser);
   const enabledFeatures = await getOrganizationFeatures(organizationId);
   const hasAgencyIntelligence = enabledFeatures.has('AGENCY_INTELLIGENCE');
   const hasWholesaleOpportunities = enabledFeatures.has('WHOLESALE_OPPORTUNITIES');
+  const hasAccountSalesStatus = enabledFeatures.has('ACCOUNT_SALES_STATUS');
   const { id } = await params;
   const query = (await searchParams) ?? {};
 
@@ -98,7 +107,7 @@ export default async function AgencyActivityPage({
     prisma.user.findMany({ where: { organizationId, isActive: true, role: { not: 'TASTER' } }, orderBy: [{ name: 'asc' }, { email: 'asc' }] }),
     prisma.organizationAccountOverlay.findUnique({
       where: { organizationId_accountType_externalAccountId: { organizationId, accountType: 'AGENCY', externalAccountId: id } },
-      select: { notes: true, storeContext: true },
+      select: { notes: true, storeContext: true, isTargeting: true },
     }),
     prisma.locationContact.findMany({
       where: { organizationId, agencyId: id },
@@ -114,7 +123,15 @@ export default async function AgencyActivityPage({
     hasAgencyIntelligence ? getAgencyMarketFitsForDisplay({ organizationId, agencyId: id }) : [],
   ]);
   const storeContext = readStoreContext(overlay?.storeContext);
+  const knownHours = readOperatingHoursDetails(agency.businessHours);
+  const hoursResearchAvailable = getAccountResearchPilotAvailability().available;
   const actionUsers = users.map((user) => ({ id: user.id, name: getUserDisplayName(user) }));
+  const [salesStatusSummary, salesStatusHistory] = hasAccountSalesStatus ? await Promise.all([
+    getAccountSalesStatusSummary({ accountType: SalesAccountType.AGENCY, externalAccountId: id, organizationId }),
+    prisma.accountSalesStatusHistory.findMany({ where: { organizationId, accountType: SalesAccountType.AGENCY, externalAccountId: id }, orderBy: { changedAt: 'desc' }, take: 50 }),
+  ]) : [null, []];
+  const userNames = new Map(users.map((entry) => [entry.id, getUserDisplayName(entry)]));
+  const targetingHistory = await prisma.accountTargetingHistory.findMany({ where: { organizationId, accountType: SalesAccountType.AGENCY, externalAccountId: id }, orderBy: { changedAt: 'desc' }, take: 50 });
 
   const contacts = await prisma.locationContact.findMany({
     where: { organizationId, id: { in: visits.map((visit) => visit.contactId).filter(Boolean) as string[] } },
@@ -128,14 +145,14 @@ export default async function AgencyActivityPage({
         <div>
           <span className="page-eyebrow">Agency · {agency.city || 'Location not set'}</span>
           <h1>{agency.name}</h1>
+          {overlay?.isTargeting ? <p><strong className="target-account-marker">TARGET ACCOUNT</strong></p> : null}
           {agency.tags.length ? <TagBadges tags={agency.tags.map((assignment) => assignment.tag)} /> : null}
         </div>
         <div className="page-heading-actions">
+          <TargetAccountControl accountType={SalesAccountType.AGENCY} externalAccountId={id} isTargeting={overlay?.isTargeting ?? false} allowStop returnTo={`/agencies/${id}`} />
           <ContextualActions
-            address={[agency.address, agency.city, agency.state, agency.zip].filter(Boolean).join(', ')}
             context={{ accountName: agency.name, agencyId: agency.id, returnTo: `/agencies/${agency.id}`, sourceLabel: agency.name, sourceType: 'AGENCY_DETAIL' }}
             currentUserId={currentUser.id}
-            phone={agency.primaryContactPhone ?? agency.phone}
             users={actionUsers}
           />
           <details className="account-secondary-actions"><summary>More actions</summary><div>
@@ -143,6 +160,7 @@ export default async function AgencyActivityPage({
           </div></details>
         </div>
       </header>
+      {salesStatusSummary ? <AccountSalesStatusPanel accountType={SalesAccountType.AGENCY} externalAccountId={id} returnTo={`/agencies/${id}`} {...salesStatusSummary} /> : null}
       {hasAgencyIntelligence ? <AgencyStoreSummary context={storeContext} market={marketProfile} d8Permit={agency.d8Permit} county={agency.county} /> : null}
       {query.status ? <p className="toast-notice" role="status">{statusMessages[query.status] ?? query.status}</p> : null}
       {query.tagStatus ? <p className="pill">{tagStatusMessages[query.tagStatus] ?? query.tagStatus}</p> : null}
@@ -172,7 +190,7 @@ export default async function AgencyActivityPage({
           <p><strong>Agency ID</strong><span>{agency.agencyId}</span></p>
           <p>
             <strong>Address</strong>
-            <span>{[agency.address, agency.city, agency.state, agency.zip].filter(Boolean).join(', ')}</span>
+            <AddressLink address={[agency.address, agency.city, agency.state, agency.zip].filter(Boolean).join(', ')} />
           </p>
           <p>
             <strong>Primary contact</strong>
@@ -180,12 +198,13 @@ export default async function AgencyActivityPage({
           </p>
           <p>
             <strong>Contact phone</strong>
-            <span>{agency.primaryContactPhone}</span>
+            <PhoneLink phone={agency.primaryContactPhone} />
           </p>
           <p>
             <strong>Agency phone</strong>
-            <span>{agency.phone}</span>
+            <PhoneLink phone={agency.phone} />
           </p>
+          <AgencyOperatingHoursEditor agencyId={agency.id} {...knownHours} researchAvailable={hoursResearchAvailable} />
         </div>
         <AccountTagPanel
           assignments={agency.tags}
@@ -208,7 +227,7 @@ export default async function AgencyActivityPage({
       <section className="dashboard-section account-workspace-section" id="activity">
         <div className="section-heading">
           <h2>Activity</h2>
-          <span className="pill">{visits.length + communicationActivities.length}</span>
+          <span className="pill">{visits.length + communicationActivities.length + salesStatusHistory.length + targetingHistory.length}</span>
         </div>
         <VisitActivityTable contactMap={contactMap} visits={visits} supplementalEvents={communicationActivities.map((activity) => ({
           actor: getUserDisplayName(activity.createdByUser),
@@ -216,7 +235,20 @@ export default async function AgencyActivityPage({
           detail: getCommunicationTitle(activity.activityType, activity.contact.name),
           id: activity.id,
           title: activity.activityType === 'EMAIL_INITIATED' ? 'Email initiated' : 'Call initiated',
-        }))} />
+        })).concat(salesStatusHistory.map((event) => ({
+          actor: event.changedByUserId ? userNames.get(event.changedByUserId) ?? 'Former team member' : 'Neat',
+          at: event.changedAt,
+          detail: event.previousStatus ? `${SALES_STATUS_LABELS[event.previousStatus]} → ${SALES_STATUS_LABELS[event.newStatus]}` : `Set to ${SALES_STATUS_LABELS[event.newStatus]}`,
+          id: `sales-status-${event.id}`,
+          title: event.source === 'SALES_DATA' ? 'Purchase detected' : 'Sales status changed',
+        }))).concat(targetingHistory.map((event) => ({
+          actor: event.changedByUserId ? userNames.get(event.changedByUserId) ?? 'Former team member' : 'Neat',
+          at: event.changedAt,
+          detail: event.isTargeting ? 'TARGET ACCOUNT' : 'Targeting stopped',
+          href: '',
+          id: `targeting-${event.id}`,
+          title: event.isTargeting ? 'Account targeted' : 'Targeting stopped',
+        })))} />
       </section>
       {hasAgencyIntelligence ? <AnchoredDetails className="account-overview-details account-workspace-section agency-retail-intelligence" id="intelligence" initialOpen summary="Retail Intelligence">
         <div className="retail-intelligence-content">

@@ -34,6 +34,7 @@ test('Wholesale opportunity intelligence shows the tenant-scoped production scor
   assert.match(panel, /Opportunity score \$\{Math\.round\(productionScore\)\} out of 100/);
   assert.match(panel, /How this score was calculated/);
   assert.match(panel, /This score is calculated for your organization/);
+  assert.match(panel, /scoringVersion\.startsWith\('RESEARCH_FIT_'\)/);
   assert.match(panel, /parseOpportunityScoreComponents\(factors\)/);
   assert.match(panel, /scores: \{ orderBy: \{ scoredAt: 'desc' \}/);
   assert.match(panel, /Point-by-point values were not stored with this earlier score/);

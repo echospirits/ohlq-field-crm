@@ -15,6 +15,7 @@ export const FEATURE_KEYS = [
   'ADVANCED_INTELLIGENCE',
   'TASTING_WORKFLOWS',
   'ANALYTICS',
+  'ACCOUNT_SALES_STATUS',
 ] as const;
 
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
@@ -30,6 +31,7 @@ export type FeatureDefinition = {
 };
 
 export const FEATURE_REGISTRY: Record<FeatureKey, FeatureDefinition> = {
+  ACCOUNT_SALES_STATUS: { key: 'ACCOUNT_SALES_STATUS', label: 'Account Sales Status / Pipeline', description: 'Tenant-owned relationship stages, buying state, and lightweight pipeline visibility.', category: 'Core', defaultEnabled: false, dependencies: ['CORE_CRM'], beta: true },
   ANALYTICS: { key: 'ANALYTICS', label: 'Analytics', description: 'Tenant sales, account performance, and activity reporting with CSV exports.', category: 'Core', defaultEnabled: false, dependencies: ['CORE_CRM'], beta: true },
   CORE_CRM: { key: 'CORE_CRM', label: 'Core CRM', description: 'Users, shared accounts, private overlays, and core relationship workflows.', category: 'Core', defaultEnabled: true, dependencies: [] },
   VISITS: { key: 'VISITS', label: 'Visits', description: 'Field visit capture and visit history.', category: 'Core', defaultEnabled: true, dependencies: ['CORE_CRM'] },
@@ -49,20 +51,24 @@ export const FEATURE_REGISTRY: Record<FeatureKey, FeatureDefinition> = {
 };
 
 export const INTELLIGENCE_PACKAGE_FEATURE_KEYS = ['AGENCY_INTELLIGENCE', 'WHOLESALE_OPPORTUNITIES', 'ADVANCED_INTELLIGENCE'] as const satisfies readonly FeatureKey[];
-export const OPTIONAL_FEATURE_KEYS = ['OHIO_DIRECT_WHOLESALE_ORDERS', 'ANALYTICS'] as const satisfies readonly FeatureKey[];
+export const OPTIONAL_FEATURE_KEYS = ['OHIO_DIRECT_WHOLESALE_ORDERS', 'ANALYTICS', 'ACCOUNT_SALES_STATUS'] as const satisfies readonly FeatureKey[];
 export const CORE_PACKAGE_FEATURE_KEYS = FEATURE_KEYS.filter((key) =>
   !INTELLIGENCE_PACKAGE_FEATURE_KEYS.includes(key as (typeof INTELLIGENCE_PACKAGE_FEATURE_KEYS)[number]) &&
   !OPTIONAL_FEATURE_KEYS.includes(key as (typeof OPTIONAL_FEATURE_KEYS)[number]));
 export const DEFAULT_FEATURE_KEYS = [...CORE_PACKAGE_FEATURE_KEYS];
-export const ECHO_FEATURE_KEYS = FEATURE_KEYS.filter(
-  (key) => !OPTIONAL_FEATURE_KEYS.includes(key as (typeof OPTIONAL_FEATURE_KEYS)[number]));
+export const ECHO_FEATURE_KEYS = FEATURE_KEYS.filter((key) => key !== 'ANALYTICS' && key !== 'OHIO_DIRECT_WHOLESALE_ORDERS');
 
-export function getPackageFeatureKeys(intelligenceEnabled: boolean, directWholesaleOrdersEnabled = false, analyticsEnabled = false): FeatureKey[] {
+export function getEnvironmentFeatureKeys(configured: readonly FeatureKey[], env: Record<string, string | undefined> = process.env): FeatureKey[] {
+  return env.APP_ENV?.trim().toLowerCase() === 'test' ? [...FEATURE_KEYS] : [...configured];
+}
+
+export function getPackageFeatureKeys(intelligenceEnabled: boolean, directWholesaleOrdersEnabled = false, analyticsEnabled = false, accountSalesStatusEnabled = false): FeatureKey[] {
   return FEATURE_KEYS.filter((key) =>
     CORE_PACKAGE_FEATURE_KEYS.includes(key as (typeof CORE_PACKAGE_FEATURE_KEYS)[number]) ||
     (intelligenceEnabled && INTELLIGENCE_PACKAGE_FEATURE_KEYS.includes(key as (typeof INTELLIGENCE_PACKAGE_FEATURE_KEYS)[number])) ||
     (directWholesaleOrdersEnabled && key === 'OHIO_DIRECT_WHOLESALE_ORDERS') ||
-    (analyticsEnabled && key === 'ANALYTICS'));
+    (analyticsEnabled && key === 'ANALYTICS') ||
+    (accountSalesStatusEnabled && key === 'ACCOUNT_SALES_STATUS'));
 }
 
 export function hasIntelligencePackage(keys: ReadonlySet<string> | readonly string[]) {

@@ -5,7 +5,7 @@ import test from 'node:test';
 import ts from 'typescript';
 import { WorklistStatus } from '@prisma/client';
 
-for (const page of ['alerts', 'my-week']) {
+for (const page of ['alerts']) {
   const source = readFileSync(new URL(`../app/${page}/page.tsx`, import.meta.url), 'utf8');
   const ast = ts.createSourceFile('page.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const action = ast.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'updateWorklistStatus')!;

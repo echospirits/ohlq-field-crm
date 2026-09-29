@@ -161,8 +161,36 @@ export const zonedDateTimeToUtc = (
   const day = Number(match[3]);
   const hour = Math.floor(minutes / 60);
   const minute = minutes % 60;
-  const guess = new Date(Date.UTC(year, month - 1, day, hour, minute));
-  const local = getZonedDateTimeParts(guess, timeZone);
-  const offset = Date.UTC(local.year, local.month - 1, local.day, local.hour, local.minute) - guess.getTime();
-  return new Date(Date.UTC(year, month - 1, day, hour, minute) - offset);
+  const desiredLocalAsUtc = Date.UTC(year, month - 1, day, hour, minute);
+  let candidate = desiredLocalAsUtc;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const local = getZonedDateTimeParts(new Date(candidate), timeZone);
+    const candidateLocalAsUtc = Date.UTC(local.year, local.month - 1, local.day, local.hour, local.minute, local.second);
+    const adjustment = desiredLocalAsUtc - candidateLocalAsUtc;
+    if (adjustment === 0) return new Date(candidate);
+    candidate += adjustment;
+  }
+  throw new Error('Invalid local date/time');
+};
+
+export const isValidZonedDateTime = (
+  dateInput: string,
+  minutes: number,
+  timeZone = EASTERN_TIME_ZONE,
+) => {
+  if (!Number.isInteger(minutes) || minutes < 0 || minutes >= 24 * 60) return false;
+  const match = dateInput.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return false;
+  const date = new Date(`${dateInput}T00:00:00.000Z`);
+  if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== dateInput) return false;
+
+  try {
+    const parts = getZonedDateTimeParts(zonedDateTimeToUtc(dateInput, minutes, timeZone), timeZone);
+    return parts.year === Number(match[1]) &&
+      parts.month === Number(match[2]) &&
+      parts.day === Number(match[3]) &&
+      parts.hour * 60 + parts.minute === minutes;
+  } catch {
+    return false;
+  }
 };

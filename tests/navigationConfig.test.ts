@@ -11,12 +11,21 @@ import {
 test('desktop navigation keeps work and account areas intentionally grouped', () => {
   assert.deepEqual(
     getNavigationItems('work').map((item) => item.key),
-    ['home', 'worklist', 'my-week', 'visits', 'analytics'],
+    ['home', 'worklist', 'visits', 'analytics'],
+  );
+  assert.deepEqual(
+    getNavigationItems('work').find((item) => item.key === 'home'),
+    { key: 'home', href: '/', label: 'My Schedule', mobileLabel: 'Schedule', section: 'work', mobileOrder: 1 },
   );
   assert.deepEqual(
     getNavigationItems('accounts').map((item) => item.key),
-    ['accounts', 'agencies', 'wholesale', 'wholesale-orders'],
+    ['accounts', 'agencies', 'wholesale', 'wholesale-orders', 'pipeline'],
   );
+});
+
+test('pipeline navigation is feature gated', () => {
+  assert.equal(getNavigationItems('accounts', []).some((item) => item.key === 'pipeline'), false);
+  assert.equal(getNavigationItems('accounts', ['ACCOUNT_SALES_STATUS']).some((item) => item.key === 'pipeline'), true);
 });
 
 test('wholesale orders navigation is feature gated', () => {

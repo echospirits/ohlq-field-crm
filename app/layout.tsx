@@ -68,9 +68,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               {!isTaster ? <GlobalSearchForm compact /> : null}
               <AppSidebarNavigation enabledFeatures={enabledFeatures} isAdmin={isAdmin} isPlatformAdmin={isPlatformAdmin} isTaster={isTaster} />
               <div className="user-card">
-                <span className="muted">Signed in as</span>
+                <span className="sr-only">Signed in as</span>
                 <strong>{getUserDisplayName(user)}</strong>
-                {organizationContext ? <span className="muted">{organizationContext.organization.displayName}</span> : null}
                 <span className="pill">{isPlatformAdmin ? 'Platform Admin' : user.role === 'ADMIN' ? 'Admin' : isTaster ? 'Taster' : 'User'}</span>
                 <Link className="user-card-profile" href="/profile">Profile &amp; preferences</Link>
                 <form action="/api/auth/logout" method="post">

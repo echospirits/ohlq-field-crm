@@ -7,7 +7,7 @@ on:
       - package-lock.json
       - .github/workflows/dependency-lockfile.yml
   push:
-    branches: [main]
+    branches: [main, tst]
     paths:
       - package.json
       - package-lock.json

@@ -31,6 +31,7 @@ type ResearchCandidate = {
   state: string | null;
   zip: string | null;
   licenseeId: string;
+  isTargeting?: boolean;
   targetPublicResearch: { lastRefreshedAt: Date | null } | null;
   opportunities: Array<{ productionScore: number; status: OpportunityStatus }>;
 };
@@ -156,15 +157,19 @@ export async function getAccountResearchQueue({ db = prisma, now = new Date(), l
   const pursuedCutoff = new Date(now.getTime() - PURSUED_RESEARCH_DAYS * DAY);
   const standardCutoff = new Date(now.getTime() - STANDARD_RESEARCH_DAYS * DAY);
   const opportunityScope = organizationId ? { organizationId } : {};
-  const candidates = await db.wholesaleAccount.findMany({
+  const targetedOverlays = organizationId ? await db.organizationAccountOverlay.findMany({ where: { organizationId, accountType: 'WHOLESALE', isTargeting: true }, select: { externalAccountId: true } }) : [];
+  const targetedIds = targetedOverlays.map(({ externalAccountId }) => externalAccountId);
+  const candidates: ResearchCandidate[] = await db.wholesaleAccount.findMany({
     where: {
       isActive: true,
       mergedIntoId: null,
       OR: [
+        ...(targetedIds.length ? [{ id: { in: targetedIds } }] : []),
         { opportunities: { some: { ...opportunityScope, status: { in: activeStatuses } } } },
         { state: { in: US_STATES.filter(({ code }) => code !== 'OH').map(({ code }) => code) }, address: { not: null }, city: { not: null }, zip: { not: null } },
       ],
       ...(!includeFresh ? { AND: [{ OR: [
+        ...(targetedIds.length ? [{ id: { in: targetedIds } }] : []),
         { targetPublicResearch: { is: null } },
         { targetPublicResearch: { is: { lastRefreshedAt: null } } },
         { AND: [
@@ -183,7 +188,8 @@ export async function getAccountResearchQueue({ db = prisma, now = new Date(), l
       opportunities: { where: { ...opportunityScope, status: { in: activeStatuses } }, select: { productionScore: true, status: true } },
     },
   });
-  candidates.sort(compareResearchCandidates);
+  candidates.forEach((candidate) => { candidate.isTargeting = targetedIds.includes(candidate.id); });
+  candidates.sort((a, b) => Number(Boolean(b.isTargeting)) - Number(Boolean(a.isTargeting)) || compareResearchCandidates(a, b));
   return limit === null ? candidates : candidates.slice(0, normalizeResearchExportLimit(limit));
 }
 

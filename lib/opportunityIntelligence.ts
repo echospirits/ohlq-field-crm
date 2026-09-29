@@ -59,6 +59,11 @@ export type AccountOpportunitySignals = {
   ownershipVerification?: string | null;
   buyerStructure?: string | null;
   patioOutdoor?: string | null;
+  privateDining?: string | null;
+  venueType?: string | null;
+  footTrafficSignal?: string | null;
+  footTrafficEvidence?: string | null;
+  meetingSpaceSquareFeet?: number | null;
   cocktailProgram?: string | null;
   popularitySignal?: string | null;
   googleRating?: number | null;
@@ -141,33 +146,62 @@ export function isNationalChainSignal(signals: AccountOpportunitySignals) {
   return nationalChainNamePatterns.some((pattern) => identity.includes(normalized(pattern)));
 }
 
-const qualitativePublicScore = (signals: AccountOpportunitySignals) => {
-  let score = 0;
-  if (hasText(signals.patioOutdoor, /\byes\b|\bstrong\b|\blarge\b|\brooftop\b/)) score += 3;
-  if (hasText(signals.cocktailProgram, /\bstrong\b|\bextensive\b/)) score += 4;
-  else if (hasText(signals.cocktailProgram, /\bmoderate\b|\byes\b/)) score += 2;
-  if (hasText(signals.popularitySignal, /\bhigh\b|\bvery busy\b/)) score += 4;
-  else if (hasText(signals.popularitySignal, /\bmedium\b|\bmoderate\b/)) score += 2;
+const hasExactResearchEvidence = (signals: AccountOpportunitySignals, pattern: RegExp) =>
+  (signals.researchEvidence ?? []).some((item) => item.exactLocation && pattern.test(normalized(item.field)));
+
+const publicResearchScoreComponents = (signals: AccountOpportunitySignals) => {
   const ratingSignals = signals.publicRatings?.length ? signals.publicRatings.map((item) => ({
     rating: item.rating, reviews: item.reviewCount,
   })) : [
     { rating: signals.googleRating, reviews: signals.googleReviewCount },
     { rating: signals.yelpRating, reviews: signals.yelpReviewCount },
   ].filter((item) => item.rating !== null && item.rating !== undefined);
-  if (ratingSignals.length > 0) {
-    const averageRating = ratingSignals.reduce((sum, item) => sum + Number(item.rating), 0) / ratingSignals.length;
-    const totalReviews = ratingSignals.reduce((sum, item) => sum + Math.max(0, item.reviews ?? 0), 0);
-    score += averageRating >= 4.5 ? 2 : averageRating >= 4 ? 1 : 0;
-    score += totalReviews >= 1000 ? 2 : totalReviews >= 250 ? 1 : 0;
-  }
-  return Math.min(15, score);
+  const highestReviewCount = Math.max(0, ...ratingSignals.map((item) => Math.max(0, item.reviews ?? 0)));
+  const reviewVolume = highestReviewCount >= 5_000 ? 25
+    : highestReviewCount >= 2_500 ? 22
+    : highestReviewCount >= 1_000 ? 18
+    : highestReviewCount >= 500 ? 13
+    : highestReviewCount >= 250 ? 9
+    : highestReviewCount >= 100 ? 5
+    : 0;
+  const averageRating = ratingSignals.length
+    ? ratingSignals.reduce((sum, item) => sum + Number(item.rating), 0) / ratingSignals.length
+    : 0;
+  const subjectiveRating = averageRating >= 4.5 ? 2 : averageRating >= 4 ? 1 : 0;
+  const footTrafficSupported = Boolean(signals.footTrafficEvidence)
+    && hasExactResearchEvidence(signals, /\bfoot traffic\b|\bfoottraffic\b|\btraffic\b|\bcapacity\b|\battendance\b/);
+  const footTraffic = !footTrafficSupported ? 0
+    : hasText(signals.footTrafficSignal, /\bvery high\b/) ? 40
+    : hasText(signals.footTrafficSignal, /\bhigh\b/) ? 30
+    : hasText(signals.footTrafficSignal, /\bmedium\b|\bmoderate\b/) ? 15
+    : 0;
+  const patio = hasText(signals.patioOutdoor, /\bstrong\b|\blarge\b|\brooftop\b/) ? 8
+    : hasText(signals.patioOutdoor, /\byes\b/) ? 5 : 0;
+  const privateDining = hasText(signals.privateDining, /\bstrong\b|\bmultiple\b|\blarge\b/) ? 8
+    : hasText(signals.privateDining, /\byes\b/) ? 5 : 0;
+  const hotelMeetingSupported = hasText(signals.venueType, /\bhotel bar restaurant\b/)
+    && hasExactResearchEvidence(signals, /\bhotel meeting space\b|\bhotelmeetingspace\b|\bmeeting space\b|\bmeetingspace\b/);
+  const meetingSpace = !hotelMeetingSupported ? 0
+    : (signals.meetingSpaceSquareFeet ?? 0) >= 100_000 ? 25
+    : (signals.meetingSpaceSquareFeet ?? 0) >= 50_000 ? 10
+    : (signals.meetingSpaceSquareFeet ?? 0) > 0 ? 4
+    : 0;
+  const cocktailProgram = hasText(signals.cocktailProgram, /\bstrong\b|\bextensive\b/) ? 8
+    : hasText(signals.cocktailProgram, /\bmoderate\b|\byes\b/) ? 4 : 0;
+  return { footTraffic, reviewVolume, subjectiveRating, patio, privateDining, meetingSpace, cocktailProgram, highestReviewCount };
+};
+
+const qualitativePublicScore = (signals: AccountOpportunitySignals) => {
+  const components = publicResearchScoreComponents(signals);
+  return Math.min(20, (components.footTraffic + components.reviewVolume + components.subjectiveRating
+    + components.patio + components.privateDining + components.meetingSpace + components.cocktailProgram) * 0.4);
 };
 
 function researchOnlyHypothesis(signals: AccountOpportunitySignals): OpportunityHypothesis {
     return {
       type: OpportunityType.CATEGORY_CONQUEST, pitchMode: 'RESEARCH_ONLY', targetCategory: null,
       cycleKey: 'research-fit', title: 'Research-based account fit',
-      recommendedAction: signals.openStatus === 'Closed' ? 'Verify closure before pursuing' : 'Qualify buyer, price fit and local distribution',
+      recommendedAction: signals.openStatus === 'Closed' ? 'Verify closure before prioritizing' : 'Qualify buyer, price fit and local distribution',
       explanation: ['Provisional research-only assessment; purchase volume, bottle-price affinity and buying outcomes are unavailable.'],
     };
 }
@@ -336,6 +370,9 @@ export class RuleBasedOpportunityRanker implements OpportunityRanker {
     if (signals.observedSince) factors.push(`Available purchase observations begin ${signals.observedSince}; windows may be incomplete`);
     if (signals.targetTotalVolumePercentile !== null && signals.targetTotalVolumePercentile !== undefined) factors.push(`Sales volume percentile ${Math.round(Number(signals.targetTotalVolumePercentile))}`);
     if (signals.patioOutdoor) factors.push(`Public research — patio: ${signals.patioOutdoor}`);
+    if (signals.privateDining) factors.push(`Public research — private dining: ${signals.privateDining}`);
+    if (signals.footTrafficSignal) factors.push(`Public research — foot traffic: ${signals.footTrafficSignal}${signals.footTrafficEvidence ? ` (${signals.footTrafficEvidence})` : ' (unverified; no score contribution)'}`);
+    if (hasText(signals.venueType, /\bhotel bar restaurant\b/) && signals.meetingSpaceSquareFeet !== null && signals.meetingSpaceSquareFeet !== undefined) factors.push(`Hotel venue — ${signals.meetingSpaceSquareFeet.toLocaleString()} square feet of meeting space`);
     if (signals.cocktailProgram) factors.push(`Public research — cocktail program: ${signals.cocktailProgram}`);
     if (signals.popularitySignal) factors.push(`Public research — popularity: ${signals.popularitySignal}`);
     if (signals.publicRatings?.length) {
@@ -355,28 +392,33 @@ export class RuleBasedOpportunityRanker implements OpportunityRanker {
   }
 }
 
-export const RESEARCH_FIT_VERSION = 'RESEARCH_FIT_V1';
+export const RESEARCH_FIT_VERSION = 'RESEARCH_FIT_V2';
 
 function rankResearchOnly(signals: AccountOpportunitySignals): RankResult {
-  // This is a separate discovery score, not a sales prediction or a rescaled V5 score.
-  const publicFit = qualitativePublicScore(signals) * 4; // 0–60: menu, popularity, reputation, patio
-  const craft = signals.localBrandsOnMenu?.length ? 10 : 0;
+  // This is a separate discovery score, not a sales prediction or a rescaled account-fit score.
+  const publicSignals = publicResearchScoreComponents(signals);
+  const craft = signals.localBrandsOnMenu?.length ? 5 : 0;
   const menu = (signals.researchEvidence ?? []).filter(item => item.exactLocation && /menu|cocktail/i.test(item.field)).map(item => item.claim).join(' ');
   const categories = [...new Set((signals.portfolio ?? []).filter(item => item.priority > 0).map(item => item.category).filter(Boolean))];
   const matched = categories.filter(category => new RegExp(`\\b${category!.toLowerCase()}\\b`, 'i').test(menu));
-  const portfolioFit = matched.length ? 20 : 0;
-  const independent = signals.isNationalChain === false && hasText(signals.buyerStructure, /\blocal\b|\bindependent\b|\bowner\b/) ? 10 : 0;
+  const portfolioFit = matched.length ? 8 : 0;
+  const independent = signals.isNationalChain === false && hasText(signals.buyerStructure, /\blocal\b|\bindependent\b|\bowner\b/) ? 4 : 0;
+  const objectiveTraffic = publicSignals.footTraffic + publicSignals.reviewVolume;
+  const venueAttributes = publicSignals.patio + publicSignals.privateDining + publicSignals.meetingSpace;
   const factors = [
-    'Provisional research-only score. Compare with other research-only accounts; it is not equivalent to a sales-backed V5 score.',
+    'Provisional research-only score. Compare with other research-only accounts; it is not equivalent to a sales-backed account-fit score.',
     'Sales volume, bottle-price affinity, purchase history, peer sales and conversion learning are unavailable; no purchase or product-displacement claims are inferred.',
-    `Score components: public fit ${publicFit.toFixed(1)}, local menu evidence ${craft.toFixed(1)}, portfolio category fit ${portfolioFit.toFixed(1)}, independent buying ${independent.toFixed(1)}; no baseline points`,
-    `Public fit: cocktail program ${signals.cocktailProgram ?? 'unknown'}, popularity ${signals.popularitySignal ?? 'unknown'}, patio ${signals.patioOutdoor ?? 'unknown'}`,
+    `Score components: objective traffic ${objectiveTraffic.toFixed(1)}, venue attributes ${venueAttributes.toFixed(1)}, cocktail program ${publicSignals.cocktailProgram.toFixed(1)}, subjective rating ${publicSignals.subjectiveRating.toFixed(1)}, local menu evidence ${craft.toFixed(1)}, portfolio category fit ${portfolioFit.toFixed(1)}, independent buying ${independent.toFixed(1)}; no baseline points`,
+    `Objective traffic: direct evidence ${publicSignals.footTraffic.toFixed(1)}, highest verified review count ${publicSignals.highestReviewCount.toLocaleString()} (${publicSignals.reviewVolume.toFixed(1)} points). Star rating contributes at most 2 points.`,
+    `Venue attributes: patio ${signals.patioOutdoor ?? 'unknown'}, private dining ${signals.privateDining ?? 'unknown'}, venue type ${signals.venueType ?? 'unknown'}`,
     matched.length ? `Verified menu categories overlap this tenant's portfolio: ${matched.join(', ')}` : 'Menu overlap with this tenant’s portfolio is unconfirmed.',
     'Confirm state distribution and buyer price expectations before proposing a specific product.',
   ];
   if (signals.localBrandsOnMenu?.length) factors.push(`Local brands on menu: ${signals.localBrandsOnMenu.join(', ')}. Existing local placements are not displacement targets.`);
   for (const rating of signals.publicRatings ?? []) factors.push(`${rating.sourceName}: ${rating.rating.toFixed(1)} from ${rating.reviewCount ?? 'unknown'} reviews`);
-  let score = publicFit + craft + portfolioFit + independent;
+  if (publicSignals.footTraffic > 0 && signals.footTrafficEvidence) factors.push(`Direct foot-traffic evidence: ${signals.footTrafficEvidence}`);
+  if (publicSignals.meetingSpace > 0) factors.push(`Hotel meeting demand: ${(signals.meetingSpaceSquareFeet ?? 0).toLocaleString()} square feet; hotel-only contribution ${publicSignals.meetingSpace.toFixed(1)} points.`);
+  let score = objectiveTraffic + venueAttributes + publicSignals.cocktailProgram + publicSignals.subjectiveRating + craft + portfolioFit + independent;
   if (isNationalChainSignal(signals)) {
     score = Math.min(20, score - 25);
     factors.push('National chain: 25-point penalty; research-only score capped at 20.');

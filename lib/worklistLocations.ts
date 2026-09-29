@@ -1,4 +1,6 @@
 import type { PrismaClient, WorklistCategory } from '@prisma/client';
+import { readBusinessHours } from './accountResearchQueue';
+import { readOperatingHoursSchedule, type OperatingHoursEntry } from './operatingHours';
 import { prisma } from './prisma';
 
 type WorklistLocationReferenceItem = {
@@ -25,6 +27,7 @@ export type WorklistLocationReference = {
 export type WorklistLocation = WorklistLocationReference & {
   href: string;
   name: string;
+  businessHours: OperatingHoursEntry[] | null;
 };
 
 export function getWorklistCategoryForLocationSelection(
@@ -127,13 +130,13 @@ export async function getWorklistLocations(
           where: {
             OR: [{ id: { in: agencyIds } }, { agencyId: { in: agencyIds } }],
           },
-          select: { id: true, agencyId: true, name: true },
+          select: { id: true, agencyId: true, name: true, businessHours: true },
         })
       : [],
     wholesaleAccountIds.length
       ? db.wholesaleAccount.findMany({
           where: { id: { in: wholesaleAccountIds } },
-          select: { id: true, name: true },
+          select: { id: true, name: true, targetPublicResearch: { select: { identitySnapshot: true } } },
         })
       : [],
   ]);
@@ -158,6 +161,7 @@ export async function getWorklistLocations(
           type: 'agency',
           href: `/agencies/${agency.id}`,
           name: agency.name,
+          businessHours: readOperatingHoursSchedule(agency.businessHours),
         });
       }
       return;
@@ -170,6 +174,7 @@ export async function getWorklistLocations(
         type: 'wholesale',
         href: `/wholesale/${account.id}`,
         name: account.name,
+        businessHours: readOperatingHoursSchedule(readBusinessHours(account.targetPublicResearch?.identitySnapshot)?.schedule),
       });
     }
   });

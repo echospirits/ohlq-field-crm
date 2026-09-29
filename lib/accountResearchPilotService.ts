@@ -330,6 +330,7 @@ export async function autoResolveAccountResearchJobs({
       const researchData = {
         researchStatus: 'Automatically validated research',
         patioOutdoor: result.patioOutdoor,
+        privateDining: result.privateDining,
         cocktailProgram: result.cocktailProgram,
         events: result.events,
         popularitySignal: result.popularitySignal,
@@ -361,7 +362,7 @@ export async function autoResolveAccountResearchJobs({
           city: input.city,
           state: input.state,
           zip: input.zip,
-        }, { publicRatings: result.publicRatings, businessHours: result.businessHours, evidence: result.evidence }),
+        }, result),
       };
       await tx.targetPublicResearch.upsert({
         where: { wholesaleAccountId: job.wholesaleAccountId },
@@ -489,6 +490,7 @@ export async function approveAccountResearchJob({
         wholesaleAccountId: job.wholesaleAccountId,
         researchStatus: 'Reviewed pilot research',
         patioOutdoor: result.patioOutdoor,
+        privateDining: result.privateDining,
         cocktailProgram: result.cocktailProgram,
         events: result.events,
         popularitySignal: result.popularitySignal,
@@ -520,11 +522,12 @@ export async function approveAccountResearchJob({
           city: input.city,
           state: input.state,
           zip: input.zip,
-        }, { publicRatings: result.publicRatings, businessHours: result.businessHours, evidence: result.evidence }),
+        }, result),
       },
       update: {
         researchStatus: 'Reviewed pilot research',
         patioOutdoor: result.patioOutdoor,
+        privateDining: result.privateDining,
         cocktailProgram: result.cocktailProgram,
         events: result.events,
         popularitySignal: result.popularitySignal,
@@ -556,7 +559,7 @@ export async function approveAccountResearchJob({
           city: input.city,
           state: input.state,
           zip: input.zip,
-        }, { publicRatings: result.publicRatings, businessHours: result.businessHours, evidence: result.evidence }),
+        }, result),
       },
     });
     await tx.accountResearchJob.update({

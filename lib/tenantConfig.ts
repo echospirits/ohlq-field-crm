@@ -94,7 +94,7 @@ export function getTenantConfig(env: NodeJS.ProcessEnv = process.env): TenantCon
  */
 export async function getOrganizationTenantConfig(
   organizationId: string,
-  db: PrismaClient = prisma,
+  db: PrismaClient | Prisma.TransactionClient = prisma,
 ): Promise<TenantConfig> {
   const organization = await db.organization.findUnique({
     where: { id: organizationId },
@@ -175,5 +175,5 @@ export function matchesTenantProduct({
     vendor,
   });
 }
-import { OrganizationProductStatus, type PrismaClient } from '@prisma/client';
+import { OrganizationProductStatus, type Prisma, type PrismaClient } from '@prisma/client';
 import { prisma } from './prisma';

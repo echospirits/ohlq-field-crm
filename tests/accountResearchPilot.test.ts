@@ -36,12 +36,18 @@ const input: AccountResearchInputSnapshot = {
 const result = {
   identity: { verdict: 'EXACT', matchedName: 'Example Bar', matchedAddress: '123 W Main St', matchedCity: 'Columbus', matchedState: 'OH', matchedZip: '43215-1234', explanation: 'Address agrees.' },
   researchedAt: '2026-09-14', websiteUrl: 'https://example.com/', cocktailMenuUrl: null, localBrandsOnMenu: [],
-  patioOutdoor: 'Unknown', cocktailProgram: 'Moderate', events: null, popularitySignal: 'High', openStatus: 'Open',
+  patioOutdoor: 'Yes', privateDining: 'Yes', venueType: 'Hotel bar/restaurant',
+  footTrafficSignal: 'High', footTrafficEvidence: 'The venue publishes a 500-person capacity.', meetingSpaceSquareFeet: 100_000,
+  cocktailProgram: 'Moderate', events: null, popularitySignal: 'High', openStatus: 'Open',
   publicRatings: [{ sourceName: 'Apple Maps', sourceUrl: 'https://maps.apple.com/example', rating: 4.6, reviewCount: 400 }],
   businessHours: { sourceName: 'Apple Maps', sourceUrl: 'https://maps.apple.com/example', schedule: [{ day: 'Monday', hours: '11:00 AM–10:00 PM' }] },
   isNationalChain: false,
   ownershipVerification: 'Independent', buyerStructure: 'Local', notes: 'Exact address supported.', confidence: 'HIGH',
-  evidence: [{ field: 'identity', claim: 'The listing uses 123 W Main St.', sourceUrl: 'https://example.com/contact', sourceTitle: 'Contact', exactLocation: true }],
+  evidence: [
+    { field: 'identity', claim: 'The listing uses 123 W Main St.', sourceUrl: 'https://example.com/contact', sourceTitle: 'Contact', exactLocation: true },
+    { field: 'footTraffic', claim: 'The venue publishes a 500-person capacity.', sourceUrl: 'https://example.com/venue', sourceTitle: 'Venue', exactLocation: true },
+    { field: 'hotelMeetingSpace', claim: 'The hotel lists 100,000 square feet of meeting space.', sourceUrl: 'https://example.com/meetings', sourceTitle: 'Meetings', exactLocation: true },
+  ],
 };
 
 it('hard-caps manual tests at 25 accounts and two dollars', () => {
@@ -83,6 +89,9 @@ it('assigns deep research only to pursued and high-provisional-score accounts', 
 
 it('requires exact street number, city, ZIP, model verdict, and location evidence', () => {
   const parsed = parseAccountResearchResult(result);
+  assert.equal(parsed.footTrafficSignal, 'High');
+  assert.equal(parsed.privateDining, 'Yes');
+  assert.equal(parsed.meetingSpaceSquareFeet, 100_000);
   assert.equal(validateExactResearchLocation(input, parsed).exact, true);
   assert.equal(validateExactResearchLocation(input, { ...parsed, identity: { ...parsed.identity, matchedZip: '43000' } }).exact, false);
   assert.equal(validateExactResearchLocation(input, { ...parsed, identity: { ...parsed.identity, matchedState: 'KY' } }).exact, false);
@@ -143,9 +152,17 @@ it('honors OpenAI retry timing with a bounded buffer', () => {
 
 it('scopes waterfall candidates to the selected tenant organization', async () => {
   let query: unknown;
-  const db = { wholesaleAccount: { findMany: async (value: unknown) => { query = value; return []; } } } as unknown as PrismaClient;
+  let overlayQuery: unknown;
+  const db = {
+    wholesaleAccount: { findMany: async (value: unknown) => { query = value; return []; } },
+    organizationAccountOverlay: { findMany: async (value: unknown) => { overlayQuery = value; return []; } },
+  } as unknown as PrismaClient;
   await getAccountResearchQueue({ db, organizationId: 'org_1', limit: 50 });
   assert.match(JSON.stringify(query), /"organizationId":"org_1"/);
+  assert.deepEqual(overlayQuery, {
+    where: { organizationId: 'org_1', accountType: 'WHOLESALE', isTargeting: true },
+    select: { externalAccountId: true },
+  });
 });
 
 it('keeps manual tests Platform Admin protected and schedules a production-gated worker', () => {

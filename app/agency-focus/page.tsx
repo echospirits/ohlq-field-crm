@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 import { SubmitButton } from '../components/SubmitButton';
-import { AgencyProductOpportunityState, OpportunityStatus } from '@prisma/client';
+import { AgencyProductOpportunityState, OpportunityStatus, SalesAccountType } from '@prisma/client';
 import Link from 'next/link';
 import { buildPageMetadata } from '../../lib/appBrand';
 import { requireUser } from '../../lib/auth';
@@ -15,6 +15,8 @@ import { requireFeatureForUser } from '../../lib/organizations';
 import { AgencyFocusSearch } from './AgencyFocusSearch';
 import { formatDateOnly } from '../../lib/dateTime';
 import { AGENCY_FOCUS_PAGE_SIZE, agencyFocusHref, agencyFocusPageNumber } from '../../lib/agencyFocusView';
+import { TargetAccountControl } from '../components/TargetAccountControl';
+import { TargetAccountMarker } from '../components/TargetAccountMarker';
 
 export const metadata = buildPageMetadata('Agency Intelligence');
 
@@ -86,6 +88,8 @@ export default async function AgencyFocusPage({
   }), prisma.user.findMany({ where: { organizationId, isActive: true, role: { notIn: ['TASTER', 'PLATFORM_ADMIN'] } }, orderBy: [{ name: 'asc' }, { email: 'asc' }] })]);
   const actionUsers = users.map((user) => ({ id: user.id, name: getUserDisplayName(user) }));
   const visibleOpportunities = opportunities.slice(0, AGENCY_FOCUS_PAGE_SIZE);
+  const targetedAgencies = await prisma.organizationAccountOverlay.findMany({ where: { organizationId, accountType: 'AGENCY', externalAccountId: { in: [...new Set(visibleOpportunities.map((item) => item.agency.id))] }, isTargeting: true }, select: { externalAccountId: true } });
+  const targetedAgencyIds = new Set(targetedAgencies.map((item) => item.externalAccountId));
   const hasMore = opportunities.length > AGENCY_FOCUS_PAGE_SIZE;
   const returnTo = agencyFocusHref({ agencyId: query.agencyId, state, q: search, page });
   const latestSourceDate = visibleOpportunities.reduce<Date | null>(
@@ -112,6 +116,7 @@ export default async function AgencyFocusPage({
       {visibleOpportunities.map((item) => <article aria-labelledby={`focus-${item.id}`} className="agency-focus-row" key={item.id}>
         <div className="agency-focus-identity">
           <h2 id={`focus-${item.id}`}><Link href={`/agencies/${item.agency.id}`}>{item.agency.name}</Link></h2>
+          {targetedAgencyIds.has(item.agency.id) ? <TargetAccountMarker /> : null}
           <p className="muted">#{item.agency.agencyId}{item.agency.city ? ` · ${item.agency.city}` : ''}</p>
           <div className="agency-focus-state"><span className={`priority priority-${item.priorityBand.toLowerCase()}`}>{titleCase(item.priorityBand)}</span><span>{stateLabels[item.opportunityState]}</span></div>
         </div>
@@ -130,6 +135,7 @@ export default async function AgencyFocusPage({
         </dl>
         <ul aria-label="Recommendation evidence" className="agency-focus-reasons">{stringList(item.reasons).map((reason) => <li key={reason}>{reason}</li>)}</ul>
         <div className="agency-focus-row-actions">
+          <TargetAccountControl accountType={SalesAccountType.AGENCY} externalAccountId={item.agency.id} isTargeting={targetedAgencyIds.has(item.agency.id)} returnTo={returnTo} />
           <ContextualActions
             context={{ accountName: item.agency.name, agencyId: item.agency.id, agencyProductIntelligenceId: item.id, productItemCode: item.itemCode, productName: item.itemName, reason: stringList(item.reasons).join(' '), returnTo, sourceLabel: `${stateLabels[item.opportunityState]} - ${item.itemName}`, sourceType: item.opportunityState }}
             currentUserId={currentUser.id}

@@ -5,13 +5,15 @@ import { prisma } from './prisma';
 import { getOrganizationTenantConfig, matchesTenantProduct } from './tenantConfig';
 import { catalogLiters, compareWithBuyers, toAffinityProduct, type BuyerBasket } from './opportunityAffinity';
 import { learnedAdjustment, labelMatureOutcome, outcomeSegment, trainOutcomeModel, type OutcomeExample } from './opportunityLearning';
-import { buildDailyPurchaseEvents } from './opportunitySalesLedger';
 import { getDistilleryOnlyItemCodes, isOpportunityEligibleOhlqProduct } from './ohlqProductEligibility';
 import { normalizeOpportunityCategory, OPPORTUNITY_RANKING_VERSION, OPPORTUNITY_RULES_VERSION, OPPORTUNITY_SIGNAL_VERSION, opportunityRules } from './opportunityConfig';
 import { detectOpportunityHypotheses, noCurrentOpportunityRank, presentOpportunityHypothesis, RESEARCH_FIT_VERSION, RuleBasedOpportunityRanker, selectPrimaryOpportunity, type AccountOpportunitySignals } from './opportunityIntelligence';
 import { isDismissedOpportunityMatch } from './opportunityWorkflow';
-import { hasResearchIdentityChanged, readPublicRatings, readResearchEvidence } from './accountResearchQueue';
+import { hasResearchIdentityChanged, readPublicRatings, readResearchEvidence, readResearchSignals } from './accountResearchQueue';
 import { isOutsideOhio, isOhioAccount } from './usStates';
+import { captureWholesaleSalesEvents } from './accountSalesEvents';
+import { buildDailyPurchaseEvents } from './opportunitySalesLedger';
+export { captureWholesaleSalesEvents } from './accountSalesEvents';
 
 const DAY = 86400000;
 const dateOnly = (date: Date) => date.toISOString().slice(0, 10);
@@ -22,20 +24,6 @@ const stringList = (value: unknown) => Array.isArray(value) ? value.map(String).
 const activeOpportunityStatuses = [OpportunityStatus.OPEN, OpportunityStatus.ACTIONED, OpportunityStatus.SNOOZED];
 const scoreOnlyOpportunityStatuses = [...activeOpportunityStatuses, OpportunityStatus.DISMISSED];
 const SCORE_ONLY_ACCOUNT_QUERY_BATCH_SIZE = 250;
-
-export async function captureWholesaleSalesEvents({ db = prisma, reportDate, organizationId }: { db?: PrismaClient; reportDate: Date; organizationId: string }) {
-  const config = await getOrganizationTenantConfig(organizationId, db);
-  config.productFilter.mode = 'item-list';
-  const [currentRows, accounts, masters] = await Promise.all([
-    db.ohlqAnnualSalesByWholesaleRow.findMany({ where: { reportDate } }),
-    db.wholesaleAccount.findMany({ where: { mergedIntoId: null, OR: [{ state: { in: ['OH', 'Ohio'], mode: 'insensitive' } }, { state: null }, { state: '' }] }, select: { id: true, licenseeId: true, licenseeIds: { select: { licenseeId: true } } } }),
-    db.ohlqBrandMasterItem.findMany({ select: { itemCode: true, name: true, category: true } }),
-  ]);
-  const data = buildDailyPurchaseEvents(currentRows, accounts, masters, config);
-  let created = 0;
-  for (let i = 0; i < data.length; i += 1000) created += (await db.accountSalesEvent.createMany({ skipDuplicates: true, data: data.slice(i, i + 1000) })).count;
-  return { created, skippedWithoutBaseline: false };
-}
 
 const eventKey = (type: OpportunityEventType, suffix: string) => `${type}:${suffix}`;
 
@@ -104,7 +92,7 @@ export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = 
           name: true,
           state: true, address: true, city: true, zip: true,
           targetProfiles: { where: { organizationId }, take: 1, select: { assignedUserId: true, researchStatus: true, ownershipGroup: { select: { name: true } } } },
-          targetPublicResearch: { select: { lastRefreshedAt: true, researchConfidence: true, openStatus: true, patioOutdoor: true, cocktailProgram: true, popularitySignal: true, ownershipVerification: true, buyerStructure: true, isNationalChain: true, googleRating: true, googleReviewCount: true, yelpRating: true, yelpReviewCount: true, localBrandsOnMenu: true, sourceUrls: true, identitySnapshot: true } },
+          targetPublicResearch: { select: { lastRefreshedAt: true, researchConfidence: true, openStatus: true, patioOutdoor: true, privateDining: true, cocktailProgram: true, popularitySignal: true, ownershipVerification: true, buyerStructure: true, isNationalChain: true, googleRating: true, googleReviewCount: true, yelpRating: true, yelpReviewCount: true, localBrandsOnMenu: true, sourceUrls: true, identitySnapshot: true } },
           tags: { where: { organizationId }, select: { tag: { select: { name: true } } } },
           opportunitySignals: { where: { organizationId }, take: 1 },
         },
@@ -209,6 +197,7 @@ export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = 
     const firstObserved = (opportunitySignal?.signalVersion === OPPORTUNITY_SIGNAL_VERSION ? opportunitySignal.firstEchoPurchaseAt : null) ?? echoEvents[0]?.reportDate ?? null;
     const lastEcho = echoEvents.at(-1)?.reportDate ?? null;
     const research = account.targetPublicResearch;
+    const researchSignals = readResearchSignals(research?.identitySnapshot);
     const normalizedTags = new Set(account.tags.map(({ tag }) => tag.name.toUpperCase().replace(/[\s-]+/g, '_')));
     const signal: AccountOpportunitySignals = {
       salesDataAvailable: isOhioAccount(account.state),
@@ -233,7 +222,10 @@ export async function evaluateOpportunityIntelligence({ db = prisma, asOfDate = 
       ownershipGroupName: targetProfile?.ownershipGroup?.name ?? null,
       isNationalChain: normalizedTags.has('NATIONAL_CHAIN') ? true : normalizedTags.has('LOCAL_INDEPENDENT') ? false : research?.isNationalChain ?? null,
       ownershipVerification: research?.ownershipVerification ?? null, buyerStructure: research?.buyerStructure ?? null,
-      patioOutdoor: research?.patioOutdoor ?? null, cocktailProgram: research?.cocktailProgram ?? null, popularitySignal: research?.popularitySignal ?? null,
+      patioOutdoor: research?.patioOutdoor ?? null, privateDining: research?.privateDining ?? researchSignals.privateDining,
+      venueType: researchSignals.venueType, footTrafficSignal: researchSignals.footTrafficSignal,
+      footTrafficEvidence: researchSignals.footTrafficEvidence, meetingSpaceSquareFeet: researchSignals.meetingSpaceSquareFeet,
+      cocktailProgram: research?.cocktailProgram ?? null, popularitySignal: research?.popularitySignal ?? null,
       googleRating: numberValue(research?.googleRating), googleReviewCount: research?.googleReviewCount ?? null,
       yelpRating: numberValue(research?.yelpRating), yelpReviewCount: research?.yelpReviewCount ?? null,
       publicRatings: readPublicRatings(research?.identitySnapshot),

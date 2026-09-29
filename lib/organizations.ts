@@ -1,7 +1,7 @@
 import { OrganizationAuditAction, OrganizationProductStatus, OrganizationStatus, Prisma, UserRole } from '@prisma/client';
 import { cookies } from 'next/headers';
 import { notFound, redirect } from 'next/navigation';
-import { ECHO_FEATURE_KEYS, FEATURE_KEYS, type FeatureKey, validateFeatureSelection } from './featureRegistry';
+import { ECHO_FEATURE_KEYS, FEATURE_KEYS, getEnvironmentFeatureKeys, type FeatureKey, validateFeatureSelection } from './featureRegistry';
 import { prisma } from './prisma';
 import { DEFAULT_TENANT_ENTITY_NAME, DEFAULT_TENANT_EXCLUDED_ITEM_CODES, DEFAULT_TENANT_OHLQ_VENDOR_IDS } from './tenantConfig';
 
@@ -44,11 +44,14 @@ export async function requireOrganizationContext(user: { id: string; organizatio
 }
 
 export async function getOrganizationFeatures(organizationId: string) {
+  const environmentFeatures = getEnvironmentFeatureKeys([], process.env);
+  if (environmentFeatures.length) return new Set(environmentFeatures);
   const rows = await prisma.organizationFeature.findMany({ where: { organizationId, enabled: true }, select: { featureKey: true } });
   return new Set(rows.map((row) => row.featureKey).filter((key): key is FeatureKey => FEATURE_KEYS.includes(key as FeatureKey)));
 }
 
 export async function hasFeature(organizationId: string, featureKey: FeatureKey) {
+  if (getEnvironmentFeatureKeys([], process.env).includes(featureKey)) return true;
   return Boolean(await prisma.organizationFeature.findFirst({ where: { organizationId, featureKey, enabled: true }, select: { id: true } }));
 }
 

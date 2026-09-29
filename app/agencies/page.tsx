@@ -1,3 +1,4 @@
+import { AddressLink, PhoneLink } from '../components/AccountContactLinks';
 ﻿export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
@@ -17,6 +18,7 @@ import { LiveFilterForm } from '../components/LiveFilterForm';
 import { AccountViewNavigation } from '../components/AccountViewNavigation';
 import { NearbyAccountsSection } from '../components/NearbyAccountsSection';
 import { TagBadges } from '../tags/TagBadges';
+import { TargetAccountMarker } from '../components/TargetAccountMarker';
 
 export const metadata = buildPageMetadata('Agencies');
 
@@ -165,6 +167,8 @@ export default async function AgenciesPage({
     orderBy: [{ name: 'asc' }, { agencyId: 'asc' }],
   });
   const agencyIds = agencies.map((agency) => agency.id);
+  const targetingOverlays = await prisma.organizationAccountOverlay.findMany({ where: { organizationId, accountType: 'AGENCY', externalAccountId: { in: agencyIds }, isTargeting: true }, select: { externalAccountId: true } });
+  const targetedIds = new Set(targetingOverlays.map((item) => item.externalAccountId));
   const visitStats =
     agencyIds.length > 0
       ? await prisma.loggedVisit.groupBy({
@@ -241,8 +245,9 @@ export default async function AgenciesPage({
                   <Link className="table-link account-directory-name-link" href={`/agencies/${agency.id}`}>
                     {agency.name}
                   </Link>
+                  {targetedIds.has(agency.id) ? <TargetAccountMarker /> : null}
                   <span className="account-directory-mobile-only account-directory-location">
-                    {address || `Agency ${agency.agencyId}`}
+                    {address ? <AddressLink address={address} /> : `Agency ${agency.agencyId}`}
                   </span>
                   <span className="account-directory-mobile-only account-directory-context">
                     {stats.lastVisitAt ? `Last visit ${formatEasternDate(stats.lastVisitAt)}` : 'Not visited yet'}
@@ -250,11 +255,11 @@ export default async function AgenciesPage({
                   </span>
                 </td>
                 <td className="account-directory-secondary-cell" data-label="Agency ID">{agency.agencyId}</td>
-                <td className="account-directory-secondary-cell" data-label="Address">{agency.address}</td>
+                <td className="account-directory-secondary-cell" data-label="Address"><AddressLink address={address}>{agency.address}</AddressLink></td>
                 <td className="account-directory-secondary-cell" data-label="City">{agency.city}</td>
                 <td className="account-directory-secondary-cell" data-label="Primary Contact">{agency.primaryContact}</td>
-                <td className="account-directory-secondary-cell" data-label="Contact Phone">{agency.primaryContactPhone}</td>
-                <td className="account-directory-secondary-cell" data-label="Agency Phone">{agency.phone}</td>
+                <td className="account-directory-secondary-cell" data-label="Contact Phone"><PhoneLink phone={agency.primaryContactPhone} /></td>
+                <td className="account-directory-secondary-cell" data-label="Agency Phone"><PhoneLink phone={agency.phone} /></td>
                 <td className="account-directory-secondary-cell" data-label="Tags">
                   <TagBadges tags={agency.tags.map((assignment) => assignment.tag)} />
                 </td>

@@ -23,12 +23,20 @@ export async function runOhlqTenantInventoryWorkflow({
 
   const reportDate = getOhlqAgencyInventoryObservationDate();
   const organizations = await db.organization.findMany({
-    where: { active: true, ohlqCredentials: { isNot: null } },
+    where: {
+      active: true,
+      ohlqCredentials: { isNot: null },
+      OR: [
+        { features: { some: { enabled: true, featureKey: 'AGENCY_INTELLIGENCE' } } },
+        { accountOverlays: { some: { accountType: 'AGENCY', isTargeting: true } } },
+      ],
+    },
     orderBy: { id: 'asc' },
     select: {
       displayName: true,
       id: true,
       features: { where: { enabled: true, featureKey: 'AGENCY_INTELLIGENCE' }, select: { id: true } },
+      accountOverlays: { where: { accountType: 'AGENCY', isTargeting: true }, select: { externalAccountId: true } },
     },
   });
   const latestSales = await db.ohlqReportImportStatus.findFirst({
@@ -57,8 +65,14 @@ export async function runOhlqTenantInventoryWorkflow({
       const result = await importOhlqAgencyInventoryCsv({ csv: download.csvBuffer, db, organizationId: organization.id, reportDate: download.reportDate });
       importedRows += result.importedRows;
       await completeTenantInventoryRun(organization.id, download, result, db);
-      if (organization.features.length && latestSales) {
-        await refreshAgencyIntelligence({ db, inventoryReportDate: new Date(`${download.reportDate}T00:00:00.000Z`), organizationId: organization.id, salesReportDate: latestSales.reportDate });
+      if ((organization.features.length || organization.accountOverlays.length) && latestSales) {
+        await refreshAgencyIntelligence({
+          db,
+          inventoryReportDate: new Date(`${download.reportDate}T00:00:00.000Z`),
+          organizationId: organization.id,
+          salesReportDate: latestSales.reportDate,
+          targetedAgencyIds: organization.features.length ? undefined : organization.accountOverlays.map((overlay) => overlay.externalAccountId),
+        });
       }
       logger.log(JSON.stringify({ organizationId: organization.id, inventoryRows: result.importedRows, reportDate: download.reportDate }));
     } catch (error) {

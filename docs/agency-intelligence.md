@@ -31,7 +31,7 @@ Fit bands are High (65+), Medium (40–64), and Low (below 40). Rules and thresh
 - Stockout: zero on hand with at least two retail bottles sold in 30 days → Restock.
 - Understocked: below configured minimum or under 14 estimated days of supply → Restock.
 - Dead inventory: at least three on hand, no 30-day sales, and no sale for 45 days → Investigate.
-- Missing placement: no current placement and High fit → Pursue placement.
+- Missing placement: no current placement and High fit → Seek placement.
 - At risk: previously placed High-fit item disappeared or inventory status indicates removal/inactivity → Investigate.
 - Healthy: inventory is present without an exception → Maintain/Winning according to fit.
 - Insufficient data: no current placement and inadequate fit evidence → Monitor.

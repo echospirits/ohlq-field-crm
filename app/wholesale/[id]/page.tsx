@@ -1,3 +1,4 @@
+import { AddressLink, PhoneLink } from '../../components/AccountContactLinks';
 import { AnchoredDetails } from '../../components/AnchoredDetails';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -27,6 +28,10 @@ import { formatOrderCurrency } from '../../wholesale-orders/orderPresentation';
 import { AccountMemoryPanel } from '../../account-memory/AccountMemoryPanel';
 import { getCommunicationTitle } from '../../../lib/accountMemory';
 import { readBusinessHours } from '../../../lib/accountResearchQueue';
+import { SalesAccountType } from '@prisma/client';
+import { getAccountSalesStatusSummary, SALES_STATUS_LABELS } from '../../../lib/accountSalesStatus';
+import { AccountSalesStatusPanel } from '../../components/AccountSalesStatusPanel';
+import { TargetAccountControl } from '../../components/TargetAccountControl';
 
 const formatVisitDate = (date: Date | null | undefined) => formatEasternDate(date) || 'No visits yet';
 const getMergedWholesaleAccountIds = async (accountId: string) => {
@@ -87,6 +92,7 @@ export default async function WholesaleActivityPage({
   const enabledFeatures = await getOrganizationFeatures(organizationId);
   const hasWholesaleOpportunities = enabledFeatures.has('WHOLESALE_OPPORTUNITIES');
   const hasDirectWholesaleOrders = enabledFeatures.has('OHIO_DIRECT_WHOLESALE_ORDERS');
+  const hasAccountSalesStatus = enabledFeatures.has('ACCOUNT_SALES_STATUS');
   const tenantConfig = await getOrganizationTenantConfig(organizationId);
   const { id } = await params;
   const query = (await searchParams) ?? {};
@@ -159,7 +165,7 @@ export default async function WholesaleActivityPage({
     hasDirectWholesaleOrders ? listWholesaleOrders({ organizationId, wholesaleAccountIds: mergedAccountIds, filed: true, pageSize: 200 }) : { orders: [], totalCount: 0, page: 1, pageSize: 200 },
     prisma.organizationAccountOverlay.findUnique({
       where: { organizationId_accountType_externalAccountId: { organizationId, accountType: 'WHOLESALE', externalAccountId: id } },
-      select: { notes: true },
+      select: { notes: true, isTargeting: true },
     }),
     prisma.locationContact.findMany({
       where: { organizationId, wholesaleAccountId: id },
@@ -248,6 +254,12 @@ export default async function WholesaleActivityPage({
   const latestVisitAt = visits[0]?.visitAt;
   const actionUsers = users.filter((activeUser) => activeUser.isActive && activeUser.role !== UserRole.TASTER).map((activeUser) => ({ id: activeUser.id, name: getUserDisplayName(activeUser) }));
   const businessHours = readBusinessHours(account.targetPublicResearch?.identitySnapshot);
+  const [salesStatusSummary, salesStatusHistory] = hasAccountSalesStatus ? await Promise.all([
+    getAccountSalesStatusSummary({ accountType: SalesAccountType.WHOLESALE, externalAccountId: id, organizationId }),
+    prisma.accountSalesStatusHistory.findMany({ where: { organizationId, accountType: SalesAccountType.WHOLESALE, externalAccountId: id }, orderBy: { changedAt: 'desc' }, take: 50 }),
+  ]) : [null, []];
+  const userNames = new Map(users.map((entry) => [entry.id, getUserDisplayName(entry)]));
+  const targetingHistory = await prisma.accountTargetingHistory.findMany({ where: { organizationId, accountType: SalesAccountType.WHOLESALE, externalAccountId: id }, orderBy: { changedAt: 'desc' }, take: 50 });
 
   return (
     <>
@@ -255,26 +267,24 @@ export default async function WholesaleActivityPage({
         <div>
           <span className="page-eyebrow">Wholesale · {account.city || 'Location not set'}</span>
           <h1>{account.name}</h1>
+          {overlay?.isTargeting ? <p><strong className="target-account-marker">TARGET ACCOUNT</strong></p> : null}
           {account.tags.length ? <TagBadges tags={account.tags.map((assignment) => assignment.tag)} /> : null}
         </div>
         <div className="page-heading-actions">
+          <TargetAccountControl accountType={SalesAccountType.WHOLESALE} externalAccountId={id} isTargeting={overlay?.isTargeting ?? false} allowStop returnTo={`/wholesale/${id}`} />
           {hasDirectWholesaleOrders ? <Link className="btn compact-btn secondary" href={`/wholesale/${account.id}/direct-order`}>Create order</Link> : null}
           <ContextualActions
-            address={[account.address, account.city, account.state, account.zip].filter(Boolean).join(', ')}
             context={{ accountName: account.name, returnTo: `/wholesale/${account.id}`, sourceLabel: account.name, sourceType: 'WHOLESALE_DETAIL', wholesaleAccountId: account.id }}
             currentUserId={user.id}
-            phone={account.phone}
             users={actionUsers}
           />
-          <details className="account-secondary-actions"><summary>More actions</summary><div>
-          <Link className="btn compact-btn secondary" href={`/visits/new?type=wholesale&wholesaleAccountId=${account.id}&voice=1`}>Voice note</Link>
           <Link className="btn compact-btn secondary" href={`/wholesale/${account.id}/edit`}>Edit</Link>
           {isAdminRole(user.role) && !account.officialAccountId ? (
             <Link className="btn compact-btn secondary" href={`/wholesale/${account.id}/merge`}>Merge account</Link>
           ) : null}
-          </div></details>
         </div>
       </header>
+      {salesStatusSummary ? <AccountSalesStatusPanel compact accountType={SalesAccountType.WHOLESALE} externalAccountId={id} returnTo={`/wholesale/${id}`} {...salesStatusSummary} /> : null}
       {query.status ? <p className="toast-notice" role="status">{statusMessages[query.status] ?? query.status}</p> : null}
       {query.tagStatus ? <p className="pill">{tagStatusMessages[query.tagStatus] ?? query.tagStatus}</p> : null}
       {query.memoryStatus ? <p className="toast-notice" role="status">{query.memoryStatus === 'notes-saved' ? 'Account notes saved.' : query.memoryStatus === 'contact-saved' ? 'Contact saved.' : 'Unable to save that account information.'}</p> : null}
@@ -307,7 +317,7 @@ export default async function WholesaleActivityPage({
           <p><strong>Licensee IDs</strong><span>{formatWholesaleLicenseeIds(account)}</span></p>
           <p>
             <strong>Address</strong>
-            <span>{[account.address, account.city, account.state, account.zip].filter(Boolean).join(', ')}</span>
+            <AddressLink address={[account.address, account.city, account.state, account.zip].filter(Boolean).join(', ')} />
           </p>
           <p>
             <strong>Agency ID</strong>
@@ -319,7 +329,7 @@ export default async function WholesaleActivityPage({
           </p>
           <p>
             <strong>Phone</strong>
-            <span>{account.phone}</span>
+            <PhoneLink phone={account.phone} />
           </p>
           <p>
             <strong>Delivery day</strong>
@@ -370,7 +380,7 @@ export default async function WholesaleActivityPage({
       <section className="dashboard-section account-workspace-section" id="activity">
         <div className="section-heading">
           <h2>Activity</h2>
-          <span className="pill">{visits.length + filedOrders.length + communicationActivities.length}</span>
+          <span className="pill">{visits.length + filedOrders.length + communicationActivities.length + salesStatusHistory.length + targetingHistory.length}</span>
         </div>
         <VisitActivityTable contactMap={contactMap} visits={visits} supplementalEvents={filedOrders.map((order) => ({
           actor: order.filedSource === WholesaleOrderFiledSource.MANUAL ? order.filedBy?.displayName : 'OHLQ sales match',
@@ -384,6 +394,20 @@ export default async function WholesaleActivityPage({
           detail: getCommunicationTitle(activity.activityType, activity.contact.name), id: activity.id,
           href: '',
           title: activity.activityType === 'EMAIL_INITIATED' ? 'Email initiated' : 'Call initiated',
+        }))).concat(salesStatusHistory.map((event) => ({
+          actor: event.changedByUserId ? userNames.get(event.changedByUserId) ?? 'Former team member' : 'Neat',
+          at: event.changedAt,
+          detail: event.previousStatus ? `${SALES_STATUS_LABELS[event.previousStatus]} → ${SALES_STATUS_LABELS[event.newStatus]}` : `Set to ${SALES_STATUS_LABELS[event.newStatus]}`,
+          id: `sales-status-${event.id}`,
+          href: '',
+          title: event.source === 'SALES_DATA' ? 'Purchase detected' : 'Sales status changed',
+        }))).concat(targetingHistory.map((event) => ({
+          actor: event.changedByUserId ? userNames.get(event.changedByUserId) ?? 'Former team member' : 'Neat',
+          at: event.changedAt,
+          detail: event.isTargeting ? 'TARGET ACCOUNT' : 'Targeting stopped',
+          href: '',
+          id: `targeting-${event.id}`,
+          title: event.isTargeting ? 'Account targeted' : 'Targeting stopped',
         })))} />
       </section>
     </>

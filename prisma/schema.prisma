@@ -14,6 +14,29 @@ enum AccountType {
   OTHER
 }
 
+enum SalesAccountType {
+  AGENCY
+  WHOLESALE
+}
+
+enum AccountSalesStatus {
+  TARGET
+  CONTACTED
+  ENGAGED
+  INTERESTED
+  WAITING_ON_ORDER
+  PURCHASING
+  NURTURE
+  LOST
+}
+
+enum AccountSalesStatusSource {
+  USER
+  VISIT
+  SALES_DATA
+  SYSTEM
+}
+
 enum AlertStatus {
   OPEN
   SNOOZED
@@ -429,69 +452,71 @@ model User {
 }
 
 model Organization {
-  id                    String                            @id @default(cuid())
-  name                  String
-  displayName           String
-  slug                  String                            @unique
-  active                Boolean                           @default(true)
-  primaryState          String                            @default("OH")
-  timezone              String                            @default("America/New_York")
-  website               String?
-  logoUrl               String?
-  appName               String                            @default("Neat")
-  digestName            String                            @default("Neat")
-  productLabel          String                            @default("product")
-  productPluralLabel    String                            @default("products")
-  brandPrimaryColor     String                            @default("#2458ff")
-  brandAccentColor      String                            @default("#6d28d9")
-  contactName           String?
-  contactEmail          String?
-  contactPhone          String?
-  supportEmail          String?
-  settings              Json                              @default("{}")
-  accountStatus         OrganizationStatus                @default(TRIAL)
-  onboardingStatus      OrganizationOnboardingStatus      @default(PROVISIONING)
-  onboardingData        Json                              @default("{}")
-  notes                 String?
-  createdAt             DateTime                          @default(now())
-  updatedAt             DateTime                          @updatedAt
-  vendorIdentifiers     OrganizationVendorIdentifier[]
-  a3aStoreIdentifiers   OrganizationA3aStoreIdentifier[]
-  products              OrganizationProduct[]
-  features              OrganizationFeature[]
-  accountOverlays       OrganizationAccountOverlay[]
-  auditEvents           OrganizationAuditEvent[]
-  provisioningRuns      OrganizationProvisioningRun[]
-  weeklyDigestLogs      WeeklyDigestLog[]
-  tags                  Tag[]
-  menuPlacements        MenuPlacement[]
-  recipes               Recipe[]
-  recipeSuggestions     RecipeSuggestion[]
-  targetProfiles        TargetAccountProfile[]
-  locationTags          LocationTag[]
-  locationContacts      LocationContact[]
-  contactImports        ContactImportSession[]
-  accountActivities     AccountActivity[]
-  loggedVisitContacts   LoggedVisitContact[]
-  loggedVisits          LoggedVisit[]
-  visitPhotos           VisitPhoto[]
-  worklistItems         WorklistItem[]
-  agencyProducts        AgencyProductIntelligence[]
-  agencySummaries       AgencyIntelligenceSummary[]
-  agencyEvents          AgencyIntelligenceEvent[]
-  agencyMarketProfiles  AgencyMarketProfile[]
-  agencyProductFits     AgencyProductMarketFit[]
-  opportunitySignals    OpportunityAccountSignal[]
-  accountSalesEvents    AccountSalesEvent[]
-  salesOpportunities    SalesOpportunity[]
-  opportunityEvents     OpportunityEvent[]
-  ohlqCredentials       OrganizationOhlqCredentials?
-  inventorySnapshots    OhlqAgencyInventorySnapshot[]
-  currentInventory      OhlqAgencyInventoryCurrent[]
-  inventoryImportRuns   OhlqTenantInventoryImportStatus[]
-  wholesaleOrders       WholesaleOrder[]
-  accountResearchPilots AccountResearchPilot[]
-  accountResearchJobs   AccountResearchJob[]
+  id                      String                            @id @default(cuid())
+  name                    String
+  displayName             String
+  slug                    String                            @unique
+  active                  Boolean                           @default(true)
+  primaryState            String                            @default("OH")
+  timezone                String                            @default("America/New_York")
+  website                 String?
+  logoUrl                 String?
+  appName                 String                            @default("Neat")
+  digestName              String                            @default("Neat")
+  productLabel            String                            @default("product")
+  productPluralLabel      String                            @default("products")
+  brandPrimaryColor       String                            @default("#2458ff")
+  brandAccentColor        String                            @default("#6d28d9")
+  contactName             String?
+  contactEmail            String?
+  contactPhone            String?
+  supportEmail            String?
+  settings                Json                              @default("{}")
+  accountStatus           OrganizationStatus                @default(TRIAL)
+  onboardingStatus        OrganizationOnboardingStatus      @default(PROVISIONING)
+  onboardingData          Json                              @default("{}")
+  notes                   String?
+  createdAt               DateTime                          @default(now())
+  updatedAt               DateTime                          @updatedAt
+  vendorIdentifiers       OrganizationVendorIdentifier[]
+  a3aStoreIdentifiers     OrganizationA3aStoreIdentifier[]
+  products                OrganizationProduct[]
+  features                OrganizationFeature[]
+  accountOverlays         OrganizationAccountOverlay[]
+  accountTargetingHistory AccountTargetingHistory[]
+  salesStatusHistory      AccountSalesStatusHistory[]
+  auditEvents             OrganizationAuditEvent[]
+  provisioningRuns        OrganizationProvisioningRun[]
+  weeklyDigestLogs        WeeklyDigestLog[]
+  tags                    Tag[]
+  menuPlacements          MenuPlacement[]
+  recipes                 Recipe[]
+  recipeSuggestions       RecipeSuggestion[]
+  targetProfiles          TargetAccountProfile[]
+  locationTags            LocationTag[]
+  locationContacts        LocationContact[]
+  contactImports          ContactImportSession[]
+  accountActivities       AccountActivity[]
+  loggedVisitContacts     LoggedVisitContact[]
+  loggedVisits            LoggedVisit[]
+  visitPhotos             VisitPhoto[]
+  worklistItems           WorklistItem[]
+  agencyProducts          AgencyProductIntelligence[]
+  agencySummaries         AgencyIntelligenceSummary[]
+  agencyEvents            AgencyIntelligenceEvent[]
+  agencyMarketProfiles    AgencyMarketProfile[]
+  agencyProductFits       AgencyProductMarketFit[]
+  opportunitySignals      OpportunityAccountSignal[]
+  accountSalesEvents      AccountSalesEvent[]
+  salesOpportunities      SalesOpportunity[]
+  opportunityEvents       OpportunityEvent[]
+  ohlqCredentials         OrganizationOhlqCredentials?
+  inventorySnapshots      OhlqAgencyInventorySnapshot[]
+  currentInventory        OhlqAgencyInventoryCurrent[]
+  inventoryImportRuns     OhlqTenantInventoryImportStatus[]
+  wholesaleOrders         WholesaleOrder[]
+  accountResearchPilots   AccountResearchPilot[]
+  accountResearchJobs     AccountResearchJob[]
 
   @@index([active, accountStatus])
   @@index([onboardingStatus])
@@ -630,28 +655,72 @@ model OrganizationFeature {
 }
 
 model OrganizationAccountOverlay {
-  id                    String       @id @default(cuid())
+  id                    String              @id @default(cuid())
   organizationId        String
   accountType           String
   externalAccountId     String
-  active                Boolean      @default(true)
+  active                Boolean             @default(true)
   targetStatus          String?
   assignedUserId        String?
+  salesStatus           AccountSalesStatus?
+  salesStatusUpdatedAt  DateTime?
+  salesStatusUpdatedBy  String?
   priority              String?
   notes                 String?
   customName            String?
-  tags                  Json         @default("[]")
+  tags                  Json                @default("[]")
   relationshipStatus    String?
-  opportunitySuppressed Boolean      @default(false)
+  opportunitySuppressed Boolean             @default(false)
+  isTargeting           Boolean             @default(false)
+  targetingUpdatedAt    DateTime?
+  targetingUpdatedBy    String?
   strategy              String?
   storeContext          Json?
-  createdAt             DateTime     @default(now())
-  updatedAt             DateTime     @updatedAt
-  organization          Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+  organization          Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@unique([organizationId, accountType, externalAccountId])
   @@index([organizationId, active])
   @@index([assignedUserId])
+  @@index([organizationId, salesStatus])
+  @@index([organizationId, accountType, isTargeting])
+}
+
+model AccountTargetingHistory {
+  id                String           @id @default(cuid())
+  organizationId    String
+  accountType       SalesAccountType
+  externalAccountId String
+  isTargeting       Boolean
+  changedAt         DateTime         @default(now())
+  changedByUserId   String?
+  loggedVisitId     String?
+  organization      Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, accountType, externalAccountId, changedAt])
+  @@index([loggedVisitId])
+}
+
+model AccountSalesStatusHistory {
+  id                String                   @id @default(cuid())
+  organizationId    String
+  accountType       SalesAccountType
+  externalAccountId String
+  previousStatus    AccountSalesStatus?
+  newStatus         AccountSalesStatus
+  changedAt         DateTime                 @default(now())
+  changedByUserId   String?
+  source            AccountSalesStatusSource
+  loggedVisitId     String?
+  context           String?
+  purchaseSourceKey String?
+  organization      Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, purchaseSourceKey])
+  @@index([organizationId, accountType, externalAccountId, changedAt], map: "AccountSalesStatusHistory_organizationId_accountType_externalAc")
+  @@index([organizationId, newStatus, changedAt], map: "AccountSalesStatusHistory_organizationId_newStatus_changedAt_id")
+  @@index([loggedVisitId])
 }
 
 model OrganizationAuditEvent {
@@ -1283,6 +1352,7 @@ model Agency {
   orderDay                 String?
   orderWeek                String?
   deliveryDay              String?
+  businessHours            Json?
   primaryContact           String?
   primaryContactPhone      String?
   wholesaleStatus          String?
@@ -2124,27 +2194,27 @@ model AgencyIntelligenceEvent {
 }
 
 model AgencyMarketProfile {
-  id                     String                 @id @default(cuid())
-  organizationId         String
-  agencyId               String
-  asOfDate               DateTime               @db.Date
-  observedSince          DateTime?              @db.Date
-  observedDayCount       Int                    @default(0)
+  id                       String                 @id @default(cuid())
+  organizationId           String
+  agencyId                 String
+  asOfDate                 DateTime               @db.Date
+  observedSince            DateTime?              @db.Date
+  observedDayCount         Int                    @default(0)
   totalRetailEqBottles     Float                  @default(0)
   tenantRetailEqBottles    Float                  @default(0)
   nonTenantRetailEqBottles Float                  @default(0)
-  categoryMix            Json                   @default("{}")
-  priceCoverage          Float                  @default(0)
-  medianPrice750         Float?
+  categoryMix              Json                   @default("{}")
+  priceCoverage            Float                  @default(0)
+  medianPrice750           Float?
   localRetailEqBottles     Float                  @default(0)
-  localShare             Float                  @default(0)
-  confidence             AgencyMarketConfidence
-  signalSnapshot         Json
-  scoringVersion         String
-  createdAt              DateTime               @default(now())
-  updatedAt              DateTime               @updatedAt
-  agency                 Agency                 @relation(fields: [agencyId], references: [id], onDelete: Cascade)
-  organization           Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  localShare               Float                  @default(0)
+  confidence               AgencyMarketConfidence
+  signalSnapshot           Json
+  scoringVersion           String
+  createdAt                DateTime               @default(now())
+  updatedAt                DateTime               @updatedAt
+  agency                   Agency                 @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  organization             Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@unique([organizationId, agencyId])
   @@index([organizationId, confidence])

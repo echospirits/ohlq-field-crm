@@ -8,7 +8,7 @@ Complete out-of-state locations do not require Ohio sales or an existing opportu
 
 ## Two distinct score bases
 
-Ohio accounts retain sales-backed V5 scoring. Out-of-state accounts use `RESEARCH_FIT_V1`, a provisional discovery score, only after current-location research exists. The active eligible tenant portfolio provides category context; it is not proof of distribution in another state. No sales volume, bottle-price affinity, displacement target or buying conversion is inferred from missing sales data.
+Ohio accounts use sales-backed V6 scoring. Out-of-state accounts use `RESEARCH_FIT_V2`, a provisional discovery score, only after current-location research exists. The research-only model gives the greatest weight to evidence-backed foot traffic and verified review volume, adds patio, private-dining, and hotel meeting-space signals, and gives star ratings at most two points. Hotel meeting space contributes only when the account is a bar or restaurant inside that exact hotel property. The active eligible tenant portfolio provides category context; it is not proof of distribution in another state. No sales volume, bottle-price affinity, displacement target or buying conversion is inferred from missing sales data.
 
 Research-only contributions: public fit up to 60 (cocktails, popularity, ratings/review volume and patio); named local menu brands 10; exact-location menu category overlap with the tenant portfolio 20; confirmed independent buying 10. No baseline points. National chains receive a 25-point penalty and 20-point cap. Incomplete confidence/operating status caps scores; closed locations or missing current-location research score zero. Recommendations are buyer/price/distribution qualification, not a specific product pitch.
 

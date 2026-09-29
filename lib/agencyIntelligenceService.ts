@@ -35,6 +35,8 @@ type InputStatus = { dataSource: OhlqReportDataSource; status: OhlqReportRunStat
 
 type RefreshOptions = {
   db?: PrismaClient;
+  /** Recalculate one or more target agencies while still using all agencies as peer baselines. */
+  targetedAgencyIds?: string[];
   inventoryReportDate: Date;
   organizationId: string;
   salesReportDate: Date;
@@ -151,7 +153,7 @@ const actionLabel: Record<AgencyProductAnalysis['recommendedAction'], string> = 
   MAINTAIN: 'Maintain',
   MONITOR: 'Monitor',
   NO_ACTION: 'No action',
-  PURSUE_PLACEMENT: 'Pursue placement',
+  PURSUE_PLACEMENT: 'Seek placement',
   REDUCE_PRIORITY: 'Reduce priority',
   RESTOCK: 'Restock',
   SCHEDULE_TASTING: 'Schedule tasting',
@@ -192,6 +194,7 @@ export async function refreshAgencyIntelligence({
   inventoryReportDate,
   organizationId,
   salesReportDate,
+  targetedAgencyIds,
   tenantConfig: configuredTenant,
 }: RefreshOptions) {
   await assertAgencyIntelligenceInputsComplete({ db, inventoryReportDate, organizationId, salesReportDate });
@@ -290,6 +293,9 @@ export async function refreshAgencyIntelligence({
     const agencyNumber = normalizeOhlqId(agency.agencyId);
     return agencyNumber ? [{ ...agency, agencyNumber }] : [];
   });
+  const agenciesToRefresh = targetedAgencyIds
+    ? normalizedAgencies.filter((agency) => targetedAgencyIds.includes(agency.id))
+    : normalizedAgencies;
   const inventoryByKey = new Map(inventory.flatMap((row) => {
     const agencyNumber = normalizeOhlqId(row.agencyNumber);
     return agencyNumber ? [[key(agencyNumber, row.itemCode), row] as const] : [];
@@ -373,8 +379,8 @@ export async function refreshAgencyIntelligence({
   const now = new Date();
 
   const persistenceConcurrency = 8;
-  for (let offset = 0; offset < normalizedAgencies.length; offset += persistenceConcurrency) {
-    await Promise.all(normalizedAgencies.slice(offset, offset + persistenceConcurrency).map(async (agency) => {
+  for (let offset = 0; offset < agenciesToRefresh.length; offset += persistenceConcurrency) {
+    await Promise.all(agenciesToRefresh.slice(offset, offset + persistenceConcurrency).map(async (agency) => {
     const linkedWholesale = wholesaleByAgencyNumber.get(agency.agencyNumber) ?? [];
     const wholesale = analyzeWholesaleInfluence({
       linkedWholesaleCount: linkedWholesale.length,
@@ -653,6 +659,54 @@ export async function refreshAgencyIntelligence({
     rulesVersion: AGENCY_INTELLIGENCE_RULES_VERSION,
     scoringVersion: AGENCY_INTELLIGENCE_SCORING_VERSION,
   };
+}
+
+/** Re-run the existing intelligence pipeline for a targeted agency using the latest complete inputs. */
+export async function refreshTargetedAgencyResearch({
+  agencyId,
+  db = prisma,
+  organizationId,
+}: {
+  agencyId: string;
+  db?: PrismaClient;
+  organizationId: string;
+}) {
+  const [salesImports, inventoryImport] = await Promise.all([
+    db.ohlqReportImportStatus.findMany({
+      where: {
+        dataSource: { in: [OhlqReportDataSource.ANNUAL_SALES_SUMMARY, OhlqReportDataSource.ANNUAL_SALES_SUMMARY_BY_WHOLESALE] },
+        status: OhlqReportRunStatus.COMPLETED,
+      },
+      orderBy: { reportDate: 'desc' },
+      select: { dataSource: true, reportDate: true },
+    }),
+    db.ohlqTenantInventoryImportStatus.findFirst({
+      where: { organizationId, status: OhlqReportRunStatus.COMPLETED },
+      orderBy: { reportDate: 'desc' },
+      select: { reportDate: true },
+    }),
+  ]);
+  const sourcesByDate = new Map<string, Set<OhlqReportDataSource>>();
+  for (const row of salesImports) {
+    const date = row.reportDate.toISOString();
+    const sources = sourcesByDate.get(date) ?? new Set<OhlqReportDataSource>();
+    sources.add(row.dataSource);
+    sourcesByDate.set(date, sources);
+  }
+  const salesReportDate = [...sourcesByDate.entries()]
+    .filter(([, sources]) => sources.has(OhlqReportDataSource.ANNUAL_SALES_SUMMARY) && sources.has(OhlqReportDataSource.ANNUAL_SALES_SUMMARY_BY_WHOLESALE))
+    .map(([date]) => new Date(date))
+    .sort((left, right) => right.getTime() - left.getTime())[0];
+  if (!salesReportDate || !inventoryImport) return { refreshed: false, reason: 'complete_inputs_unavailable' as const };
+
+  const result = await refreshAgencyIntelligence({
+    db,
+    inventoryReportDate: inventoryImport.reportDate,
+    organizationId,
+    salesReportDate,
+    targetedAgencyIds: [agencyId],
+  });
+  return { ...result, refreshed: result.agenciesProcessed > 0, reason: null };
 }
 
 export const actionableAgencyOpportunityStates: AgencyProductOpportunityState[] = [

@@ -1,6 +1,6 @@
 'use server';
 
-import { AccountType, OpportunityEventType, PhotoType, UserRole, WorklistCategory, WorklistSource, WorklistStatus } from '@prisma/client';
+import { AccountSalesStatusSource, AccountType, OpportunityEventType, PhotoType, SalesAccountType, UserRole, WorklistCategory, WorklistSource, WorklistStatus } from '@prisma/client';
 import { revalidatePath } from 'next/cache';
 import { normalizeUsState, stateScopedLicenseeIds } from '../../lib/usStates';
 import { redirect, unstable_rethrow } from 'next/navigation';
@@ -12,10 +12,13 @@ import {
   verifyClientUploadedVisitPhoto,
 } from '../../lib/blob';
 import { prisma } from '../../lib/prisma';
-import { requireOrganizationContext } from '../../lib/organizations';
+import { hasFeature, requireOrganizationContext } from '../../lib/organizations';
 import { getGeocodeResetForAddressChange } from '../../lib/location/geocode';
 import { parseTimeInputToMinutes } from '../../lib/dateTime';
 import { syncWorklistItemCalendar } from '../../lib/calendar/worklistSync';
+import { parseSalesStatus, setAccountSalesStatus } from '../../lib/accountSalesStatus';
+import { setAccountTargeting } from '../../lib/accountTargeting';
+import { scheduleTargetedAgencyResearch } from '../../lib/scheduleTargetedAgencyResearch';
 import { createVisitDiagnostics, type VisitDiagnostics } from '../../lib/visitDiagnostics';
 import { getSelectedVoiceFollowUps } from '../../lib/voiceVisitNoteShared';
 import {
@@ -218,6 +221,11 @@ async function createVisitWithDiagnostics(formData: FormData, diagnostics: Visit
   const newContactEmail = isTaster ? null : toOptional(formData.get('newContactEmail'));
   const newContactPhone = isTaster ? null : toOptional(formData.get('newContactPhone'));
   const summary = toOptional(formData.get('summary'));
+  const requestedSalesStatus = isTaster ? null : parseSalesStatus(formData.get('salesStatus'));
+  const requestedTargeting = !isTaster && formData.get('targetAccount') === 'true';
+  if (requestedSalesStatus && !(await hasFeature(organizationId, 'ACCOUNT_SALES_STATUS'))) {
+    redirectVisitWithStatus(formOrigin, 'invalid-context', locationType);
+  }
   const outcomeCodes = isTaster ? [] : sanitizeOutcomeCodes(locationType, getOutcomeCodes(formData));
   const outcomeLabels = getOutcomeLabels(locationType, outcomeCodes);
   const typedOutcomes = isTaster ? null : toOptional(formData.get('outcomes'));
@@ -529,6 +537,32 @@ async function createVisitWithDiagnostics(formData: FormData, diagnostics: Visit
         followUpAssignedToUserId: followUpAssignee?.id ?? null,
       },
     });
+    if (requestedSalesStatus) {
+      await setAccountSalesStatus({
+        accountType: locationType === 'agency' ? SalesAccountType.AGENCY : SalesAccountType.WHOLESALE,
+        changedAt: loggedVisit.visitAt,
+        changedByUserId: user.id,
+        context: summary,
+        db: tx,
+        externalAccountId: locationType === 'agency' ? agencyId! : wholesaleAccountId!,
+        loggedVisitId: loggedVisit.id,
+        organizationId,
+        source: AccountSalesStatusSource.VISIT,
+        status: requestedSalesStatus,
+      });
+    }
+    if (requestedTargeting) {
+      await setAccountTargeting({
+        accountType: locationType === 'agency' ? SalesAccountType.AGENCY : SalesAccountType.WHOLESALE,
+        changedAt: loggedVisit.visitAt,
+        changedByUserId: user.id,
+        db: tx,
+        externalAccountId: locationType === 'agency' ? agencyId! : wholesaleAccountId!,
+        isTargeting: true,
+        loggedVisitId: loggedVisit.id,
+        organizationId,
+      });
+    }
     if (contactIds.length) await tx.loggedVisitContact.createMany({
       data: contactIds.map((contactId) => ({ organizationId, loggedVisitId: loggedVisit.id, contactId })),
       skipDuplicates: true,
@@ -643,6 +677,9 @@ async function createVisitWithDiagnostics(formData: FormData, diagnostics: Visit
   });
 
   diagnostics.mark('committed', { visitId: visit.id, committed: true });
+  if (requestedTargeting && locationType === 'agency' && agencyId) {
+    scheduleTargetedAgencyResearch({ agencyId, organizationId });
+  }
   diagnostics.mark('photos');
   if (isTaster) {
     const photo = pendingPhotos[0]!;

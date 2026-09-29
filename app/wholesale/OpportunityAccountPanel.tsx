@@ -27,7 +27,7 @@ function ScoreBreakdown({ explanation, score, scoringVersion, scoredAt }: { expl
   return <div className="opportunity-score-detail">
     <div className="opportunity-score-summary">
       <div><strong>{Math.round(score)}</strong><span>out of 100</span></div>
-      <p>{scoringVersion === 'RESEARCH_FIT_V1' ? 'Provisional research-only score for your organization’s portfolio. Sales and bottle-price evidence are unavailable. Compare with other research-only accounts and confirm local distribution before pitching.' : 'This score is calculated for your organization using its active products, purchases, activity, public research, and learned outcomes.'}</p>
+      <p>{scoringVersion.startsWith('RESEARCH_FIT_') ? 'Provisional research-only score for your organization’s portfolio. Sales and bottle-price evidence are unavailable. Compare with other research-only accounts and confirm local distribution before pitching.' : 'This score is calculated for your organization using its active products, purchases, activity, public research, and learned outcomes.'}</p>
     </div>
     {components.length > 0 ? <>
       <h4>Point contributions</h4>
@@ -171,7 +171,7 @@ function OpportunityRow({
         {accountHref && accountName ? <span aria-hidden="true">·</span> : null}
         {accountHref && accountName ? <span className="sr-only">Opportunity: </span> : null}
         <strong>{title}</strong>
-        {productionScore !== undefined ? <span aria-label={`Opportunity score ${Math.round(productionScore)} out of 100`} className="account-opportunity-score"><strong>{Math.round(productionScore)}</strong> {scoringVersion === 'RESEARCH_FIT_V1' ? 'provisional' : 'score'}</span> : null}
+        {productionScore !== undefined ? <span aria-label={`Opportunity score ${Math.round(productionScore)} out of 100`} className="account-opportunity-score"><strong>{Math.round(productionScore)}</strong> {scoringVersion?.startsWith('RESEARCH_FIT_') ? 'provisional' : 'score'}</span> : null}
       </div>
       <span className="account-opportunity-next"><strong>Next</strong> {recommendedAction}</span>
     </div>
@@ -252,7 +252,7 @@ export async function OpportunityAccountPanel({ agencyId, wholesaleAccountId, cu
       <IntelligenceFacts facts={[
         { label: 'Active', value: opportunities.length },
         { label: 'High priority', value: highPriority },
-        { label: 'Pursuing', value: pursuing },
+        { label: 'In progress', value: pursuing },
         { label: 'Follow-ups', value: openFollowUps },
         { label: 'Linked accounts', value: linkedAccounts.length },
         { label: 'Buying / 30d', value: buyingAccounts },

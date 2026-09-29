@@ -51,10 +51,11 @@ test('pagination preserves filters, validates input, and search resets to the fi
   assert.match(readFileSync('app/agency-focus/AgencyFocusSearch.tsx', 'utf8'), /name="page" type="hidden" value="1"/);
 });
 
-test('shared Intelligence submenu appears on desktop and mobile without replacing primary tabs', () => {
+test('shared Intelligence navigation group appears on desktop and mobile without replacing primary tabs', () => {
   const source = readFileSync('app/components/AppNavigation.tsx', 'utf8');
   assert.equal((source.match(/<IntelligenceMenu /g) ?? []).length, 2);
-  assert.match(source, /app-intelligence-menu/);
+  assert.match(source, /getIntelligenceNavigationItems\(enabledFeatures, isAdmin, isPlatformAdmin\)/);
+  assert.match(source, /label: 'Intelligence', items/);
   assert.match(source, /event.currentTarget.open = false/);
   assert.match(source, /prefix: '\/agency-focus'.*label: 'Agency Intelligence'/);
 });

@@ -14,21 +14,26 @@ it('assesses researched prospects without sales and separates tenant fit from un
   const rum = { itemCode: 'RUM', name: 'Tenant Rum', category: 'RUM' as const, price750: 30, isLocal: true, priority: 1 };
   const signal = base({ salesDataAvailable: false, researchCurrent: true, researchConfidence: 'HIGH', openStatus: 'Open',
     portfolio: [rum], cocktailProgram: 'Strong', popularitySignal: 'High', patioOutdoor: 'Yes',
+    privateDining: 'Unknown', venueType: 'Restaurant', footTrafficSignal: 'High', footTrafficEvidence: 'Published capacity and sustained reservation demand indicate heavy traffic.',
     isNationalChain: false, buyerStructure: 'Independent owner', localBrandsOnMenu: ['Local Rum'],
     publicRatings: [{ sourceName: 'Yelp', rating: 4.7, reviewCount: 1100 }],
-    researchEvidence: [{ field: 'menuCategories', claim: 'The current menu lists rum cocktails.', exactLocation: true }],
+    researchEvidence: [
+      { field: 'menuCategories', claim: 'The current menu lists rum cocktails.', exactLocation: true },
+      { field: 'footTraffic', claim: 'Published capacity and sustained reservation demand indicate heavy traffic.', exactLocation: true },
+    ],
   });
   const result = selectPrimaryOpportunity(detectOpportunityHypotheses(signal), signal)!;
-  assert.equal(result.ranking.version, 'RESEARCH_FIT_V1');
-  assert.equal(result.ranking.score, 100);
+  assert.equal(result.ranking.version, 'RESEARCH_FIT_V2');
+  assert.equal(result.ranking.score, 80);
   assert.equal(result.hypothesis.targetProduct, undefined);
   const oldPitch = { ...result.hypothesis, title: 'Introduce Tenant Rum', targetProduct: rum, pitchMode: 'SPECIFIC_PRODUCT' as const };
   assert.equal(presentOpportunityHypothesis(oldPitch, signal).targetProduct, undefined);
   assert.equal(presentOpportunityHypothesis(oldPitch, signal).pitchMode, 'RESEARCH_ONLY');
-  assert.match(result.ranking.factors.join(' '), /not equivalent to a sales-backed V5/);
+  assert.match(result.ranking.factors.join(' '), /not equivalent to a sales-backed account-fit score/);
   const vodka = { ...signal, portfolio: [{ ...rum, category: 'VODKA' as const }] };
-  assert.equal(selectPrimaryOpportunity(detectOpportunityHypotheses(vodka), vodka)!.ranking.score, 80);
+  assert.equal(selectPrimaryOpportunity(detectOpportunityHypotheses(vodka), vodka)!.ranking.score, 72);
   const unknown = { ...signal, cocktailProgram: 'Unknown', popularitySignal: 'Unknown', patioOutdoor: 'Unknown', isNationalChain: null,
+    privateDining: 'Unknown', venueType: 'Unknown', footTrafficSignal: 'Unknown', footTrafficEvidence: null,
     buyerStructure: null, localBrandsOnMenu: [], publicRatings: [], researchEvidence: [] };
   assert.equal(selectPrimaryOpportunity(detectOpportunityHypotheses(unknown), unknown)!.ranking.score, 0);
   const closed = { ...signal, openStatus: 'Closed' };
@@ -109,8 +114,45 @@ it('resets an opportunity with no current qualifying signals to zero', () => {
     score: 0,
     priorityBand: 'LOW',
     factors: ['No current qualifying opportunity signals', 'Score components: no baseline points'],
-    version: 'ACCOUNT_FIT_V5',
+    version: 'ACCOUNT_FIT_V6',
   });
+});
+
+it('makes objective traffic and review volume dominate research-only scoring', () => {
+  const rum = { itemCode: 'RUM', name: 'Tenant Rum', category: 'RUM' as const, price750: 30, isLocal: true, priority: 1 };
+  const researchOnly = (overrides: Partial<AccountOpportunitySignals>) => {
+    const signals = base({ salesDataAvailable: false, researchCurrent: true, researchConfidence: 'HIGH', openStatus: 'Open', portfolio: [rum], ...overrides });
+    return selectPrimaryOpportunity(detectOpportunityHypotheses(signals), signals)!.ranking;
+  };
+  const highRatingFewReviews = researchOnly({ publicRatings: [{ sourceName: 'Directory', rating: 5, reviewCount: 20 }] });
+  const lowerRatingManyReviews = researchOnly({ publicRatings: [{ sourceName: 'Directory', rating: 3.8, reviewCount: 5_000 }] });
+  assert.ok(lowerRatingManyReviews.score - highRatingFewReviews.score >= 20);
+
+  const unsupportedTraffic = researchOnly({ footTrafficSignal: 'Very High', footTrafficEvidence: 'Busy every night.', researchEvidence: [] });
+  const supportedTraffic = researchOnly({
+    footTrafficSignal: 'Very High', footTrafficEvidence: 'The venue publishes a 600-person capacity and high annual attendance.',
+    researchEvidence: [{ field: 'footTraffic', claim: '600-person capacity and high annual attendance.', exactLocation: true }],
+  });
+  assert.equal(supportedTraffic.score - unsupportedTraffic.score, 40);
+});
+
+it('scores patios, private dining, and large hotel meeting space without crediting standalone venues for hotel capacity', () => {
+  const rum = { itemCode: 'RUM', name: 'Tenant Rum', category: 'RUM' as const, price750: 30, isLocal: true, priority: 1 };
+  const score = (overrides: Partial<AccountOpportunitySignals>) => {
+    const signals = base({ salesDataAvailable: false, researchCurrent: true, researchConfidence: 'HIGH', openStatus: 'Open', portfolio: [rum], ...overrides });
+    return selectPrimaryOpportunity(detectOpportunityHypotheses(signals), signals)!.ranking.score;
+  };
+  const plain = score({ patioOutdoor: 'Unknown', privateDining: 'Unknown' });
+  assert.equal(score({ patioOutdoor: 'Yes', privateDining: 'Yes' }) - plain, 10);
+  const hotel = score({
+    venueType: 'Hotel bar/restaurant', meetingSpaceSquareFeet: 100_000,
+    researchEvidence: [{ field: 'hotelMeetingSpace', claim: 'The hotel lists 100,000 square feet of meeting space.', exactLocation: true }],
+  });
+  const standalone = score({
+    venueType: 'Restaurant', meetingSpaceSquareFeet: 100_000,
+    researchEvidence: [{ field: 'hotelMeetingSpace', claim: 'A nearby hotel lists 100,000 square feet of meeting space.', exactLocation: true }],
+  });
+  assert.equal(hotel - standalone, 25);
 });
 
 it('caps national chains at very low priority even when volume is strong', () => {

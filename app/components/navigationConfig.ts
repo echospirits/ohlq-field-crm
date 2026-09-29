@@ -16,11 +16,10 @@ export type NavigationItem = {
 };
 
 export const navigationItems: NavigationItem[] = [
-  { key: 'home', href: '/', label: 'My Day', mobileLabel: 'Home', section: 'work', mobileOrder: 1 },
+  { key: 'home', href: '/', label: 'My Schedule', mobileLabel: 'Schedule', section: 'work', mobileOrder: 1 },
   { key: 'worklist', href: '/alerts', label: 'Worklist', mobileLabel: 'Work', section: 'work', mobileOrder: 2 },
   { key: 'opportunities', href: '/opportunities', label: 'Wholesale Opportunities', section: 'intelligence', featureKey: 'WHOLESALE_OPPORTUNITIES' },
   { key: 'agency-intelligence', href: '/agency-focus', label: 'Agency Intelligence', section: 'intelligence', featureKey: 'AGENCY_INTELLIGENCE' },
-  { key: 'my-week', href: '/my-week', label: 'My Week', section: 'work', moreOrder: 2 },
   { key: 'visits', href: '/visits', label: 'Visit History', mobileLabel: 'Visits', section: 'work', mobileOrder: 4 },
   { key: 'analytics', href: '/analytics', label: 'Analytics', section: 'work', moreOrder: 1, featureKey: 'ANALYTICS' },
   {
@@ -35,6 +34,7 @@ export const navigationItems: NavigationItem[] = [
   { key: 'agencies', href: '/agencies', label: 'Agencies', section: 'accounts', moreOrder: 2 },
   { key: 'wholesale', href: '/wholesale', label: 'Wholesale', section: 'accounts', moreOrder: 3 },
   { key: 'wholesale-orders', href: '/wholesale-orders', label: 'Wholesale Orders', section: 'accounts', moreOrder: 4, featureKey: 'OHIO_DIRECT_WHOLESALE_ORDERS' },
+  { key: 'pipeline', href: '/pipeline', label: 'Pipeline', section: 'accounts', moreOrder: 5, featureKey: 'ACCOUNT_SALES_STATUS' },
   { key: 'tags', href: '/tags', label: 'Tags', section: 'utility', moreOrder: 5 },
   { key: 'profile', href: '/profile', label: 'Profile', section: 'utility', moreOrder: 6 },
   { key: 'users', href: '/users', label: 'Users', section: 'admin', adminGroup: 'Organization', adminOnly: true, moreOrder: 7 },

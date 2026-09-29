@@ -1,3 +1,4 @@
+import { AddressLink } from '../components/AccountContactLinks';
 ﻿export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
@@ -29,6 +30,7 @@ import {
 import { LiveFilterForm } from '../components/LiveFilterForm';
 import { AccountViewNavigation } from '../components/AccountViewNavigation';
 import { NearbyAccountsSection } from '../components/NearbyAccountsSection';
+import { TargetAccountMarker } from '../components/TargetAccountMarker';
 
 export const metadata = buildPageMetadata('Wholesale Accounts');
 
@@ -461,6 +463,8 @@ export default async function WholesalePage({
     prisma.tag.findMany({ where: { organizationId }, orderBy: [{ name: 'asc' }] }),
   ]);
   const accountIds = accounts.map((account) => account.id);
+  const targetingOverlays = await prisma.organizationAccountOverlay.findMany({ where: { organizationId, accountType: 'WHOLESALE', externalAccountId: { in: accountIds }, isTargeting: true }, select: { externalAccountId: true } });
+  const targetedIds = new Set(targetingOverlays.map((item) => item.externalAccountId));
   const [visitStats, opportunities] =
     accountIds.length > 0
       ? await Promise.all([
@@ -634,8 +638,9 @@ export default async function WholesalePage({
                   <Link className="table-link account-directory-name-link" href={row.nameHref ?? '/wholesale'}>
                     {row.name}
                   </Link>
+                  {targetedIds.has(row.id) ? <TargetAccountMarker /> : null}
                   <span className="account-directory-mobile-only account-directory-location">
-                    {row.locationText || (row.licenseeIdsText ? `Licensee ${row.licenseeIdsText}` : 'Location unavailable')}
+                    {row.locationText ? <AddressLink address={row.locationText} /> : (row.licenseeIdsText ? `Licensee ${row.licenseeIdsText}` : 'Location unavailable')}
                   </span>
                   <span className="account-directory-mobile-only account-directory-context">
                     {row.opportunityPriority ? <span className={`priority priority-${row.opportunityPriority.toLowerCase()}`}>{row.opportunityPriority}</span> : null}
@@ -643,7 +648,7 @@ export default async function WholesalePage({
                   </span>
                 </td>
                 <td className="account-directory-secondary-cell" data-label="Licensee IDs">{row.licenseeIdsText}</td>
-                <td className="account-directory-secondary-cell" data-label="Address">{row.address}</td>
+                <td className="account-directory-secondary-cell" data-label="Address"><AddressLink address={row.locationText}>{row.address}</AddressLink></td>
                 <td className="account-directory-secondary-cell" data-label="City">{row.city}</td>
                 <td className="account-directory-secondary-cell" data-label="Agency ID">{row.agencyId}</td>
                 <td className="account-directory-secondary-cell" data-label="Most Recent Visit">{formatEasternDate(row.mostRecentVisit)}</td>

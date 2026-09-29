@@ -17,17 +17,21 @@ import { formatEasternDateTime } from '../../../lib/dateTime';
 import { prisma } from '../../../lib/prisma';
 import { requireFeatureForUser, requireOrganizationContext } from '../../../lib/organizations';
 import { PageHeader, SectionHeading } from '../../components/PageChrome';
+import { LiveFilterForm } from '../../components/LiveFilterForm';
 import { checkAccountResearchPilot, continueAccountResearchPilot, startAccountResearchPilot, uploadAccountResearchCsv } from './actions';
+import { AgencyHoursResearchQueue } from './AgencyHoursResearchQueue';
+import { readOperatingHoursSchedule } from '../../../lib/operatingHours';
 
 export const metadata = buildPageMetadata('Account Research');
 
 type PageParams = {
   status?: string; rows?: string; imported?: string; errors?: string; detail?: string; submitted?: string;
   failed?: string; remaining?: string; checked?: string; completed?: string; pending?: string;
-  applied?: string; rejected?: string; historyPage?: string;
+  applied?: string; rejected?: string; historyPage?: string; view?: string; q?: string; hoursPage?: string;
 };
 
 const RESEARCH_HISTORY_PAGE_SIZE = 100;
+const AGENCY_HOURS_QUEUE_PAGE_SIZE = 25;
 
 const statusMessage = (params: PageParams) => {
   if (params.status === 'dry-run') return `Dry run passed for ${params.rows ?? '0'} rows. Re-upload the same file and choose Import research.`;
@@ -69,12 +73,15 @@ export default async function AccountResearchPage({ searchParams }: { searchPara
   const { organizationId } = await requireOrganizationContext(user);
   await requireFeatureForUser(user, 'ADVANCED_INTELLIGENCE');
   const params = (await searchParams) ?? {};
+  const view = params.view === 'agencies' ? 'agencies' : 'wholesale';
   const requestedHistoryPage = Number.parseInt(params.historyPage ?? '1', 10);
   const historyPage = Number.isFinite(requestedHistoryPage) && requestedHistoryPage > 0 ? requestedHistoryPage : 1;
+  const requestedAgencyHoursPage = Number.parseInt(params.hoursPage ?? '1', 10);
+  const agencyHoursPage = Number.isFinite(requestedAgencyHoursPage) && requestedAgencyHoursPage > 0 ? requestedAgencyHoursPage : 1;
   // Public account research is shared reference data, so Platform Admin history
   // must include researched accounts even before a tenant opportunity exists.
   const researchWhere = { lastRefreshedAt: { not: null as null } };
-  const [automaticStatus, latestResearch, completedCount, pilot, researchHistoryCount, researchHistory, actionableFailureAttempts] = await Promise.all([
+  const [automaticStatus, latestResearch, completedCount, pilot, researchHistoryCount, researchHistory, actionableFailureAttempts, agencyRows] = await Promise.all([
     getAutomaticAccountResearchStatus(),
     prisma.targetPublicResearch.findFirst({ where: researchWhere, orderBy: { updatedAt: 'desc' }, select: { updatedAt: true } }),
     prisma.targetPublicResearch.count({ where: { refreshStatus: 'COMPLETE' } }),
@@ -130,6 +137,10 @@ export default async function AccountResearchPage({ searchParams }: { searchPara
         } },
       },
     }),
+    view === 'agencies' ? prisma.agency.findMany({
+      orderBy: { agencyId: 'asc' },
+      select: { id: true, agencyId: true, name: true, address: true, city: true, state: true, zip: true, businessHours: true },
+    }) : Promise.resolve([]),
   ]);
   const availability = getAccountResearchPilotAvailability();
   const automationAvailability = getAccountResearchAutomationAvailability();
@@ -165,12 +176,55 @@ export default async function AccountResearchPage({ searchParams }: { searchPara
     || displayedPilotStatus === AccountResearchPilotStatus.COMPLETE
     || displayedPilotStatus === AccountResearchPilotStatus.FAILED
     || displayedPilotStatus === AccountResearchPilotStatus.CANCELLED;
+  const agencyHoursQueue = agencyRows.filter((agency) => !readOperatingHoursSchedule(agency.businessHours));
+  const agencySearch = (params.q ?? '').trim().toLocaleLowerCase();
+  const matchingAgencyHoursQueue = agencySearch
+    ? agencyHoursQueue.filter((agency) => [agency.agencyId, agency.name, agency.address, agency.city, agency.state, agency.zip].some((value) => value?.toLocaleLowerCase().includes(agencySearch)))
+    : agencyHoursQueue;
+  const visibleAgencyHoursQueue = matchingAgencyHoursQueue.slice((agencyHoursPage - 1) * AGENCY_HOURS_QUEUE_PAGE_SIZE, agencyHoursPage * AGENCY_HOURS_QUEUE_PAGE_SIZE);
+  const addressReadyAgencyCount = agencyHoursQueue.filter((agency) => Boolean(agency.address?.trim() && agency.city?.trim() && agency.state?.trim())).length;
+  const agencyHoursPageCount = Math.max(1, Math.ceil(matchingAgencyHoursQueue.length / AGENCY_HOURS_QUEUE_PAGE_SIZE));
 
   return (
     <>
-      <PageHeader actions={<Link className="btn secondary" href="/opportunities">View opportunities</Link>} description="Research the accounts where public evidence can materially improve an opportunity decision. Structured findings are applied automatically only after exact-location validation." eyebrow="Administration" title="Account Research" />
+      <PageHeader actions={<Link className="btn secondary" href="/opportunities">View opportunities</Link>} description={view === 'agencies' ? 'Find and verify public operating hours for Ohio Agencies. The queue highlights missing hours; each lookup starts only when you choose Research hours.' : 'Research the accounts where public evidence can materially improve an opportunity decision. Structured findings are applied automatically only after exact-location validation.'} eyebrow="Administration" title="Account Research" />
       {message ? <p className="toast-notice page-status" role="status">{message}</p> : null}
       {params.detail ? <p className="card danger-text research-import-errors">{params.detail}</p> : null}
+
+      <nav aria-label="Account research queues" className="research-queue-tabs">
+        <Link aria-current={view === 'wholesale' ? 'page' : undefined} className={view === 'wholesale' ? 'btn' : 'btn secondary'} href="/admin/account-research">Wholesale</Link>
+        <Link aria-current={view === 'agencies' ? 'page' : undefined} className={view === 'agencies' ? 'btn' : 'btn secondary'} href="/admin/account-research?view=agencies">Agencies</Link>
+      </nav>
+
+      {view === 'agencies' ? <>
+        <div className="grid target-import-stats agency-hours-queue-stats">
+          <div className="card metric-card"><h3>Hours needed</h3><p className="metric-value">{agencyHoursQueue.length.toLocaleString()}</p><p className="muted">Agencies without a usable weekly schedule</p></div>
+          <div className="card metric-card"><h3>Ready to research</h3><p className="metric-value">{addressReadyAgencyCount.toLocaleString()}</p><p className="muted">Have street address, city, and state</p></div>
+          <div className="card metric-card"><h3>Need address details</h3><p className="metric-value">{(agencyHoursQueue.length - addressReadyAgencyCount).toLocaleString()}</p><p className="muted">Open an Agency record to complete its location</p></div>
+        </div>
+        <section className="dashboard-section" id="agency-hours-queue">
+          <SectionHeading count={matchingAgencyHoursQueue.length} description="This Agency queue is populated from saved hours, so adding or confirming a schedule removes the account from the list. Research is manual in TST and production; the Agency detail page keeps its direct research shortcut." title="Agency public-hours queue" />
+          {!availability.available ? <p className="card muted">Public lookup is unavailable here. You can still open an Agency and enter known hours manually.</p> : null}
+          <LiveFilterForm action="/admin/account-research" className="agency-hours-queue-search" label="Search Agency hours queue" role="search">
+            <input name="view" type="hidden" value="agencies" />
+            <input name="hoursPage" type="hidden" value="1" />
+            <label>Search by Agency number, name, address, or city<input autoComplete="off" defaultValue={params.q ?? ''} name="q" placeholder="Agency number, name, address, or city" type="search" /></label>
+          </LiveFilterForm>
+          <AgencyHoursResearchQueue agencies={visibleAgencyHoursQueue} researchAvailable={availability.available} />
+          {matchingAgencyHoursQueue.length > AGENCY_HOURS_QUEUE_PAGE_SIZE ? <nav aria-label="Agency hours queue pages" className="pagination-actions">
+            {agencyHoursPage > 1 ? <Link className="btn secondary" href={`/admin/account-research?view=agencies${agencySearch ? `&q=${encodeURIComponent(params.q ?? '')}` : ''}&hoursPage=${agencyHoursPage - 1}#agency-hours-queue`}>Previous agencies</Link> : <span />}
+            <span>Page {agencyHoursPage} of {agencyHoursPageCount}</span>
+            {agencyHoursPage < agencyHoursPageCount ? <Link className="btn secondary" href={`/admin/account-research?view=agencies${agencySearch ? `&q=${encodeURIComponent(params.q ?? '')}` : ''}&hoursPage=${agencyHoursPage + 1}#agency-hours-queue`}>More agencies</Link> : null}
+          </nav> : null}
+        </section>
+        <section className="dashboard-section">
+          <SectionHeading description="Agency sales, inventory, retail opportunity, and market-fit intelligence refresh through OHLQ data imports. Sourced ownership, store format, neighborhood, and demographic context is maintained on Agency records; it is not part of this public-hours lookup." title="Other Agency research" />
+          <article className="card research-workflow-card">
+            <p className="muted">Targeting an Agency can request a targeted refresh when complete sales and inventory inputs are available. The separate Store Context fields remain team-entered with source and observation date. Public-hours research does not overwrite either workflow.</p>
+            <div className="segmented-submit"><Link className="btn secondary" href="/agency-focus">Open Agency Intelligence</Link><Link className="btn secondary" href="/agencies">Browse Agencies</Link></div>
+          </article>
+        </section>
+      </> : <>
 
       <div className="grid target-import-stats">
         <div className="card metric-card"><h3>Needing intelligence</h3><p className="metric-value">{automaticStatus.queueCount}</p><p className="muted">Prioritized across all tenant activity; oldest routine refreshes come last</p></div>
@@ -184,7 +238,7 @@ export default async function AccountResearchPage({ searchParams }: { searchPara
         <article className="card research-workflow-card">
           <div className="research-pilot-summary">
             <div><span className={`status-badge ${automationAvailability.available ? '' : 'muted'}`}>{automationAvailability.available ? 'Enabled' : 'Disabled here'}</span><strong>{automaticStatus.queueCount.toLocaleString()} accounts queued</strong><small>{automaticStatus.submittedToday.toLocaleString()} attempts today · {automaticStatus.uniqueAccountsSubmittedToday.toLocaleString()} unique accounts</small></div>
-            <div><strong>Priority queue</strong><small>{automaticStatus.byPriority[1] ?? 0} unscored · {automaticStatus.byPriority[2] ?? 0} identity changes · {automaticStatus.byPriority[3] ?? 0} newly pursued · {automaticStatus.byPriority[4] ?? 0} due soon</small></div>
+            <div><strong>Priority queue</strong><small>{automaticStatus.byPriority[1] ?? 0} target / unscored · {automaticStatus.byPriority[2] ?? 0} identity changes · {automaticStatus.byPriority[3] ?? 0} recent activity · {automaticStatus.byPriority[4] ?? 0} due soon</small></div>
             <div><strong>{automaticStatus.latestRun ? automaticRunStatusLabel : 'No automatic run yet'}</strong><small>{automaticStatus.approvedToday.toLocaleString()} applied · {automaticStatus.failedToday.toLocaleString()} failed · {automaticStatus.unsuccessfulToday.toLocaleString()} unsuccessful · {automaticStatus.rejectedToday.toLocaleString()} declined today</small>{automaticStatus.latestRun ? <small>{formatUsdMicros(automaticStatus.latestRun.estimatedSpendMicros)} estimated · started {formatEasternDateTime(automaticStatus.latestRun.startedAt)}</small> : <small>The production scheduler will create the first run when enabled.</small>}</div>
           </div>
           {!automationAvailability.available ? <p className="muted">Automatic OpenAI research is intentionally disabled in this environment. Manual test runs remain available.</p> : null}
@@ -263,6 +317,7 @@ Keep every identity column unchanged and verify findings against the exact stree
           <p className="muted">Imports remain all-or-nothing. A successful reviewed import immediately recalculates affected opportunities.</p>
         </form>
       </section>
+      </>}
     </>
   );
 }

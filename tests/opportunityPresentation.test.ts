@@ -35,5 +35,6 @@ test('wholesale opportunities use the compact intelligence row and live search p
   assert.match(page, /className="opportunity-row"/);
   assert.match(page, /className="opportunity-row-reasons"/);
   assert.doesNotMatch(page, /className="card opportunity-card"/);
+  assert.match(page, /scoringVersion\.startsWith\('RESEARCH_FIT_'\)/);
   assert.match(search, /LiveFilterForm/);
 });

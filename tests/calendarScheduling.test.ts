@@ -2,13 +2,14 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { WorklistCategory, WorklistSource, WorklistStatus } from '@prisma/client';
 import { decryptCalendarToken, encryptCalendarToken } from '../lib/calendar/crypto';
-import { buildGoogleCalendarChangesQuery } from '../lib/calendar/google';
+import { buildGoogleCalendarChangesQuery, buildGoogleCalendarUpdateHeaders } from '../lib/calendar/google';
 import {
   buildWorklistCalendarInput,
+  getCalendarEditWinner,
   getWorklistScheduleFromExternalEvent,
   getWorklistScheduleHash,
 } from '../lib/calendar/worklistSync';
-import { formatDateOnlyInputValue, formatTimeMinutesInput, parseTimeInputToMinutes } from '../lib/dateTime';
+import { formatDateOnlyInputValue, formatTimeMinutesInput, isValidZonedDateTime, parseTimeInputToMinutes, zonedDateTimeToUtc } from '../lib/dateTime';
 
 const item = (overrides: Record<string, unknown> = {}) => ({
   id: 'task-1',
@@ -53,6 +54,19 @@ test('timed worklist items create 30-minute Eastern events', () => {
   assert.equal(event.schedule.endsAt.getTime() - event.schedule.startsAt.getTime(), 30 * 60 * 1000);
 });
 
+test('scheduler local times reject the spring-forward gap and preserve the repeated fall-back hour', () => {
+  assert.equal(isValidZonedDateTime('2026-03-08', 2 * 60 + 30), false);
+  assert.equal(isValidZonedDateTime('2026-03-08', 1 * 60 + 30), true);
+  assert.equal(isValidZonedDateTime('2026-03-08', 3 * 60 + 30), true);
+  assert.equal(zonedDateTimeToUtc('2026-03-08', 3 * 60 + 30).toISOString(), '2026-03-08T07:30:00.000Z');
+  assert.equal(isValidZonedDateTime('2026-11-01', 1 * 60 + 30), true);
+  assert.equal(zonedDateTimeToUtc('2026-11-01', 1 * 60 + 30).toISOString(), '2026-11-01T05:30:00.000Z');
+});
+
+test('calendar sync refuses a legacy timed item inside the spring-forward gap', () => {
+  assert.throws(() => buildWorklistCalendarInput({ item: item({ dueDate: new Date('2026-03-08T00:00:00.000Z'), dueTimeMinutes: 2 * 60 + 30 }) as never }), /does not exist/);
+});
+
 test('Google all-day changes map back to date-only CRM schedules', () => {
   const schedule = getWorklistScheduleFromExternalEvent({
     id: 'event-1', status: 'confirmed', title: null, description: null,
@@ -76,6 +90,22 @@ test('schedule hashes are stable and change for material scheduling updates', ()
   assert.equal(first, getWorklistScheduleHash(item() as never));
   assert.notEqual(first, getWorklistScheduleHash(item({ dueTimeMinutes: 60 }) as never));
   assert.notEqual(first, getWorklistScheduleHash(item({ assignedToUserId: 'user-2' }) as never));
+});
+
+test('calendar conflict resolution follows the latest source edit when both sides changed', () => {
+  const crmEarlier = new Date('2026-08-24T19:00:00.000Z');
+  const googleLater = new Date('2026-08-24T19:05:00.000Z');
+  const crmLater = new Date('2026-08-24T19:10:00.000Z');
+  assert.equal(getCalendarEditWinner({ crmChangedSinceSync: true, crmUpdatedAt: crmEarlier, googleUpdatedAt: googleLater }), 'GOOGLE');
+  assert.equal(getCalendarEditWinner({ crmChangedSinceSync: true, crmUpdatedAt: crmLater, googleUpdatedAt: googleLater }), 'CRM');
+  assert.equal(getCalendarEditWinner({ crmChangedSinceSync: true, crmUpdatedAt: crmEarlier, googleUpdatedAt: crmEarlier }), 'GOOGLE');
+  assert.equal(getCalendarEditWinner({ crmChangedSinceSync: false, crmUpdatedAt: crmLater, googleUpdatedAt: googleLater }), 'GOOGLE');
+  assert.equal(getCalendarEditWinner({ crmChangedSinceSync: true, crmUpdatedAt: crmLater, googleUpdatedAt: null }), 'CRM');
+});
+
+test('Google updates carry an If-Match precondition when the last synced ETag is known', () => {
+  assert.deepEqual(buildGoogleCalendarUpdateHeaders('"calendar-etag"'), { 'If-Match': '"calendar-etag"' });
+  assert.deepEqual(buildGoogleCalendarUpdateHeaders(null), {});
 });
 
 test('optional time inputs round-trip as minutes after midnight', () => {

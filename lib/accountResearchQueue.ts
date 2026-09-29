@@ -28,6 +28,7 @@ export type ResearchIdentitySnapshot = {
   publicRatings?: AccountResearchResult['publicRatings'];
   businessHours?: AccountResearchResult['businessHours'];
   researchEvidence?: AccountResearchResult['evidence'];
+  researchSignals?: Pick<AccountResearchResult, 'privateDining' | 'venueType' | 'footTrafficSignal' | 'footTrafficEvidence' | 'meetingSpaceSquareFeet'>;
   // Read-only compatibility for research completed before source provenance was captured.
   googleHours?: Array<{ day: string; hours: string }>;
 };
@@ -42,6 +43,7 @@ export type ResearchQueueCandidate = {
   state: string | null;
   zip: string | null;
   createdAt: Date;
+  isTargeting?: boolean;
   targetPublicResearch: { lastRefreshedAt: Date | null; identitySnapshot: unknown } | null;
   opportunities: Array<{ productionScore: number; status: OpportunityStatus; actionedAt: Date | null; lastDetectedAt: Date }>;
   upcomingWork: Array<{ dueDate: Date | null; createdAt: Date }>;
@@ -66,7 +68,8 @@ const isOlderThan = (value: Date | null | undefined, cutoff: Date) => !value || 
 
 export const createResearchIdentitySnapshot = (
   candidate: Pick<ResearchQueueCandidate, 'name' | 'address' | 'city' | 'state' | 'zip'>,
-  research?: Pick<AccountResearchResult, 'publicRatings' | 'businessHours' | 'evidence'>,
+  research?: Pick<AccountResearchResult, 'publicRatings' | 'businessHours' | 'evidence'>
+    & Partial<Pick<AccountResearchResult, 'privateDining' | 'venueType' | 'footTrafficSignal' | 'footTrafficEvidence' | 'meetingSpaceSquareFeet'>>,
 ): ResearchIdentitySnapshot => ({
   accountName: candidate.name,
   address: candidate.address,
@@ -77,6 +80,13 @@ export const createResearchIdentitySnapshot = (
     publicRatings: research.publicRatings,
     businessHours: research.businessHours,
     researchEvidence: research.evidence,
+    researchSignals: {
+      privateDining: research.privateDining ?? 'Unknown',
+      venueType: research.venueType ?? 'Unknown',
+      footTrafficSignal: research.footTrafficSignal ?? 'Unknown',
+      footTrafficEvidence: research.footTrafficEvidence ?? null,
+      meetingSpaceSquareFeet: research.meetingSpaceSquareFeet ?? null,
+    },
   } : {}),
 });
 
@@ -130,6 +140,26 @@ export const readResearchEvidence = (snapshot: unknown): AccountResearchResult['
   ));
 };
 
+export const readResearchSignals = (snapshot: unknown): NonNullable<ResearchIdentitySnapshot['researchSignals']> => {
+  const unknownSignals = {
+    privateDining: 'Unknown', venueType: 'Unknown', footTrafficSignal: 'Unknown',
+    footTrafficEvidence: null, meetingSpaceSquareFeet: null,
+  } as const;
+  if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) return unknownSignals;
+  const stored = (snapshot as Partial<ResearchIdentitySnapshot>).researchSignals;
+  if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return unknownSignals;
+  const privateDining = ['Strong', 'Yes', 'No', 'Unknown'].includes(stored.privateDining) ? stored.privateDining : 'Unknown';
+  const venueType = ['Hotel bar/restaurant', 'Restaurant', 'Bar', 'Other', 'Unknown'].includes(stored.venueType) ? stored.venueType : 'Unknown';
+  const footTrafficSignal = ['Very High', 'High', 'Medium', 'Low', 'Unknown'].includes(stored.footTrafficSignal) ? stored.footTrafficSignal : 'Unknown';
+  return {
+    privateDining,
+    venueType,
+    footTrafficSignal,
+    footTrafficEvidence: typeof stored.footTrafficEvidence === 'string' ? stored.footTrafficEvidence : null,
+    meetingSpaceSquareFeet: typeof stored.meetingSpaceSquareFeet === 'number' && stored.meetingSpaceSquareFeet >= 0 ? stored.meetingSpaceSquareFeet : null,
+  } as NonNullable<ResearchIdentitySnapshot['researchSignals']>;
+};
+
 export const hasResearchIdentityChanged = (
   candidate: Pick<ResearchQueueCandidate, 'name' | 'address' | 'city' | 'state' | 'zip'>,
   snapshot: unknown,
@@ -167,9 +197,10 @@ export function classifyResearchNeed(candidate: ResearchQueueCandidate, now = ne
   const upcomingTwoDayWork = candidate.upcomingWork.some((item) => item.dueDate && item.dueDate >= now && item.dueDate <= nextTwoDays);
   const otherUpcomingWork = candidate.upcomingWork.some((item) => (item.dueDate && item.dueDate >= now && item.dueDate <= nextSevenDays) || (!item.dueDate && item.createdAt >= ageCutoff(now, 1)));
 
+  if (candidate.isTargeting) return { ...candidate, priorityBucket: 1, researchReason: 'Target account; refresh research' };
   if (candidate.opportunities.length === 0 && !refreshedAt) return { ...candidate, priorityBucket: 1, researchReason: 'New account without an opportunity score or research' };
   if (hasResearchIdentityChanged(candidate, candidate.targetPublicResearch?.identitySnapshot)) return { ...candidate, priorityBucket: 2, researchReason: 'Account name or address changed since research' };
-  if (stale30 && recentPursuit) return { ...candidate, priorityBucket: 3, researchReason: 'Pursued by a tenant in the last day; research is over 30 days old' };
+  if (stale30 && recentPursuit) return { ...candidate, priorityBucket: 3, researchReason: 'Opportunity moved to in progress by a tenant in the last day; research is over 30 days old' };
   if (stale30 && upcomingTwoDayWork) return { ...candidate, priorityBucket: 4, researchReason: 'Tenant work is due in the next two days; research is over 30 days old' };
   if (stale30 && (otherUpcomingWork || recentTenantActivity)) return { ...candidate, priorityBucket: 5, researchReason: 'Upcoming or recent tenant activity; research is over 30 days old' };
   if (isOlderThan(refreshedAt, ageCutoff(now, 90))) return { ...candidate, priorityBucket: 6, researchReason: 'Research intelligence is over 90 days old' };
@@ -185,6 +216,8 @@ export async function getPrioritizedAccountResearchQueue({
   now?: Date;
   limit?: number | null;
 } = {}) {
+  const targetedOverlays = await db.organizationAccountOverlay.findMany({ where: { accountType: 'WHOLESALE', isTargeting: true }, select: { externalAccountId: true } });
+  const targetedIds = [...new Set(targetedOverlays.map(({ externalAccountId }) => externalAccountId))];
   const accounts = await db.wholesaleAccount.findMany({
     where: {
       isActive: true,
@@ -237,6 +270,7 @@ export async function getPrioritizedAccountResearchQueue({
     .filter((account) => !shouldDeferResearchRetry(account, now))
     .map((account) => classifyResearchNeed({
       ...account,
+      isTargeting: targetedIds.includes(account.id),
       upcomingWork: workByAccount.get(account.id) ?? [],
     }, now))
     .filter((item): item is ResearchQueueItem => Boolean(item))

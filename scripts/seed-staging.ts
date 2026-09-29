@@ -1,5 +1,6 @@
 import { OrganizationOnboardingStatus, OrganizationStatus, UserRole, WorklistCategory, WorklistSource } from '@prisma/client';
 import { getAppEnvironment, logEnvironmentEvent, validateRuntimeEnvironment } from '../lib/appEnvironment';
+import { FEATURE_KEYS } from '../lib/featureRegistry';
 import { hashPassword } from '../lib/password';
 import { prisma } from '../lib/prisma';
 
@@ -15,6 +16,11 @@ async function main() {
     create: { id: 'org_neat_staging', name: 'Neat Staging', displayName: 'Neat Staging', slug: 'neat-staging', accountStatus: OrganizationStatus.ACTIVE, onboardingStatus: OrganizationOnboardingStatus.READY },
     update: { active: true, displayName: 'Neat Staging' },
   });
+  await prisma.$transaction(FEATURE_KEYS.map((featureKey) => prisma.organizationFeature.upsert({
+    where: { organizationId_featureKey: { organizationId: organization.id, featureKey } },
+    create: { organizationId: organization.id, featureKey, enabled: true, source: 'staging-seed' },
+    update: { enabled: true, source: 'staging-seed' },
+  })));
   const admin = await prisma.user.upsert({
     where: { email },
     create: { organizationId: organization.id, email, firstName: 'Staging', lastName: 'Admin', passwordHash: hashPassword(password), role: UserRole.ADMIN },

@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 import { buildPageMetadata } from '../../../lib/appBrand';
+import { APP_VERSION } from '../../../lib/appVersion';
 import {
   getEnvironmentLabel,
   getSafeDatabaseTarget,
@@ -35,6 +36,7 @@ export default async function EnvironmentDiagnosticsPage() {
       <section className="card admin-panel">
         <dl className="integration-summary">
           <div><dt>Environment</dt><dd>{getEnvironmentLabel()}</dd></div>
+          <div><dt>Application version</dt><dd>{APP_VERSION}</dd></div>
           <div><dt>Branch</dt><dd>{runtime.branch ?? 'Local checkout'}</dd></div>
           <div><dt>Commit</dt><dd>{commit}</dd></div>
           <div><dt>Base URL</dt><dd>{runtime.baseUrl}</dd></div>

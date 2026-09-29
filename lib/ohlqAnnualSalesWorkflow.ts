@@ -21,6 +21,7 @@ import {
   recordOhlqReportRunStarted,
 } from './ohlqDataStatus';
 import { getTenantConfig } from './tenantConfig';
+import { reconcileAccountSalesStatusAfterImport } from './accountSalesStatus';
 
 type Logger = Pick<Console, 'error' | 'log'>;
 
@@ -137,6 +138,11 @@ export async function runOhlqAnnualSalesWorkflow(options: OhlqAnnualSalesWorkflo
     });
     completedSources.add(OhlqReportDataSource.ANNUAL_SALES_SUMMARY_BY_WHOLESALE);
 
+    const accountSalesStatus = await reconcileAccountSalesStatusAfterImport({
+      reportDate: toOhlqDateOnlyUtc(reportDate),
+    });
+    logger.log(`Account Sales Status moved ${accountSalesStatus.transitioned} tracked account(s) to Purchasing.`);
+
     if (options.deferIntelligence) {
       logger.log(`Sales reports for ${reportDate} imported; intelligence and retention will run after inventory.`);
     }
@@ -167,6 +173,7 @@ export async function runOhlqAnnualSalesWorkflow(options: OhlqAnnualSalesWorkflo
       ok: true,
       durationMs: Date.now() - startedAt,
       retention,
+      accountSalesStatus,
       agencyMarketIntelligence,
       opportunityIntelligence,
       reports: {

@@ -3,7 +3,7 @@ export const runtime = 'nodejs';
 
 import { ActionForm } from '../components/ActionForm';
 import { SubmitButton } from '../components/SubmitButton';
-import { OpportunityEventType, OpportunityStatus, OpportunityType, Prisma, UserRole } from '@prisma/client';
+import { OpportunityEventType, OpportunityStatus, OpportunityType, Prisma, SalesAccountType, UserRole } from '@prisma/client';
 import Link from 'next/link';
 import { buildPageMetadata } from '../../lib/appBrand';
 import { getUserDisplayName, requireUser } from '../../lib/auth';
@@ -17,6 +17,7 @@ import { ContextualActions } from '../components/ContextualActions';
 import { DataFreshnessBadge } from '../components/DataFreshnessBadge';
 import { OpportunitySearch } from './OpportunitySearch';
 import { normalizeUsState } from '../../lib/usStates';
+import { TargetAccountControl } from '../components/TargetAccountControl';
 
 export const metadata = buildPageMetadata('Wholesale Opportunities');
 
@@ -80,6 +81,8 @@ export default async function OpportunityInbox({ searchParams }: { searchParams?
     })) : Promise.resolve([]),
   ]);
   const shownOpportunities = territoryView ? territoryGroups.flatMap((group) => group.opportunities) : opportunities;
+  const targetedAccounts = await prisma.organizationAccountOverlay.findMany({ where: { organizationId, accountType: 'WHOLESALE', externalAccountId: { in: [...new Set(shownOpportunities.map((item) => item.wholesaleAccountId))] }, isTargeting: true }, select: { externalAccountId: true } });
+  const targetedIds = new Set(targetedAccounts.map((item) => item.externalAccountId));
   const actionUsers = assignees.map((assignee) => ({ id: assignee.id, name: getUserDisplayName(assignee) }));
   const latestSignalAt = shownOpportunities.reduce<Date | null>((latest, item) => !latest || item.lastDetectedAt > latest ? item.lastDetectedAt : latest, null);
 
@@ -92,12 +95,12 @@ export default async function OpportunityInbox({ searchParams }: { searchParams?
   const renderOpportunity = (item: OpportunityRow) => {
     const reasons = reasonsFor(item);
     return <article aria-labelledby={`opportunity-${item.id}`} className="opportunity-row" key={item.id}>
-      <div className="opportunity-row-identity"><h2 id={`opportunity-${item.id}`}><Link href={`/wholesale/${item.wholesaleAccountId}`}>{item.wholesaleAccount.name}</Link></h2><p className="muted">{[item.wholesaleAccount.city, item.wholesaleAccount.state ?? 'OH', item.wholesaleAccount.county].filter(Boolean).join(' · ')}</p><div className="opportunity-row-state"><span className={`priority priority-${item.priorityBand.toLowerCase()}`}>{item.priorityBand}</span><span>{labels[item.type]}</span></div></div>
+      <div className="opportunity-row-identity"><h2 id={`opportunity-${item.id}`}><Link href={`/wholesale/${item.wholesaleAccountId}`}>{item.wholesaleAccount.name}</Link></h2>{targetedIds.has(item.wholesaleAccountId) ? <p><strong className="target-account-marker">TARGET ACCOUNT</strong></p> : null}<p className="muted">{[item.wholesaleAccount.city, item.wholesaleAccount.state ?? 'OH', item.wholesaleAccount.county].filter(Boolean).join(' · ')}</p><div className="opportunity-row-state"><span className={`priority priority-${item.priorityBand.toLowerCase()}`}>{item.priorityBand}</span><span>{labels[item.type]}</span></div></div>
       <div className="opportunity-row-recommendation"><strong>{item.title}</strong>{item.targetCategory ? <small>{item.targetCategory}</small> : null}<p><strong>Next:</strong> {item.recommendedAction}</p></div>
-      <dl className="opportunity-row-metrics"><div><dt>{item.scoringVersion === 'RESEARCH_FIT_V1' ? 'Research-only score (provisional)' : 'Score'}</dt><dd>{Math.round(item.productionScore)}</dd></div><div><dt>Intelligence updated</dt><dd>{formatEasternDateTime(item.lastDetectedAt)}</dd></div></dl>
-      {item.status === OpportunityStatus.ACTIONED ? <p className="opportunity-pursuing" role="status"><strong>Pursuing</strong>{item.actionedAt ? ` since ${formatEasternDate(item.actionedAt)}` : ''}</p> : null}
+      <dl className="opportunity-row-metrics"><div><dt>{item.scoringVersion.startsWith('RESEARCH_FIT_') ? 'Research-only score (provisional)' : 'Score'}</dt><dd>{Math.round(item.productionScore)}</dd></div><div><dt>Intelligence updated</dt><dd>{formatEasternDateTime(item.lastDetectedAt)}</dd></div></dl>
+      {item.status === OpportunityStatus.ACTIONED ? <p className="opportunity-pursuing" role="status"><strong>In progress</strong>{item.actionedAt ? ` since ${formatEasternDate(item.actionedAt)}` : ''}</p> : null}
       <ul aria-label="Opportunity evidence" className="opportunity-row-reasons">{reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>
-      <div className="opportunity-row-actions"><ContextualActions context={{ accountName: item.wholesaleAccount.name, opportunityId: item.id, reason: reasons.join(' '), returnTo: buildHref({}), sourceLabel: item.title, sourceType: item.type, wholesaleAccountId: item.wholesaleAccountId }} currentUserId={currentUser.id} existingFollowUpId={item.worklistItems[0]?.id} followUpLabel="Create Follow-up" users={actionUsers} />
+      <div className="opportunity-row-actions"><TargetAccountControl accountType={SalesAccountType.WHOLESALE} externalAccountId={item.wholesaleAccountId} isTargeting={targetedIds.has(item.wholesaleAccountId)} returnTo={buildHref({})} /><ContextualActions context={{ accountName: item.wholesaleAccount.name, opportunityId: item.id, reason: reasons.join(' '), returnTo: buildHref({}), sourceLabel: item.title, sourceType: item.type, wholesaleAccountId: item.wholesaleAccountId }} currentUserId={currentUser.id} existingFollowUpId={item.worklistItems[0]?.id} followUpLabel="Create Follow-up" users={actionUsers} />
       <details className="opportunity-more-actions"><summary>More</summary><div className="opportunity-more-menu">
         <ActionForm action={updateOpportunity} className="opportunity-feedback"><input type="hidden" name="id" value={item.id}/><input aria-label="Snooze until" name="snoozedUntil" type="date" required/><SubmitButton name="action" value="snooze">Snooze</SubmitButton></ActionForm>
         <ActionForm action={updateOpportunity} className="opportunity-dismiss"><input type="hidden" name="id" value={item.id}/><select aria-label="Dismissal reason" name="reason" defaultValue="Wrong timing">{['Not a fit','Wrong timing','Already handled','Buyer not interested','Seasonal','Bad/missing data','Other'].map((reason) => <option key={reason}>{reason}</option>)}</select><SubmitButton className="danger" name="action" value="dismiss">Dismiss</SubmitButton></ActionForm>
@@ -107,7 +110,7 @@ export default async function OpportunityInbox({ searchParams }: { searchParams?
 
   await prisma.opportunityEvent.createMany({ skipDuplicates: true, data: shownOpportunities.map((item) => ({ organizationId, opportunityId: item.id, eventType: OpportunityEventType.SHOWN, eventKey: 'SHOWN:INBOX', wholesaleAccountId: item.wholesaleAccountId, occurredAt: new Date() })) });
   return <div className="opportunities-page">
-    <header className="page-heading page-header opportunities-header"><div><span className="page-eyebrow">Intelligence · Wholesale</span><h1>Wholesale Opportunities</h1><p className="muted">Prioritized recommendations. Geography changes what you see, never how an account scores.</p></div><div className="page-actions"><DataFreshnessBadge datePrefix="Signals through" sourceDate={latestSignalAt} /><Link className="btn secondary" href="/alerts?view=pursuing">View pursuing</Link>{currentUser.role === UserRole.ADMIN ? <Link className="btn secondary" href="/admin/opportunity-performance">Performance</Link> : null}</div></header>
+    <header className="page-heading page-header opportunities-header"><div><span className="page-eyebrow">Intelligence · Wholesale</span><h1>Wholesale Opportunities</h1><p className="muted">Prioritized recommendations. Geography changes what you see, never how an account scores.</p></div><div className="page-actions"><DataFreshnessBadge datePrefix="Signals through" sourceDate={latestSignalAt} /><Link className="btn secondary" href="/alerts?view=pursuing">View in progress</Link>{currentUser.role === UserRole.ADMIN ? <Link className="btn secondary" href="/admin/opportunity-performance">Performance</Link> : null}</div></header>
     <nav aria-label="Opportunity views" className="opportunity-filters">
       <Link aria-current={!territoryView && !territory && !type && !priority && !lowestFirst ? 'page' : undefined} className={!territoryView && !territory && !type && !priority && !lowestFirst ? 'active' : undefined} href="/opportunities">Best overall</Link>
       <Link aria-current={territoryView ? 'page' : undefined} className={territoryView ? 'active' : undefined} href={buildHref({ territory: undefined, view: 'territories', sort: undefined, state: undefined })}>Best by Ohio territory</Link>
