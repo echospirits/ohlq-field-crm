@@ -11,6 +11,7 @@ import { formatEasternDate } from '../../../lib/dateTime';
 import { getAgencyRecentItemSales } from '../../../lib/ohlqSalesData';
 import { prisma } from '../../../lib/prisma';
 import { getOrganizationFeatures, requireOrganizationContext } from '../../../lib/organizations';
+import { getOrganizationTenantConfig } from '../../../lib/tenantConfig';
 import { AgencyRecentSalesCard } from '../AgencyRecentSalesCard';
 import { AgencyIntelligencePanel } from '../AgencyIntelligencePanel';
 import { AccountTagPanel } from '../../tags/AccountTagPanel';
@@ -59,6 +60,7 @@ export default async function AgencyActivityPage({
 }) {
   const currentUser = await requireUser();
   const { organizationId } = await requireOrganizationContext(currentUser);
+  const tenantConfig = await getOrganizationTenantConfig(organizationId);
   const enabledFeatures = await getOrganizationFeatures(organizationId);
   const hasAgencyIntelligence = enabledFeatures.has('AGENCY_INTELLIGENCE');
   const hasWholesaleOpportunities = enabledFeatures.has('WHOLESALE_OPPORTUNITIES');
@@ -103,7 +105,7 @@ export default async function AgencyActivityPage({
       orderBy: [{ visitAt: 'desc' }],
     }),
     prisma.tag.findMany({ where: { organizationId }, orderBy: [{ name: 'asc' }] }),
-    getAgencyRecentItemSales({ agencyId: agency.agencyId }),
+    getAgencyRecentItemSales({ agencyId: agency.agencyId, config: tenantConfig }),
     prisma.user.findMany({ where: { organizationId, isActive: true, role: { not: 'TASTER' } }, orderBy: [{ name: 'asc' }, { email: 'asc' }] }),
     prisma.organizationAccountOverlay.findUnique({
       where: { organizationId_accountType_externalAccountId: { organizationId, accountType: 'AGENCY', externalAccountId: id } },
@@ -221,7 +223,7 @@ export default async function AgencyActivityPage({
       </AnchoredDetails> : null}
 
       <AnchoredDetails className="account-overview-details account-workspace-section" id="sales" summary="Recent item sales">
-        <AgencyRecentSalesCard salesWindows={salesWindows} />
+        <AgencyRecentSalesCard salesWindows={salesWindows} config={tenantConfig} />
       </AnchoredDetails>
 
       <section className="dashboard-section account-workspace-section" id="activity">

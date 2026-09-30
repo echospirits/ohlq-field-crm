@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { PrismaClient } from '@prisma/client';
+import type { TenantConfig } from '../lib/tenantConfig';
+import { getTenantConfig } from '../lib/tenantConfig';
 import {
   ECHO_VENDOR_ID,
+  getAgencyRecentItemSales,
   getTenantAccountSalesEventWhere,
   getWholesaleRecentPurchases,
   getOhlqWindowStartDate,
@@ -11,6 +14,16 @@ import {
   summarizeLinkedWholesaleAccountSales,
   toAgencySalesSummaryItems,
 } from '../lib/ohlqSalesData';
+
+const otherTenantConfig: TenantConfig = {
+  appName: 'Neat',
+  digestName: 'Neat',
+  entityName: 'Other Distillery',
+  id: 'other-tenant',
+  productLabel: 'Other Distillery',
+  productPluralLabel: 'Other Distillery items',
+  productFilter: { excludedItemCodes: [], itemCodes: ['0200B'], mode: 'item-list', vendorIds: ['OTHER'] },
+};
 
 describe('OHLQ Echo item filtering', () => {
   it('includes Echo vendor rows and excludes item code 3150B', () => {
@@ -50,13 +63,16 @@ describe('OHLQ Echo item filtering', () => {
 
 describe('getWholesaleRecentPurchases', () => {
   it('matches permit suffix variants and aggregates purchases by item name', async () => {
+    const whereClauses: unknown[] = [];
     const db = {
       account: {
         findMany: async () => [],
       },
       ohlqAnnualSalesByWholesaleRow: {
         findFirst: async () => ({ reportDate: new Date('2026-05-12T00:00:00.000Z') }),
-        findMany: async () => [
+        findMany: async ({ where }: { where: unknown }) => {
+          whereClauses.push(where);
+          return [
           {
             agencyId: '10101',
             brand: '0100A',
@@ -81,7 +97,8 @@ describe('getWholesaleRecentPurchases', () => {
             vendor: ECHO_VENDOR_ID,
             wholesaleBottlesSold: 2,
           },
-        ],
+          ];
+        },
       },
       ohlqBrandMasterItem: {
         findMany: async () => [
@@ -93,24 +110,51 @@ describe('getWholesaleRecentPurchases', () => {
 
     const result = await getWholesaleRecentPurchases({
       account: { licenseeId: '72045' },
+      config: getTenantConfig(),
       db,
       licenseeId: '72045',
     });
 
-    assert.equal(result.all.count, 2);
-    assert.deepEqual(
-      result.all.items.map((item) => item.itemName),
-      ['Alpha Vodka', 'Zeta Whiskey'],
-    );
-    assert.equal(result.all.purchaseLineCount, 3);
-    assert.equal(result.all.items[0].totalBottlesSold, 5);
-    assert.equal(result.all.items[0].purchaseLineCount, 2);
-    assert.equal(result.all.items[0].agencyCount, 2);
-    assert.equal(result.echo.count, 1);
-    assert.equal(result.echo.items[0].itemCode, '0100A');
-    assert.equal(result.echo.items[0].totalBottlesSold, 5);
     assert.equal(result.tracked.count, 1);
+    assert.equal(result.tracked.items[0].itemCode, '0100A');
+    assert.equal(result.tracked.items[0].totalBottlesSold, 5);
+    assert.equal(result.tracked.items[0].purchaseLineCount, 2);
+    assert.equal(result.tracked.items[0].agencyCount, 2);
     assert.equal(result.productLabel, 'Echo');
+
+    const otherTenantResult = await getWholesaleRecentPurchases({
+      account: { licenseeId: '72045' },
+      config: otherTenantConfig,
+      db,
+    });
+    assert.deepEqual(otherTenantResult.tracked.items.map((item) => item.itemCode), ['0200B']);
+    assert.equal(otherTenantResult.tracked.totalBottlesSold, 1);
+    assert.equal(otherTenantResult.productLabel, 'Other Distillery');
+    assert.deepEqual((whereClauses[1] as { brand: unknown }).brand, { in: ['0200B'] });
+  });
+});
+
+describe('getAgencyRecentItemSales', () => {
+  it('uses the selected organization products for both sales windows', async () => {
+    const whereClauses: unknown[] = [];
+    const db = {
+      ohlqAnnualSalesRow: {
+        findFirst: async () => ({ reportDate: new Date('2026-05-12T00:00:00.000Z') }),
+        groupBy: async ({ where }: { where: unknown }) => {
+          whereClauses.push(where);
+          return [{ brand: '0200B', _max: { reportDate: new Date('2026-05-12T00:00:00.000Z') }, _sum: { retailBottlesSold: 2, wholesaleBottlesSold: 0 } }];
+        },
+      },
+      ohlqBrandMasterItem: { findMany: async () => [{ itemCode: '0200B', name: 'Zeta Whiskey' }] },
+    } as unknown as PrismaClient;
+
+    const windows = await getAgencyRecentItemSales({ agencyId: '10101', config: otherTenantConfig, db });
+    assert.equal(whereClauses.length, 2);
+    for (const where of whereClauses) {
+      assert.deepEqual((where as { brand: unknown }).brand, { in: ['0200B'] });
+      assert.equal((where as { agencyId: string }).agencyId, '10101');
+    }
+    assert.deepEqual(windows.map((window) => window.items.map((item) => item.itemCode)), [['0200B'], ['0200B']]);
   });
 });
 

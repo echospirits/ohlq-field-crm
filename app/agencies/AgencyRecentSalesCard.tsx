@@ -1,5 +1,5 @@
 import type { AgencySalesSummaryItem, AgencySalesWindow } from '../../lib/ohlqSalesData';
-import { getTenantConfig } from '../../lib/tenantConfig';
+import type { TenantConfig } from '../../lib/tenantConfig';
 import { DataFreshnessBadge } from '../components/DataFreshnessBadge';
 
 const numberFormatter = new Intl.NumberFormat('en-US');
@@ -116,8 +116,7 @@ function SalesItemList({ emptyText, items }: { emptyText: string; items: Combine
   );
 }
 
-export function AgencyRecentSalesCard({ salesWindows }: { salesWindows: AgencySalesWindow[] }) {
-  const tenantConfig = getTenantConfig();
+export function AgencyRecentSalesCard({ salesWindows, config }: { salesWindows: AgencySalesWindow[]; config: TenantConfig }) {
   const sevenDayWindow = salesWindows.find((window) => window.days === 7) ?? salesWindows[0];
   const thirtyDayWindow = salesWindows.find((window) => window.days === 30) ?? salesWindows[1];
   const combinedItems = combineSalesItems(sevenDayWindow?.items ?? [], thirtyDayWindow?.items ?? []);
@@ -125,7 +124,7 @@ export function AgencyRecentSalesCard({ salesWindows }: { salesWindows: AgencySa
   return (
     <section className="dashboard-section ohlq-sales-section">
       <div className="section-heading ohlq-sales-heading">
-        <h2>Recent {tenantConfig.productLabel} Item Sales</h2>
+        <h2>Recent {config.productLabel} Item Sales</h2>
         <DataFreshnessBadge sourceDate={thirtyDayWindow?.endDate} />
       </div>
 
@@ -141,7 +140,7 @@ export function AgencyRecentSalesCard({ salesWindows }: { salesWindows: AgencySa
             </div>
           </div>
           <SalesItemList
-            emptyText={`No ${tenantConfig.productPluralLabel} sales found in the last 30 days.`}
+            emptyText={`No ${config.productPluralLabel} sales found in the last 30 days.`}
             items={combinedItems}
           />
         </div>

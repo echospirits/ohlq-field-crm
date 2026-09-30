@@ -64,8 +64,6 @@ export type WholesalePurchaseList = {
 };
 
 export type WholesaleRecentPurchases = {
-  all: WholesalePurchaseList;
-  echo: WholesalePurchaseList;
   endDate: string | null;
   licenseeId: string | null;
   productLabel: string;
@@ -225,14 +223,15 @@ export function toAgencySalesSummaryItems(groups: AgencySalesGroup[], skuLookup:
 
 export async function getAgencyRecentItemSales({
   agencyId,
+  config,
   db = prisma,
   windows = [7, 30],
 }: {
   agencyId: string;
+  config: TenantConfig;
   db?: PrismaClient;
   windows?: number[];
 }) {
-  const tenantConfig = getTenantConfig();
   const latest = await db.ohlqAnnualSalesRow.findFirst({
     orderBy: { reportDate: 'desc' },
     select: { reportDate: true },
@@ -255,7 +254,7 @@ export async function getAgencyRecentItemSales({
         by: ['brand'],
         where: {
           agencyId,
-          ...getTenantSalesWhere(tenantConfig),
+          ...getTenantSalesWhere(config),
           reportDate: { gte: startDate, lte: endDate },
         },
         _max: { reportDate: true },
@@ -336,22 +335,19 @@ const sortPurchaseItemsByName = (left: WholesalePurchaseSummaryItem, right: Whol
 
 export async function getWholesaleRecentPurchases({
   account,
-  config = getTenantConfig(),
+  config,
   db = prisma,
   days = 30,
   licenseeId,
-  takeAll = 50,
-  takeEcho = 50,
+  take = 50,
 }: {
   account?: OhlqWholesaleLookupAccount;
-  config?: TenantConfig;
+  config: TenantConfig;
   db?: PrismaClient;
   days?: number;
   licenseeId?: string | null | undefined;
-  takeAll?: number;
-  takeEcho?: number;
+  take?: number;
 }) {
-  const tenantConfig = config;
   const lookupAccount = account ?? { licenseeId };
   const lookup = await resolveOhlqWholesaleSalesLookup({ account: lookupAccount, db });
   const linkedLicenseeId = lookup.primaryLicenseeId ?? Array.from(lookup.permitNumbers)[0] ?? null;
@@ -359,12 +355,10 @@ export async function getWholesaleRecentPurchases({
 
   if (!linkedLicenseeId || permitNumberSearchConditions.length === 0) {
     return {
-      all: { count: 0, items: [], purchaseLineCount: 0, totalBottlesSold: 0 },
-      echo: { count: 0, items: [], purchaseLineCount: 0, totalBottlesSold: 0 },
       endDate: null,
       licenseeId: null,
-      productLabel: tenantConfig.productLabel,
-      productPluralLabel: tenantConfig.productPluralLabel,
+      productLabel: config.productLabel,
+      productPluralLabel: config.productPluralLabel,
       startDate: null,
       tracked: { count: 0, items: [], purchaseLineCount: 0, totalBottlesSold: 0 },
     } satisfies WholesaleRecentPurchases;
@@ -377,12 +371,10 @@ export async function getWholesaleRecentPurchases({
 
   if (!latest) {
     return {
-      all: { count: 0, items: [], purchaseLineCount: 0, totalBottlesSold: 0 },
-      echo: { count: 0, items: [], purchaseLineCount: 0, totalBottlesSold: 0 },
       endDate: null,
       licenseeId: linkedLicenseeId,
-      productLabel: tenantConfig.productLabel,
-      productPluralLabel: tenantConfig.productPluralLabel,
+      productLabel: config.productLabel,
+      productPluralLabel: config.productPluralLabel,
       startDate: null,
       tracked: { count: 0, items: [], purchaseLineCount: 0, totalBottlesSold: 0 },
     } satisfies WholesaleRecentPurchases;
@@ -392,38 +384,30 @@ export async function getWholesaleRecentPurchases({
   const startDate = getOhlqWindowStartDate(endDate, days);
   const baseWhere = {
     OR: permitNumberSearchConditions,
+    ...getTenantWholesaleSalesWhere(config),
     reportDate: { gte: startDate, lte: endDate },
   };
-  const candidateRows = (
+  const trackedRows = (
     await db.ohlqAnnualSalesByWholesaleRow.findMany({
       where: baseWhere,
       orderBy: [{ reportDate: 'desc' }, { brand: 'asc' }, { agencyId: 'asc' }],
     })
-  ).filter((row) => salesPermitMatchesLookup(row.permitNumber, lookup));
-  const trackedRows = candidateRows.filter((row) => isConfiguredTenantItem(row.vendor, row.brand, tenantConfig));
-  const itemCodes = candidateRows.map((record) => record.brand);
+  ).filter((row) => salesPermitMatchesLookup(row.permitNumber, lookup) && isConfiguredTenantItem(row.vendor, row.brand, config));
+  const itemCodes = trackedRows.map((record) => record.brand);
   const skuLookup = await getSkuLookup(db, itemCodes);
   const trackedItems = toPurchaseSummaryItems(trackedRows, skuLookup).sort(sortPurchaseItemsByName);
-  const allItems = toPurchaseSummaryItems(candidateRows, skuLookup).sort(sortPurchaseItemsByName);
   const tracked = {
     count: trackedItems.length,
-    items: trackedItems.slice(0, takeEcho),
+    items: trackedItems.slice(0, take),
     purchaseLineCount: trackedRows.length,
     totalBottlesSold: trackedRows.reduce((total, row) => total + row.wholesaleBottlesSold, 0),
   };
 
   return {
-    all: {
-      count: allItems.length,
-      items: allItems.slice(0, takeAll),
-      purchaseLineCount: candidateRows.length,
-      totalBottlesSold: candidateRows.reduce((total, row) => total + row.wholesaleBottlesSold, 0),
-    },
-    echo: tracked,
     endDate: formatDateOnly(endDate),
     licenseeId: linkedLicenseeId,
-    productLabel: tenantConfig.productLabel,
-    productPluralLabel: tenantConfig.productPluralLabel,
+    productLabel: config.productLabel,
+    productPluralLabel: config.productPluralLabel,
     startDate: formatDateOnly(startDate),
     tracked,
   } satisfies WholesaleRecentPurchases;
