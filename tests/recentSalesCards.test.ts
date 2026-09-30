@@ -29,9 +29,18 @@ it('labels retail sales for the selected organization, including the empty state
   assert.doesNotMatch(html, /Echo/);
 });
 
-it('shows only the tenant product list in wholesale purchases', () => {
+it('shows tenant purchases first and all purchases in the wholesale disclosure', () => {
   const html = renderToStaticMarkup(createElement(WholesaleRecentPurchasesCard, {
     purchases: {
+      all: {
+        count: 2,
+        items: [
+          { agencyCount: 1, itemCode: '0100A', itemName: 'Echo Vodka', purchaseLineCount: 1, totalBottlesSold: 3, vendorCount: 1 },
+          { agencyCount: 1, itemCode: '0200B', itemName: 'Zeta Whiskey', purchaseLineCount: 1, totalBottlesSold: 2, vendorCount: 1 },
+        ],
+        purchaseLineCount: 2,
+        totalBottlesSold: 5,
+      },
       endDate: '2026-05-12',
       licenseeId: '72045',
       productLabel: config.productLabel,
@@ -47,6 +56,8 @@ it('shows only the tenant product list in wholesale purchases', () => {
   }));
   assert.match(html, /Other Distillery/);
   assert.match(html, /Zeta Whiskey/);
-  assert.doesNotMatch(html, /All purchases/);
-  assert.doesNotMatch(html, /Echo/);
+  const allPurchasesIndex = html.indexOf('All purchases · 30 days');
+  assert.ok(allPurchasesIndex > 0);
+  assert.doesNotMatch(html.slice(0, allPurchasesIndex), /Echo Vodka/);
+  assert.match(html.slice(allPurchasesIndex), /Echo Vodka/);
 });

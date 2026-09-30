@@ -70,6 +70,7 @@ export function WholesaleRecentPurchasesCard({
   purchases: WholesaleRecentPurchases;
 }) {
   const productLabel = purchases.productLabel;
+  const productPluralLabel = purchases.productPluralLabel;
 
   if (!purchases.licenseeId) {
     return (
@@ -94,7 +95,7 @@ export function WholesaleRecentPurchasesCard({
 
       <details className="source-explanation compact-details nested-details">
         <summary>How these purchases relate to the timeline</summary>
-        <p>This card shows your organization&apos;s tracked products purchased by this account during the source-date window. CRM visits and tasks may be newer than the latest OHLQ report.</p>
+        <p>The first list shows your organization&apos;s tracked products purchased by this account during the source-date window. All purchases includes other vendors at this location. The activity timeline shows only your organization&apos;s tracked products, so it can contain fewer purchase entries. CRM visits and tasks may also be newer than the latest OHLQ report.</p>
       </details>
 
       <div className="card ohlq-window-card">
@@ -102,12 +103,21 @@ export function WholesaleRecentPurchasesCard({
           <h3>{productLabel} · 30 days</h3>
           <PurchaseSummary list={purchases.tracked} />
         </div>
+        {purchases.tracked.count === 0 && purchases.all.count > 0 ? (
+          <p className="muted">This account has recent OHLQ purchases, but none for {productPluralLabel}.</p>
+        ) : null}
         <PurchaseList
           emptyText={`No ${productLabel} purchases found in the last 30 days.`}
           list={purchases.tracked}
         />
       </div>
-
+      <details className="card compact-details ohlq-window-details">
+        <summary>
+          All purchases · 30 days
+          <PurchaseSummary list={purchases.all} />
+        </summary>
+        <PurchaseList emptyText="No purchases found in the last 30 days." list={purchases.all} />
+      </details>
     </section>
   );
 }

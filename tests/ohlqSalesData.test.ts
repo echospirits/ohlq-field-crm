@@ -97,6 +97,14 @@ describe('getWholesaleRecentPurchases', () => {
             vendor: ECHO_VENDOR_ID,
             wholesaleBottlesSold: 2,
           },
+          {
+            agencyId: '10200',
+            brand: '0300C',
+            permitNumber: '99999999-1',
+            reportDate: new Date('2026-05-10T00:00:00.000Z'),
+            vendor: 'OTHER',
+            wholesaleBottlesSold: 99,
+          },
           ];
         },
       },
@@ -116,6 +124,10 @@ describe('getWholesaleRecentPurchases', () => {
     });
 
     assert.equal(result.tracked.count, 1);
+    assert.equal(result.all.count, 2);
+    assert.equal(result.all.purchaseLineCount, 3);
+    assert.equal(result.all.totalBottlesSold, 6);
+    assert.deepEqual(result.all.items.map((item) => item.itemCode), ['0100A', '0200B']);
     assert.equal(result.tracked.items[0].itemCode, '0100A');
     assert.equal(result.tracked.items[0].totalBottlesSold, 5);
     assert.equal(result.tracked.items[0].purchaseLineCount, 2);
@@ -130,7 +142,11 @@ describe('getWholesaleRecentPurchases', () => {
     assert.deepEqual(otherTenantResult.tracked.items.map((item) => item.itemCode), ['0200B']);
     assert.equal(otherTenantResult.tracked.totalBottlesSold, 1);
     assert.equal(otherTenantResult.productLabel, 'Other Distillery');
-    assert.deepEqual((whereClauses[1] as { brand: unknown }).brand, { in: ['0200B'] });
+    assert.deepEqual(otherTenantResult.all, result.all);
+    for (const where of whereClauses) {
+      assert.equal((where as { brand?: unknown }).brand, undefined);
+      assert.ok((where as { OR: unknown[] }).OR.length > 0);
+    }
   });
 });
 
