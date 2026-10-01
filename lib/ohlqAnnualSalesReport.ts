@@ -503,11 +503,26 @@ async function throwOhlqLoginFailure(page: Page, message: string) {
   );
 }
 
-async function waitForOhlqPartnerLogin(page: Page) {
+export function isOhlqLoginSuccessUrl(url: URL, report?: Pick<OhlqPowerBiReportConfig, 'reportId'>) {
+  if (url.protocol !== 'https:') return false;
+  if (url.hostname === 'ops.ohlq.com' && url.pathname.startsWith('/partner')) return true;
+  // A report re-login can resume the original destination without visiting /partner.
+  // Let the existing Microsoft/report handlers finish that handoff.
+  return Boolean(report && (
+    (url.hostname === 'app.powerbigov.us' && url.pathname.endsWith(`/rdlreports/${report.reportId}`)) ||
+    url.hostname === 'login.microsoftonline.com'
+  ));
+}
+
+export async function waitForOhlqPartnerLogin(page: Page, report?: Pick<OhlqPowerBiReportConfig, 'reportId'>) {
   const invalidLoginMessage = page.getByText(OHLQ_INVALID_LOGIN_TEXT).first();
   const outcome = await Promise.race([
-    page.waitForURL(/https:\/\/ops\.ohlq\.com\/partner/, { timeout: OHLQ_LOGIN_TIMEOUT_MS }).then(() => 'partner' as const),
-    page.waitForURL(/https:\/\/ops\.ohlq\.com\/passwordReset\//, { timeout: OHLQ_LOGIN_TIMEOUT_MS }).then(() => 'passwordReset' as const),
+    page.waitForURL((url) => isOhlqLoginSuccessUrl(url, report), {
+      timeout: OHLQ_LOGIN_TIMEOUT_MS, waitUntil: 'domcontentloaded',
+    }).then(() => 'partner' as const),
+    page.waitForURL(/https:\/\/ops\.ohlq\.com\/passwordReset\//, {
+      timeout: OHLQ_LOGIN_TIMEOUT_MS, waitUntil: 'domcontentloaded',
+    }).then(() => 'passwordReset' as const),
     invalidLoginMessage.waitFor({ state: 'visible', timeout: OHLQ_LOGIN_TIMEOUT_MS }).then(() => 'invalid' as const),
   ]);
 
@@ -976,7 +991,11 @@ async function saveDownloadWithTimeout(download: Download, outputPath: string, d
   }
 }
 
-async function signInToOhlqPartner(page: Page, credentials?: { password: string; username: string }) {
+async function signInToOhlqPartner(
+  page: Page,
+  credentials?: { password: string; username: string },
+  report?: OhlqPowerBiReportConfig,
+) {
   const ohlqUsername = credentials?.username ?? requireEnv('OHLQ_OPS_USERNAME');
   const ohlqPassword = credentials?.password ?? requireEnv('OHLQ_OPS_PASSWORD');
 
@@ -992,7 +1011,7 @@ async function signInToOhlqPartner(page: Page, credentials?: { password: string;
 
   for (let attempt = 1; attempt <= OHLQ_NAVIGATION_RETRY_ATTEMPTS; attempt += 1) {
     await gotoWithRetry(page, 'https://ops.ohlq.com/login', { waitUntil: 'domcontentloaded', timeout: 60_000 });
-    if (page.url().includes('/partner')) return;
+    if (isOhlqLoginSuccessUrl(new URL(page.url()), report)) return;
 
     lastPageSummary = await getPageSummary(page);
     let pageIsBlocked = isOhlqRequestBlockedPageSummary(lastPageSummary);
@@ -1006,7 +1025,7 @@ async function signInToOhlqPartner(page: Page, credentials?: { password: string;
         await usernameInput.fill(ohlqUsername);
         await passwordInput.fill(ohlqPassword);
         await submitButton.click();
-        await waitForOhlqPartnerLogin(page);
+        await waitForOhlqPartnerLogin(page, report);
         return;
       }
       lastPageSummary = await getPageSummary(page);
@@ -1063,7 +1082,7 @@ async function waitForPowerBiReportUrlOrOhlqLogin(page: Page, report: OhlqPowerB
   ]);
 }
 
-async function openOhlqPowerBiReportWithSessionRetry(
+export async function openOhlqPowerBiReportWithSessionRetry(
   page: Page,
   report: OhlqPowerBiReportConfig,
   runtime: OhlqDownloadRuntime,
@@ -1078,9 +1097,11 @@ async function openOhlqPowerBiReportWithSessionRetry(
     if (outcome === 'report') return;
 
     runtime.logger.log(
-      `OHLQ OPS returned to login while opening ${report.fileSlug}; re-authenticating before retry ${attempt + 1}.`,
+      `OHLQ OPS returned to login while opening ${report.fileSlug}; re-authenticating on attempt ${attempt}.`,
     );
-    await signInToOhlqPartner(page, partnerCredentials);
+    await signInToOhlqPartner(page, partnerCredentials, report);
+    await handleMicrosoftSignIn(page, runtime.debugDir, ohlqReportRedirectUrl);
+    if (isPowerBiReportUrl(page.url(), report)) return;
   }
 
   throw new Error(`OHLQ OPS returned to login while opening ${report.fileSlug}; report redirect did not complete.`);
