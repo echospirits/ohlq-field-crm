@@ -1,83 +1,27 @@
-import { createHash } from 'node:crypto';
-import { OpportunityStatus, PrismaClient } from '@prisma/client';
+import { writeFileSync } from 'node:fs';
 import { validateRuntimeEnvironment } from '../lib/appEnvironment';
-import { OPPORTUNITY_RANKING_VERSION } from '../lib/opportunityConfig';
-import { evaluateOpportunityIntelligence } from '../lib/opportunityEngine';
-
-const db = new PrismaClient();
-const preservedStatuses = [OpportunityStatus.OPEN, OpportunityStatus.ACTIONED, OpportunityStatus.SNOOZED, OpportunityStatus.DISMISSED];
-
-const workflowDigest = (rows: Array<Record<string, unknown>>) => createHash('sha256')
-  .update(JSON.stringify(rows, Object.keys(rows[0] ?? {}).sort()))
-  .digest('hex');
-
-async function workflowSnapshot(organizationId: string) {
-  const rows = await db.salesOpportunity.findMany({
-    where: { organizationId, status: { in: preservedStatuses } },
-    orderBy: { id: 'asc' },
-    select: {
-      id: true,
-      status: true,
-      actionedAt: true,
-      snoozedUntil: true,
-      dismissedAt: true,
-      dismissalReason: true,
-      assignedToUserId: true,
-    },
-  });
-  return { count: rows.length, digest: workflowDigest(rows) };
-}
-
+import { prisma } from '../lib/prisma';
+import { enabledAssessmentTenants, evaluateWholesaleAssessments } from '../lib/wholesaleAssessmentService';
+const arg = (key: string) => { const i = process.argv.indexOf(key); return i < 0 ? undefined : process.argv[i + 1]; };
 async function main() {
-  const runtime = validateRuntimeEnvironment();
-  if (runtime.appEnvironment === 'production' && !process.argv.includes('--confirm-production')) {
-    throw new Error(`Production ${OPPORTUNITY_RANKING_VERSION} recalculation requires --confirm-production.`);
-  }
-  const latestImport = await db.ohlqReportImportStatus.findFirst({
-    where: { dataSource: 'ANNUAL_SALES_SUMMARY_BY_WHOLESALE', status: 'COMPLETED' },
-    orderBy: { reportDate: 'desc' },
-    select: { reportDate: true },
-  });
-  if (!latestImport) throw new Error('No completed wholesale sales import is available for a scoring date.');
-  const organizations = await db.organization.findMany({
-    where: { active: true, features: { some: { enabled: true, featureKey: 'WHOLESALE_OPPORTUNITIES' } } },
-    orderBy: { createdAt: 'asc' },
-    select: { id: true, displayName: true },
-  });
+  const environment = validateRuntimeEnvironment();
+  const apply = process.argv.includes('--apply');
+  if (environment.appEnvironment === 'production') throw new Error('This development recalculation command refuses production.');
+  const organizations = await prisma.organization.findMany({ where: { ...enabledAssessmentTenants, ...(arg('--organization') ? { id: arg('--organization') } : {}) }, select: { id: true } });
+  if (!organizations.length) throw new Error('No enabled organization matches this request.');
   const results = [];
   for (const organization of organizations) {
-    const opportunities = await db.salesOpportunity.findMany({
-      where: { organizationId: organization.id, status: { in: preservedStatuses } },
-      distinct: ['wholesaleAccountId'],
-      select: { wholesaleAccountId: true },
-    });
-    if (opportunities.length === 0) {
-      results.push({ organization: organization.displayName, organizationId: organization.id, skipped: 'no preserved-status opportunities' });
-      continue;
+    try {
+    const result = await evaluateWholesaleAssessments({ organizationId: organization.id, dryRun: !apply, reconcileLedger: apply, accountIds: arg('--account') ? [arg('--account')!] : undefined });
+    results.push({ organizationId: organization.id, ...result });
+    console.log(JSON.stringify({ organizationId: organization.id, expected: result.expected, evaluated: result.evaluated, persisted: result.persisted, failed: result.failed, evidenceCounts: result.evidenceCounts, runId: result.runId }));
+    if (result.failed || apply && result.persisted !== result.expected) process.exitCode = 1;
+    } catch {
+      console.error(`Assessment refresh failed for ${organization.id}; inspect run status and retry scoring.`);
+      results.push({ organizationId: organization.id, failed: true });
+      process.exitCode = 1;
     }
-    const before = await workflowSnapshot(organization.id);
-    const result = await evaluateOpportunityIntelligence({
-      db,
-      organizationId: organization.id,
-      accountIds: opportunities.map((item) => item.wholesaleAccountId),
-      asOfDate: latestImport.reportDate,
-      scoreExistingOnly: true,
-    });
-    const after = await workflowSnapshot(organization.id);
-    if (before.count !== after.count || before.digest !== after.digest) {
-      throw new Error(`Workflow status preservation check failed for ${organization.displayName}.`);
-    }
-    const versions = await db.salesOpportunity.groupBy({
-      by: ['scoringVersion'],
-      where: { organizationId: organization.id, status: { in: preservedStatuses } },
-      _count: true,
-    });
-    results.push({ organization: organization.displayName, organizationId: organization.id, before, after, result, versions });
   }
-  console.log(JSON.stringify({ environment: runtime.appEnvironment, asOfDate: latestImport.reportDate, expectedVersion: OPPORTUNITY_RANKING_VERSION, organizations: results }, null, 2));
+  if (arg('--output')) writeFileSync(arg('--output')!, JSON.stringify(results, null, 2));
 }
-
-main().catch((error) => {
-  console.error(error instanceof Error ? error.message : error);
-  process.exitCode = 1;
-}).finally(() => db.$disconnect());
+main().catch(e => { console.error(e instanceof Error ? e.message : 'Recalculation failed'); process.exitCode = 1; }).finally(() => prisma.$disconnect());

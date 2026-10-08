@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { CORE_PACKAGE_FEATURE_KEYS, DEFAULT_FEATURE_KEYS, ECHO_FEATURE_KEYS, FEATURE_KEYS, FEATURE_REGISTRY, getEnvironmentFeatureKeys, getPackageFeatureKeys, hasIntelligencePackage, INTELLIGENCE_PACKAGE_FEATURE_KEYS, OPTIONAL_FEATURE_KEYS, validateFeatureSelection } from '../lib/featureRegistry';
+import { CORE_PACKAGE_FEATURE_KEYS, DEFAULT_FEATURE_KEYS, ECHO_FEATURE_KEYS, FEATURE_KEYS, FEATURE_REGISTRY, getEnvironmentFeatureKeys, getPackageFeatureKeys, hasIntelligencePackage, INTELLIGENCE_PACKAGE_FEATURE_KEYS, validateFeatureSelection } from '../lib/featureRegistry';
 import { getNavigationItems, navigationItems } from '../app/components/navigationConfig';
 import { normalizeOrganizationIdentifierList } from '../lib/organizationConfiguration';
 
@@ -10,8 +10,8 @@ test('feature registry has stable unique keys and explicit dependency metadata',
   assert.equal(Object.keys(FEATURE_REGISTRY).length, FEATURE_KEYS.length);
   assert.equal(DEFAULT_FEATURE_KEYS.includes('WHOLESALE_OPPORTUNITIES'), false);
   assert.equal(ECHO_FEATURE_KEYS.includes('WHOLESALE_OPPORTUNITIES'), true);
-  assert.equal(new Set<string>(ECHO_FEATURE_KEYS).has('OHIO_DIRECT_WHOLESALE_ORDERS'), false);
-  assert.equal(DEFAULT_FEATURE_KEYS.includes('OHIO_DIRECT_WHOLESALE_ORDERS'), false);
+  assert.equal(new Set<string>(ECHO_FEATURE_KEYS).has('OHIO_DIRECT_WHOLESALE_ORDERS'), true);
+  assert.equal(DEFAULT_FEATURE_KEYS.includes('OHIO_DIRECT_WHOLESALE_ORDERS'), true);
   assert.deepEqual(FEATURE_REGISTRY.WHOLESALE_OPPORTUNITIES.dependencies, ['WHOLESALE_ACCOUNTS', 'OHLQ_SALES_DATA']);
   assert.deepEqual(FEATURE_REGISTRY.OHIO_DIRECT_WHOLESALE_ORDERS.dependencies, ['WHOLESALE_ACCOUNTS', 'OHLQ_SALES_DATA']);
 });
@@ -19,11 +19,8 @@ test('feature registry has stable unique keys and explicit dependency metadata',
 test('feature packages keep Core mandatory and group every intelligence capability', () => {
   assert.deepEqual(DEFAULT_FEATURE_KEYS, CORE_PACKAGE_FEATURE_KEYS);
   assert.deepEqual(INTELLIGENCE_PACKAGE_FEATURE_KEYS, ['AGENCY_INTELLIGENCE', 'WHOLESALE_OPPORTUNITIES', 'ADVANCED_INTELLIGENCE']);
-  assert.deepEqual(OPTIONAL_FEATURE_KEYS, ['OHIO_DIRECT_WHOLESALE_ORDERS', 'ANALYTICS', 'ACCOUNT_SALES_STATUS']);
   assert.deepEqual(getPackageFeatureKeys(false), CORE_PACKAGE_FEATURE_KEYS);
-  assert.deepEqual(getPackageFeatureKeys(true), FEATURE_KEYS.filter((key) => key !== 'OHIO_DIRECT_WHOLESALE_ORDERS' && key !== 'ANALYTICS' && key !== 'ACCOUNT_SALES_STATUS'));
-  assert.deepEqual(getPackageFeatureKeys(true, true), FEATURE_KEYS.filter((key) => key !== 'ANALYTICS' && key !== 'ACCOUNT_SALES_STATUS'));
-  assert.deepEqual(getPackageFeatureKeys(true, true, true), FEATURE_KEYS.filter((key) => key !== 'ACCOUNT_SALES_STATUS'));
+  assert.deepEqual(getPackageFeatureKeys(true), [...FEATURE_KEYS]);
   assert.equal(hasIntelligencePackage(['AGENCY_INTELLIGENCE']), true);
   assert.equal(hasIntelligencePackage(CORE_PACKAGE_FEATURE_KEYS), false);
 });
@@ -54,30 +51,28 @@ test('staging tenant creation, editing, and seeding preserve all-feature entitle
   assert.match(reconcile, /FEATURE_KEYS\.map/);
 });
 
-test('Analytics is an independent opt-in pilot with no automatic tenant grants', () => {
-  assert.equal(DEFAULT_FEATURE_KEYS.includes('ANALYTICS'), false);
-  assert.equal(new Set<string>(ECHO_FEATURE_KEYS).has('ANALYTICS'), false);
-  assert.equal(FEATURE_REGISTRY.ANALYTICS.defaultEnabled, false);
-  for (const intelligence of [false, true]) {
-    for (const orders of [false, true]) {
-      const without = getPackageFeatureKeys(intelligence, orders);
-      const withAnalytics = getPackageFeatureKeys(intelligence, orders, true);
-      assert.equal(without.includes('ANALYTICS'), false);
-      assert.deepEqual(withAnalytics, [...without, 'ANALYTICS']);
-      assert.deepEqual(validateFeatureSelection(withAnalytics).missing, []);
-    }
+test('former Pilot capabilities are included in Core without buying Intelligence', () => {
+  for (const key of ['ANALYTICS', 'ACCOUNT_SALES_STATUS', 'OHIO_DIRECT_WHOLESALE_ORDERS'] as const) {
+    assert.equal(DEFAULT_FEATURE_KEYS.includes(key), true);
+    assert.equal(ECHO_FEATURE_KEYS.includes(key), true);
+    assert.equal(FEATURE_REGISTRY[key].defaultEnabled, true);
+    assert.equal(FEATURE_REGISTRY[key].beta, undefined);
   }
-  assert.equal(getNavigationItems('work', []).some((item) => item.key === 'analytics'), false);
-  assert.equal(getNavigationItems('work', ['ANALYTICS']).some((item) => item.key === 'analytics'), true);
+  assert.deepEqual(validateFeatureSelection(getPackageFeatureKeys(false)).missing, []);
+  assert.equal(getNavigationItems('work', getPackageFeatureKeys(false)).some((item) => item.key === 'analytics'), true);
+  assert.equal(getNavigationItems('accounts', getPackageFeatureKeys(false)).some((item) => item.key === 'pipeline'), true);
+  assert.equal(getNavigationItems('accounts', getPackageFeatureKeys(false)).some((item) => item.key === 'wholesale-orders'), true);
+  assert.equal(hasIntelligencePackage(getPackageFeatureKeys(false)), false);
   for (const path of ['app/analytics/page.tsx', 'app/analytics/export/route.ts']) {
     const source = readFileSync(path, 'utf8');
     assert.match(source, /requireFeatureForUser\(user, 'ANALYTICS'\)/);
-    assert.ok(source.indexOf("requireFeatureForUser(user, 'ANALYTICS')") < source.indexOf('await getAnalytics('));
   }
   for (const path of ['app/platform/organizations/new/page.tsx', 'app/platform/organizations/[id]/page.tsx']) {
     const source = readFileSync(path, 'utf8');
-    assert.match(source, /getPackageFeatureKeys\(intelligenceEnabled, directWholesaleOrdersEnabled, analyticsEnabled, accountSalesStatusEnabled\)/);
-    assert.match(source, /name="analytics" type="checkbox"/);
+    assert.match(source, /getPackageFeatureKeys\(intelligenceEnabled\)/);
+    assert.doesNotMatch(source, /name="(?:analytics|accountSalesStatus|directWholesaleOrders)"/);
+    assert.doesNotMatch(source, />Pilot</);
+    assert.match(source, /name="intelligence" type="checkbox"/);
   }
 });
 
@@ -87,7 +82,7 @@ test('Wholesale Opportunities uses one entitlement in navigation and server acce
   assert.equal(navigationItems.find((item) => item.href === '/admin/account-research')?.featureKey, 'ADVANCED_INTELLIGENCE');
   const page = readFileSync('app/opportunities/page.tsx', 'utf8');
   const actions = readFileSync('app/opportunities/actions.ts', 'utf8');
-  assert.match(page, /requireFeatureForUser\(currentUser, 'WHOLESALE_OPPORTUNITIES'\)/);
+  assert.match(page, /requireFeatureForUser\(user, 'WHOLESALE_OPPORTUNITIES'\)/);
   assert.match(actions, /requireFeatureForUser\(user, 'WHOLESALE_OPPORTUNITIES'\)/);
 });
 

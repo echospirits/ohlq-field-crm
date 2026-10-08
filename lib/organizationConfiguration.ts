@@ -165,6 +165,7 @@ export async function saveOrganizationProductSelection({
     db.organizationProduct.updateMany({ where: { organizationId, id: { in: included } }, data: { status: OrganizationProductStatus.OWNED } }),
     db.organizationProduct.updateMany({ where: { organizationId, id: { notIn: included } }, data: { status: OrganizationProductStatus.EXCLUDED } }),
     db.organization.update({ where: { id: organizationId }, data: { onboardingData: { ...onboarding, productsConfirmed: products.length > 0 } } }),
+    db.wholesaleAccountAssessment.updateMany({ where: { organizationId }, data: { refreshRequestedAt: new Date() } }),
   ]);
 
   return { excludedCount: products.length - included.length, includedCount: included.length };

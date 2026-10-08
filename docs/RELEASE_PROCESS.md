@@ -2,6 +2,13 @@
 
 Neat uses `0.X.0-dev` while TST is open for development toward a planned `0.X.0` feature release, and `0.X.Y` for a stable bugfix or hotfix release. Remove the `-dev` suffix only when establishing the exact release candidate. `package.json` is the canonical application version source; generated lockfile metadata may mirror it.
 
+## Open a development cycle
+
+1. Fetch both repositories and verify the current production version/tag, archived release records, and actual main/TST tree differences. Preserve any unreleased work; do not assume divergent commit history means divergent application state.
+2. Start from current `staging/tst` and advance package.json plus lockfile version metadata to the next planned `0.X.0-dev`.
+3. Initialize `UNRELEASED.md` with verified production/TST baselines and links to a version-specific release plan, pending checklist copied from the standard template, and validation record. Keep candidate gates unchecked until checked against the frozen candidate.
+4. Validate the changed scope, commit and push only to `neat-tst/tst`, and verify its deployment/version/environment/health. Record evidence and exclusions. Do not promote or create a production tag.
+
 ## Feature development: TST only
 
 1. Build and test the feature or fix.

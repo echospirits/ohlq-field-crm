@@ -400,6 +400,20 @@ enum TargetPlacementStatus {
   PLACED
 }
 
+// Compact, permanent daily audit. No cascades from users, organizations or sessions.
+model UserActivityDay {
+  userId          String
+  day             DateTime @db.Date
+  organizationId  String?
+  firstActivityAt DateTime @db.Timestamptz(3)
+  lastLoginAt     DateTime? @db.Timestamptz(3)
+  loginCount      Int      @default(0)
+
+  @@id([userId, day])
+  @@index([organizationId, day])
+  @@index([day])
+}
+
 model User {
   id                          String                 @id @default(cuid())
   organizationId              String?
@@ -408,6 +422,7 @@ model User {
   lastName                    String?
   name                        String?
   phone                       String?
+  darkMode                    Boolean                @default(false)
   passwordHash                String?
   role                        UserRole               @default(USER)
   isActive                    Boolean                @default(true)
@@ -416,6 +431,7 @@ model User {
   updatedAt                   DateTime               @updatedAt
   sessions                    UserSession[]
   invitations                 UserInvitation[]
+  passwordResetTokens         PasswordResetToken[]
   createdWholesaleAccounts    WholesaleAccount[]     @relation("WholesaleAccountCreatedBy")
   mergedWholesaleAccounts     WholesaleAccount[]     @relation("WholesaleAccountMergedBy")
   createdLocationContacts     LocationContact[]      @relation("LocationContactCreatedBy")
@@ -507,6 +523,9 @@ model Organization {
   agencyMarketProfiles    AgencyMarketProfile[]
   agencyProductFits       AgencyProductMarketFit[]
   opportunitySignals      OpportunityAccountSignal[]
+  wholesaleAssessments    WholesaleAccountAssessment[]
+  wholesaleAssessmentRuns WholesaleAssessmentRun[]
+  wholesaleLedgerDays     WholesaleSalesLedgerDay[]
   accountSalesEvents      AccountSalesEvent[]
   salesOpportunities      SalesOpportunity[]
   opportunityEvents       OpportunityEvent[]
@@ -629,6 +648,8 @@ model OrganizationProduct {
   category          String?
   subcategory       String?
   strategicPriority Int?
+  opportunityRole   String?
+  distributionStatus String?
   discontinued      Boolean                   @default(false)
   notes             String?
   createdAt         DateTime                  @default(now())
@@ -859,6 +880,19 @@ model UserInvitation {
   @@index([userId])
   @@index([expiresAt])
   @@index([acceptedAt])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([expiresAt])
 }
 
 model LoginThrottle {
@@ -1219,6 +1253,9 @@ model MenuPlacement {
   proofPhotoId       String?             @unique
   product            String
   menuItemName       String
+  useFamily          String?
+  pouredProduct      String?
+  demandEvidence     String?
   placementType      MenuPlacementType   @default(COCKTAIL_MENU)
   status             MenuPlacementStatus @default(PROMISED)
   source             MenuPlacementSource @default(MANUAL)
@@ -1429,6 +1466,7 @@ model WholesaleAccount {
   targetChainMemberships        TargetChainMembership[]
   opportunities                 SalesOpportunity[]
   opportunitySignals            OpportunityAccountSignal[]
+  currentAssessments             WholesaleAccountAssessment[]
   salesEvents                   AccountSalesEvent[]
   wholesaleOrders               WholesaleOrder[]
   accountResearchJobs           AccountResearchJob[]
@@ -2358,6 +2396,7 @@ model SalesOpportunity {
   expiredAt            DateTime?
   conversionPurchaseAt DateTime?          @db.Date
   conversionVisitId    String?
+  outcomeSummary       Json?
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
   wholesaleAccount     WholesaleAccount   @relation(fields: [wholesaleAccountId], references: [id], onDelete: Cascade)
@@ -2400,6 +2439,76 @@ model OpportunityEvent {
   @@index([loggedVisitId])
   @@index([worklistItemId])
   @@index([purchaseReportDate])
+}
+
+model WholesaleAccountAssessment {
+  id                 String @id @default(cuid())
+  organizationId     String
+  wholesaleAccountId String
+  modelVersion       String
+  configurationId    String
+  runId              String
+  asOfDate           DateTime @db.Date
+  calculatedAt       DateTime
+  researchAt         DateTime?
+  evidenceMode       String
+  state              String
+  priority           Float
+  priorityBand       String
+  effort             String
+  title              String
+  action             String
+  assessment         Json
+  dismissedKey       String?
+  dismissalReason    String?
+  snoozedUntil       DateTime?
+  refreshRequestedAt DateTime?
+  organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  wholesaleAccount   WholesaleAccount @relation(fields: [wholesaleAccountId], references: [id], onDelete: Cascade)
+  run                WholesaleAssessmentRun @relation(fields: [runId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, wholesaleAccountId])
+  @@index([organizationId, evidenceMode, priority])
+  @@index([organizationId, state, priority])
+}
+
+model WholesaleAssessmentRun {
+  id              String @id @default(cuid())
+  organizationId  String
+  activeKey       String? @unique
+  leaseUntil      DateTime?
+  modelVersion    String
+  configurationId String
+  fullSweep       Boolean
+  status          String
+  startedAt       DateTime @default(now())
+  completedAt     DateTime?
+  asOfDate        DateTime? @db.Date
+  expected        Int @default(0)
+  evaluated       Int @default(0)
+  persisted       Int @default(0)
+  ineligible      Int @default(0)
+  failed          Int @default(0)
+  evidenceCounts  Json
+  sourceCoverage  Json
+  errors          Json
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  assessments     WholesaleAccountAssessment[]
+
+  @@index([organizationId, startedAt])
+  @@index([organizationId, fullSweep, status, completedAt])
+}
+
+model WholesaleSalesLedgerDay {
+  id             String @id @default(cuid())
+  organizationId String
+  reportDate     DateTime @db.Date
+  sourceRevision String
+  sourceRows     Int
+  capturedAt     DateTime @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, reportDate])
 }
 
 model OpportunityScore {

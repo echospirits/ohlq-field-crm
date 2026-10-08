@@ -68,11 +68,10 @@ export default async function SearchPage({ searchParams }: { searchParams?: Prom
             name: true,
             address: true,
             city: true,
-            opportunities: {
-              where: { organizationId, status: { in: [OpportunityStatus.OPEN, OpportunityStatus.ACTIONED, OpportunityStatus.SNOOZED] } },
-              orderBy: [{ productionScore: 'desc' }, { lastDetectedAt: 'desc' }],
+            currentAssessments: {
+              where: { organizationId },
               take: 1,
-              select: { priorityBand: true, recommendedAction: true },
+              select: { priorityBand: true, action: true, evidenceMode: true },
             },
           },
         }),
@@ -148,7 +147,7 @@ export default async function SearchPage({ searchParams }: { searchParams?: Prom
                   <Link className="search-result-row" href={`/wholesale/${account.id}`} key={account.id}>
                     <span><strong>{account.name}</strong><small>{[account.address, account.city].filter(Boolean).join(', ') || 'No address'}</small></span>
                     <span>
-                      {hasWholesaleOpportunities && account.opportunities[0] ? <small>{account.opportunities[0].priorityBand} opportunity · {account.opportunities[0].recommendedAction}</small> : <small>Wholesale</small>}
+                      {hasWholesaleOpportunities && account.currentAssessments[0] ? <small>{account.currentAssessments[0].priorityBand} priority · {account.currentAssessments[0].evidenceMode.replaceAll('_', ' ').toLowerCase()} · {account.currentAssessments[0].action}</small> : <small>Wholesale</small>}
                       <strong>{account.licenseeId}</strong>
                     </span>
                   </Link>

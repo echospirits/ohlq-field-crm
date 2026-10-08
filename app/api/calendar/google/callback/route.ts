@@ -1,5 +1,6 @@
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
+export const maxDuration = 300;
 
 import { createHash } from 'crypto';
 import { NextResponse } from 'next/server';
@@ -14,6 +15,7 @@ import {
 import { syncOutstandingWorklistItemsForUser } from '../../../../../lib/calendar/worklistSync';
 import { prisma } from '../../../../../lib/prisma';
 import { isSideEffectEnabled } from '../../../../../lib/appEnvironment';
+import { CalendarSyncBusyError, withCalendarSyncLock } from '../../../../../lib/calendar/syncLock';
 
 const redirectWithStatus = (request: Request, status: string) =>
   NextResponse.redirect(new URL(`/settings/calendar?status=${encodeURIComponent(status)}`, request.url));
@@ -35,53 +37,72 @@ export async function GET(request: Request) {
   await prisma.calendarOAuthState.delete({ where: { id: oauthState.id } });
 
   try {
-    const token = await exchangeGoogleOAuthCode(code);
-    const identity = await getGoogleIdentity(token.access_token);
-    const current = await prisma.calendarConnection.findUnique({
-      where: { userId_provider: { userId: user.id, provider: GOOGLE_PROVIDER } },
+    const status = await withCalendarSyncLock(async () => {
+      const token = await exchangeGoogleOAuthCode(code);
+      const identity = await getGoogleIdentity(token.access_token);
+      const current = await prisma.calendarConnection.findUnique({
+        where: { userId_provider: { userId: user.id, provider: GOOGLE_PROVIDER } },
+      });
+      const sameAccount = !current || current.providerAccountId === identity.sub;
+      if (!sameAccount) return 'account-change-blocked';
+      const temporaryConnection = {
+        id: current?.id ?? 'oauth-pending',
+        accessTokenEncrypted: encryptCalendarToken(token.access_token),
+        refreshTokenEncrypted: token.refresh_token ? encryptCalendarToken(token.refresh_token) : current?.refreshTokenEncrypted ?? null,
+        tokenExpiresAt: new Date(Date.now() + (token.expires_in ?? 3600) * 1000),
+        selectedCalendarId: current?.selectedCalendarId ?? 'primary',
+      };
+      const calendars = await googleCalendarProvider.listCalendars(temporaryConnection);
+      const available = calendars.find((calendar) => calendar.id === current?.selectedCalendarId) ?? calendars.find((calendar) => calendar.primary) ?? calendars[0];
+      const hasLinkedEvents = current && await prisma.worklistCalendarEvent.count({ where: { connectionId: current.id, externalEventId: { not: null } } });
+      const unavailable = Boolean(current && hasLinkedEvents && available?.id !== current.selectedCalendarId);
+      // Refresh the same account's credentials so cleanup remains possible, but
+      // never silently move live event links onto a fallback calendar.
+      const selected = unavailable && current ? { id: current.selectedCalendarId, name: current.selectedCalendarName } : available;
+      if (!selected) throw new Error('No writable Google calendar is available.');
+      await prisma.calendarConnection.upsert({
+        where: { userId_provider: { userId: user.id, provider: GOOGLE_PROVIDER } },
+        create: {
+          userId: user.id,
+          provider: GOOGLE_PROVIDER,
+          providerAccountId: identity.sub,
+          providerEmail: identity.email ?? null,
+          accessTokenEncrypted: temporaryConnection.accessTokenEncrypted,
+          refreshTokenEncrypted: temporaryConnection.refreshTokenEncrypted,
+          tokenExpiresAt: temporaryConnection.tokenExpiresAt,
+          scope: token.scope ?? '',
+          selectedCalendarId: selected.id,
+          selectedCalendarName: selected.name,
+        },
+        update: {
+          providerAccountId: identity.sub,
+          providerEmail: identity.email ?? null,
+          accessTokenEncrypted: temporaryConnection.accessTokenEncrypted,
+          refreshTokenEncrypted: temporaryConnection.refreshTokenEncrypted ?? undefined,
+          tokenExpiresAt: temporaryConnection.tokenExpiresAt,
+          scope: token.scope ?? current?.scope ?? '',
+          selectedCalendarId: selected.id,
+          selectedCalendarName: selected.name,
+          syncEnabled: !unavailable,
+          requiresReconnect: false,
+          syncError: unavailable ? 'Your linked calendar is unavailable. Choose an available calendar in settings.' : null,
+          syncToken: null,
+          lastSyncAt: null,
+        },
+      });
+      return unavailable ? 'calendar-unavailable' : 'connected';
     });
-    const temporaryConnection = {
-      id: current?.id ?? 'oauth-pending',
-      accessTokenEncrypted: encryptCalendarToken(token.access_token),
-      refreshTokenEncrypted: token.refresh_token ? encryptCalendarToken(token.refresh_token) : current?.refreshTokenEncrypted ?? null,
-      tokenExpiresAt: new Date(Date.now() + (token.expires_in ?? 3600) * 1000),
-      selectedCalendarId: current?.selectedCalendarId ?? 'primary',
-    };
-    const calendars = await googleCalendarProvider.listCalendars(temporaryConnection);
-    const selected = calendars.find((calendar) => calendar.id === current?.selectedCalendarId) ?? calendars.find((calendar) => calendar.primary) ?? calendars[0];
-    if (!selected) throw new Error('No writable Google calendar is available.');
-    await prisma.calendarConnection.upsert({
-      where: { userId_provider: { userId: user.id, provider: GOOGLE_PROVIDER } },
-      create: {
-        userId: user.id,
-        provider: GOOGLE_PROVIDER,
-        providerAccountId: identity.sub,
-        providerEmail: identity.email ?? null,
-        accessTokenEncrypted: temporaryConnection.accessTokenEncrypted,
-        refreshTokenEncrypted: temporaryConnection.refreshTokenEncrypted,
-        tokenExpiresAt: temporaryConnection.tokenExpiresAt,
-        scope: token.scope ?? '',
-        selectedCalendarId: selected.id,
-        selectedCalendarName: selected.name,
-      },
-      update: {
-        providerAccountId: identity.sub,
-        providerEmail: identity.email ?? null,
-        accessTokenEncrypted: temporaryConnection.accessTokenEncrypted,
-        refreshTokenEncrypted: temporaryConnection.refreshTokenEncrypted ?? undefined,
-        tokenExpiresAt: temporaryConnection.tokenExpiresAt,
-        scope: token.scope ?? current?.scope ?? '',
-        selectedCalendarId: selected.id,
-        selectedCalendarName: selected.name,
-        syncEnabled: true,
-        requiresReconnect: false,
-        syncError: null,
-        syncToken: null,
-      },
-    });
-    await syncOutstandingWorklistItemsForUser(user.id);
-    return redirectWithStatus(request, 'connected');
+    if (status === 'connected') {
+      // Connection is saved even when the initial check is partial or unavailable.
+      try {
+        const result = await syncOutstandingWorklistItemsForUser(user.id);
+        if (result.failed) return redirectWithStatus(request, 'partial');
+        if (result.skipped) return redirectWithStatus(request, result.reason ?? 'check-failed');
+      } catch { return redirectWithStatus(request, 'check-failed'); }
+    }
+    return redirectWithStatus(request, status);
   } catch (error) {
+    if (error instanceof CalendarSyncBusyError) return redirectWithStatus(request, 'busy');
     console.error('Google Calendar OAuth callback failed', { userId: user.id, error: error instanceof Error ? error.message : String(error) });
     return redirectWithStatus(request, 'connection-failed');
   }

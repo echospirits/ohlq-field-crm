@@ -1,3 +1,5 @@
+import { Suspense } from 'react';
+import { AccountWorklist } from '../../components/AccountWorklist';
 import { AddressLink, PhoneLink } from '../../components/AccountContactLinks';
 import { AnchoredDetails } from '../../components/AnchoredDetails';
 export const dynamic = 'force-dynamic';
@@ -294,6 +296,7 @@ export default async function WholesaleActivityPage({
       <AccountWorkspaceNavigation sections={[
         { href: '#overview', label: 'Overview' },
         { href: '#account-memory', label: 'Notes + contacts' },
+        { href: '#account-worklist', label: 'Outstanding work' },
         { href: '#placements', label: 'Placements' },
         { href: '#purchases', label: 'Purchases' },
         ...(hasWholesaleOpportunities ? [{ href: '#intelligence', label: 'Intelligence' }] : []),
@@ -301,6 +304,10 @@ export default async function WholesaleActivityPage({
       ]} />
 
       <AccountMemoryPanel accountId={account.id} accountType="WHOLESALE" contacts={accountContacts} notes={overlay?.notes ?? null} returnTo={`/wholesale/${account.id}`} />
+
+      <Suspense fallback={<section id="account-worklist" className="card account-workspace-section account-worklist" aria-busy="true"><h2>Outstanding work</h2><p role="status">Loading outstanding work…</p></section>}>
+        <AccountWorklist accountId={account.id} accountName={account.name} accountType="WHOLESALE" currentUserId={user.id} actorName={getUserDisplayName(user)} organizationId={organizationId} enabledFeatures={enabledFeatures} />
+      </Suspense>
 
       <AnchoredDetails className="account-overview-details account-workspace-section" id="overview" initialOpen summary="Account details, visit totals & tags">
       <div className="grid account-summary-grid account-workspace-section">

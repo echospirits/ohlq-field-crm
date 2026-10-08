@@ -15,7 +15,7 @@ export function SalesStatusJourney({ compact = false, currentStatus, counts, fil
   const currentIndex = ACTIVE_SALES_STATUSES.findIndex((status) => status === currentStatus);
   const stage = (option: typeof SALES_STATUS_OPTIONS[number], index?: number) => {
     const current = currentStatus === option.value;
-    const muted = compact && !current && (index === undefined || currentIndex < 0 || index > currentIndex);
+    const muted = !filterHref && !current && (index === undefined || currentIndex < 0 || index > currentIndex);
     const content = <>
       {!compact ? <span className="sales-journey-caption">{counts ? `${counts[option.value] ?? 0} account${counts[option.value] === 1 ? '' : 's'}` : index === undefined ? 'Other status' : `Stage ${index + 1}`}</span> : null}
       {compact && index !== undefined ? <span className="sales-journey-number" aria-hidden="true">{index + 1}</span> : null}

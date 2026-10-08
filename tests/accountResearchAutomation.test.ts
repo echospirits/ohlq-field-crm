@@ -84,7 +84,8 @@ it('queues accounts regardless of recent bottle volume', () => {
 
 it('refreshes research-driven opportunity scores independently for every entitled tenant', () => {
   const scoring = readFileSync('lib/accountResearchScoring.ts', 'utf8');
-  assert.match(scoring, /featureKey: 'ADVANCED_INTELLIGENCE'/);
+  assert.match(scoring, /where: enabledAssessmentTenants/);
+  assert.match(readFileSync('lib/wholesaleAssessmentService.ts', 'utf8'), /featureKey: 'WHOLESALE_OPPORTUNITIES'/);
   assert.match(scoring, /organizationId: scope\.id/);
 });
 

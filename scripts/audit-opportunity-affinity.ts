@@ -10,12 +10,10 @@ async function main() {
       const account = await tx.wholesaleAccount.findFirst({ where: { licenseeId: '02485275-1' }, select: { id: true } });
       if (!account) throw new Error('Standard Hall identity was not found');
       const result = await evaluateOpportunityIntelligence({ db: tx as unknown as PrismaClient, organizationId: 'org_echo_spirits', accountIds: [account.id], dryRun: true });
-      return { ...result, previews: result.previews?.map(p => {
-        const totalLiters = p.purchases.reduce((n,x) => n + x.bottles90 * (x.liters ?? .75), 0);
-        const cheapLiters = p.purchases.filter(x => x.price750 !== null && x.price750 !== undefined && x.price750 < 15).reduce((n,x) => n + x.bottles90 * (x.liters ?? .75), 0);
-        return { name: p.name, primary: p.primary, alternatives: p.alternatives.map(a => ({ item: a.item, score: a.score, peers: a.peers, price: a.factors.filter(f => /price fit|priority capped/.test(f)) })), totalLiters, below15Share: totalLiters ? cheapLiters / totalLiters : null,
-          largestPurchases: p.purchases.sort((a,b) => b.bottles90-a.bottles90).slice(0,8) };
-      }) };
+      return { ...result, previews: result.previews.map(p => ({
+        name: p.name, assessment: p.assessment,
+        largestPurchases: p.input.purchases.sort((a,b) => b.bottles90-a.bottles90).slice(0,8),
+      })) };
     }, { timeout: 180000 });
     console.log(JSON.stringify(report, null, 2));
     return;

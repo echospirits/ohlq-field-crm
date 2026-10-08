@@ -70,6 +70,7 @@ type WholesaleTableRow = {
   nextAction: string | null;
   opportunityPriority: string | null;
   opportunityScore: number | null;
+  evidenceMode?: string;
   phone: string | null;
   directionsHref: string | null;
   locationText: string | null;
@@ -86,7 +87,7 @@ const wholesaleSortColumns: Array<{ key: WholesaleSortKey; label: string }> = [
   { key: 'agencyId', label: 'Agency ID' },
   { key: 'mostRecentVisit', label: 'Most Recent Visit' },
   { key: 'opportunityPriority', label: 'Opportunity Priority' },
-  { key: 'opportunityScore', label: 'Opportunity Score' },
+  { key: 'opportunityScore', label: 'Account Priority' },
   { key: 'nextAction', label: 'Next Action' },
   { key: 'actions', label: 'Actions' },
 ];
@@ -272,6 +273,10 @@ const getSortTextValue = (row: WholesaleTableRow, sortKey: WholesaleSortKey) => 
 
 const sortWholesaleRows = (rows: WholesaleTableRow[], sortKey: WholesaleSortKey, direction: SortDirection) =>
   [...rows].sort((left, right) => {
+    if (numericSortKeys.has(sortKey)) {
+      const mode = (left.evidenceMode ?? '').localeCompare(right.evidenceMode ?? '');
+      if (mode) return mode;
+    }
     const primary =
       sortKey === 'mostRecentVisit'
         ? compareDate(left.mostRecentVisit, right.mostRecentVisit, direction)
@@ -477,18 +482,18 @@ export default async function WholesalePage({
             },
             _max: { visitAt: true },
           }),
-          hasWholesaleOpportunities ? prisma.salesOpportunity.findMany({
+          hasWholesaleOpportunities ? prisma.wholesaleAccountAssessment.findMany({
             where: {
               organizationId,
               wholesaleAccountId: { in: accountIds },
-              status: { in: [OpportunityStatus.OPEN, OpportunityStatus.ACTIONED, OpportunityStatus.SNOOZED] },
             },
-            orderBy: [{ productionScore: 'desc' }, { lastDetectedAt: 'desc' }],
+            orderBy: [{ priority: 'desc' }],
             select: {
               wholesaleAccountId: true,
               priorityBand: true,
-              productionScore: true,
-              recommendedAction: true,
+              priority: true,
+              action: true,
+              evidenceMode: true,
             },
           }) : Promise.resolve([]),
         ])
@@ -519,9 +524,10 @@ export default async function WholesalePage({
       mostRecentVisit: lastVisitAt,
       name: account.name,
       nameHref: `/wholesale/${account.id}`,
-      nextAction: opportunity?.recommendedAction ?? null,
+      nextAction: opportunity?.action ?? null,
       opportunityPriority: opportunity?.priorityBand ?? null,
-      opportunityScore: opportunity?.productionScore ?? null,
+      opportunityScore: opportunity?.priority ?? null,
+      evidenceMode: opportunity?.evidenceMode.replaceAll('_', ' ').toLowerCase(),
       phone: account.phone,
       directionsHref: getDirectionsHref(locationText),
       locationText: locationText || null,
@@ -655,7 +661,7 @@ export default async function WholesalePage({
                 {hasWholesaleOpportunities ? <><td className="account-directory-secondary-cell" data-label="Opportunity Priority">
                   {row.opportunityPriority ? <span className={`priority priority-${row.opportunityPriority.toLowerCase()}`}>{row.opportunityPriority}</span> : <span className="muted">None active</span>}
                 </td>
-                <td className="account-directory-secondary-cell" data-label="Opportunity Score">{formatMetric(row.opportunityScore)}</td>
+                <td className="account-directory-secondary-cell" data-label="Account priority">{formatMetric(row.opportunityScore)}{row.evidenceMode ? <small className="muted"> {row.evidenceMode}</small> : null}</td>
                 <td className="account-directory-secondary-cell" data-label="Next Action">{row.nextAction ?? '—'}</td>
                 </> : null}
                 <td className="account-directory-actions-cell" data-label="Actions">

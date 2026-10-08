@@ -1,6 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { useDialogFocus } from '../components/useDialogFocus';
 
 type VisitPhoto = {
   id: string;
@@ -12,6 +14,55 @@ type VisitPhoto = {
 type VisitPhotoGalleryProps = {
   photos: VisitPhoto[];
 };
+
+function VisitPhotoDialog({ photo, onClose }: { photo: VisitPhoto; onClose: () => void }) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  useDialogFocus(dialogRef, true, onClose);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const { scrollX, scrollY } = window;
+    const body = document.body;
+    const previousStyle = body.style.cssText;
+
+    // A fixed body also prevents background touch scrolling in iOS Safari.
+    body.style.position = 'fixed';
+    body.style.top = `-${scrollY}px`;
+    body.style.left = `-${scrollX}px`;
+    body.style.width = '100%';
+    body.style.overflow = 'hidden';
+    dialog.showModal();
+    dialog.querySelector<HTMLButtonElement>('.photo-modal-close')?.focus();
+
+    return () => {
+      dialog.close();
+      body.style.cssText = previousStyle;
+      window.scrollTo(scrollX, scrollY);
+      trigger?.focus({ preventScroll: true });
+    };
+  }, []);
+
+  return createPortal(
+    <dialog
+      aria-label="Visit photo"
+      className="photo-modal"
+      onCancel={(event) => { event.preventDefault(); onClose(); }}
+      ref={dialogRef}
+    >
+      <button aria-label="Close photo" className="photo-modal-backdrop" onClick={onClose} tabIndex={-1} type="button" />
+      <div className="photo-modal-panel">
+        <button autoFocus aria-label="Close photo" className="photo-modal-close" onClick={onClose} type="button">
+          Close
+        </button>
+        <img alt={photo.caption || `${photo.type.toLowerCase()} visit photo`} src={photo.url} />
+        <p><strong>{photo.type}</strong>{photo.caption ? ` - ${photo.caption}` : ''}</p>
+      </div>
+    </dialog>,
+    document.body
+  );
+}
 
 export function VisitPhotoGallery({ photos }: VisitPhotoGalleryProps) {
   const [selectedPhoto, setSelectedPhoto] = useState<VisitPhoto | null>(null);
@@ -36,26 +87,7 @@ export function VisitPhotoGallery({ photos }: VisitPhotoGalleryProps) {
         ))}
       </div>
 
-      {selectedPhoto ? (
-        <div className="photo-modal" role="dialog" aria-modal="true">
-          <button className="photo-modal-backdrop" onClick={() => setSelectedPhoto(null)} type="button" />
-          <div className="photo-modal-panel">
-            <button
-              aria-label="Close photo"
-              className="photo-modal-close"
-              onClick={() => setSelectedPhoto(null)}
-              type="button"
-            >
-              Close
-            </button>
-            <img alt={selectedPhoto.caption || `${selectedPhoto.type.toLowerCase()} visit photo`} src={selectedPhoto.url} />
-            <p>
-              <strong>{selectedPhoto.type}</strong>
-              {selectedPhoto.caption ? ` - ${selectedPhoto.caption}` : ''}
-            </p>
-          </div>
-        </div>
-      ) : null}
+      {selectedPhoto ? <VisitPhotoDialog photo={selectedPhoto} onClose={() => setSelectedPhoto(null)} /> : null}
     </>
   );
 }

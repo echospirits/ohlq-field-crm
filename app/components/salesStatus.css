@@ -1,12 +1,12 @@
 /* The same status palette follows an account from its journey to the board. */
-[data-sales-stage="TARGET"] { --stage-bg: #f8e5b2; --stage-ink: #674500; }
-[data-sales-stage="CONTACTED"] { --stage-bg: #dbeafe; --stage-ink: #234f85; }
-[data-sales-stage="ENGAGED"] { --stage-bg: #e7def5; --stage-ink: #5c377e; }
-[data-sales-stage="INTERESTED"] { --stage-bg: #f7dcdf; --stage-ink: #842c47; }
-[data-sales-stage="WAITING_ON_ORDER"] { --stage-bg: #ffdfbd; --stage-ink: #813f0c; }
-[data-sales-stage="PURCHASING"] { --stage-bg: #d8ecdc; --stage-ink: #265a36; }
-[data-sales-stage="NURTURE"] { --stage-bg: #d5ecec; --stage-ink: #275e60; }
-[data-sales-stage="LOST"] { --stage-bg: #e7e7e7; --stage-ink: #505050; }
+[data-sales-stage="TARGET"] { --stage-bg: var(--theme-warning-surface, #f8e5b2); --stage-ink: var(--theme-warning-ink, #674500); }
+[data-sales-stage="CONTACTED"] { --stage-bg: var(--theme-info-surface, #dbeafe); --stage-ink: var(--theme-info-ink, #234f85); }
+[data-sales-stage="ENGAGED"] { --stage-bg: var(--theme-purple-surface, #e7def5); --stage-ink: var(--theme-purple-ink, #5c377e); }
+[data-sales-stage="INTERESTED"] { --stage-bg: var(--theme-danger-surface, #f7dcdf); --stage-ink: var(--theme-purple-ink, #842c47); }
+[data-sales-stage="WAITING_ON_ORDER"] { --stage-bg: var(--theme-warning-surface, #ffdfbd); --stage-ink: var(--theme-warning-ink, #813f0c); }
+[data-sales-stage="PURCHASING"] { --stage-bg: var(--theme-success-surface, #d8ecdc); --stage-ink: var(--theme-success-ink, #265a36); }
+[data-sales-stage="NURTURE"] { --stage-bg: var(--theme-teal-surface, #d5ecec); --stage-ink: var(--theme-teal-ink, #275e60); }
+[data-sales-stage="LOST"] { --stage-bg: var(--theme-surface-raised, #e7e7e7); --stage-ink: var(--theme-muted, #505050); }
 .account-sales-status-section { margin-block: 16px; }
 .sales-journey { margin-block: 12px 20px; }
 .sales-journey-path, .sales-journey-other { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
@@ -31,7 +31,7 @@
 .sales-journey--filters li:focus-within:not(:has(> a:focus-visible)) { outline: none; }
 .sales-journey-filter-icon { position: absolute; right: 14px; top: 12px; }
 .pipeline-kanban { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-items: start; }
-.pipeline-kanban-column { min-width: 0; border: none; border-radius: 12px; background: #f3f3ed; overflow: hidden; }
+.pipeline-kanban-column { min-width: 0; border: none; border-radius: 12px; background: var(--theme-surface-raised, #f3f3ed); overflow: hidden; }
 .pipeline-kanban-column > summary { display: flex; align-items: center; gap: 8px; min-height: 56px; box-sizing: border-box; padding: 12px; background: var(--stage-bg); color: var(--stage-ink); cursor: pointer; list-style: none; }
 .pipeline-kanban-column > summary::-webkit-details-marker { display: none; }
 .pipeline-kanban-column > summary:hover { filter: brightness(.96); }
@@ -42,7 +42,7 @@
 .pipeline-kanban-column h3 { margin: 0; font-size: 15px; color: inherit; }
 .pipeline-kanban-card { display: grid; gap: 4px; background: var(--panel); margin: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; font-size: 12px; overflow-wrap: anywhere; }
 .pipeline-kanban-account { display: flex; align-items: center; min-height: 44px; font-size: 14px; font-weight: 650; }
-.pipeline-kanban-attention { color: #893e2b; border-top: 1px solid var(--line); padding-top: 6px; margin-top: 4px; }
+.pipeline-kanban-attention { color: var(--theme-warning-ink, #893e2b); border-top: 1px solid var(--line); padding-top: 6px; margin-top: 4px; }
 .pipeline-kanban-empty { font-size: 12px; color: var(--muted); padding: 12px; margin: 0; }
 @media (min-width: 700px) {
   .sales-journey-path { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -60,7 +60,7 @@
 .sales-journey--compact { margin: 0 0 8px; }
 .sales-journey--compact .sales-journey-path { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; }
 .sales-journey--compact li.is-current { outline: none; }
-.sales-journey--compact li.is-upcoming { --stage-bg: #eeeeea; --stage-ink: #66695f; }
+.sales-journey li.is-upcoming { --stage-bg: var(--theme-surface-raised, #eeeeea); --stage-ink: var(--theme-muted, #66695f); }
 .sales-journey--compact li > div { min-height: 44px; padding: 8px 16px; }
 .sales-journey--compact .sales-journey-number { display: none; }
 .sales-journey--compact .sales-journey-other { display: flex; margin-top: 6px; }

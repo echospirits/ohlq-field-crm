@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { prisma } from './prisma';
 import { isAdminRole, isTasterRole } from './userAccess';
+import { recordUserActivity } from './userActivity';
 
 export const SESSION_COOKIE = 'echo_session';
 
@@ -31,12 +32,16 @@ export async function createUserSession(userId: string) {
   const sessionToken = createSessionToken();
   const expiresAt = getSessionExpiresAt();
 
-  await prisma.userSession.create({
-    data: {
-      tokenHash: hashSessionToken(sessionToken),
-      userId,
-      expiresAt,
-    },
+  await prisma.$transaction(async (tx) => {
+    const user = await tx.user.findUniqueOrThrow({ where: { id: userId }, select: { id: true, organizationId: true } });
+    await tx.userSession.create({
+      data: {
+        tokenHash: hashSessionToken(sessionToken),
+        userId,
+        expiresAt,
+      },
+    });
+    await recordUserActivity(tx, user, true);
   });
 
   return { expiresAt, sessionToken };

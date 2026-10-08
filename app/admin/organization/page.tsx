@@ -18,6 +18,7 @@ import { prisma } from '../../../lib/prisma';
 import { PageHeader } from '../../components/PageChrome';
 import { A3aLocationForm } from '../../components/A3aLocationForm';
 import { ProductSelectionEditor } from '../../platform/organizations/[id]/ProductSelectionEditor';
+import { OpportunityStrategy } from './OpportunityStrategy';
 
 export const metadata = buildPageMetadata('Organization Setup');
 
@@ -148,6 +149,7 @@ export default async function OrganizationSetupPage({ searchParams }: { searchPa
       </form>
       <article className="card"><span className="page-eyebrow">Connection safety</span><h2>Inventory isolation</h2><p className="muted">The daily runner stores this tenant's current inventory and history separately. Missing credentials skip this tenant without using another organization's login.</p>{actor.role !== UserRole.PLATFORM_ADMIN && organization.ohlqCredentials ? <form action={removeOhlqCredentials}><SubmitButton className="danger" type="submit">Remove inventory login</SubmitButton></form> : null}</article>
     </section>
+    <OpportunityStrategy organizationId={organizationId} />
     <article className="card product-selection-card">
       <div className="section-heading"><div><span className="page-eyebrow">Catalog configuration</span><h2>Product selection</h2><p className="muted">Choose which discovered item codes your organization includes. Brand Master imports remain Platform Admin-only.</p></div><form action={refreshProductCandidates}><SubmitButton className="compact-btn secondary" type="submit">Check for new products</SubmitButton></form></div>
       <ProductSelectionEditor action={saveProductSelection} organizationId={organizationId} products={organization.products.map((product) => ({ id: product.id, itemCode: product.externalItemCode, name: product.displayName, status: product.status }))} />

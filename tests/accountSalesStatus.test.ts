@@ -23,12 +23,11 @@ test('sales status definitions are centralized, stable, and user friendly', () =
   assert.equal(BUYING_STATE_LABELS.NEVER_PURCHASED, 'Never purchased');
 });
 
-test('pilot entitlement is default disabled, enabled for Echo, and independent of Intelligence', () => {
-  assert.equal(FEATURE_REGISTRY.ACCOUNT_SALES_STATUS.defaultEnabled, false);
-  assert.equal(CORE_PACKAGE_FEATURE_KEYS.includes('ACCOUNT_SALES_STATUS'), false);
-  assert.equal(getPackageFeatureKeys(false).includes('ACCOUNT_SALES_STATUS'), false);
-  assert.equal(getPackageFeatureKeys(false, false, false, true).includes('ACCOUNT_SALES_STATUS'), true);
-  assert.equal(getPackageFeatureKeys(false, false, false, true).includes('WHOLESALE_OPPORTUNITIES'), false);
+test('sales status is included in Core and independent of Intelligence', () => {
+  assert.equal(FEATURE_REGISTRY.ACCOUNT_SALES_STATUS.defaultEnabled, true);
+  assert.equal(CORE_PACKAGE_FEATURE_KEYS.includes('ACCOUNT_SALES_STATUS'), true);
+  assert.equal(getPackageFeatureKeys(false).includes('ACCOUNT_SALES_STATUS'), true);
+  assert.equal(getPackageFeatureKeys(false).includes('WHOLESALE_OPPORTUNITIES'), false);
   assert.equal(ECHO_FEATURE_KEYS.includes('ACCOUNT_SALES_STATUS'), true);
   assert.equal(getNavigationItems('accounts', []).some((item) => item.href === '/pipeline'), false);
   assert.equal(getNavigationItems('accounts', ['ACCOUNT_SALES_STATUS']).some((item) => item.href === '/pipeline'), true);

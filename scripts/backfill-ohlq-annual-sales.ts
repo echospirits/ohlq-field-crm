@@ -73,7 +73,9 @@ async function main() {
     // date after all backfill dates and inventory have loaded, then prune.
     const reportDate = dates.at(-1)!;
     console.log(`Starting post-import opportunity intelligence for ${reportDate}.`);
-    console.log(JSON.stringify(await runOpportunityIntelligenceAfterImport({ reportDate: toOhlqDateOnlyUtc(reportDate) })));
+    const assessmentRefresh = await runOpportunityIntelligenceAfterImport({ reportDate: toOhlqDateOnlyUtc(reportDate) });
+    console.log(JSON.stringify(assessmentRefresh));
+    console.log(`Full wholesale refresh persisted ${assessmentRefresh.intelligence.persisted} current assessments; no research was requested.`);
     console.log(`Starting post-import Agency market intelligence for ${reportDate}.`);
     console.log(JSON.stringify(await runAgencyMarketIntelligenceAfterImport({ asOfDate: toOhlqDateOnlyUtc(reportDate) })));
     console.log(JSON.stringify(await pruneOhlqAnnualSalesRows({ reportDate })));

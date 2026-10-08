@@ -180,7 +180,10 @@ export function MobileTabbar({ enabledFeatures, isAdmin, isPlatformAdmin, isTast
   const pathname = usePathname();
   const moreItems = getMoreNavigationItems(isAdmin, enabledFeatures, isPlatformAdmin);
 
-  if (isTaster) return null;
+  if (isTaster) return <nav className="mobile-tabbar mobile-tabbar-taster" aria-label="Quick field actions">
+    <NavLink item={{ href: '/visits/new', key: 'visits', label: 'Log Visit', section: 'work' }} pathname={pathname} />
+    <NavLink item={{ href: '/profile', key: 'profile', label: 'Profile', section: 'utility' }} pathname={pathname} />
+  </nav>;
 
   return (
     <nav className="mobile-tabbar" aria-label="Quick field actions">

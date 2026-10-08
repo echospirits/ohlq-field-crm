@@ -27,6 +27,7 @@ export default async function PlatformDashboard() {
       {[['Organizations', total], ['Active', active], ['Onboarding', onboarding], ['Disabled', disabled]].map(([label, value]) => <article className="card" key={label}><span>{label}</span><strong>{value}</strong></article>)}
     </section>
     <section className="platform-grid">
+      <article className="card"><h2>User activity</h2><p className="muted">Compare organization logins and active days, and filter daily user history.</p><Link className="btn secondary" href="/admin/user-activity">View user activity</Link></article>
       <article className="card"><div className="section-heading"><div><span className="page-eyebrow">Customers</span><h2>Recent organizations</h2></div><Link href="/platform/organizations">View all</Link></div>
         <div className="platform-list">{recent.map((organization) => <Link href={`/platform/organizations/${organization.id}`} key={organization.id}><span><strong>{organization.displayName}</strong><small>{organization.primaryState} · {organization.vendorIdentifiers.map((item) => item.vendorId).join(', ') || 'No Vendor ID'}</small></span><span className="pill">{hasIntelligencePackage(organization.features.filter((feature) => feature.enabled).map((feature) => feature.featureKey)) ? 'Core + Intelligence' : 'Core'}</span></Link>)}</div>
       </article>

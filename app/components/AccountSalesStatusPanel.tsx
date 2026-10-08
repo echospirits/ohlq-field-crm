@@ -36,19 +36,20 @@ export function AccountSalesStatusPanel({
   statusUpdatedAt: Date | null;
 }) {
   return <section className={`account-sales-status-section${compact ? ' account-sales-status-section--compact' : ''}`} aria-label="Account sales status">
-    <SalesStatusJourney currentStatus={status} compact={compact} />
+    <SalesStatusJourney currentStatus={statusIsExplicit ? status : null} compact={compact} />
     <div className="account-sales-status-bar">
     <div className="account-sales-status-current">
-      <span><small>Sales Status</small><strong>{SALES_STATUS_LABELS[status]}</strong></span>
+      <span><small>Sales Status</small><strong>{statusIsExplicit ? SALES_STATUS_LABELS[status] : 'Not set'}</strong></span>
       <span><small>Buying State</small><strong>{BUYING_STATE_LABELS[buyingState]}</strong></span>
-      <span className="account-sales-status-meta"><small>{timeInStatus(statusUpdatedAt)}</small>{statusUpdatedAt ? <span>{formatEasternDate(statusUpdatedAt)}{changedBy ? ` · ${getUserDisplayName(changedBy)}` : ''}</span> : <span>{statusIsExplicit ? 'Saved status' : 'Default pilot status'}</span>}</span>
+      <span className="account-sales-status-meta"><small>{timeInStatus(statusUpdatedAt)}</small>{statusUpdatedAt ? <span>{formatEasternDate(statusUpdatedAt)}{changedBy ? ` · ${getUserDisplayName(changedBy)}` : ''}</span> : <span>{statusIsExplicit ? 'Saved status' : 'No saved status'}</span>}</span>
     </div>
     <form action={updateAccountSalesStatus} className="account-sales-status-form">
       <input name="accountType" type="hidden" value={accountType} />
       <input name="externalAccountId" type="hidden" value={externalAccountId} />
       <input name="returnTo" type="hidden" value={returnTo} />
       <label htmlFor={`sales-status-${accountType}-${externalAccountId}`}>Change status</label>
-      <select defaultValue={status} id={`sales-status-${accountType}-${externalAccountId}`} name="salesStatus">
+      <select defaultValue={statusIsExplicit ? status : ''} id={`sales-status-${accountType}-${externalAccountId}`} name="salesStatus" required>
+        <option value="" disabled>Choose status</option>
         {SALES_STATUS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
       </select>
       <SubmitButton className="compact-btn" pendingLabel="Saving…">Save</SubmitButton>

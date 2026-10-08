@@ -50,7 +50,7 @@ test('administration stays out of the standard More menu', () => {
 test('desktop administration consolidates organization, data, and platform destinations', () => {
   const groups = getAdministrationNavigationGroups(['WHOLESALE_OPPORTUNITIES', 'ADVANCED_INTELLIGENCE'], true);
   assert.deepEqual(groups.map((group) => group.label), ['Organization', 'Data & insights', 'Platform']);
-  assert.deepEqual(groups[0].items.map((item) => item.key), ['users', 'organization-setup', 'weekly-digest']);
+  assert.deepEqual(groups[0].items.map((item) => item.key), ['users', 'user-activity', 'organization-setup', 'weekly-digest']);
   assert.deepEqual(groups[1].items.map((item) => item.key), ['data-health']);
   assert.deepEqual(groups[2].items.map((item) => item.key), ['environment', 'platform-administration']);
 });
@@ -78,8 +78,10 @@ test('organization admins do not see platform administration', () => {
 });
 
 test('platform admins outside a support view retain global administration access', () => {
+  assert.ok(getMoreNavigationItems(false, [], true).some((item) => item.key === 'user-activity'));
   const groups = getAdministrationNavigationGroups([], true, false);
   assert.deepEqual(groups.flatMap((group) => group.items).map((item) => item.key), [
+    'user-activity',
     'data-health',
     'environment',
     'platform-administration',

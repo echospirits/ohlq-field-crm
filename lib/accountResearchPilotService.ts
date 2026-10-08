@@ -79,7 +79,7 @@ export async function createAccountResearchPilot({
   });
   if (existing) throw new Error('This organization already has an active manual research test.');
 
-  const dueAccounts = await getPrioritizedAccountResearchQueue({ db, limit: null });
+  const dueAccounts = await getPrioritizedAccountResearchQueue({ db, limit: null, organizationId });
   const candidates = dueAccounts
     .filter((candidate) => candidate.address?.trim() && candidate.city?.trim() && candidate.zip?.match(/\d{5}/))
     .slice(0, ACCOUNT_RESEARCH_PILOT_MAX_ACCOUNTS);
@@ -100,7 +100,10 @@ export async function createAccountResearchPilot({
       startedByUserId,
       jobs: {
         create: candidates.map((candidate, index) => {
-          const waterfall = chooseResearchTier(candidate.opportunities);
+          const waterfall = chooseResearchTier([
+            ...candidate.opportunities.map(p => ({ status: p.status, productionScore: 0 })),
+            ...(candidate.currentAssessments ?? []).map(a => ({ status: 'CURRENT', productionScore: a.priority })),
+          ]);
           const inputSnapshot: AccountResearchInputSnapshot = {
             wholesaleAccountId: candidate.id,
             licenseeId: candidate.licenseeId,

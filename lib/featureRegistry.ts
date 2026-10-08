@@ -31,8 +31,8 @@ export type FeatureDefinition = {
 };
 
 export const FEATURE_REGISTRY: Record<FeatureKey, FeatureDefinition> = {
-  ACCOUNT_SALES_STATUS: { key: 'ACCOUNT_SALES_STATUS', label: 'Account Sales Status / Pipeline', description: 'Tenant-owned relationship stages, buying state, and lightweight pipeline visibility.', category: 'Core', defaultEnabled: false, dependencies: ['CORE_CRM'], beta: true },
-  ANALYTICS: { key: 'ANALYTICS', label: 'Analytics', description: 'Tenant sales, account performance, and activity reporting with CSV exports.', category: 'Core', defaultEnabled: false, dependencies: ['CORE_CRM'], beta: true },
+  ACCOUNT_SALES_STATUS: { key: 'ACCOUNT_SALES_STATUS', label: 'Account Sales Status / Pipeline', description: 'Tenant-owned relationship stages, buying state, and lightweight pipeline visibility.', category: 'Core', defaultEnabled: true, dependencies: ['CORE_CRM'] },
+  ANALYTICS: { key: 'ANALYTICS', label: 'Analytics', description: 'Tenant sales, account performance, and activity reporting with CSV exports.', category: 'Core', defaultEnabled: true, dependencies: ['CORE_CRM'] },
   CORE_CRM: { key: 'CORE_CRM', label: 'Core CRM', description: 'Users, shared accounts, private overlays, and core relationship workflows.', category: 'Core', defaultEnabled: true, dependencies: [] },
   VISITS: { key: 'VISITS', label: 'Visits', description: 'Field visit capture and visit history.', category: 'Core', defaultEnabled: true, dependencies: ['CORE_CRM'] },
   WORKLIST: { key: 'WORKLIST', label: 'Worklist', description: 'Assignments, follow-ups, and personal work planning.', category: 'Core', defaultEnabled: true, dependencies: ['CORE_CRM'] },
@@ -45,30 +45,25 @@ export const FEATURE_REGISTRY: Record<FeatureKey, FeatureDefinition> = {
   LOCATION_PROXIMITY: { key: 'LOCATION_PROXIMITY', label: 'Location proximity', description: 'Nearby-account tools for field teams.', category: 'Field', defaultEnabled: true, dependencies: ['CORE_CRM'] },
   AGENCY_INTELLIGENCE: { key: 'AGENCY_INTELLIGENCE', label: 'Agency Intelligence', description: 'Organization-specific agency prioritization and recommended actions.', category: 'Intelligence', defaultEnabled: false, dependencies: ['AGENCIES', 'OHLQ_SALES_DATA', 'AGENCY_INVENTORY'] },
   WHOLESALE_OPPORTUNITIES: { key: 'WHOLESALE_OPPORTUNITIES', label: 'Wholesale Opportunities', description: 'Forward-looking wholesale account opportunity detection, prioritization, and recommended actions.', category: 'Intelligence', defaultEnabled: false, dependencies: ['WHOLESALE_ACCOUNTS', 'OHLQ_SALES_DATA'] },
-  OHIO_DIRECT_WHOLESALE_ORDERS: { key: 'OHIO_DIRECT_WHOLESALE_ORDERS', label: 'Direct Wholesale Orders', description: 'Prepare Ohio A-3a direct wholesale orders and download the completed official PDF.', category: 'Field', defaultEnabled: false, dependencies: ['WHOLESALE_ACCOUNTS', 'OHLQ_SALES_DATA'] },
+  OHIO_DIRECT_WHOLESALE_ORDERS: { key: 'OHIO_DIRECT_WHOLESALE_ORDERS', label: 'Direct Wholesale Orders', description: 'Prepare Ohio A-3a direct wholesale orders and download the completed official PDF.', category: 'Field', defaultEnabled: true, dependencies: ['WHOLESALE_ACCOUNTS', 'OHLQ_SALES_DATA'] },
   ADVANCED_INTELLIGENCE: { key: 'ADVANCED_INTELLIGENCE', label: 'Advanced intelligence', description: 'Advanced scoring and predictive account recommendations.', category: 'Intelligence', defaultEnabled: false, dependencies: ['OHLQ_SALES_DATA'] },
   TASTING_WORKFLOWS: { key: 'TASTING_WORKFLOWS', label: 'Tasting workflows', description: 'Restricted tasting visit workflow and context.', category: 'Field', defaultEnabled: true, dependencies: ['VISITS', 'AGENCIES'] },
 };
 
 export const INTELLIGENCE_PACKAGE_FEATURE_KEYS = ['AGENCY_INTELLIGENCE', 'WHOLESALE_OPPORTUNITIES', 'ADVANCED_INTELLIGENCE'] as const satisfies readonly FeatureKey[];
-export const OPTIONAL_FEATURE_KEYS = ['OHIO_DIRECT_WHOLESALE_ORDERS', 'ANALYTICS', 'ACCOUNT_SALES_STATUS'] as const satisfies readonly FeatureKey[];
 export const CORE_PACKAGE_FEATURE_KEYS = FEATURE_KEYS.filter((key) =>
-  !INTELLIGENCE_PACKAGE_FEATURE_KEYS.includes(key as (typeof INTELLIGENCE_PACKAGE_FEATURE_KEYS)[number]) &&
-  !OPTIONAL_FEATURE_KEYS.includes(key as (typeof OPTIONAL_FEATURE_KEYS)[number]));
+  !INTELLIGENCE_PACKAGE_FEATURE_KEYS.includes(key as (typeof INTELLIGENCE_PACKAGE_FEATURE_KEYS)[number]));
 export const DEFAULT_FEATURE_KEYS = [...CORE_PACKAGE_FEATURE_KEYS];
-export const ECHO_FEATURE_KEYS = FEATURE_KEYS.filter((key) => key !== 'ANALYTICS' && key !== 'OHIO_DIRECT_WHOLESALE_ORDERS');
+export const ECHO_FEATURE_KEYS = [...FEATURE_KEYS];
 
 export function getEnvironmentFeatureKeys(configured: readonly FeatureKey[], env: Record<string, string | undefined> = process.env): FeatureKey[] {
   return env.APP_ENV?.trim().toLowerCase() === 'test' ? [...FEATURE_KEYS] : [...configured];
 }
 
-export function getPackageFeatureKeys(intelligenceEnabled: boolean, directWholesaleOrdersEnabled = false, analyticsEnabled = false, accountSalesStatusEnabled = false): FeatureKey[] {
+export function getPackageFeatureKeys(intelligenceEnabled: boolean): FeatureKey[] {
   return FEATURE_KEYS.filter((key) =>
-    CORE_PACKAGE_FEATURE_KEYS.includes(key as (typeof CORE_PACKAGE_FEATURE_KEYS)[number]) ||
-    (intelligenceEnabled && INTELLIGENCE_PACKAGE_FEATURE_KEYS.includes(key as (typeof INTELLIGENCE_PACKAGE_FEATURE_KEYS)[number])) ||
-    (directWholesaleOrdersEnabled && key === 'OHIO_DIRECT_WHOLESALE_ORDERS') ||
-    (analyticsEnabled && key === 'ANALYTICS') ||
-    (accountSalesStatusEnabled && key === 'ACCOUNT_SALES_STATUS'));
+    CORE_PACKAGE_FEATURE_KEYS.includes(key) ||
+    (intelligenceEnabled && INTELLIGENCE_PACKAGE_FEATURE_KEYS.includes(key as (typeof INTELLIGENCE_PACKAGE_FEATURE_KEYS)[number])));
 }
 
 export function hasIntelligencePackage(keys: ReadonlySet<string> | readonly string[]) {

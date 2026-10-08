@@ -28,6 +28,7 @@ export type ResearchIdentitySnapshot = {
   publicRatings?: AccountResearchResult['publicRatings'];
   businessHours?: AccountResearchResult['businessHours'];
   researchEvidence?: AccountResearchResult['evidence'];
+  productUses?: AccountResearchResult['productUses'];
   researchSignals?: Pick<AccountResearchResult, 'privateDining' | 'venueType' | 'footTrafficSignal' | 'footTrafficEvidence' | 'meetingSpaceSquareFeet'>;
   // Read-only compatibility for research completed before source provenance was captured.
   googleHours?: Array<{ day: string; hours: string }>;
@@ -45,6 +46,7 @@ export type ResearchQueueCandidate = {
   createdAt: Date;
   isTargeting?: boolean;
   targetPublicResearch: { lastRefreshedAt: Date | null; identitySnapshot: unknown } | null;
+  currentAssessments?: Array<{ priority: number; evidenceMode: string }>;
   opportunities: Array<{ productionScore: number; status: OpportunityStatus; actionedAt: Date | null; lastDetectedAt: Date }>;
   upcomingWork: Array<{ dueDate: Date | null; createdAt: Date }>;
   accountResearchJobs?: Array<{
@@ -69,7 +71,7 @@ const isOlderThan = (value: Date | null | undefined, cutoff: Date) => !value || 
 export const createResearchIdentitySnapshot = (
   candidate: Pick<ResearchQueueCandidate, 'name' | 'address' | 'city' | 'state' | 'zip'>,
   research?: Pick<AccountResearchResult, 'publicRatings' | 'businessHours' | 'evidence'>
-    & Partial<Pick<AccountResearchResult, 'privateDining' | 'venueType' | 'footTrafficSignal' | 'footTrafficEvidence' | 'meetingSpaceSquareFeet'>>,
+    & Partial<Pick<AccountResearchResult, 'privateDining' | 'venueType' | 'footTrafficSignal' | 'footTrafficEvidence' | 'meetingSpaceSquareFeet' | 'productUses'>>,
 ): ResearchIdentitySnapshot => ({
   accountName: candidate.name,
   address: candidate.address,
@@ -80,6 +82,7 @@ export const createResearchIdentitySnapshot = (
     publicRatings: research.publicRatings,
     businessHours: research.businessHours,
     researchEvidence: research.evidence,
+    productUses: research.productUses ?? [],
     researchSignals: {
       privateDining: research.privateDining ?? 'Unknown',
       venueType: research.venueType ?? 'Unknown',
@@ -211,12 +214,15 @@ export async function getPrioritizedAccountResearchQueue({
   db = prisma,
   now = new Date(),
   limit = null,
+  organizationId,
 }: {
   db?: PrismaClient;
   now?: Date;
   limit?: number | null;
+  organizationId?: string;
 } = {}) {
-  const targetedOverlays = await db.organizationAccountOverlay.findMany({ where: { accountType: 'WHOLESALE', isTargeting: true }, select: { externalAccountId: true } });
+  const scope = organizationId ? { organizationId } : {};
+  const targetedOverlays = await db.organizationAccountOverlay.findMany({ where: { ...scope, accountType: 'WHOLESALE', isTargeting: true }, select: { externalAccountId: true } });
   const targetedIds = [...new Set(targetedOverlays.map(({ externalAccountId }) => externalAccountId))];
   const accounts = await db.wholesaleAccount.findMany({
     where: {
@@ -240,7 +246,8 @@ export async function getPrioritizedAccountResearchQueue({
       zip: true,
       createdAt: true,
       targetPublicResearch: { select: { lastRefreshedAt: true, identitySnapshot: true } },
-      opportunities: { select: { productionScore: true, status: true, actionedAt: true, lastDetectedAt: true } },
+      opportunities: { where: scope, select: { productionScore: true, status: true, actionedAt: true, lastDetectedAt: true } },
+      currentAssessments: { where: scope, select: { priority: true, evidenceMode: true } },
       accountResearchJobs: {
         where: { status: { in: TERMINAL_RESEARCH_RETRY_STATUSES } },
         orderBy: { createdAt: 'desc' },
@@ -281,8 +288,8 @@ export async function getPrioritizedAccountResearchQueue({
       const rightRefresh = right.targetPublicResearch?.lastRefreshedAt?.getTime() ?? 0;
       const leftIsRetry = left.accountResearchJobs?.length ? 1 : 0;
       const rightIsRetry = right.accountResearchJobs?.length ? 1 : 0;
-      const leftScore = Math.max(0, ...left.opportunities.map((item) => item.productionScore));
-      const rightScore = Math.max(0, ...right.opportunities.map((item) => item.productionScore));
+      const leftScore = Math.max(0, ...(left.currentAssessments ?? []).map((item) => item.priority));
+      const rightScore = Math.max(0, ...(right.currentAssessments ?? []).map((item) => item.priority));
       return left.priorityBucket - right.priorityBucket
         || leftIsRetry - rightIsRetry
         || rightCoverageDeficit - leftCoverageDeficit

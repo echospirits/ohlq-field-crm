@@ -10,6 +10,8 @@ import { hashPassword, verifyPassword } from '../../lib/password';
 import { prisma } from '../../lib/prisma';
 import { PageHeader } from '../components/PageChrome';
 import Link from 'next/link';
+import { AppearanceSettings } from './AppearanceSettings';
+import { isTasterRole } from '../../lib/userAccess';
 import { getIPhoneShortcutConfig, IPHONE_SHORTCUT_NAME } from '../../lib/contactImport';
 
 export const metadata = buildPageMetadata('Profile');
@@ -22,7 +24,7 @@ const toOptional = (value: FormDataEntryValue | null | undefined) => {
 async function updateProfile(formData: FormData) {
   'use server';
 
-  const session = await requireUserSession();
+  const session = await requireUserSession({ allowTaster: true });
   const user = session.user;
   const phone = toOptional(formData.get('phone'));
   const currentPassword = String(formData.get('currentPassword') ?? '');
@@ -74,7 +76,7 @@ export default async function ProfilePage({
 }: {
   searchParams?: Promise<{ status?: string }>;
 }) {
-  const { user } = await requireUserSession();
+  const { user } = await requireUserSession({ allowTaster: true });
   const params = (await searchParams) ?? {};
   const shortcutConfig = getIPhoneShortcutConfig();
 
@@ -88,6 +90,7 @@ export default async function ProfilePage({
       {params.status ? <p className="toast-notice page-status">{statusMessages[params.status] ?? params.status}</p> : null}
 
       <div className="workflow-shell"><div className="card admin-panel">
+        <AppearanceSettings darkMode={user.darkMode} />
         <form action={updateProfile}>
           <div className="form-grid">
             <label>
@@ -122,11 +125,11 @@ export default async function ProfilePage({
           </details>
           <SubmitButton type="submit">Save profile</SubmitButton>
         </form>
-        <div className="profile-integration-link">
+        {!isTasterRole(user.role) ? <div className="profile-integration-link">
           <h2>Calendar</h2>
           <p className="muted">Connect your own Google Calendar for dated worklist follow-ups.</p>
           <Link className="button-link secondary" href="/settings/calendar">Calendar settings</Link>
-        </div>
+        </div> : null}
         <div className="profile-integration-link">
           <h2>{IPHONE_SHORTCUT_NAME} — iPhone Shortcut</h2>
           <p className="muted">Select an Apple Contact from an account in Neat, then review it before saving.</p>

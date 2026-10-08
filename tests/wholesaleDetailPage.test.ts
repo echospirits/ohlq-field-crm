@@ -26,18 +26,13 @@ test('Wholesale account overview opens by default and displays source-attributed
   assert.match(page, /Not yet confirmed from a current public source/);
 });
 
-test('Wholesale opportunity intelligence shows the tenant-scoped production score', () => {
+test('Wholesale intelligence reads tenant-scoped current assessments and keeps pursuit scores historical', () => {
   const panel = readFileSync('app/wholesale/OpportunityAccountPanel.tsx', 'utf8');
-
-  assert.match(panel, /\{ organizationId, wholesaleAccountId, status: \{ in: activeStatuses \} \}/);
-  assert.match(panel, /productionScore=\{item\.productionScore\}/);
-  assert.match(panel, /Opportunity score \$\{Math\.round\(productionScore\)\} out of 100/);
-  assert.match(panel, /How this score was calculated/);
-  assert.match(panel, /This score is calculated for your organization/);
-  assert.match(panel, /scoringVersion\.startsWith\('RESEARCH_FIT_'\)/);
-  assert.match(panel, /parseOpportunityScoreComponents\(factors\)/);
-  assert.match(panel, /scores: \{ orderBy: \{ scoredAt: 'desc' \}/);
-  assert.match(panel, /Point-by-point values were not stored with this earlier score/);
+  assert.match(panel, /wholesaleAccountAssessment.findUnique/);
+  assert.match(panel, /organizationId_wholesaleAccountId: \{ organizationId, wholesaleAccountId \}/);
+  assert.match(panel, /WholesaleAssessmentSummary value=\{currentAssessment\?\.assessment\}/);
+  assert.doesNotMatch(panel, /productionScore=\{item\.productionScore\}/);
+  assert.match(panel, /Existing pursuit:/);
 });
 
 test('Wholesale opportunity intelligence shows public research signals and freshness', () => {
@@ -49,5 +44,5 @@ test('Wholesale opportunity intelligence shows public research signals and fresh
   assert.match(panel, /Source:/);
   assert.match(panel, /Patio/);
   assert.match(panel, /Cocktails/);
-  assert.match(panel, /Updated \{formatEasternDateTime\(research\.updatedAt\)\}/);
+  assert.match(panel, /Last researched \{research\.lastRefreshedAt \? formatEasternDateTime\(research\.lastRefreshedAt\)/);
 });

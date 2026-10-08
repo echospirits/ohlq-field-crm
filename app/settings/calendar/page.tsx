@@ -1,16 +1,17 @@
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
+export const maxDuration = 300;
 
 import { SubmitButton } from '../../components/SubmitButton';
-import { CalendarSyncStatus } from '@prisma/client';
+
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { buildPageMetadata } from '../../../lib/appBrand';
 import { assertSideEffectEnabled, isSideEffectEnabled } from '../../../lib/appEnvironment';
 import { requireUser } from '../../../lib/auth';
-import { getCalendarProvider } from '../../../lib/calendar';
+
 import { GOOGLE_PROVIDER, googleCalendarProvider } from '../../../lib/calendar/google';
-import { syncGoogleCalendarConnection, syncOutstandingWorklistItemsForUser } from '../../../lib/calendar/worklistSync';
+import { changeGoogleCalendarSettings, syncGoogleCalendarConnection } from '../../../lib/calendar/worklistSync';
 import { formatEasternDateTime } from '../../../lib/dateTime';
 import { prisma } from '../../../lib/prisma';
 import { PageHeader } from '../../components/PageChrome';
@@ -22,7 +23,17 @@ const messages: Record<string, string> = {
   disconnected: 'Google Calendar disconnected.',
   updated: 'Calendar settings updated.',
   resynced: 'Outstanding Neat tasks were pushed to Google Calendar.',
-  checked: 'Google Calendar changes were checked and applied to Neat.',
+  checked: 'Calendar check completed. Task schedules are up to date.',
+  partial: 'Google changes were checked, but some tasks could not finish syncing. Retry the check.',
+  busy: 'Another calendar operation is running. Try again shortly.',
+  paused: 'Sync is paused. Enable Sync Neat follow-ups to check for changes.',
+  reconnect: 'Reconnect Google Calendar before checking for changes.',
+  'not-connected': 'Connect Google Calendar before checking for changes.',
+  'cleanup-failed': 'Some events could not be removed. Your old calendar links were retained and sync is paused. Reconnect if needed, then retry.',
+  'settings-failed': 'Calendar settings could not be saved. Try again.',
+  'invalid-calendar': 'Choose an available writable calendar.',
+  'account-change-blocked': 'Disconnect your current Google account before connecting a different account.',
+  'calendar-unavailable': 'Your linked calendar is unavailable. Choose an available calendar in settings.',
   'check-failed': 'Google Calendar could not be checked. Review the sync status below and try again.',
   'authorization-cancelled': 'Google authorization was cancelled.',
   'invalid-oauth-response': 'Google returned an invalid authorization response.',
@@ -32,102 +43,51 @@ const messages: Record<string, string> = {
   'environment-disabled': 'Google Calendar side effects are disabled in this environment.',
 };
 
+function refreshWorklistViews() {
+  for (const path of ['/settings/calendar', '/alerts', '/my-day', '/my-week', '/wholesale', '/agencies']) revalidatePath(path);
+}
+function checkStatus(result: Awaited<ReturnType<typeof syncGoogleCalendarConnection>>) {
+  if (result.skipped) return result.reason ?? 'check-failed';
+  return result.failed ? 'partial' : 'checked';
+}
 async function updateCalendarSettings(formData: FormData) {
   'use server';
   assertSideEffectEnabled('calendar');
   const user = await requireUser();
-  const connection = await prisma.calendarConnection.findUnique({ where: { userId_provider: { userId: user.id, provider: GOOGLE_PROVIDER } } });
-  if (!connection) redirect('/settings/calendar');
-  const calendarId = String(formData.get('calendarId') ?? '').trim();
-  const calendars = await googleCalendarProvider.listCalendars(connection);
-  const selected = calendars.find((calendar) => calendar.id === calendarId);
-  if (!selected) redirect('/settings/calendar?status=invalid-calendar');
   const syncEnabled = formData.get('syncEnabled') === 'on';
-  if (selected.id !== connection.selectedCalendarId || !syncEnabled) {
-    const links = await prisma.worklistCalendarEvent.findMany({ where: { connectionId: connection.id, externalEventId: { not: null } } });
-    for (const link of links) {
-      try { await googleCalendarProvider.deleteEvent(connection, link.externalEventId!); }
-      catch (error) { console.error('Old calendar event cleanup failed', { linkId: link.id, error: error instanceof Error ? error.message : String(error) }); }
-    }
-    await prisma.worklistCalendarEvent.updateMany({
-      where: { connectionId: connection.id },
-      data: {
-        externalEventId: null,
-        calendarId: null,
-        syncStatus: syncEnabled ? CalendarSyncStatus.PENDING : CalendarSyncStatus.DISABLED,
-        eventEtag: null,
-        eventUpdatedAt: null,
-        syncError: syncEnabled ? null : 'Calendar sync is disabled.',
-      },
-    });
+  const result = await changeGoogleCalendarSettings(user.id, String(formData.get('calendarId') ?? '').trim(), syncEnabled);
+  let status = result.status;
+  if (status === 'updated' && syncEnabled) {
+    const connection = await prisma.calendarConnection.findUnique({ where: { userId_provider: { userId: user.id, provider: GOOGLE_PROVIDER } } });
+    try { if (connection) status = checkStatus(await syncGoogleCalendarConnection(connection.id)); }
+    catch { status = 'check-failed'; }
   }
-  await prisma.calendarConnection.update({
-    where: { id: connection.id },
-    data: { selectedCalendarId: selected.id, selectedCalendarName: selected.name, syncEnabled, syncToken: null, syncError: null },
-  });
-  await prisma.worklistCalendarEvent.updateMany({
-    where: { connectionId: connection.id },
-    data: {
-      syncStatus: syncEnabled ? CalendarSyncStatus.PENDING : CalendarSyncStatus.DISABLED,
-      syncError: syncEnabled ? null : 'Calendar sync is disabled.',
-    },
-  });
-  if (syncEnabled) await syncOutstandingWorklistItemsForUser(user.id);
-  revalidatePath('/settings/calendar');
-  redirect('/settings/calendar?status=updated');
+  refreshWorklistViews();
+  redirect('/settings/calendar?status=' + encodeURIComponent(status));
 }
-
-async function resyncCalendar() {
+async function checkCalendarChanges(formData: FormData) {
   'use server';
   assertSideEffectEnabled('calendar');
   const user = await requireUser();
-  await prisma.worklistCalendarEvent.updateMany({ where: { worklistItem: { assignedToUserId: user.id }, provider: GOOGLE_PROVIDER }, data: { syncStatus: CalendarSyncStatus.PENDING, syncError: null } });
-  await syncOutstandingWorklistItemsForUser(user.id);
-  revalidatePath('/settings/calendar');
-  redirect('/settings/calendar?status=resynced');
-}
-
-async function checkCalendarChanges() {
-  'use server';
-  assertSideEffectEnabled('calendar');
-  const user = await requireUser();
-  const connection = await prisma.calendarConnection.findUnique({
-    where: { userId_provider: { userId: user.id, provider: GOOGLE_PROVIDER } },
-  });
-  if (!connection) redirect('/settings/calendar');
-  let status = 'checked';
+  const connection = await prisma.calendarConnection.findUnique({ where: { userId_provider: { userId: user.id, provider: GOOGLE_PROVIDER } } });
+  if (!connection) redirect('/settings/calendar?status=not-connected');
+  let status: string;
   try {
-    await syncGoogleCalendarConnection(connection.id);
+    status = checkStatus(await syncGoogleCalendarConnection(connection.id, { restoreRemoved: formData.get('restoreRemoved') === 'true' }));
   } catch (error) {
     status = 'check-failed';
-    console.error('Manual Google Calendar check failed', { userId: user.id, error: error instanceof Error ? error.message : String(error) });
+    console.error('Manual calendar check failed', { userId: user.id, error: error instanceof Error ? error.message : String(error) });
   }
-  revalidatePath('/settings/calendar');
-  redirect(`/settings/calendar?status=${status}`);
+  refreshWorklistViews();
+  redirect('/settings/calendar?status=' + encodeURIComponent(status));
 }
-
 async function disconnectCalendar() {
   'use server';
+  assertSideEffectEnabled('calendar');
   const user = await requireUser();
-  const connection = await prisma.calendarConnection.findUnique({
-    where: { userId_provider: { userId: user.id, provider: GOOGLE_PROVIDER } },
-    include: { worklistCalendarEvents: true },
-  });
-  if (!connection) redirect('/settings/calendar');
-  const provider = getCalendarProvider(GOOGLE_PROVIDER);
-  for (const link of connection.worklistCalendarEvents) {
-    if (link.externalEventId) {
-      try { await provider.deleteEvent(connection, link.externalEventId); }
-      catch (error) { console.error('Calendar event cleanup during disconnect failed', { linkId: link.id, error: error instanceof Error ? error.message : String(error) }); }
-    }
-  }
-  await prisma.worklistCalendarEvent.updateMany({
-    where: { connectionId: connection.id },
-    data: { connectionId: null, externalEventId: null, calendarId: null, syncStatus: CalendarSyncStatus.DISABLED, syncError: 'Calendar disconnected.' },
-  });
-  await prisma.calendarConnection.delete({ where: { id: connection.id } });
-  revalidatePath('/settings/calendar');
-  redirect('/settings/calendar?status=disconnected');
+  const result = await changeGoogleCalendarSettings(user.id, '', false, true);
+  refreshWorklistViews();
+  redirect('/settings/calendar?status=' + encodeURIComponent(result.status));
 }
 
 export default async function CalendarSettingsPage({ searchParams }: { searchParams?: Promise<{ status?: string }> }) {
@@ -140,33 +100,38 @@ export default async function CalendarSettingsPage({ searchParams }: { searchPar
     try { calendars = await googleCalendarProvider.listCalendars(connection); }
     catch (error) { console.error('Unable to list Google calendars', { userId: user.id, error: error instanceof Error ? error.message : String(error) }); }
   }
+  const syncAvailable = Boolean(calendarEnabled && connection?.syncEnabled && !connection.requiresReconnect);
   return (
     <>
       <PageHeader eyebrow="Account" title="Calendar integration" description="Put dated Neat follow-ups on your calendar and keep schedule changes in sync." />
-      {!calendarEnabled ? <p className="toast-notice page-status">Calendar connections and synchronization are disabled in this environment.</p> : null}
-      {params.status ? <p className="toast-notice page-status">{messages[params.status] ?? params.status}</p> : null}
+      {!calendarEnabled ? <p className="toast-notice page-status calendar-sync-notice">Calendar connections and synchronization are disabled in this environment.</p> : null}
+      {params.status ? <p role="status" className={'toast-notice page-status' + (['connected', 'updated', 'disconnected', 'checked'].includes(params.status) ? '' : ' calendar-sync-notice')}>{messages[params.status] ?? 'Calendar action could not be completed. Try again.'}</p> : null}
+      <p className="muted">Google date and time changes update Neat at the daily check. Use Check and sync now for an immediate update. Task titles, notes, owners, and completion are managed in Neat.</p>
       <div className="workflow-shell"><section className="card admin-panel calendar-settings-card">
-        <div className="section-heading"><div><h2>Google Calendar</h2><p className="muted">Each user connects their own account. Neat follow-ups continue to work when no calendar is connected.</p></div><span className="pill">{connection ? (connection.requiresReconnect ? 'Reconnect required' : 'Connected') : 'Not connected'}</span></div>
+        <div className="section-heading"><div><h2>Google Calendar</h2><p className="muted">Each user connects their own account. Neat follow-ups continue to work when no calendar is connected.</p></div><span className="pill">{connection ? (connection.requiresReconnect ? 'Reconnect required' : connection.syncEnabled ? 'Connected' : 'Sync paused') : 'Not connected'}</span></div>
         {!connection ? (calendarEnabled ? <a className="button-link" href="/api/calendar/google/connect">Connect Google Calendar</a> : null) : (
           <>
             <dl className="integration-summary">
               <div><dt>Google account</dt><dd>{connection.providerEmail ?? 'Connected account'}</dd></div>
               <div><dt>Calendar</dt><dd>{connection.selectedCalendarName ?? connection.selectedCalendarId}</dd></div>
-              <div><dt>Last checked</dt><dd>{formatEasternDateTime(connection.lastSyncAt) || 'Not yet'}</dd></div>
-              {connection.syncError ? <div><dt>Sync status</dt><dd className="error-text">{connection.syncError}</dd></div> : null}
+              <div><dt>Last successful check</dt><dd>{formatEasternDateTime(connection.lastSyncAt) || 'Not yet'}</dd></div>
+              {connection.syncError ? <div><dt>Sync status</dt><dd><span className="error-text">Some calendar work needs attention. Retry the check or reconnect if required.</span><details><summary>Sync details</summary><p>{connection.syncError}</p></details></dd></div> : null}
             </dl>
             {connection.requiresReconnect ? (calendarEnabled ? <a className="button-link" href="/api/calendar/google/connect">Reconnect Google Calendar</a> : null) : (calendarEnabled ? (
               <form action={updateCalendarSettings}>
                 <label>Calendar<select name="calendarId" defaultValue={connection.selectedCalendarId}>{calendars.map((calendar) => <option key={calendar.id} value={calendar.id}>{calendar.name}</option>)}</select></label>
-                <label className="checkbox-row"><input name="syncEnabled" type="checkbox" defaultChecked={connection.syncEnabled} /> Sync Neat follow-ups</label>
-                <SubmitButton type="submit">Save calendar settings</SubmitButton>
+                <label className="checkbox-label"><input name="syncEnabled" type="checkbox" defaultChecked={connection.syncEnabled} /> Sync Neat follow-ups</label>
+                <SubmitButton type="submit" disabled={!calendars.length}>Save calendar settings</SubmitButton>
+                {!calendars.length ? <p className="muted">Calendars could not be loaded. Reconnect or try again.</p> : null}
               </form>
             ) : null)}
+            {calendarEnabled && !syncAvailable ? <p className="muted">{connection.requiresReconnect ? 'Reconnect to resume calendar checks.' : 'Enable Sync Neat follow-ups to resume calendar checks.'}</p> : null}
             {calendarEnabled ? <div className="action-row">
-              <form action={checkCalendarChanges}><SubmitButton className="secondary" type="submit">Check Google for changes</SubmitButton></form>
-              <form action={resyncCalendar}><SubmitButton className="secondary" type="submit">Push Neat tasks to Google</SubmitButton></form>
+              <form action={checkCalendarChanges}><SubmitButton className="secondary" disabled={!syncAvailable} pendingLabel="Checking…" type="submit">Check and sync now</SubmitButton></form>
+              <form action={checkCalendarChanges}><input type="hidden" name="restoreRemoved" value="true" /><SubmitButton className="secondary" disabled={!syncAvailable} pendingLabel="Restoring…" type="submit">Restore removed events</SubmitButton></form>
               <form action={disconnectCalendar}><SubmitButton className="secondary" type="submit">Disconnect</SubmitButton></form>
             </div> : null}
+            {calendarEnabled ? <p className="muted">Restore removed events recreates deleted Google events for active, dated Neat follow-ups. It does not delete or complete Neat tasks.</p> : null}
           </>
         )}
       </section></div>

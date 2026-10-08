@@ -63,6 +63,12 @@ const evidenceSchema = z.object({
 }).strict();
 
 const commonResearchShape = {
+  productUses: z.array(z.object({
+    productCode: z.string().nullable(), category: z.string().nullable(), subtype: z.string().nullable(),
+    use: z.string().min(1).max(160), kind: z.enum(['MENU','BUYER_PLAN','DEMAND','TRIAL','PLACEMENT']),
+    claim: z.string().min(1).max(500), source: z.string().url(), observedAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    exactLocation: z.boolean(), pouredProduct: z.string().nullable(), status: z.string().nullable(),
+  }).strict()).max(8).default([]),
   identity: z.object({
     verdict: z.enum(['EXACT', 'PROBABLE', 'MISMATCH', 'UNCLEAR']),
     matchedName: z.string().max(200).nullable(),
@@ -119,9 +125,17 @@ export const ACCOUNT_RESEARCH_JSON_SCHEMA = {
     'venueType', 'footTrafficSignal', 'footTrafficEvidence', 'meetingSpaceSquareFeet',
     'cocktailProgram', 'events', 'popularitySignal', 'openStatus', 'publicRatings', 'businessHours',
     'isNationalChain', 'ownershipVerification', 'buyerStructure', 'notes',
-    'confidence', 'evidence',
+    'confidence', 'evidence', 'productUses',
   ],
   properties: {
+    productUses: { type: 'array', maxItems: 8, items: { type: 'object', additionalProperties: false,
+      required: ['productCode','category','subtype','use','kind','claim','source','observedAt','exactLocation','pouredProduct','status'],
+      properties: {
+        productCode: { type: ['string','null'] }, category: { type: ['string','null'] }, subtype: { type: ['string','null'] },
+        use: { type: 'string' }, kind: { type: 'string', enum: ['MENU','BUYER_PLAN','DEMAND','TRIAL','PLACEMENT'] },
+        claim: { type: 'string' }, source: { type: 'string' }, observedAt: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
+        exactLocation: { type: 'boolean' }, pouredProduct: { type: ['string','null'] }, status: { type: ['string','null'] },
+      } } },
     identity: {
       type: 'object', additionalProperties: false,
       required: ['verdict', 'matchedName', 'matchedAddress', 'matchedCity', 'matchedState', 'matchedZip', 'explanation'],
@@ -256,6 +270,7 @@ export function buildAccountResearchPrompt(input: AccountResearchInputSnapshot, 
 
 Source rules:
 - Research the specified US state. Local means local to that account's market, not necessarily Ohio. For a cocktail menu, record explicit spirit categories in evidence (field: menuCategories). Do not infer sales volume, bottle pricing, or a tenant product's state distribution from reviews or cocktail prices.
+- In productUses save only sourced exact-location uses actually found. Record category and verified subtype, drink/use, source URL and observation date. Keep productCode null unless the source gives a catalog code. Distinguish menu wording from a verified poured product. Use MENU for menu presence; BUYER_PLAN, DEMAND or TRIAL requires explicit supporting evidence, never a menu mention or generic cocktail-program claim. No supported uses means an empty array. Do not fabricate serving counts, popularity or historical details.
 - Treat review count as an objective popularity/traffic proxy; star rating is subjective and must not drive footTrafficSignal. Use footTrafficSignal only when exact-location sources provide direct volume, attendance, capacity, reservation-demand, or sustained crowd evidence. Put the concise evidence in footTrafficEvidence and add its source to evidence with field footTraffic. Return Unknown and null rather than guessing.
 - Record patio/rooftop evidence with field patioOutdoor and private dining or reservable event-room evidence with field privateDining.
 - Set venueType to Hotel bar/restaurant only when this exact account operates inside the matched hotel property. Only then return meetingSpaceSquareFeet, supported by an official hotel, convention, or venue source in evidence with field hotelMeetingSpace. For every other venue type, meetingSpaceSquareFeet must be null.

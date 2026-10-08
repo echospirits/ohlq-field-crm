@@ -1,0 +1,92 @@
+/* Semantic dark palette. Legacy declarations keep their exact light colors as
+   fallbacks while sharing these tokens in dark mode. No image inversion. */
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #171c18;
+  --bg-2: #1c221d;
+  --panel: #202721;
+  --panel-2: #2a332b;
+  --panel-3: #344035;
+  --text: #edf0e8;
+  --muted: #bbc4b5;
+  --muted-2: #cbd3c5;
+  --line: #556151;
+  --line-strong: #85917b;
+  --border: var(--line);
+  --surface: var(--panel);
+  --action: #44583c;
+  --action-hover: #506748;
+  --accent-soft: #b8d8a430;
+  --sage: #2e3e2a;
+  --clay: #49322d;
+  --success: #9cdbad;
+  --danger: #ffb4ad;
+  --warning: #f5d28e;
+  --shadow: 0 6px 24px #00000040;
+  --theme-surface: var(--panel);
+  --theme-surface-raised: var(--panel-2);
+  --theme-text: var(--text);
+  --theme-muted: var(--muted);
+  --theme-link: #c2dda9;
+  --theme-border: var(--line-strong);
+  --theme-action: var(--action);
+  --theme-success-surface: #293e2f;
+  --theme-success-ink: #b5e3bf;
+  --theme-success-border: #83ac8e;
+  --theme-success-fill: #36533c;
+  --theme-warning-surface: #443820;
+  --theme-warning-ink: #f5d28e;
+  --theme-warning-border: #ae925e;
+  --theme-warning-fill: #635028;
+  --theme-danger-surface: #49302e;
+  --theme-danger-ink: #ffb4ad;
+  --theme-danger-border: #c28b83;
+  --theme-danger-fill: #703b35;
+  --theme-info-surface: #293b51;
+  --theme-info-ink: #bad8ff;
+  --theme-info-border: #84a9d4;
+  --theme-info-fill: #35567e;
+  --theme-teal-surface: #263e3e;
+  --theme-teal-ink: #a6dedb;
+  --theme-teal-border: #79aaa6;
+  --theme-teal-fill: #345b59;
+  --theme-purple-surface: #3c304b;
+  --theme-purple-ink: #ddc6f4;
+  --theme-purple-border: #ac91c6;
+  --theme-purple-fill: #59426c;
+}
+
+/* Readable links and charts for every tenant, independent of brand contrast. */
+html[data-theme="dark"] body { --accent: #c2dda9 !important; --accent-hover: #d8efc5 !important; --accent-2: #a6dedb !important; }
+html[data-theme="dark"] :focus-visible { outline-color: #c2dda9; }
+html[data-theme="dark"] input::placeholder,
+html[data-theme="dark"] textarea::placeholder { color: var(--muted); }
+html[data-theme="dark"] input[readonly] { background: var(--panel-2); }
+html[data-theme="dark"] button:disabled { background: var(--panel-2); color: var(--muted); border-color: var(--line); }
+html[data-theme="dark"] .analytics-tabs a[aria-current="page"] { background: var(--action); }
+html[data-theme="dark"] .contact-action { color: var(--accent); }
+/* Documents and email previews preserve the intended output appearance. */
+.digest-preview-frame { color-scheme: light; }
+
+.appearance-setting { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.appearance-setting > div { min-width: 0; }
+.appearance-setting p { margin: 4px 0 0; max-width: 52ch; font-size: 13px; }
+.appearance-switch { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 8px; min-width: 104px; min-height: 44px; }
+.appearance-switch-track { display: inline-flex; align-items: center; width: 38px; height: 22px; padding: 3px; background: var(--muted); border-radius: 20px; }
+.appearance-switch-track > span { display: block; width: 16px; height: 16px; border-radius: 50%; background: var(--panel); }
+.appearance-switch[aria-checked="true"] .appearance-switch-track { background: var(--accent); }
+.appearance-switch[aria-checked="true"] .appearance-switch-track > span { margin-left: auto; background: var(--bg); }
+.appearance-feedback { min-height: 1.5em; font-size: 13px; margin-bottom: 0; }
+.appearance-section { border-bottom: 1px solid var(--line); padding-bottom: 18px; margin-bottom: 18px; }
+.appearance-section h2 { margin-top: 0; }
+.mobile-tabbar-taster { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+html[data-theme="dark"] .link-button,
+html[data-theme="dark"] .empty-state-mark { color: var(--accent); }
+html[data-theme="dark"] a:hover { color: var(--accent-hover); }
+html[data-theme="dark"] :is(.btn, .button-link, .fab, .app-nav-primary):hover { color: white; }
+html[data-theme="dark"] :is(.btn.secondary, .button-link.secondary):hover { color: var(--text); }
+html[data-theme="dark"] .mobile-tabbar > a[aria-current="page"],
+html[data-theme="dark"] .store-fit-more > summary { color: var(--accent); }
+html[data-theme="dark"] .quick-action-card::after { color: var(--accent); }
+html[data-theme="dark"] .quick-action-primary::after { color: white; }

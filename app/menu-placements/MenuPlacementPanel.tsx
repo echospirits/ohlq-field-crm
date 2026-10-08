@@ -134,6 +134,12 @@ function PlacementFields({
         Notes
         <textarea name="notes" rows={3} defaultValue={placement?.notes ?? ''} />
       </label>
+      <details className="compact-details"><summary>Product use and buyer evidence (optional)</summary>
+        <label>Cocktail/use family<input name="useFamily" defaultValue={placement?.useFamily ?? ''} /></label>
+        <label>Product actually poured<input name="pouredProduct" defaultValue={placement?.pouredProduct ?? ''} /></label>
+        <label>Buyer-confirmed plan or demand evidence<textarea name="demandEvidence" rows={2} defaultValue={placement?.demandEvidence ?? ''} /></label>
+        <p className="muted">Use the observation dates and proof above. Menu wording does not prove the poured product or drink popularity.</p>
+      </details>
     </>
   );
 }

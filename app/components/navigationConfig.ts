@@ -38,6 +38,7 @@ export const navigationItems: NavigationItem[] = [
   { key: 'tags', href: '/tags', label: 'Tags', section: 'utility', moreOrder: 5 },
   { key: 'profile', href: '/profile', label: 'Profile', section: 'utility', moreOrder: 6 },
   { key: 'users', href: '/users', label: 'Users', section: 'admin', adminGroup: 'Organization', adminOnly: true, moreOrder: 7 },
+  { key: 'user-activity', href: '/admin/user-activity', label: 'User activity', section: 'admin', adminGroup: 'Organization', adminOnly: true, moreOrder: 9 },
   { key: 'organization-setup', href: '/admin/organization', label: 'Organization Setup', section: 'admin', adminGroup: 'Organization', adminOnly: true },
   { key: 'weekly-digest', href: '/admin/weekly-digest', label: 'Weekly Digest', section: 'admin', adminGroup: 'Organization', adminOnly: true },
   { key: 'data-health', href: '/admin/data-status', label: 'Data Status', section: 'utility', adminGroup: 'Data & insights', moreOrder: 8 },
@@ -72,13 +73,13 @@ export const getAdministrationNavigationGroups = (enabledFeatures?: readonly str
         item.adminGroup === label &&
         featureVisible(item, enabledFeatures) &&
         (!item.platformAdminOnly || isPlatformAdmin) &&
-        (hasOrganizationAdminAccess || ['data-health', 'environment', 'platform-administration'].includes(item.key))
+        (hasOrganizationAdminAccess || ['data-health', 'environment', 'platform-administration', 'user-activity'].includes(item.key))
       ),
     }))
     .filter((group) => group.items.length > 0);
 
 export const getMoreNavigationItems = (isAdmin: boolean, enabledFeatures?: readonly string[], isPlatformAdmin = false) =>
   navigationItems
-    .filter((item) => item.moreOrder !== undefined && (!item.adminOnly || isAdmin) && featureVisible(item, enabledFeatures) && (!item.platformAdminOnly || isPlatformAdmin))
+    .filter((item) => item.moreOrder !== undefined && (!item.adminOnly || isAdmin || (isPlatformAdmin && item.key === 'user-activity')) && featureVisible(item, enabledFeatures) && (!item.platformAdminOnly || isPlatformAdmin))
     .sort((left, right) => (left.moreOrder ?? 99) - (right.moreOrder ?? 99));
 import type { FeatureKey } from '../../lib/featureRegistry';

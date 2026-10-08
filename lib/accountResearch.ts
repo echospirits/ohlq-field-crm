@@ -33,6 +33,7 @@ type ResearchCandidate = {
   licenseeId: string;
   isTargeting?: boolean;
   targetPublicResearch: { lastRefreshedAt: Date | null } | null;
+  currentAssessments?: Array<{ priority: number; evidenceMode: string }>;
   opportunities: Array<{ productionScore: number; status: OpportunityStatus }>;
 };
 
@@ -126,22 +127,22 @@ const parseResearchDate = (value: string | null, rowNumber: number, errors: Acco
   return parsed;
 };
 
-export const getResearchPriority = (candidate: Pick<ResearchCandidate, 'opportunities' | 'targetPublicResearch' | 'name'>) => {
+export const getResearchPriority = (candidate: Pick<ResearchCandidate, 'opportunities' | 'targetPublicResearch' | 'name' | 'currentAssessments'>) => {
   const statuses = new Set(candidate.opportunities.map((item) => item.status));
   const workflowPriority = statuses.has(OpportunityStatus.ACTIONED) ? 0 : statuses.has(OpportunityStatus.OPEN) || statuses.has(OpportunityStatus.SNOOZED) ? 1 : 2;
   const refreshedAt = candidate.targetPublicResearch?.lastRefreshedAt?.getTime() ?? 0;
   const refreshInterval = statuses.has(OpportunityStatus.ACTIONED) ? PURSUED_RESEARCH_DAYS : STANDARD_RESEARCH_DAYS;
   return {
     workflowPriority,
-    opportunityScore: Math.max(0, ...candidate.opportunities.map((item) => item.productionScore)),
+    opportunityScore: Math.max(0, ...(candidate.currentAssessments ?? []).map((item) => item.priority)),
     dueAt: refreshedAt === 0 ? 0 : refreshedAt + refreshInterval * DAY,
     name: candidate.name,
   };
 };
 
 export const compareResearchCandidates = (
-  left: Pick<ResearchCandidate, 'opportunities' | 'targetPublicResearch' | 'name'>,
-  right: Pick<ResearchCandidate, 'opportunities' | 'targetPublicResearch' | 'name'>,
+  left: Pick<ResearchCandidate, 'opportunities' | 'targetPublicResearch' | 'name' | 'currentAssessments'>,
+  right: Pick<ResearchCandidate, 'opportunities' | 'targetPublicResearch' | 'name' | 'currentAssessments'>,
 ) => {
   const a = getResearchPriority(left);
   const b = getResearchPriority(right);
@@ -166,6 +167,7 @@ export async function getAccountResearchQueue({ db = prisma, now = new Date(), l
       OR: [
         ...(targetedIds.length ? [{ id: { in: targetedIds } }] : []),
         { opportunities: { some: { ...opportunityScope, status: { in: activeStatuses } } } },
+        { currentAssessments: { some: { ...opportunityScope, state: 'READY' } } },
         { state: { in: US_STATES.filter(({ code }) => code !== 'OH').map(({ code }) => code) }, address: { not: null }, city: { not: null }, zip: { not: null } },
       ],
       ...(!includeFresh ? { AND: [{ OR: [
@@ -185,6 +187,7 @@ export async function getAccountResearchQueue({ db = prisma, now = new Date(), l
     select: {
       id: true, name: true, address: true, city: true, state: true, zip: true, licenseeId: true,
       targetPublicResearch: { select: { lastRefreshedAt: true } },
+      currentAssessments: { where: opportunityScope, select: { priority: true, evidenceMode: true } },
       opportunities: { where: { ...opportunityScope, status: { in: activeStatuses } }, select: { productionScore: true, status: true } },
     },
   });

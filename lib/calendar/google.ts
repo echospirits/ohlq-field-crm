@@ -104,8 +104,6 @@ async function getAccessToken(connection: CalendarProviderConnection) {
       accessTokenEncrypted: encryptCalendarToken(token.access_token),
       refreshTokenEncrypted: token.refresh_token ? encryptCalendarToken(token.refresh_token) : undefined,
       tokenExpiresAt: expiresAt,
-      requiresReconnect: false,
-      syncError: null,
     },
   });
   connection.accessTokenEncrypted = encryptCalendarToken(token.access_token);
@@ -113,7 +111,7 @@ async function getAccessToken(connection: CalendarProviderConnection) {
   return token.access_token;
 }
 
-async function googleFetch(connection: CalendarProviderConnection, path: string, init?: RequestInit) {
+async function googleFetch(connection: CalendarProviderConnection, path: string, init?: RequestInit, allowedStatuses: number[] = []) {
   const accessToken = await getAccessToken(connection);
   const response = await fetch(`${API_ROOT}${path}`, {
     ...init,
@@ -124,7 +122,7 @@ async function googleFetch(connection: CalendarProviderConnection, path: string,
       ...init?.headers,
     },
   });
-  if (response.status === 404 || response.status === 410) return response;
+  if (allowedStatuses.includes(response.status)) return response;
   if (!response.ok) {
     const message = await parseError(response);
     throw new CalendarProviderError(message, `google_${response.status}`, response.status === 401);
@@ -133,25 +131,33 @@ async function googleFetch(connection: CalendarProviderConnection, path: string,
 }
 
 export const googleCalendarProvider: CalendarProvider = {
-  async createEvent(connection, input) {
+  async createEvent(connection, input, reservedEventId) {
     const response = await googleFetch(connection, `/calendars/${encodeURIComponent(connection.selectedCalendarId)}/events`, {
-      method: 'POST', body: JSON.stringify(toGoogleEvent(input)),
-    });
+      method: 'POST', body: JSON.stringify({ ...toGoogleEvent(input), ...(reservedEventId ? { id: reservedEventId } : {}) }),
+    }, reservedEventId ? [409] : []);
+    if (response.status === 409 && reservedEventId) {
+      const event = await this.getEvent(connection, reservedEventId);
+      if (!event || event.status === 'cancelled') throw new CalendarProviderError('Calendar event was removed.', 'event_removed');
+      if (event.privateMetadata.worklistItemId !== input.privateMetadata.worklistItemId || event.privateMetadata.echoCrmManaged !== 'true') {
+        throw new CalendarProviderError('Calendar event identity does not match this task.', 'event_identity_conflict');
+      }
+      return { externalEventId: event.id, updatedAt: event.updatedAt, etag: event.etag };
+    }
     return toResult((await response.json()) as GoogleEvent);
   },
   async updateEvent(connection, eventId, input, expectedEtag) {
     const response = await googleFetch(connection, `/calendars/${encodeURIComponent(connection.selectedCalendarId)}/events/${encodeURIComponent(eventId)}`, {
       method: 'PATCH', body: JSON.stringify(toGoogleEvent(input)), headers: buildGoogleCalendarUpdateHeaders(expectedEtag),
-    });
+    }, [404, 410]);
     if (response.status === 404 || response.status === 410) throw new CalendarProviderError('Calendar event was removed.', 'event_removed');
     return toResult((await response.json()) as GoogleEvent);
   },
   async deleteEvent(connection, eventId) {
-    const response = await googleFetch(connection, `/calendars/${encodeURIComponent(connection.selectedCalendarId)}/events/${encodeURIComponent(eventId)}`, { method: 'DELETE' });
+    const response = await googleFetch(connection, `/calendars/${encodeURIComponent(connection.selectedCalendarId)}/events/${encodeURIComponent(eventId)}`, { method: 'DELETE' }, [404, 410]);
     if (response.status === 404 || response.status === 410 || response.status === 204) return;
   },
   async getEvent(connection, eventId) {
-    const response = await googleFetch(connection, `/calendars/${encodeURIComponent(connection.selectedCalendarId)}/events/${encodeURIComponent(eventId)}`);
+    const response = await googleFetch(connection, `/calendars/${encodeURIComponent(connection.selectedCalendarId)}/events/${encodeURIComponent(eventId)}`, undefined, [404, 410]);
     if (response.status === 404 || response.status === 410) return null;
     return parseGoogleEvent((await response.json()) as GoogleEvent);
   },
@@ -159,7 +165,7 @@ export const googleCalendarProvider: CalendarProvider = {
     const query = buildGoogleCalendarChangesQuery(syncToken, pageToken);
     let response: Response;
     try {
-      response = await googleFetch(connection, `/calendars/${encodeURIComponent(connection.selectedCalendarId)}/events?${query}`);
+      response = await googleFetch(connection, `/calendars/${encodeURIComponent(connection.selectedCalendarId)}/events?${query}`, undefined, [410]);
     } catch (error) {
       // Tokens created by the former filtered change feed are rejected when the
       // incompatible filter is removed. Treat that one-time 400 as an expired
@@ -171,6 +177,7 @@ export const googleCalendarProvider: CalendarProvider = {
     }
     if (response.status === 410) throw new CalendarProviderError('Google sync token expired.', 'sync_token_expired');
     const body = (await response.json()) as { items?: GoogleEvent[]; nextPageToken?: string; nextSyncToken?: string };
+    if (!body.nextPageToken && !body.nextSyncToken) throw new CalendarProviderError('Google did not return a sync cursor.', 'missing_sync_cursor');
     return {
       events: (body.items ?? []).map(parseGoogleEvent).filter((event) => event.id),
       nextPageToken: body.nextPageToken ?? null,
@@ -187,7 +194,7 @@ export const googleCalendarProvider: CalendarProvider = {
 };
 
 export const buildGoogleCalendarChangesQuery = (syncToken?: string | null, pageToken?: string | null) => {
-  const query = new URLSearchParams({ showDeleted: 'true', singleEvents: 'true' });
+  const query = new URLSearchParams({ showDeleted: 'true', singleEvents: 'true', maxResults: '100' });
   if (syncToken) query.set('syncToken', syncToken);
   if (pageToken) query.set('pageToken', pageToken);
   return query;
@@ -235,7 +242,7 @@ export const exchangeGoogleOAuthCode = async (code: string) => {
 };
 
 export const getGoogleIdentity = async (accessToken: string) => {
-  const response = await fetch('https://openidconnect.googleapis.com/v1/userinfo', { headers: { authorization: `Bearer ${accessToken}` } });
+  const response = await fetch('https://openidconnect.googleapis.com/v1/userinfo', { signal: AbortSignal.timeout(15_000), headers: { authorization: `Bearer ${accessToken}` } });
   if (!response.ok) throw new CalendarProviderError(await parseError(response), 'identity_failed');
   return (await response.json()) as { sub: string; email?: string };
 };

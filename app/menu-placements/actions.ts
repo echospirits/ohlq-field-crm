@@ -10,6 +10,7 @@ import {
   validateMenuPlacementProofFile,
 } from '../../lib/blob';
 import { prisma } from '../../lib/prisma';
+import { scheduleWholesaleAssessment } from '../../lib/scheduleWholesaleAssessment';
 import { requireOrganizationContext } from '../../lib/organizations';
 import {
   getLegacyAccountCreateDataFromWholesaleAccount,
@@ -126,6 +127,9 @@ function getPlacementData(formData: FormData) {
   return {
     product,
     menuItemName,
+    useFamily: toOptional(formData.get('useFamily')),
+    pouredProduct: toOptional(formData.get('pouredProduct')),
+    demandEvidence: toOptional(formData.get('demandEvidence')),
     placementType: toPlacementType(formData.get('placementType')),
     status: toPlacementStatus(formData.get('status')),
     source: toPlacementSource(formData.get('source')),
@@ -243,7 +247,7 @@ export async function createMenuPlacement(formData: FormData) {
 
   revalidatePath('/');
   revalidatePath('/wholesale');
-  if (wholesaleAccountId) revalidatePath(`/wholesale/${wholesaleAccountId}`);
+  if (wholesaleAccountId) { revalidatePath(`/wholesale/${wholesaleAccountId}`); scheduleWholesaleAssessment(organizationId, wholesaleAccountId); }
   redirectWithPlacementStatus(returnTo, 'created');
 }
 
@@ -321,7 +325,7 @@ export async function updateMenuPlacement(formData: FormData) {
 
   revalidatePath('/');
   revalidatePath('/wholesale');
-  if (existingPlacement.wholesaleAccountId) revalidatePath(`/wholesale/${existingPlacement.wholesaleAccountId}`);
+  if (existingPlacement.wholesaleAccountId) { revalidatePath(`/wholesale/${existingPlacement.wholesaleAccountId}`); scheduleWholesaleAssessment(organizationId, existingPlacement.wholesaleAccountId); }
   redirectWithPlacementStatus(returnTo, 'updated');
 }
 
@@ -362,6 +366,6 @@ export async function deleteMenuPlacement(formData: FormData) {
 
   revalidatePath('/');
   revalidatePath('/wholesale');
-  if (placement.wholesaleAccountId) revalidatePath(`/wholesale/${placement.wholesaleAccountId}`);
+  if (placement.wholesaleAccountId) { revalidatePath(`/wholesale/${placement.wholesaleAccountId}`); scheduleWholesaleAssessment(organizationId, placement.wholesaleAccountId); }
   redirectWithPlacementStatus(returnTo, 'deleted');
 }

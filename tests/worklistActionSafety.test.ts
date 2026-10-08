@@ -6,12 +6,12 @@ import ts from 'typescript';
 import { WorklistStatus } from '@prisma/client';
 
 for (const page of ['alerts']) {
-  const source = readFileSync(new URL(`../app/${page}/page.tsx`, import.meta.url), 'utf8');
+  const source = readFileSync(new URL(`../app/${page}/actions.ts`, import.meta.url), 'utf8');
   const ast = ts.createSourceFile('page.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const action = ast.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'updateWorklistStatus')!;
   function load(owned: boolean) {
     const calls: string[] = [];
-    const code = ts.transpileModule(`${action.getText(ast)}\nresult = updateWorklistStatus;`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+    const code = ts.transpileModule(`${action.getText(ast).replace("export ", "")}\nresult = updateWorklistStatus;`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
     const context = {
       result: undefined as unknown,
       WorklistStatus,
@@ -39,6 +39,8 @@ for (const page of ['alerts']) {
     assert.ok(calls.includes('schedule-calendar'));
     assert.ok(calls.includes('/alerts'));
     assert.ok(calls.includes('/my-week'));
+    assert.ok(calls.includes('/agencies/[id]'));
+    assert.ok(calls.includes('/wholesale/[id]'));
   });
 
   test(`${page}: missing or inaccessible tasks produce a visible error without writes`, async () => {

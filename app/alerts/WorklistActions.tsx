@@ -41,7 +41,8 @@ type WorklistActionItem = {
   } | null;
 };
 
-type WorklistActionsProps = {
+export type WorklistActionsProps = {
+  returnTo?: string;
   item: WorklistActionItem;
   actorName: string;
   agencies: VisitFormAgencyOption[];
@@ -79,6 +80,7 @@ export function WorklistActions({
   updateItemAction,
   currentUserId,
   users,
+  returnTo = '/alerts',
 }: WorklistActionsProps) {
   const [openAction, setOpenAction] = useState<'log-visit' | 'reschedule' | 'reassign' | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -191,7 +193,7 @@ export function WorklistActions({
                 sourceLabel: item.title,
                 sourceType: 'WORKLIST',
                 reason: item.detail,
-                returnTo: '/alerts',
+                returnTo,
               }}
               submitLabel="Log visit"
               tags={tags}

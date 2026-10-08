@@ -8,6 +8,7 @@ import {
 import { pruneOhlqAnnualSalesRows } from './ohlqAnnualSalesRetention';
 import { runAgencyMarketIntelligenceAfterImport } from './agencyMarketIntelligenceService';
 import { runOpportunityIntelligenceAfterImport } from './opportunityEngine';
+import { runOhlqTenantInventoryWorkflow } from './ohlqTenantInventoryWorkflow';
 import { toOhlqDateOnlyUtc } from './ohlqDataStatus';
 import {
   downloadOhlqSharedSalesReports,
@@ -146,13 +147,16 @@ export async function runOhlqAnnualSalesWorkflow(options: OhlqAnnualSalesWorkflo
     if (options.deferIntelligence) {
       logger.log(`Sales reports for ${reportDate} imported; intelligence and retention will run after inventory.`);
     }
+    let inventoryFailure: unknown = null;
+    if (!options.deferIntelligence) {
+      try { await runOhlqTenantInventoryWorkflow(); }
+      catch (error) { inventoryFailure = error; logger.error('Inventory refresh failed; wholesale scoring will expose unverified availability.', error); }
+    }
     const opportunityIntelligence = options.deferIntelligence ? null : await runOpportunityIntelligenceAfterImport({
       reportDate: toOhlqDateOnlyUtc(reportDate),
     });
     if (opportunityIntelligence) logger.log(
-      `Opportunity intelligence captured ${opportunityIntelligence.salesEvents.created} purchase event(s), ` +
-        `detected ${opportunityIntelligence.intelligence.detected} opportunity instance(s), and ` +
-        `converted ${opportunityIntelligence.intelligence.converted} opportunity instance(s).`,
+      `Wholesale intelligence evaluated ${opportunityIntelligence.intelligence.accountsEvaluated} accounts and persisted ${opportunityIntelligence.intelligence.persisted} current assessments. Inspect run source coverage separately.`,
     );
 
     const agencyMarketIntelligence = options.deferIntelligence ? null : await runAgencyMarketIntelligenceAfterImport({
@@ -163,6 +167,7 @@ export async function runOhlqAnnualSalesWorkflow(options: OhlqAnnualSalesWorkflo
         `${agencyMarketIntelligence.productFitsProcessed} product fit(s) with ${agencyMarketIntelligence.scoringVersion}.`,
     );
 
+    if (inventoryFailure) throw inventoryFailure;
     const retention = options.deferIntelligence ? null : await pruneOhlqAnnualSalesRows({ reportDate });
     if (retention) logger.log(
       `OHLQ annual sales retention kept ${retention.retentionDays} day(s) from ${retention.cutoffDate}; ` +

@@ -1,3 +1,5 @@
+import { after } from 'next/server';
+import { refreshTenantOpportunityScoresForAccounts } from '../../../../lib/accountResearchScoring';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
@@ -253,6 +255,8 @@ async function updateWholesaleAccount(formData: FormData) {
     });
     await syncWholesaleAccountLicenseeIds(tx, id, licenseeIds);
   });
+  await prisma.wholesaleAccountAssessment.updateMany({ where: { wholesaleAccountId: id }, data: { refreshRequestedAt: new Date() } });
+  after(async () => { try { await refreshTenantOpportunityScoresForAccounts({ accountIds: [id] }); } catch { console.warn('Account change assessment refresh remains pending', { accountId: id }); } });
 
   revalidatePath('/wholesale');
   revalidatePath(`/wholesale/${id}`);
