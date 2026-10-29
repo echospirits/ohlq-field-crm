@@ -121,7 +121,7 @@ export function DirectWholesaleOrderForm({
     return <section className="direct-order-shell">
       <div className="notice direct-order-safety"><strong>Save and download only.</strong> Neat will not email or transmit this order.</div>
       <article className="card direct-order-review">
-        <div className="section-heading"><div><span className="page-eyebrow">Review</span><h2>A-3a direct wholesale sale</h2></div><span className="pill">PDF download</span></div>
+        <div className="section-heading"><div><h2>A-3a direct wholesale sale</h2></div><span className="pill">PDF download</span></div>
         <dl className="direct-order-review-grid">
           <div><dt>Seller</dt><dd>{location?.label}<small>Store {location?.storeId}</small></dd></div>
           <div><dt>Customer</dt><dd>{customer.dba || customer.name}<small>{customer.name} · {customer.permitNumber}</small></dd></div>
@@ -146,11 +146,11 @@ export function DirectWholesaleOrderForm({
   return <section className="direct-order-shell">
     <div className="notice direct-order-safety"><strong>Safe pilot:</strong> this workflow saves the order in Neat and downloads its PDF. It cannot send email to OHLQ.</div>
     <article className="card direct-order-card">
-      <div className="section-heading"><div><span className="page-eyebrow">1. Seller</span><h2>A-3a selling location</h2></div></div>
+      <div className="section-heading"><div><h2>A-3a selling location</h2></div></div>
       <label>Selling location<select onChange={(event) => setDirectSaleLocationId(event.target.value)} value={directSaleLocationId}>{locations.map((location) => <option key={location.id} value={location.id}>{location.label} · Store {location.storeId}</option>)}</select></label>
     </article>
     <article className="card direct-order-card">
-      <div className="section-heading"><div><span className="page-eyebrow">2. Customer</span><h2>Wholesale customer information</h2><p className="muted">Correcting these values changes this PDF only.</p></div></div>
+      <div className="section-heading"><div><h2>Wholesale customer information</h2><p className="muted">Correcting these values changes this PDF only.</p></div></div>
       <div className="form-grid">
         <label>Customer name<input onChange={(event) => updateCustomer('name', event.target.value)} required value={customer.name} /></label>
         <label>Customer DBA<input onChange={(event) => updateCustomer('dba', event.target.value)} value={customer.dba} /></label>
@@ -164,7 +164,7 @@ export function DirectWholesaleOrderForm({
       <fieldset className="direct-order-choice"><legend>Is this an F2 Permit?</legend><label><input checked={!customer.f2Permit} name="f2Permit" onChange={() => updateCustomer('f2Permit', false)} type="radio" /> No</label><label><input checked={customer.f2Permit} name="f2Permit" onChange={() => updateCustomer('f2Permit', true)} type="radio" /> Yes</label></fieldset>
     </article>
     <article className="card direct-order-card">
-      <div className="section-heading"><div><span className="page-eyebrow">3. Sale</span><h2>Products and quantities</h2><p className="muted">Wholesale prices come from the latest Ohio Brand Master and can be corrected for this order.</p></div></div>
+      <div className="section-heading"><div><h2>Products and quantities</h2><p className="muted">Wholesale prices come from the latest Ohio Brand Master and can be corrected for this order.</p></div></div>
       <label>Sales date<input onChange={(event) => setSelectedSaleDate(event.target.value)} type="date" value={selectedSaleDate} /></label>
       <datalist id="direct-order-products">{products.map((product) => <option key={product.itemCode} value={product.itemCode}>{product.itemName}</option>)}</datalist>
       <div className="direct-order-lines">{lines.map((line, index) => {
@@ -182,7 +182,7 @@ export function DirectWholesaleOrderForm({
       <div className="direct-order-total"><span>Subtotal <strong>{currency.format(totals.subtotal)}</strong></span><span className="grand-total">Invoice total <strong>{currency.format(totals.total)}</strong></span></div>
     </article>
     <article className="card direct-order-card">
-      <div className="section-heading"><div><span className="page-eyebrow">4. Signatures</span><h2>Typed names on the PDF</h2></div></div>
+      <div className="section-heading"><div><h2>Typed names on the PDF</h2></div></div>
       <div className="form-grid"><label>A-3a signature name<input onChange={(event) => setA3aSignature(event.target.value)} value={a3aSignature} /></label><label>Customer signature name<input onChange={(event) => setCustomerSignature(event.target.value)} value={customerSignature} /></label></div>
     </article>
     {!canReview ? <p className="notice">Complete the required customer fields and select a valid product before review.</p> : null}

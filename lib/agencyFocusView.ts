@@ -10,7 +10,7 @@ export function agencyFocusHref(query: { agencyId?: string; state?: string; q?: 
   return `/agency-focus${params.size ? `?${params}` : ''}`;
 }
 
-export const AGENCY_FOCUS_PAGE_SIZE = 250;
+export const AGENCY_FOCUS_PAGE_SIZE = 25;
 
 export function agencyFocusPageNumber(value?: string | number) {
   const page = Number(value);

@@ -7,11 +7,10 @@ type PageHeaderProps = {
   title: ReactNode;
 };
 
-export function PageHeader({ actions, description, eyebrow, title }: PageHeaderProps) {
+export function PageHeader({ actions, description, title }: PageHeaderProps) {
   return (
     <header className="page-heading page-header">
       <div>
-        {eyebrow ? <span className="page-eyebrow">{eyebrow}</span> : null}
         <h1>{title}</h1>
         {description ? <p className="muted">{description}</p> : null}
       </div>
@@ -51,7 +50,6 @@ type EmptyStateProps = {
 export function EmptyState({ action, description, title }: EmptyStateProps) {
   return (
     <div className="empty-state">
-      <span aria-hidden="true" className="empty-state-mark">+</span>
       <div>
         <h3>{title}</h3>
         <p className="muted">{description}</p>

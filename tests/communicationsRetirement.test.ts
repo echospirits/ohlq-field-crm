@@ -82,7 +82,7 @@ test('account briefing keeps existing evidence and next actions without a commun
     '../../lib/prisma': { prisma: new Proxy({}, { get: () => assert.fail('briefing must not read removed AI settings') }) },
     '../../lib/crm/briefing': { getAccountBriefing: async (_db: unknown, a: unknown, ref: unknown) => {
       assert.equal(a, actor); assert.equal(ref, account);
-      return { health: { score: null, reasons: [], missing: [] }, indicators: { reasons: [], nextAction: 'Review overdue Worklist commitments' }, overdue: 0, open: 0 };
+      return { health: { score: null, reasons: [], missing: [] }, indicators: { reasons: [], nextAction: 'Review overdue Worklist commitments' }, lastContact: null, lastMeaningful: null, lastVisit: null, lastFollowUp: null, tasks: [], pipeline: null };
     } },
   });
   const html = renderToStaticMarkup(await component.AccountBriefing({ account, actor }));

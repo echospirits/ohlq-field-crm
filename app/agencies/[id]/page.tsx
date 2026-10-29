@@ -5,7 +5,6 @@ import { activityLabels } from '../../../lib/crm/activity';
 import { Suspense } from 'react';
 import { AccountWorklist } from '../../components/AccountWorklist';
 import { AddressLink, PhoneLink } from '../../components/AccountContactLinks';
-import { AnchoredDetails } from '../../components/AnchoredDetails';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
@@ -24,7 +23,7 @@ import { AgencyIntelligencePanel } from '../AgencyIntelligencePanel';
 import { AccountTagPanel } from '../../tags/AccountTagPanel';
 import { TagBadges } from '../../tags/TagBadges';
 import { VisitActivityTable, type SupplementalActivity } from '../../visits/VisitActivityTable';
-import { AccountWorkspaceNavigation } from '../../components/AccountWorkspaceNavigation';
+import { AccountWorkspace } from '../../components/AccountWorkspace';
 import { OpportunityAccountPanel } from '../../wholesale/OpportunityAccountPanel';
 import { ContextualActions } from '../../components/ContextualActions';
 import { AccountMemoryPanel } from '../../account-memory/AccountMemoryPanel';
@@ -153,47 +152,84 @@ export default async function AgencyActivityPage({
     <>
       <header className="page-heading page-header account-workspace-heading">
         <div>
-          <span className="page-eyebrow">Retail · {agency.city || 'Location not set'}</span>
-          <h1>{agency.name}</h1>
+          <h1>{agency.name}</h1><p className="account-kind">Retail · {agency.city || 'Location not set'}</p><p className="account-location">{[agency.address, agency.city, agency.state, agency.zip].filter(Boolean).join(', ')}</p>
           {overlay?.isTargeting ? <p><strong className="target-account-marker">TARGET ACCOUNT</strong></p> : null}
           {agency.tags.length ? <TagBadges tags={agency.tags.map((assignment) => assignment.tag)} /> : null}
         </div>
-        <div className="page-heading-actions">
-          <TargetAccountControl accountType={SalesAccountType.AGENCY} externalAccountId={id} isTargeting={overlay?.isTargeting ?? false} allowStop returnTo={`/agencies/${id}`} />
-          <ContextualActions
+        <div className="page-heading-actions"><ContextualActions
             context={{ accountName: agency.name, agencyId: agency.id, returnTo: `/agencies/${agency.id}`, sourceLabel: agency.name, sourceType: 'AGENCY_DETAIL' }}
             currentUserId={currentUser.id}
             users={actionUsers}
-          />
-          <details className="account-secondary-actions"><summary>More actions</summary><div>
+           variant="account" address={[agency.address, agency.city, agency.state, agency.zip].filter(Boolean).join(', ')} phone={agency.phone} secondaryActions={<>
+          <TargetAccountControl accountType={SalesAccountType.AGENCY} externalAccountId={id} isTargeting={overlay?.isTargeting ?? false} allowStop returnTo={`/agencies/${id}`} />
+
+
           <Link className="btn compact-btn secondary" href={`/visits/new?type=agency&agencyId=${agency.id}&voice=1`}>Voice note</Link>
-          </div></details>
-        </div>
+
+        </>} /></div>
       </header>
       {salesStatusSummary ? <AccountSalesStatusPanel accountType={SalesAccountType.AGENCY} externalAccountId={id} returnTo={`/agencies/${id}`} {...salesStatusSummary} /> : null}
-      {hasAgencyIntelligence ? <AgencyStoreSummary context={storeContext} market={marketProfile} d8Permit={agency.d8Permit} county={agency.county} /> : null}
       {query.status ? <p className="toast-notice" role="status">{statusMessages[query.status] ?? query.status}</p> : null}
       {query.tagStatus ? <p className="pill">{tagStatusMessages[query.tagStatus] ?? query.tagStatus}</p> : null}
       {query.memoryStatus ? <p className="toast-notice" role="status">{query.memoryStatus === 'notes-saved' ? 'Account notes saved.' : query.memoryStatus === 'contact-saved' ? 'Contact saved.' : 'Unable to save that account information.'}</p> : null}
-      <AccountWorkspaceNavigation sections={[
-        { href: '#overview', label: 'Overview' },
-        { href: '#account-memory', label: 'Notes + contacts' },
-        { href: '#account-worklist', label: 'Outstanding work' },
-        { href: '#sales', label: 'Sales' },
-        { href: '#activity', label: 'Activity' },
-        ...(hasAgencyIntelligence ? [{ href: '#intelligence', label: 'Retail Intelligence' }] : hasWholesaleOpportunities ? [{ href: '#intelligence', label: 'Restaurant intelligence' }] : []),
-      ]} />
-
-      <Suspense fallback={<section className="card" aria-busy="true"><p role="status">Loading account profile…</p></section>}>
-        <AccountProfile organizationId={organizationId} accountType="AGENCY" accountId={agency.id} />
-      </Suspense>
+      <AccountWorkspace key={agency.id} panels={[
+{ id: 'overview', label: 'Overview', content: <>
       <AccountMemoryPanel users={actionUsers} accountId={agency.id} accountType="AGENCY" contacts={accountContacts} notes={overlay?.notes ?? null} returnTo={`/agencies/${agency.id}`} />
 
       <Suspense fallback={<section id="account-worklist" className="card account-workspace-section account-worklist" aria-busy="true"><h2>Outstanding work</h2><p role="status">Loading outstanding work…</p></section>}>
         <AccountWorklist accountId={agency.id} accountName={agency.name} accountType="AGENCY" currentUserId={currentUser.id} actorName={getUserDisplayName(currentUser)} organizationId={organizationId} enabledFeatures={enabledFeatures} />
       </Suspense>
 
-      <AnchoredDetails className="account-overview-details account-workspace-section" id="overview" summary="Account details, visit totals & tags">
+
+<Suspense fallback={<p aria-busy="true" role="status">Loading account briefing…</p>}><AccountBriefing account={{ accountType: "AGENCY", accountId: agency.id }} actor={{ organizationId, userId: currentUser.id }} lastPurchaseAt={salesStatusSummary?.lastPurchaseAt} /></Suspense></> },
+{ id: 'sales', label: 'Sales', content: <>
+        <AgencyRecentSalesCard salesWindows={salesWindows} config={tenantConfig} />
+      </> },
+...(hasAgencyIntelligence || hasWholesaleOpportunities ? [{ id: 'intelligence', label: 'Intelligence', content: <>
+            {hasAgencyIntelligence ? <AgencyStoreSummary context={storeContext} market={marketProfile} d8Permit={agency.d8Permit} county={agency.county} /> : null}
+
+      {hasAgencyIntelligence ? <>
+        <div className="retail-intelligence-content">
+          <p className="retail-intelligence-intro muted">Next actions, what sells here, and the store behind the numbers.</p>
+          <Suspense fallback={<p aria-busy="true" role="status">Loading retail intelligence…</p>}><AgencyIntelligencePanel agencyId={agency.id} agencyName={agency.name} currentUserId={currentUser.id} organizationId={organizationId} users={actionUsers} /></Suspense>
+          <AgencyRetailMarketIntelligence market={marketProfile} fits={marketFits} />
+          <AgencyStoreIntelligence agencyId={agency.id} context={storeContext} />
+        </div>
+      </> : null}
+      {hasWholesaleOpportunities ? <section id="wholesale-intelligence"><h2>Linked restaurant opportunities</h2>
+        <Suspense fallback={<p aria-busy="true" role="status">Loading linked restaurant intelligence…</p>}><OpportunityAccountPanel agencyId={agency.agencyId} currentUserId={currentUser.id} returnTo={`/agencies/${agency.id}`} users={actionUsers} /></Suspense>
+      </section> : null}
+    </> }] : []),
+{ id: 'activity', label: 'Activity', content: <>      <section className="dashboard-section account-workspace-section">
+        <div className="section-heading">
+          <h2>Activity</h2>
+          <span className="pill">{visits.length + communicationActivities.length + salesStatusHistory.length + targetingHistory.length + workAndEvents.length}</span>
+        </div>
+
+        <VisitActivityTable contactMap={contactMap} visits={visits} supplementalEvents={communicationActivities.map((activity): SupplementalActivity => ({
+          actor: getUserDisplayName(activity.createdByUser),
+          at: activity.occurredAt,
+          detail: [activity.summary ?? (['EMAIL_INITIATED', 'CALL_INITIATED'].includes(activity.activityType) ? getCommunicationTitle(activity.activityType === 'EMAIL_INITIATED' ? 'EMAIL_INITIATED' : 'CALL_INITIATED', activity.contact?.name ?? 'Contact') : activity.contact?.name), activity.outcome, activity.visibility === 'PRIVATE' ? 'Only you' : null].filter(Boolean).join(' · '),
+          id: activity.id,
+          href: activity.createdByUserId === currentUser.id ? activity.externalUrl ?? "" : "",
+          title: activityLabels[activity.activityType], type: activityLabels[activity.activityType], source: activity.source, contactIds: activity.contactIds.length ? activity.contactIds : activity.contactId ? [activity.contactId] : [],
+        })).concat(salesStatusHistory.map((event) => ({
+          actor: event.changedByUserId ? userNames.get(event.changedByUserId) ?? 'Former team member' : 'Neat',
+          at: event.changedAt,
+          detail: event.previousStatus ? `${SALES_STATUS_LABELS[event.previousStatus]} → ${SALES_STATUS_LABELS[event.newStatus]}` : `Set to ${SALES_STATUS_LABELS[event.newStatus]}`,
+          id: `sales-status-${event.id}`,
+          href: "",
+          title: event.source === 'SALES_DATA' ? 'Purchase detected' : 'Sales status changed',
+        }))).concat(targetingHistory.map((event) => ({
+          actor: event.changedByUserId ? userNames.get(event.changedByUserId) ?? 'Former team member' : 'Neat',
+          at: event.changedAt,
+          detail: event.isTargeting ? 'TARGET ACCOUNT' : 'Targeting stopped',
+          href: '',
+          id: `targeting-${event.id}`,
+          title: event.isTargeting ? 'Account targeted' : 'Targeting stopped',
+        }))).concat(workAndEvents)} />
+      </section></> },
+{ id: 'account-details', label: 'Details', content: <><Suspense fallback={<section className="card" aria-busy="true"><p role="status">Loading account profile…</p></section>}><AccountProfile organizationId={organizationId} accountType="AGENCY" accountId={agency.id} /></Suspense>
       <div className="grid account-summary-grid account-workspace-section">
         <div className="card metric-card">
           <h3>Logged visits</h3>
@@ -232,59 +268,8 @@ export default async function AgencyActivityPage({
           tags={tags}
         />
       </div>
-      </AnchoredDetails>
-
-      {hasWholesaleOpportunities ? <AnchoredDetails className="account-overview-details account-workspace-section" id={hasAgencyIntelligence ? 'wholesale-intelligence' : 'intelligence'} summary="Linked restaurant opportunity intelligence">
-        <Suspense fallback={<p aria-busy="true" role="status">Loading linked restaurant intelligence…</p>}>
-          <OpportunityAccountPanel agencyId={agency.agencyId} currentUserId={currentUser.id} returnTo={`/agencies/${agency.id}`} users={actionUsers} />
-        </Suspense>
-      </AnchoredDetails> : null}
-
-      <AnchoredDetails className="account-overview-details account-workspace-section" id="sales" summary="Recent item sales">
-        <AgencyRecentSalesCard salesWindows={salesWindows} config={tenantConfig} />
-      </AnchoredDetails>
-
-      <section className="dashboard-section account-workspace-section" id="activity">
-        <div className="section-heading">
-          <h2>Activity</h2>
-          <span className="pill">{visits.length + communicationActivities.length + salesStatusHistory.length + targetingHistory.length + workAndEvents.length}</span>
-        </div>
-        <Suspense fallback={<p aria-busy="true" role="status">Loading account briefing…</p>}>
-          <AccountBriefing account={{ accountType: "AGENCY", accountId: agency.id }} actor={{ organizationId, userId: currentUser.id }} lastPurchaseAt={salesStatusSummary?.lastPurchaseAt} />
-        </Suspense>
-        <VisitActivityTable contactMap={contactMap} visits={visits} supplementalEvents={communicationActivities.map((activity): SupplementalActivity => ({
-          actor: getUserDisplayName(activity.createdByUser),
-          at: activity.occurredAt,
-          detail: [activity.summary ?? (['EMAIL_INITIATED', 'CALL_INITIATED'].includes(activity.activityType) ? getCommunicationTitle(activity.activityType === 'EMAIL_INITIATED' ? 'EMAIL_INITIATED' : 'CALL_INITIATED', activity.contact?.name ?? 'Contact') : activity.contact?.name), activity.outcome, activity.visibility === 'PRIVATE' ? 'Only you' : null].filter(Boolean).join(' · '),
-          id: activity.id,
-          href: activity.createdByUserId === currentUser.id ? activity.externalUrl ?? "" : "",
-          title: activityLabels[activity.activityType], type: activityLabels[activity.activityType], source: activity.source, contactIds: activity.contactIds.length ? activity.contactIds : activity.contactId ? [activity.contactId] : [],
-        })).concat(salesStatusHistory.map((event) => ({
-          actor: event.changedByUserId ? userNames.get(event.changedByUserId) ?? 'Former team member' : 'Neat',
-          at: event.changedAt,
-          detail: event.previousStatus ? `${SALES_STATUS_LABELS[event.previousStatus]} → ${SALES_STATUS_LABELS[event.newStatus]}` : `Set to ${SALES_STATUS_LABELS[event.newStatus]}`,
-          id: `sales-status-${event.id}`,
-          href: "",
-          title: event.source === 'SALES_DATA' ? 'Purchase detected' : 'Sales status changed',
-        }))).concat(targetingHistory.map((event) => ({
-          actor: event.changedByUserId ? userNames.get(event.changedByUserId) ?? 'Former team member' : 'Neat',
-          at: event.changedAt,
-          detail: event.isTargeting ? 'TARGET ACCOUNT' : 'Targeting stopped',
-          href: '',
-          id: `targeting-${event.id}`,
-          title: event.isTargeting ? 'Account targeted' : 'Targeting stopped',
-        }))).concat(workAndEvents)} />
-      </section>
-      {hasAgencyIntelligence ? <AnchoredDetails className="account-overview-details account-workspace-section agency-retail-intelligence" id="intelligence" initialOpen summary="Retail Intelligence">
-        <div className="retail-intelligence-content">
-          <p className="retail-intelligence-intro muted">Next actions, what sells here, and the store behind the numbers.</p>
-          <Suspense fallback={<p aria-busy="true" role="status">Loading retail intelligence…</p>}>
-            <AgencyIntelligencePanel agencyId={agency.id} agencyName={agency.name} currentUserId={currentUser.id} organizationId={organizationId} users={actionUsers} />
-          </Suspense>
-          <AgencyRetailMarketIntelligence market={marketProfile} fits={marketFits} />
-          <AgencyStoreIntelligence agencyId={agency.id} context={storeContext} />
-        </div>
-      </AnchoredDetails> : null}
+      </> }
+      ]} initialSection={query.tagStatus ? 'account-details' : 'overview'} />
     </>
   );
 }

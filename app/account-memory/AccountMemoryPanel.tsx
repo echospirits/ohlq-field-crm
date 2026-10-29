@@ -1,3 +1,4 @@
+import { AnchoredDetails } from '../components/AnchoredDetails';
 import { RecordPicker } from '../components/RecordPicker';
 import { ContactRelationships } from './ContactRelationships';
 import { SubmitButton } from '../components/SubmitButton';
@@ -70,7 +71,7 @@ export function AccountMemoryPanel({ accountId, accountType, contacts, notes, re
   return <section className="account-memory-grid account-workspace-section" id="account-memory">
     <article className="card account-notes-card">
       <div className="section-heading"><h2>Notes</h2></div>
-      {notes ? <p className="preserve-lines account-notes-copy">{notes}</p> : <p className="muted">Add account notes.</p>}
+      {notes ? <p className="preserve-lines account-notes-copy">{notes}</p> : <p className="muted">No account notes yet.</p>}
       <details className="nested-details"><summary>{notes ? 'Edit notes' : 'Add notes'}</summary>
         <form action={saveAccountNotes}>
           <LocationFields accountId={accountId} accountType={accountType} returnTo={returnTo} />
@@ -83,7 +84,7 @@ export function AccountMemoryPanel({ accountId, accountType, contacts, notes, re
       <div className="section-heading"><h2>Contacts</h2><span className="pill">{active.length}</span></div>
       <div className="contact-list">{active.length ? active.map(renderContact) : <p className="muted">No contacts yet.</p>}</div>
       {inactive.length ? <details className="inactive-contacts"><summary>{inactive.length} inactive</summary><div className="contact-list">{inactive.map(renderContact)}</div></details> : null}
-      <details className="contact-import-disclosure"><summary>Add or import a contact</summary><ContactImportForm accountId={accountId} accountType={accountType} installUrl={shortcutConfig.installUrl} returnTo={returnTo} shortcutVersion={shortcutConfig.version} /></details>
+      <AnchoredDetails className="contact-import-disclosure" id="account-contact-editor" summary="Add or import a contact"><ContactImportForm accountId={accountId} accountType={accountType} installUrl={shortcutConfig.installUrl} returnTo={returnTo} shortcutVersion={shortcutConfig.version} /></AnchoredDetails>
     </article>
   </section>;
 }

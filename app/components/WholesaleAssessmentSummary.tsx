@@ -3,8 +3,8 @@ import { formatEasternDateTime } from '../../lib/dateTime';
 import { evidenceModeLabel, readAssessment } from '../../lib/wholesaleAssessment';
 import { CommercialOpportunityStars } from './CommercialOpportunityStars';
 
-export function WholesaleAssessmentSummary({ value, actions, pending = false, status, reason }: {
-  value: unknown; actions?: ReactNode; pending?: boolean; status?: string | null; reason?: string | null;
+export function WholesaleAssessmentSummary({ value, actions, pending = false, status, reason, compact = false }: {
+  value: unknown; actions?: ReactNode; pending?: boolean; status?: string | null; reason?: string | null; compact?: boolean;
 }) {
   const assessment = readAssessment(value);
   if (!assessment) return <div className="wholesale-assessment"><CommercialOpportunityStars rating={null} status={status ?? 'PENDING'} pending={pending} /><p className="muted">{reason ?? 'Current commercial assessment unavailable. The next refresh will assess this account.'}</p>{actions}</div>;
@@ -13,11 +13,12 @@ export function WholesaleAssessmentSummary({ value, actions, pending = false, st
   const periods = assessment.coverage.contextPeriods;
   const quantity = (value: number | null | undefined) => value == null ? 'Unavailable' : value.toLocaleString(undefined, { maximumFractionDigits: 1 });
   return <div className="wholesale-assessment">
-    <div className="assessment-heading"><span>Commercial opportunity</span><CommercialOpportunityStars rating={assessment.rating} status={status} pending={pending} stale={stale} /><span className="pill">{evidenceModeLabel[assessment.evidenceMode]}</span></div>
+    <div className="assessment-heading">{!compact ? <span>Commercial opportunity</span> : null}<CommercialOpportunityStars rating={assessment.rating} status={status} pending={pending} stale={stale} /><span className={compact ? 'assessment-evidence-mode' : 'pill'}>{evidenceModeLabel[assessment.evidenceMode]}</span></div>
     <strong>{assessment.title}</strong>
-    <ul>{assessment.reasons.slice(0, 2).map(reason => <li key={reason}>{reason}</li>)}</ul>
+    {compact ? <p className="assessment-key-reason">{assessment.reasons[0]}</p> : <ul>{assessment.reasons.slice(0, 2).map(reason => <li key={reason}>{reason}</li>)}</ul>}
     {actions}
-    <details className="compact-details"><summary>Commercial evidence and details</summary>
+    <details className="compact-details"><summary>{compact ? 'Why this recommendation?' : 'Commercial evidence and details'}</summary>
+      {compact && assessment.reasons.length ? <ul>{assessment.reasons.map(reason => <li key={reason}>{reason}</li>)}</ul> : null}
       <p>Commercial tiers describe portfolio fit and meaningful purchasing depth. They do not predict an order or attainable revenue. Buyer access and pursuit preferences are separate.</p>
       <p>Last calculated {formatEasternDateTime(new Date(assessment.calculatedAt))} · Last researched {assessment.researchAt ? formatEasternDateTime(new Date(assessment.researchAt)) : 'Unavailable'}</p>
       <p>Sales foundation: {assessment.coverage.representedFrom ?? 'Unavailable'} through {assessment.coverage.through ?? 'Unavailable'} · {commercial.representedDays ? `${commercial.representedDays} represented days` : 'No sales period'}. Latest source date {assessment.coverage.latestSourceDate ?? 'Unavailable'}. Assessment effective date {assessment.asOf}.</p>

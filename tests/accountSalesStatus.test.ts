@@ -137,14 +137,14 @@ test('Pipeline, status writes, visit integration, and sales import are server ga
   assert.doesNotMatch(service, /WHOLESALE_OPPORTUNITIES|opportunityEngine/);
 });
 
-test('Pipeline defaults to Kanban with collapsed native groups and visible filter affordances', () => {
+test('Pipeline defaults to its account list while the board retains visible filter and disclosure affordances', () => {
   const pipeline = readFileSync('app/pipeline/page.tsx', 'utf8');
   const journey = readFileSync('app/components/SalesStatusJourney.tsx', 'utf8');
   const styles = readFileSync('app/components/salesStatus.css', 'utf8');
-  assert.match(pipeline, /const view = params\?\.view === 'list' \? 'list' : params\?\.view === 'stages' \? 'stages' : 'board'/);
+  assert.match(pipeline, /const view = params\?\.view === 'board' \? 'board' : params\?\.view === 'stages' \? 'stages' : 'list'/);
   assert.ok(pipeline.indexOf("href={pipelineHref('board')}") < pipeline.indexOf("href={pipelineHref('list')}"));
   assert.match(pipeline, /<details className="pipeline-kanban-column"/);
-  assert.doesNotMatch(pipeline, /<details[^>]*\sopen(?:[\s=>])/);
+  assert.match(pipeline, /open=\{stageRows.length > 0\}/);
   assert.match(pipeline, /<summary><h3>\{option.label\}<\/h3>/);
   assert.match(pipeline, /href=\{pipelineHref\(view, null\)\}>Clear filter/);
   assert.match(journey, /filterHref \? 'sales-journey--filters'/);

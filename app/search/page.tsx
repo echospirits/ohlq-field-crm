@@ -100,7 +100,7 @@ export default async function SearchPage({ searchParams }: { searchParams?: Prom
     <>
       <header className="page-heading page-header search-heading">
         <div>
-          <span className="page-eyebrow">Universal search</span>
+
           <h1>Find accounts and work</h1>
           <p className="muted">Search retail accounts, restaurant accounts, active Opportunities, and work in one place.</p>
         </div>

@@ -1,0 +1,109 @@
+/* Recommendations are a reading list: identity, useful evidence, then action. */
+.agency-focus-page .agency-focus-results,
+.opportunities-page .opportunity-results {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+.agency-focus-page .agency-focus-row,
+.opportunities-page .opportunity-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 8px 24px;
+  padding: 16px 0;
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  box-shadow: none;
+}
+.agency-focus-page .agency-focus-row > *,
+.opportunities-page .opportunity-row > * { grid-column: auto; min-width: 0; }
+.agency-focus-page .agency-focus-identity h2,
+.opportunities-page .opportunity-row-identity h2 { margin: 0; font-size: 16px; line-height: 1.4; }
+.agency-focus-page .agency-focus-identity h2 a,
+.opportunities-page .opportunity-row-identity h2 a {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+  color: var(--text);
+}
+.agency-focus-page .agency-focus-identity h2 a:hover,
+.opportunities-page .opportunity-row-identity h2 a:hover { text-decoration: underline; }
+.agency-focus-page .agency-focus-identity > p,
+.opportunities-page .opportunity-row-identity > p { margin: 0 0 4px; }
+.agency-focus-page .agency-focus-product { gap: 4px; }
+.agency-focus-page .agency-focus-product > strong { font-size: 14px; }
+.agency-focus-page .agency-focus-key-reason,
+.opportunities-page .assessment-key-reason { color: var(--muted); font-size: 13px; line-height: 1.5; max-width: 70ch; }
+.agency-focus-page .agency-focus-evidence { width: 100%; }
+.agency-focus-page .agency-focus-evidence .agency-focus-metrics {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border: 0;
+  padding: 8px 0;
+}
+.agency-focus-page .agency-focus-evidence .agency-focus-reasons { display: block; margin: 8px 0; }
+.agency-focus-page .agency-focus-row-actions { align-items: start; gap: 4px; }
+.agency-focus-page .agency-focus-row-actions > .contextual-actions { width: 100%; gap: 8px; }
+.agency-focus-page .agency-focus-row-actions > .contextual-actions > :is(button, a),
+.opportunities-page .assessment-actions > .contextual-actions > :is(button, a) {
+  min-height: 44px;
+  padding: 8px 12px;
+  font-size: 12px;
+}
+.agency-focus-page .agency-focus-row-actions > details { width: 100%; }
+.agency-focus-page .intelligence-secondary-actions { display: flex; flex-wrap: wrap; align-items: start; gap: 8px; }
+.agency-focus-page .intelligence-secondary-actions form { margin: 0; }
+.agency-focus-page .intelligence-secondary-actions > details { width: 100%; }
+.opportunities-page .assessment-heading { gap: 8px 12px; margin-bottom: 4px; }
+.opportunities-page .assessment-evidence-mode { color: var(--muted); font-size: 12px; }
+.opportunities-page .wholesale-assessment > strong { font-size: 14px; line-height: 1.4; }
+.opportunities-page .assessment-actions { gap: 4px 12px; margin: 8px 0 0; align-items: start; }
+.opportunities-page .assessment-actions > .contextual-actions { width: 100%; gap: 8px; }
+.opportunities-page .assessment-actions > details { margin: 0; }
+.opportunities-page .assessment-actions > .pursuit-accept { flex-basis: 100%; }
+.opportunities-page .pursuit-accept > summary { font-weight: 700; color: var(--action); }
+.opportunities-page .assessment-actions form { width: 100%; max-width: 440px; }
+.opportunities-page .assessment-actions > .intelligence-more-actions { flex-basis: 100%; }
+.opportunities-page .wholesale-assessment > details { margin: 0; }
+.agency-focus-page .compact-details > summary,
+.opportunities-page .compact-details > summary { font-size: 12px; min-height: 44px; }
+.agency-focus-page .opportunity-filters,
+.opportunities-page .opportunity-filters { gap: 0 16px; border-bottom: 1px solid var(--line); padding: 0; }
+.agency-focus-page .opportunity-filters a,
+.opportunities-page .opportunity-filters a {
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  padding: 10px 0;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 500;
+}
+.agency-focus-page .opportunity-filters a[aria-current="page"],
+.opportunities-page .opportunity-filters a[aria-current="page"] {
+  border-bottom-color: var(--action);
+  background: transparent;
+  color: var(--text);
+  font-weight: 700;
+}
+.opportunities-page .intelligence-filters { margin: 0 0 8px; }
+.opportunities-page .intelligence-filters p { font-size: 12px; }
+.opportunities-page .intelligence-header-links { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; font-size: 13px; }
+.opportunities-page .intelligence-header-links a { display: inline-flex; align-items: center; min-height: 44px; }
+.intelligence-pagination { display: flex; flex-wrap: wrap; gap: 4px 16px; justify-content: space-between; align-items: center; margin: 8px 0; font-size: 12px; color: var(--muted); }
+.intelligence-pagination > div { display: flex; gap: 16px; margin-left: auto; }
+.intelligence-pagination a { display: inline-flex; align-items: center; min-height: 44px; font-weight: 600; }
+@media (min-width: 900px) {
+  .opportunities-page .opportunity-row { grid-template-columns: minmax(180px, 1fr) minmax(0, 2.5fr); }
+  .opportunities-page .assessment-actions > .contextual-actions { width: auto; }
+  .opportunities-page .assessment-actions > .pursuit-accept { flex-basis: auto; }
+  .opportunities-page .assessment-actions > .pursuit-accept[open] { flex-basis: 100%; }
+  .opportunities-page .assessment-actions > .intelligence-more-actions { flex-basis: auto; }
+  .opportunities-page .assessment-actions > .intelligence-more-actions[open] { flex-basis: 100%; }
+}
+@media (min-width: 1100px) {
+  .agency-focus-page .agency-focus-row { grid-template-columns: minmax(160px, 1fr) minmax(240px, 1.75fr) minmax(220px, 1fr); gap: 24px; }
+}

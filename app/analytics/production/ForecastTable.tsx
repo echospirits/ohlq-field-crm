@@ -1,14 +1,13 @@
 'use client';
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { EmptyState } from '../../components/PageChrome';
 import type { ForecastSummary } from '../../../lib/productionForecasting/service';
 import { cases, trend } from '../../../lib/productionForecasting/presentation';
 export function ConfidenceBadge({ value }: { value: string }) { return <span className={`pill pf-confidence pf-${value.toLowerCase()}`}>{value} confidence</span>; }
 export function ForecastTable({ rows, initial = {}, organizationId }: { rows: ForecastSummary[]; initial?: Record<string, string>; organizationId?: string }) {
   const [query, setQuery] = useState(initial.q ?? ''), [market, setMarket] = useState(initial.market ?? 'all'), [confidence, setConfidence] = useState(initial.confidence ?? 'all'), [sort, setSort] = useState(initial.sort ?? 'need');
-  const [filtersOpen, setFiltersOpen] = useState(Boolean(initial.q));
-  useEffect(() => { if (window.matchMedia('(min-width:768px)').matches) setFiltersOpen(true); }, []);
+  const [filtersOpen, setFiltersOpen] = useState(Boolean((initial.market && initial.market !== 'all') || (initial.confidence && initial.confidence !== 'all') || (initial.sort && initial.sort !== 'need')));
   const selected = rows.filter(r => `${r.product.name} ${r.product.code}`.toLowerCase().includes(query.toLowerCase().trim()) && (market === 'all' || r.product.market === market) && (confidence === 'all' || r.confidence === confidence));
   selected.sort((a, b) => sort === 'name' ? a.product.name.localeCompare(b.product.name) : sort === 'change' ? Math.abs(b.change ?? 0) - Math.abs(a.change ?? 0) : (b.target ?? -1) - (a.target ?? -1));
   const known = selected.filter(r => r.point !== null);
@@ -17,8 +16,8 @@ export function ForecastTable({ rows, initial = {}, organizationId }: { rows: Fo
   const href = (row: ForecastSummary) => `/analytics/production/${encodeURIComponent(row.product.id)}?${params}`;
   const guidance = (r: ForecastSummary) => r.guidanceThrough ? <>{cases(r.guidanceMinimum)}–{cases(r.guidanceMaximum)}<small>Min/max · through {r.guidanceThrough}</small></> : 'Not imported';
   return <>
-    <details className="pf-filter-disclosure" open={filtersOpen} onToggle={e => setFiltersOpen(e.currentTarget.open)}><summary>Find, filter and sort products</summary><div className="pf-filters" role="search" aria-label="Find production forecasts">
-      <label>Find product<input type="search" placeholder="Name or item code" value={query} onChange={e => setQuery(e.target.value)} /></label>
+    <label className="pf-product-search">Find product<input type="search" placeholder="Name or item code" value={query} onChange={e => setQuery(e.target.value)} /></label>
+    <details className="pf-filter-disclosure compact-details" open={filtersOpen} onToggle={e => setFiltersOpen(e.currentTarget.open)}><summary>Filters and sorting</summary><div className="pf-filters" role="search" aria-label="Find production forecasts">
       <label>Market<select value={market} onChange={e => setMarket(e.target.value)}><option value="all">All markets</option>{[...new Set(rows.map(r => r.product.market))].map(m => <option key={m}>{m}</option>)}</select></label>
       <label>Confidence<select value={confidence} onChange={e => setConfidence(e.target.value)}><option value="all">All confidence levels</option>{['High', 'Medium', 'Low'].map(c => <option key={c}>{c}</option>)}</select></label>
       <label>Sort by<select value={sort} onChange={e => setSort(e.target.value)}><option value="need">Planning target</option><option value="name">Product name</option><option value="change">Forecast change</option></select></label>

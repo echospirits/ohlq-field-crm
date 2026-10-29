@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'crypto';
-import { UserRole } from '@prisma/client';
+import { UserRole, type Prisma } from '@prisma/client';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { prisma } from './prisma';
@@ -10,6 +10,10 @@ import { ECHO_ORGANIZATION_ID, hasEchoAccess } from './echoAccess';
 export const SESSION_COOKIE = 'echo_session';
 
 const SESSION_DAYS = 30;
+// Next's cookie store is request-local. Reuse an in-flight read only in that
+// request; a new request or changed cookie always revalidates durable access.
+type CurrentSession = Prisma.UserSessionGetPayload<{ include: { user: true } }>;
+const sessionReads = new WeakMap<object, { tokenHash: string; result: Promise<CurrentSession | null> }>();
 
 export const getSessionCookieOptions = (expires?: Date) => ({
   httpOnly: true,
@@ -63,14 +67,19 @@ export async function getCurrentSession() {
     return null;
   }
 
-  return prisma.userSession.findFirst({
+  const tokenHash = hashSessionToken(token);
+  const existing = sessionReads.get(cookieStore);
+  if (existing?.tokenHash === tokenHash) return existing.result;
+  const result = prisma.userSession.findFirst({
     where: {
-      tokenHash: hashSessionToken(token),
+      tokenHash,
       expiresAt: { gt: new Date() },
       user: { isActive: true, organizationId: ECHO_ORGANIZATION_ID },
     },
     include: { user: true },
   });
+  sessionReads.set(cookieStore, { tokenHash, result });
+  return result;
 }
 
 type UserAccessOptions = {

@@ -440,25 +440,31 @@ export function WorklistScheduler({ view, anchorDate, items, currentUserId, user
   const feedbackIsError = Boolean(feedback) && !['Saving schedule…', 'Schedule saved.', 'Existing task scheduled.'].includes(feedback);
   const previousDate = addSchedulerDays(anchorDate, view === 'day' ? -1 : -7);
   const nextDate = addSchedulerDays(anchorDate, view === 'day' ? 1 : 7);
+  const selectedDay = getSchedulerDayItems(items, anchorDate);
+  const emptyDay = view === 'day' && selectedDay.timed.length === 0 && selectedDay.anytime.length === 0;
+  const emptyDayView = <>
+    <div className="scheduler-empty-day"><h3>No work scheduled for this day</h3><p>No timed or date-only tasks are assigned to you.</p><div className="action-row"><button onClick={() => openAdd(anchorDate, null)} type="button">Schedule work</button><Link className="btn secondary" href="/visits/new">Log a visit</Link></div></div>
+    <div className="scheduler-empty-tray"><div><strong>Your overdue or undated work</strong><small>Past 30 days and tasks with no date</small></div><span className="pill">{visibleTray.length}</span></div>
+    {visibleTray.map((item) => <button className="scheduler-tray-item" key={item.id} onClick={() => openEdit(item)} type="button"><strong>{item.title}</strong><span><SchedulerAccountLabel item={item} /></span></button>)}
+  </>;
 
-  return <section className={`worklist-scheduler worklist-scheduler-${view}`} aria-labelledby="scheduler-title">
+  return <section className={`worklist-scheduler worklist-scheduler-${view}${emptyDay ? ' worklist-scheduler-empty' : ''}`} aria-labelledby="scheduler-title">
     <nav aria-label="Schedule view" className="view-switcher scheduler-view-tabs">
       <Link aria-current={view === 'day' ? 'page' : undefined} href={scheduleHref('day', view === 'week' ? mobileDate : anchorDate)}>Day</Link>
       <Link aria-current={view === 'week' ? 'page' : undefined} href={scheduleHref('week', anchorDate)}>Week</Link>
     </nav>
     <header className="scheduler-header">
       <div>
-        <span className="page-eyebrow">My work</span>
         <h2 id="scheduler-title">{view === 'day' ? formatDay(anchorDate) : weekLabel}</h2>
         <p className="muted">{view === 'day' ? 'Schedule your day. Date-only work stays in Anytime.' : 'Drag work to schedule it. Tap a day on mobile to see its timeline.'}</p>
       </div>
       <div className="scheduler-header-actions">
         <nav className="scheduler-date-nav" aria-label={view === 'day' ? 'Choose day' : 'Choose week'}>
           <Link aria-label={view === 'day' ? 'Previous day' : 'Previous week'} href={scheduleHref(view, previousDate)}>‹</Link>
-          <Link href={scheduleHref(view, currentDate)}>Today</Link>
+          <Link className={anchorDate === currentDate ? 'scheduler-date-today-current' : undefined} href={scheduleHref(view, currentDate)}>Today</Link>
           <Link aria-label={view === 'day' ? 'Next day' : 'Next week'} href={scheduleHref(view, nextDate)}>›</Link>
         </nav>
-        <button className="btn primary" onClick={() => openAdd(addButtonDate, null)} type="button">Add work</button>
+        {!emptyDay ? <button className="btn primary" onClick={() => openAdd(addButtonDate, null)} type="button">Add work</button> : null}
       </div>
     </header>
 
@@ -474,7 +480,7 @@ export function WorklistScheduler({ view, anchorDate, items, currentUserId, user
     </nav> : null}
 
     <div className="scheduler-desktop">
-      {view === 'day' ? <div className="scheduler-day-layout">
+      {emptyDay ? emptyDayView : view === 'day' ? <div className="scheduler-day-layout">
         {renderCalendar([anchorDate], 'scheduler-calendar-day')}
         <aside className="scheduler-tray" aria-labelledby="scheduler-tray-title">
           <div className="section-heading"><h3 id="scheduler-tray-title">To Do Today</h3><span className="pill">{visibleTray.length + getSchedulerDayItems(items, anchorDate).anytime.length}</span></div>
@@ -508,8 +514,8 @@ export function WorklistScheduler({ view, anchorDate, items, currentUserId, user
     </div>
 
     <div className="scheduler-mobile">
-      {renderMobileDay(view === 'day' ? anchorDate : mobileDate)}
-      <details className="scheduler-mobile-tray">
+      {emptyDay ? emptyDayView : renderMobileDay(view === 'day' ? anchorDate : mobileDate)}
+      {!emptyDay ? <details className="scheduler-mobile-tray">
         <summary>Unscheduled / recent overdue <span className="pill">{visibleTray.length}</span></summary>
         <div>
           <p className="muted">Overdue work from the past 30 days and undated tasks assigned to you.</p>
@@ -518,7 +524,7 @@ export function WorklistScheduler({ view, anchorDate, items, currentUserId, user
             <small>{item.dueDate ? `Overdue · ${formatDateOnlyInputValue(new Date(`${item.dueDate}T00:00:00.000Z`))}` : 'No date set'}</small>
           </button>) : <p className="muted">No overdue or undated work.</p>}
         </div>
-      </details>
+      </details> : null}
     </div>
 
     <p aria-live="polite" className={feedback ? `scheduler-feedback${feedbackIsError ? ' scheduler-feedback-error' : ''}` : 'visually-hidden'} role={feedbackIsError ? 'alert' : 'status'}>{feedback}</p>
@@ -527,7 +533,7 @@ export function WorklistScheduler({ view, anchorDate, items, currentUserId, user
     {selectedItem ? <div aria-labelledby={`scheduler-item-${selectedItem.id}`} aria-modal="true" className="app-modal contextual-action-modal" role="dialog">
       <button aria-label="Close task actions" className="app-modal-backdrop" onClick={closeDialogs} type="button" />
       <div className="app-modal-panel contextual-action-sheet scheduler-action-sheet" ref={dialogRef}>
-        <div className="app-modal-header"><div><span className="page-eyebrow">{statusLabel(selectedItem.status)}</span><h2 id={`scheduler-item-${selectedItem.id}`}>{selectedItem.title}</h2></div><button aria-label="Close" className="app-modal-close secondary" onClick={closeDialogs} type="button">Close</button></div>
+        <div className="app-modal-header"><div><h2 id={`scheduler-item-${selectedItem.id}`}>{selectedItem.title}</h2><p className="dialog-context">{statusLabel(selectedItem.status)}</p></div><button aria-label="Close" className="app-modal-close secondary" onClick={closeDialogs} type="button">Close</button></div>
         {selectedItem.location ? <p className="scheduler-account-context"><span><Link href={selectedItem.location.href}>{selectedItem.location.name}</Link>{selectedItem.isTargeting ? <> · <TargetAccountMarker /></> : null}</span><span>{selectedItem.location.type === 'wholesale' ? 'Restaurant account' : 'Retail'}</span></p> : <p className="muted">No account linked to this task.</p>}
         {selectedItem.detail ? <p className="scheduler-task-detail">{selectedItem.detail}</p> : null}
         <ActionForm action={updateAction as (data: FormData) => Promise<ActionResult>} className="scheduler-edit-form" onError={refreshAfterConflict} onSuccess={refreshAfterSave}>
@@ -574,7 +580,7 @@ export function WorklistScheduler({ view, anchorDate, items, currentUserId, user
     {createContext ? <div aria-labelledby="scheduler-create-title" aria-modal="true" className="app-modal contextual-action-modal" role="dialog">
       <button aria-label="Close add work" className="app-modal-backdrop" onClick={closeDialogs} type="button" />
       <div className="app-modal-panel contextual-action-sheet scheduler-create-sheet" ref={selectedItem ? undefined : dialogRef}>
-        <div className="app-modal-header"><div><span className="page-eyebrow">{formatDay(createContext.date)}{createContext.time !== null ? ` · ${timeLabel(createContext.time)}` : ' · Anytime'}</span><h2 id="scheduler-create-title">Add work</h2></div><button aria-label="Close" className="app-modal-close secondary" onClick={closeDialogs} type="button">Close</button></div>
+        <div className="app-modal-header"><div><h2 id="scheduler-create-title">Add work</h2><p className="dialog-context">{formatDay(createContext.date)}{createContext.time !== null ? ` · ${timeLabel(createContext.time)}` : ' · Anytime'}</p></div><button aria-label="Close" className="app-modal-close secondary" onClick={closeDialogs} type="button">Close</button></div>
         {createMode === 'choose' ? <div className="scheduler-add-choices">
           <button onClick={() => { setCreateMode('new'); setCreateDate(createContext.date); setCreateTime(createContext.time === null ? '' : formatTimeMinutesInput(createContext.time)); }} type="button"><strong>New Work</strong><span>Create a normal Worklist task.</span></button>
           <button onClick={() => setCreateMode('existing')} type="button"><strong>Existing Work</strong><span>Schedule an active task without duplicating it.</span></button>

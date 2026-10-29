@@ -139,19 +139,19 @@ export default async function OrganizationSetupPage({ searchParams }: { searchPa
     <EchoDataSettings enabledStates={organization.enabledStates} vendors={organization.vendorIdentifiers} saveStates={saveEchoStates} addVendor={addEchoVendor} />
     <section className="platform-grid">
       <article className="card a3a-location-settings">
-        <div className="section-heading"><div><span className="page-eyebrow">Organization locations</span><h2>A-3a selling locations</h2><p className="muted">This information fills the seller section of downloaded wholesale-order PDFs.</p></div></div>
+        <div className="section-heading"><div><h2>A-3a selling locations</h2><p className="muted">This information fills the seller section of downloaded wholesale-order PDFs.</p></div></div>
         {organization.a3aStoreIdentifiers.map((location) => <A3aLocationForm action={saveA3aLocation} key={location.id} location={location} />)}
         <A3aLocationForm action={saveA3aLocation} />
       </article>
     </section>
     <section className="platform-grid">
       <form action={saveOhlqCredentials} className="card">
-        <div className="section-heading"><div><span className="page-eyebrow">Tenant data connection</span><h2>OHLQ inventory login</h2><p className="muted">Used only for this organization's inventory download. Credentials are encrypted and never displayed after saving.</p></div><span className="pill">{organization.ohlqCredentials ? 'Configured' : 'Not configured'}</span></div>
+        <div className="section-heading"><div><h2>OHLQ inventory login</h2><p className="muted">Used only for this organization's inventory download. Credentials are encrypted and never displayed after saving.</p></div><span className="pill">{organization.ohlqCredentials ? 'Configured' : 'Not configured'}</span></div>
         {organization.ohlqCredentials ? <p className="muted">Current login: {organization.ohlqCredentials.usernameHint}</p> : null}
         <div className="form-grid"><label>OHLQ username<input autoComplete="username" name="username" required /></label><label>OHLQ password<input autoComplete="new-password" name="password" type="password" required /></label></div>
         <SubmitButton type="submit">{organization.ohlqCredentials ? 'Replace credentials' : 'Save credentials'}</SubmitButton>
       </form>
-      <article className="card"><span className="page-eyebrow">Connection safety</span><h2>Inventory isolation</h2><p className="muted">The daily runner stores this tenant's current inventory and history separately. Missing credentials skip this tenant without using another organization's login.</p>{actor.role !== UserRole.PLATFORM_ADMIN && organization.ohlqCredentials ? <form action={removeOhlqCredentials}><SubmitButton className="danger" type="submit">Remove inventory login</SubmitButton></form> : null}</article>
+      <article className="card"><h2>Inventory isolation</h2><p className="muted">The daily runner stores this tenant's current inventory and history separately. Missing credentials skip this tenant without using another organization's login.</p>{actor.role !== UserRole.PLATFORM_ADMIN && organization.ohlqCredentials ? <form action={removeOhlqCredentials}><SubmitButton className="danger" type="submit">Remove inventory login</SubmitButton></form> : null}</article>
     </section>
     <OpportunityStrategy organizationId={organizationId} />
     <RelationshipSettings organizationId={organizationId} />
@@ -161,7 +161,7 @@ export default async function OrganizationSetupPage({ searchParams }: { searchPa
     <PipelineStageSettings organizationId={organizationId} />
     <EventbriteSettings organizationId={organizationId} />
     <article className="card product-selection-card">
-      <div className="section-heading"><div><span className="page-eyebrow">Catalog configuration</span><h2>Product selection</h2><p className="muted">Choose which discovered item codes Echo includes. Echo administrators can maintain Brand Master imports.</p></div><form action={refreshProductCandidates}><SubmitButton className="compact-btn secondary" type="submit">Check for new products</SubmitButton></form></div>
+      <div className="section-heading"><div><h2>Product selection</h2><p className="muted">Choose which discovered item codes Echo includes. Echo administrators can maintain Brand Master imports.</p></div><form action={refreshProductCandidates}><SubmitButton className="compact-btn secondary" type="submit">Check for new products</SubmitButton></form></div>
       <ProductSelectionEditor action={saveProductSelection} organizationId={organizationId} products={organization.products.map((product) => ({ id: product.id, itemCode: product.externalItemCode, name: product.displayName, status: product.status }))} />
     </article>
   </>;

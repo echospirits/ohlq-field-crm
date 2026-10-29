@@ -56,14 +56,14 @@ export default async function TagsPage({
         <div className="card">
           <h2>Create / update tag</h2>
           <form action={createTag}>
-            <label>Name</label>
-            <input name="name" placeholder="Priority account, Menu target, Key buyer" required />
+            <label htmlFor="tag-name">Name</label>
+            <input id="tag-name" name="name" placeholder="Priority account, Menu target, Key buyer" required />
 
-            <label>Color</label>
-            <input name="color" type="color" defaultValue="#7c9cff" />
+            <label htmlFor="tag-color">Color</label>
+            <input id="tag-color" name="color" type="color" defaultValue="#7c9cff" />
 
-            <label>Description</label>
-            <textarea name="description" rows={3} placeholder="How this tag should be used" />
+            <label htmlFor="tag-description">Description</label>
+            <textarea id="tag-description" name="description" rows={3} placeholder="How this tag should be used" />
 
             <SubmitButton type="submit">Save tag</SubmitButton>
           </form>

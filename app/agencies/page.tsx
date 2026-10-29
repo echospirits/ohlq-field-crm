@@ -18,6 +18,9 @@ import { NearbyAccountsSection } from '../components/NearbyAccountsSection';
 import { TagBadges } from '../tags/TagBadges';
 import { TargetAccountMarker } from '../components/TargetAccountMarker';
 import { AgencyCsvImportPanel } from './AgencyCsvImportPanel';
+import { directoryPage } from '../../lib/directoryPagination';
+import { DirectoryPagination } from '../components/DirectoryPagination';
+import type { Prisma } from '@prisma/client';
 
 export const metadata = buildPageMetadata('Retail');
 
@@ -52,7 +55,7 @@ async function importAgencies(formData: FormData) {
 export default async function AgenciesPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ q?: string; status?: string; count?: string; error?: string }>;
+  searchParams?: Promise<{ q?: string; page?: string; status?: string; count?: string; error?: string }>;
 }) {
   const user = await requireUser();
   const { organizationId } = await requireOrganizationContext(user);
@@ -60,15 +63,7 @@ export default async function AgenciesPage({
   const params = (await searchParams) ?? {};
   const q = (params.q ?? '').trim();
 
-  const agencies = await prisma.agency.findMany({
-    take: 250,
-    include: {
-      tags: { where: { organizationId },
-        include: { tag: true },
-        orderBy: { createdAt: 'desc' },
-      },
-    },
-    where: q
+  const where: Prisma.AgencyWhereInput = q
       ? {
           OR: [
             { name: { contains: q, mode: 'insensitive' } },
@@ -80,8 +75,13 @@ export default async function AgenciesPage({
             { tags: { some: { organizationId, tag: { name: { contains: q, mode: 'insensitive' } } } } },
           ],
         }
-      : undefined,
-    orderBy: [{ name: 'asc' }, { agencyId: 'asc' }],
+      : {};
+  const total = await prisma.agency.count({ where });
+  const pagination = directoryPage(params.page, total);
+  const agencies = await prisma.agency.findMany({
+    take: pagination.take, skip: pagination.skip, where,
+    include: { tags: { where: { organizationId }, include: { tag: true }, orderBy: { createdAt: 'desc' } } },
+    orderBy: [{ name: 'asc' }, { agencyId: 'asc' }, { id: 'asc' }],
   });
   const agencyIds = agencies.map((agency) => agency.id);
   const targetingOverlays = await prisma.organizationAccountOverlay.findMany({ where: { organizationId, accountType: 'AGENCY', externalAccountId: { in: agencyIds }, isTargeting: true }, select: { externalAccountId: true } });
@@ -113,7 +113,6 @@ export default async function AgenciesPage({
     <>
       <header className="page-heading page-header">
         <div>
-          <span className="page-eyebrow">Accounts</span>
           <h1>Retail</h1>
           <p className="muted">Find retail accounts, review account context, and start a visit.</p>
         </div>
@@ -121,12 +120,14 @@ export default async function AgenciesPage({
       <AccountViewNavigation active="agencies" />
       {!q ? <NearbyAccountsSection type="agency" /> : null}
       <LiveFilterForm className="filter-form narrow-filter" label="Filter retail accounts">
-        <input name="q" defaultValue={q} placeholder="Filter name, retail ID, address, contact, phone" />
+        <label className="sr-only" htmlFor="retail-search">Search retail accounts</label>
+        <input id="retail-search" name="q" type="search" defaultValue={q} placeholder="Name, retail ID, address, or phone" />
+        <input name="page" type="hidden" value="1" />
       </LiveFilterForm>
-      <AgencyCsvImportPanel role={user.role} action={importAgencies} status={params.status} error={params.error} count={params.count} />
+      <DirectoryPagination path="/agencies" params={params} page={pagination.page} total={total} />
 
       {agencies.length === 0 ? <p className="notice">No retail accounts match your search in the states enabled for your organization.</p> : null}
-      <div className="table-scroll"><table className="responsive-table account-directory-table">
+      <div className="table-scroll"><table className="responsive-table account-directory-table retail-directory-table">
         <thead>
           <tr>
             <th>Name</th>
@@ -159,10 +160,9 @@ export default async function AgenciesPage({
                   <span className="account-directory-mobile-only account-directory-location">
                     {address ? <AddressLink address={address} /> : `Retail ${agency.agencyId}`}
                   </span>
-                  <span className="account-directory-mobile-only account-directory-context">
-                    {stats.lastVisitAt ? `Last visit ${formatEasternDate(stats.lastVisitAt)}` : 'Not visited yet'}
-                    {agency.primaryContact ? ` · ${agency.primaryContact}` : ''}
-                  </span>
+                  {stats.lastVisitAt || agency.primaryContact ? <span className="account-directory-mobile-only account-directory-context">
+                    {[stats.lastVisitAt ? `Last visit ${formatEasternDate(stats.lastVisitAt)}` : null, agency.primaryContact].filter(Boolean).join(' · ')}
+                  </span> : null}
                 </td>
                 <td className="account-directory-secondary-cell" data-label="Retail ID">{agency.agencyId}</td>
                 <td className="account-directory-secondary-cell" data-label="Address"><AddressLink address={address}>{agency.address}</AddressLink></td>
@@ -187,6 +187,8 @@ export default async function AgenciesPage({
           })}
         </tbody>
       </table></div>
+      {pagination.pages > 1 ? <DirectoryPagination path="/agencies" params={params} page={pagination.page} total={total} /> : null}
+      <AgencyCsvImportPanel role={user.role} action={importAgencies} status={params.status} error={params.error} count={params.count} />
     </>
   );
 }

@@ -17,6 +17,7 @@ import { formatDateOnly } from '../../lib/dateTime';
 import { AGENCY_FOCUS_PAGE_SIZE, agencyFocusHref, agencyFocusPageNumber } from '../../lib/agencyFocusView';
 import { TargetAccountControl } from '../components/TargetAccountControl';
 import { TargetAccountMarker } from '../components/TargetAccountMarker';
+import '../intelligence-browsing.css';
 
 export const metadata = buildPageMetadata('Retail Intelligence');
 
@@ -96,10 +97,17 @@ export default async function AgencyFocusPage({
     (latest, item) => !latest || item.asOfDate > latest ? item.asOfDate : latest,
     null,
   );
+  const pagination = page > 1 || hasMore ? <nav aria-label="Retail intelligence pages" className="intelligence-pagination">
+    <span>Page {page} · {visibleOpportunities.length} actions</span>
+    <div>
+      {page > 1 ? <Link href={agencyFocusHref({ ...query, page: page - 1 })}>Previous page</Link> : null}
+      {hasMore ? <Link href={agencyFocusHref({ ...query, page: page + 1 })}>Next page</Link> : null}
+    </div>
+  </nav> : null;
 
   return <div className="agency-focus-page">
     <header className="page-heading page-header agency-focus-header">
-      <div><span className="page-eyebrow">Intelligence · Retail actions</span><h1>Retail Intelligence</h1><p className="muted">Prioritized retail actions. Inventory, sales, and evidence at a glance.</p></div>
+      <div><h1>Retail Intelligence</h1><p className="muted">Prioritized retail actions. Inventory, sales, and evidence at a glance.</p></div>
       <DataFreshnessBadge sourceDate={latestSourceDate} />
     </header>
     <nav aria-label="Retail opportunity filters" className="opportunity-filters">
@@ -112,6 +120,7 @@ export default async function AgencyFocusPage({
       {query.agencyId ? <span className="agency-focus-scope">Single retail view <Link href={agencyFocusHref({ state, q: search })}>Show all retail accounts</Link></span> : null}
       {state || search ? <Link href={agencyFocusHref({ agencyId: query.agencyId })}>Clear filters</Link> : null}
     </div>
+    {pagination}
     <section aria-label="Retail recommendations" className="agency-focus-results">
       {visibleOpportunities.map((item) => <article aria-labelledby={`focus-${item.id}`} className="agency-focus-row" key={item.id}>
         <div className="agency-focus-identity">
@@ -122,36 +131,40 @@ export default async function AgencyFocusPage({
         </div>
         <div className="agency-focus-product">
           <strong>{item.itemName}</strong>
-          <small>Item {item.itemCode} · Through {formatDateOnly(item.asOfDate)}</small>
           <p><strong>Next:</strong> {titleCase(item.recommendedAction)}</p>
-        </div>
-        <dl className="agency-focus-metrics">
+          {stringList(item.reasons)[0] ? <p className="agency-focus-key-reason">{stringList(item.reasons)[0]}</p> : null}
+          <details className="compact-details agency-focus-evidence">
+            <summary>Why this recommendation?</summary>
+            <p className="muted">Item {item.itemCode} · Through {formatDateOnly(item.asOfDate)}</p>
+            <dl className="agency-focus-metrics">
           <div><dt>On hand</dt><dd>{item.onHand ?? '—'}</dd></div>
           <div><dt>Minimum</dt><dd>{item.minimum ?? '—'}</dd></div>
           <div><dt>Sales / 7d</dt><dd>{item.retailSales7}</dd></div>
           <div><dt>Sales / 30d</dt><dd>{item.retailSales30}</dd></div>
           <div><dt>Fit score</dt><dd>{item.fitScore} <small>{titleCase(item.fitBand)}</small></dd></div>
           <div><dt>Peer carry</dt><dd>{item.peerCarryPercent === null ? '—' : `${Math.round(item.peerCarryPercent)}%`}</dd></div>
-        </dl>
-        <ul aria-label="Recommendation evidence" className="agency-focus-reasons">{stringList(item.reasons).map((reason) => <li key={reason}>{reason}</li>)}</ul>
+            </dl>
+            <ul aria-label="Recommendation evidence" className="agency-focus-reasons">{stringList(item.reasons).map((reason) => <li key={reason}>{reason}</li>)}</ul>
+          </details>
+        </div>
         <div className="agency-focus-row-actions">
-          <TargetAccountControl accountType={SalesAccountType.AGENCY} externalAccountId={item.agency.id} isTargeting={targetedAgencyIds.has(item.agency.id)} returnTo={returnTo} />
           <ContextualActions
             context={{ accountName: item.agency.name, agencyId: item.agency.id, agencyProductIntelligenceId: item.id, productItemCode: item.itemCode, productName: item.itemName, reason: stringList(item.reasons).join(' '), returnTo, sourceLabel: `${stateLabels[item.opportunityState]} - ${item.itemName}`, sourceType: item.opportunityState }}
             currentUserId={currentUser.id}
             existingFollowUpId={item.worklistItems[0]?.id}
             users={actionUsers}
           />
-          <form action={updateAgencyOpportunity}><input name="id" type="hidden" value={item.id}/><SubmitButton className="secondary compact-btn" name="action" value="snooze">Snooze 14d</SubmitButton></form>
-          <details className="agency-focus-dismiss"><summary>Dismiss</summary><form action={updateAgencyOpportunity}><input name="id" type="hidden" value={item.id}/><select aria-label="Dismissal reason" name="reason" defaultValue="Not a fit"><option>Not a fit</option><option>Already handled</option><option>Wrong timing</option><option>Bad or missing data</option><option>Other</option></select><SubmitButton className="danger compact-btn" name="action" value="dismiss">Dismiss</SubmitButton></form></details>
+          <details className="compact-details intelligence-more-actions"><summary>More actions</summary>
+            <div className="intelligence-secondary-actions">
+              <TargetAccountControl accountType={SalesAccountType.AGENCY} externalAccountId={item.agency.id} isTargeting={targetedAgencyIds.has(item.agency.id)} returnTo={returnTo} />
+              <form action={updateAgencyOpportunity}><input name="id" type="hidden" value={item.id}/><SubmitButton className="secondary compact-btn" name="action" value="snooze">Snooze 14d</SubmitButton></form>
+              <details className="agency-focus-dismiss"><summary>Dismiss recommendation</summary><form action={updateAgencyOpportunity}><input name="id" type="hidden" value={item.id}/><select aria-label="Dismissal reason" name="reason" defaultValue="Not a fit"><option>Not a fit</option><option>Already handled</option><option>Wrong timing</option><option>Bad or missing data</option><option>Other</option></select><SubmitButton className="danger compact-btn" name="action" value="dismiss">Dismiss</SubmitButton></form></details>
+            </div>
+          </details>
         </div>
       </article>)}
       {opportunities.length === 0 ? <div className="empty-state"><h2>No matching retail actions</h2><p>{state || search || query.agencyId ? 'Try another action type, clear your search, or show all retail accounts.' : 'No active recommendations are available yet. Check data freshness or browse your retail accounts.'}</p><Link href={state || search || query.agencyId ? '/agency-focus' : '/agencies'}>{state || search || query.agencyId ? 'Show all actions' : 'Browse retail accounts'}</Link></div> : null}
     </section>
-    {page > 1 || hasMore ? <nav aria-label="Retail intelligence pages" className="pagination-row">
-      {page > 1 ? <Link className="btn compact-btn secondary" href={agencyFocusHref({ ...query, page: page - 1 })}>Previous page</Link> : null}
-      <span>Page {page}</span>
-      {hasMore ? <Link className="btn compact-btn secondary" href={agencyFocusHref({ ...query, page: page + 1 })}>Next page</Link> : null}
-    </nav> : null}
+    {pagination}
   </div>;
 }

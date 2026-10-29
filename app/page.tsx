@@ -3,7 +3,7 @@ import { ScheduleEvents } from './events/ScheduleEvents';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-import { MenuPlacementStatus, WorklistCategory, WorklistSource, WorklistStatus } from '@prisma/client';
+import { MenuPlacementStatus, WorklistCategory, WorklistSource, WorklistStatus, type Prisma } from '@prisma/client';
 import Link from 'next/link';
 import { buildPageMetadata } from '../lib/appBrand';
 import { getUserDisplayName, requireUser } from '../lib/auth';
@@ -17,6 +17,7 @@ import { getWorklistLocations } from '../lib/worklistLocations';
 import { getSchedulerWeekDates, isValidSchedulerDate } from '../lib/myDayWeekScheduler';
 import { createSchedulerWorklistItem, completeSchedulerWorklistItem, updateSchedulerWorklistItem } from './my-week/actions';
 import { WorklistScheduler } from './my-week/WorklistScheduler';
+import { getWorklistOverdueLabel } from '../lib/worklistPresentation';
 
 export const metadata = buildPageMetadata('My Schedule');
 
@@ -189,6 +190,13 @@ export default async function Dashboard({ searchParams }: { searchParams?: Promi
     ...(!enabledFeatures.has('AGENCY_INTELLIGENCE') ? [WorklistSource.AGENCY_INTELLIGENCE] : []),
     ...(!enabledFeatures.has('WHOLESALE_OPPORTUNITIES') ? [WorklistSource.OPPORTUNITY_INTELLIGENCE] : []),
   ];
+  const unassignedWhere: Prisma.WorklistItemWhereInput = {
+    organizationId,
+    status: { in: [WorklistStatus.OPEN, WorklistStatus.IN_PROGRESS] },
+    assignedToUserId: null,
+    ...(excludedIntelligenceSources.length ? { source: { notIn: excludedIntelligenceSources } } : {}),
+    AND: [{ OR: [{ assignedTo: null }, { assignedTo: '' }] }, { OR: [{ dueDate: null }, { dueDate: { lt: new Date(`${addDaysToDateInputValue(anchorDate, 1)}T00:00:00.000Z`) } }] }],
+  };
 
   const [
     activeWorklistItems,
@@ -200,6 +208,7 @@ export default async function Dashboard({ searchParams }: { searchParams?: Promi
     staleMenuPlacements,
     schedulerWorklistItems,
     schedulerUsers,
+    unassignedSummary,
   ] = await Promise.all([
     prisma.worklistItem.count({
       where: { organizationId, status: { notIn: inactiveWorklistStatuses } },
@@ -285,9 +294,14 @@ export default async function Dashboard({ searchParams }: { searchParams?: Promi
       orderBy: [{ name: 'asc' }, { email: 'asc' }],
       select: { id: true, email: true, firstName: true, lastName: true, name: true },
     }),
+    Promise.all([
+      prisma.worklistItem.count({ where: unassignedWhere }),
+      prisma.worklistItem.findMany({ where: unassignedWhere, orderBy: [{ dueDate: 'asc' }, { createdAt: 'asc' }], take: 3, include: { loggedVisit: { select: { locationType: true, agencyId: true, wholesaleAccountId: true } } } }),
+    ]),
   ]);
 
   const schedulerLocations = await getWorklistLocations(schedulerWorklistItems);
+  const unassignedLocations = await getWorklistLocations(unassignedSummary[1]);
   const schedulerAgencyIds = [...new Set([...schedulerLocations.values()].flatMap((location) => location?.type === 'agency' ? [location.id] : []))];
   const schedulerWholesaleIds = [...new Set([...schedulerLocations.values()].flatMap((location) => location?.type === 'wholesale' ? [location.id] : []))];
   const schedulerTargetOverlays = schedulerAgencyIds.length || schedulerWholesaleIds.length
@@ -342,9 +356,8 @@ export default async function Dashboard({ searchParams }: { searchParams?: Promi
     <>
       <header className="page-heading page-header dashboard-heading">
         <div>
-          <span className="page-eyebrow">Worklist</span>
           <h1>My Schedule</h1>
-          <p className="muted">Plan your day or scan the week ahead.</p>
+          <p className="muted">Your work for the day and week ahead.</p>
         </div>
       </header>
 
@@ -358,6 +371,7 @@ export default async function Dashboard({ searchParams }: { searchParams?: Promi
         users={schedulerUsers.map((member) => ({ id: member.id, name: getUserDisplayName(member) }))}
         view={view}
       />
+      {unassignedSummary[0] > 0 ? <section className="schedule-team-work" aria-labelledby="team-work-title"><div className="section-heading"><h2 id="team-work-title">Team work needs an owner</h2><span className="pill">{unassignedSummary[0]}</span></div><p>Unassigned work through this day, outside your personal schedule.</p><ul>{unassignedSummary[1].map((item) => <li key={item.id}><Link href={`/alerts?owner=unassigned#worklist-${encodeURIComponent(item.id)}`}>{unassignedLocations.get(item.id)?.name ?? item.title}</Link><small>{getWorklistOverdueLabel(item.dueDate, item.status) ?? (item.dueDate ? 'Due this day' : 'No due date')} · Unassigned</small></li>)}</ul><Link className="btn secondary" href="/alerts?owner=unassigned">Review all unassigned work</Link></section> : null}
       <div className="day-search"><GlobalSearchForm /></div>
 
       <section className="dashboard-quick-actions" aria-labelledby="quick-actions-title">
@@ -380,6 +394,7 @@ export default async function Dashboard({ searchParams }: { searchParams?: Promi
         </div>
       </section>
 
+      <section className="schedule-supporting-sections" aria-label="Planning and insights">
       <ScheduleRoute organizationId={organizationId} userId={user.id} date={anchorDate} />
       <ScheduleEvents organizationId={organizationId} />
       <details className="dashboard-section dashboard-details">
@@ -464,6 +479,7 @@ export default async function Dashboard({ searchParams }: { searchParams?: Promi
           </div>
         </div>
       </details>
+      </section>
     </>
   );
 }

@@ -1,0 +1,82 @@
+name: Validate production source downloads in TST
+
+on:
+  push:
+    branches: [tst]
+    paths:
+      - lib/ohlqAnnualSalesReport.ts
+      - lib/ohlqPartnerDcReady.ts
+      - tests/ohlqPartnerDcReady.test.ts
+      - lib/productionForecasting/ohio.ts
+      - lib/productionForecasting/import.ts
+      - scripts/verify-production-source-downloads.ts
+      - .github/workflows/production-source-download-validation.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Share the existing import lock: provider logins must not run concurrently.
+concurrency:
+  group: ohlq-annual-sales-sync-test
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: github.repository == 'echospirits/neat-tst' && github.ref == 'refs/heads/tst'
+    name: Download and validate sources without importing
+    environment: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      APP_ENV: test
+      DATABASE_ENVIRONMENT: test
+      DATABASE_TARGET_ID: ${{ vars.DATABASE_TARGET_ID }}
+      EXPECTED_DATABASE_HOST: ${{ vars.EXPECTED_DATABASE_HOST }}
+      PRODUCTION_BASE_URL: ${{ vars.PRODUCTION_BASE_URL }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      OHLQ_OPS_USERNAME: ${{ secrets.OHLQ_OPS_USERNAME }}
+      OHLQ_OPS_PASSWORD: ${{ secrets.OHLQ_OPS_PASSWORD }}
+      OHLQ_TENANT_CREDENTIAL_ENCRYPTION_KEY: ${{ secrets.OHLQ_TENANT_CREDENTIAL_ENCRYPTION_KEY }}
+      OHLQ_MICROSOFT_USERNAME: ${{ secrets.OHLQ_MICROSOFT_USERNAME }}
+      OHLQ_MICROSOFT_PASSWORD: ${{ secrets.OHLQ_MICROSOFT_PASSWORD }}
+      OHLQ_BROWSER_CHANNEL: ""
+      OHLQ_HEADLESS: "1"
+      OHLQ_IMPORT_ENABLED: "false"
+      OHLQ_USE_PERSISTENT_BROWSER_CONTEXT: "1"
+      OHLQ_USE_SERVERLESS_CHROMIUM: "0"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Validate required secrets
+        shell: bash
+        run: |
+          for name in DATABASE_URL OHLQ_TENANT_CREDENTIAL_ENCRYPTION_KEY OHLQ_MICROSOFT_USERNAME OHLQ_MICROSOFT_PASSWORD; do
+            if [[ -z "${!name}" ]]; then
+              echo "Missing required validation secret: $name" >&2
+              exit 1
+            fi
+          done
+
+      - name: Validate both source downloads
+        run: npx tsx scripts/verify-production-source-downloads.ts --environment test
+
+      - name: Verify report-control regressions
+        if: ${{ !cancelled() }}
+        run: npx tsx --test --import ./tests/setup.ts tests/ohlqPartnerDcReady.test.ts
+
+      # CSVs and screenshots are confined to private RUNNER_TEMP storage,
+      # discarded by the script, and never uploaded as workflow artifacts.

@@ -32,7 +32,7 @@ export function A3aLocationForm({
       {location ? <input name="locationId" type="hidden" value={location.id} /> : null}
       <div className="section-heading">
         <div>
-          <span className="page-eyebrow">{location ? `Store ${location.storeId}` : 'New selling location'}</span>
+          <span className="record-meta">{location ? `Store ${location.storeId}` : 'New selling location'}</span>
           <h3>{location?.name || 'Add A-3a location'}</h3>
         </div>
         <SubmitButton className="compact-btn" type="submit">{location ? 'Save location' : 'Add location'}</SubmitButton>

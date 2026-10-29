@@ -37,13 +37,15 @@ export function AccountSalesStatusPanel({
   statusUpdatedAt: Date | null;
 }) {
   return <section className={`account-sales-status-section${compact ? ' account-sales-status-section--compact' : ''}`} aria-label="Account sales status">
-    <SalesStatusJourney currentStatus={statusIsExplicit ? status : null} compact={compact} />
     <div className="account-sales-status-bar">
     <div className="account-sales-status-current">
       <span><small>Sales Status</small><strong>{statusIsExplicit ? SALES_STATUS_LABELS[status] : 'Not set'}</strong></span>
       <span><small>Buying State</small><strong>{BUYING_STATE_LABELS[buyingState]}</strong></span>
-      <span className="account-sales-status-meta"><small>{timeInStatus(statusUpdatedAt)}</small>{statusUpdatedAt ? <span>{formatEasternDate(statusUpdatedAt)}{changedBy ? ` · ${getUserDisplayName(changedBy)}` : ''}</span> : <span>{statusIsExplicit ? 'Saved status' : 'No saved status'}</span>}</span>
+
     </div>
+    <details className="account-status-editor"><summary>Update status</summary>
+      <span className="account-sales-status-meta"><small>{timeInStatus(statusUpdatedAt)}</small>{statusUpdatedAt ? <span>{formatEasternDate(statusUpdatedAt)}{changedBy ? ` · ${getUserDisplayName(changedBy)}` : ''}</span> : <span>{statusIsExplicit ? 'Saved status' : 'No saved status'}</span>}</span>
+    <SalesStatusJourney currentStatus={statusIsExplicit ? status : null} compact={compact} />
     <form action={updateAccountSalesStatus} className="account-sales-status-form">
       <input name="accountType" type="hidden" value={accountType} />
       <input name="externalAccountId" type="hidden" value={externalAccountId} />
@@ -55,7 +57,8 @@ export function AccountSalesStatusPanel({
       </select>
       <SubmitButton className="compact-btn" pendingLabel="Saving…">Save</SubmitButton>
     </form>
-    </div>
     <AccountSalesPlan account={{ accountType, accountId: externalAccountId }} />
+    </details>
+    </div>
   </section>;
 }

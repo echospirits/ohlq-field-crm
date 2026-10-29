@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useRef, useState, useTransition } from 'react';
+import { useCallback, useEffect, useRef, useState, useTransition, type ReactNode } from 'react';
 import { useDialogFocus } from './useDialogFocus';
 import type { CRMActionContext } from '../../lib/crmActionContext';
 import { getContextualVisitHref, getDirectionsHref, getSuggestedFollowUpTitle } from '../../lib/crmActionContext';
@@ -20,8 +20,12 @@ export function ContextualActions({
   existingFollowUpId,
   showFollowUp = true,
   showLogVisit = true,
+  variant = 'default',
+  secondaryActions,
 }: {
   context: CRMActionContext;
+  variant?: 'default' | 'account';
+  secondaryActions?: ReactNode;
   currentUserId: string;
   users: ActionUser[];
   phone?: string | null;
@@ -60,20 +64,23 @@ export function ContextualActions({
     });
   };
 
-  return <div className="contextual-actions">
-    {showFollowUp ? existingFollowUpId ? (
-      <Link className="btn compact-btn" href={`/alerts#worklist-${encodeURIComponent(existingFollowUpId)}`}>View task</Link>
-    ) : (
-      <button className="compact-btn" type="button" onClick={() => setIsOpen(true)}>{followUpLabel}</button>
-    ) : null}
-    {showLogVisit ? <a className="btn secondary compact-btn" href={getContextualVisitHref(context)}>Log Visit</a> : null}
-    {phone || email || directionsHref ? <details className="contextual-overflow">
-      <summary aria-label="Contact and directions">Contact</summary>
+  const followUpAction = showFollowUp ? existingFollowUpId
+    ? <Link className="btn secondary compact-btn" href={`/alerts#worklist-${encodeURIComponent(existingFollowUpId)}`}>View task</Link>
+    : <button className="secondary compact-btn" type="button" onClick={() => setIsOpen(true)}>{followUpLabel}</button> : null;
+
+  return <div className={variant === 'account' ? 'contextual-actions account-contextual-actions' : 'contextual-actions'}>
+    {variant !== 'account' ? followUpAction : null}
+    {showLogVisit ? <a className={variant === 'account' ? 'btn compact-btn account-log-visit' : 'btn secondary compact-btn'} href={getContextualVisitHref(context)}>Log Visit</a> : null}
+    {variant === 'account' && directionsHref ? <a className="btn secondary compact-btn account-directions" href={directionsHref} rel="noreferrer" target="_blank">Directions</a> : null}
+    {phone || email || directionsHref || secondaryActions || variant === 'account' ? <details className="contextual-overflow">
+      <summary aria-label={variant === 'account' ? 'More account actions' : 'Contact and directions'}>{variant === 'account' ? 'More actions' : 'Contact'}</summary>
       <div className="contextual-overflow-menu">
+        {variant === 'account' ? followUpAction : null}
         {phone ? <a href={`tel:${phone}`}>Call</a> : null}
         {phone ? <a href={`sms:${phone}`}>Text</a> : null}
         {email ? <a href={`mailto:${email}`}>Email</a> : null}
-        {directionsHref ? <a href={directionsHref} rel="noreferrer" target="_blank">Directions</a> : null}
+        {variant !== 'account' && directionsHref ? <a href={directionsHref} rel="noreferrer" target="_blank">Directions</a> : null}
+        {secondaryActions}
       </div>
     </details> : null}
 
@@ -81,7 +88,7 @@ export function ContextualActions({
       <button aria-label="Close create follow-up" className="app-modal-backdrop" type="button" onClick={() => setIsOpen(false)} />
       <div ref={dialogRef} className="app-modal-panel contextual-action-sheet">
         <div className="app-modal-header">
-          <div><span className="page-eyebrow">In context</span><h2 id="create-follow-up-title">Create Follow-up</h2></div>
+          <div><h2 id="create-follow-up-title">Create Follow-up</h2></div>
           <button className="app-modal-close secondary" type="button" onClick={() => setIsOpen(false)}>Close</button>
         </div>
         <form action={submit} className="contextual-action-form">

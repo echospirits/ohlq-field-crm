@@ -24,7 +24,7 @@ export async function DashboardNextWork({ organizationId, userId, enabledFeature
     <div className="section-heading"><h2 id="day-work-title">Your next steps</h2><Link href="/alerts?owner=mine">My work →</Link></div>
     {next ? <>
       <article className="next-work-card">
-        <span className="page-eyebrow">{getWorklistGroup(next)} · Assigned to you</span>
+        <span className="record-meta">{getWorklistGroup(next)} · Assigned to you</span>
         <h2>{locations.get(next.id)?.name ?? next.title}</h2>
         {locations.has(next.id) ? <p>{next.title}</p> : null}
         <p className="muted">{formatWorklistDue(next.dueDate, next.dueTimeMinutes) || 'No date set'}</p>

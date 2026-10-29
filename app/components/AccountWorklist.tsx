@@ -5,7 +5,7 @@ import { getAccountWorklist } from '../../lib/accountWorklist';
 import { getUserDisplayName } from '../../lib/auth';
 import { prisma } from '../../lib/prisma';
 import { formatDateOnlyInputValue, formatTimeMinutesInput, formatWorklistDue } from '../../lib/dateTime';
-import { getWorklistGroup, worklistGroups } from '../../lib/worklistPresentation';
+import { getWorklistGroup, getWorklistOverdueLabel, worklistGroups } from '../../lib/worklistPresentation';
 import { splitReactivationPurchasedAgainDetail } from '../../lib/ohlqWholesaleReactivation';
 import { WorklistActions } from '../alerts/WorklistActions';
 import { WorklistDetail } from '../alerts/WorklistDetail';
@@ -43,7 +43,7 @@ export async function AccountWorklist(props: {
   return (
     <section className="card account-workspace-section account-worklist" id="account-worklist" aria-labelledby="account-worklist-heading">
       <div className="section-heading"><h2 id="account-worklist-heading">Outstanding work</h2><span className="pill">{items.length}</span></div>
-      {items.length === 0 ? <p className="muted">No outstanding work for this account. Use Create follow-up in the account actions to add a task.</p> : <>
+      {items.length === 0 ? <p className="muted">No outstanding work. Use More actions to create a follow-up.</p> : <>
         <p className="field-note">Team tasks for this account, including unassigned work.</p>
         {worklistGroups.filter((group) => group !== 'Finished').map((group) => {
           const grouped = items.filter((item) => getWorklistGroup(item) === group);
@@ -51,9 +51,9 @@ export async function AccountWorklist(props: {
             <h3>{group}</h3>
             {grouped.map((item) => <article className="account-worklist-item" key={item.id} aria-label={item.title}>
               <strong className="account-worklist-title">{item.title}</strong>
-              <div className="inline-meta"><span>{item.status === 'IN_PROGRESS' ? 'In progress' : 'Open'}</span><span>{formatWorklistDue(item.dueDate, item.dueTimeMinutes) || 'No due date'}</span><span>Owner: {item.assignedToUser ? getUserDisplayName(item.assignedToUser) : item.assignedTo || 'Unassigned'}</span></div>
-              {item.detail ? <details className="task-context"><summary>Task details</summary><WorklistDetail detail={item.detail} /></details> : null}
+              <div className="inline-meta">{item.status === 'IN_PROGRESS' ? <span>In progress</span> : null}{getWorklistOverdueLabel(item.dueDate, item.status) ? <strong className="worklist-overdue-label">{getWorklistOverdueLabel(item.dueDate, item.status)}</strong> : null}<span>{formatWorklistDue(item.dueDate, item.dueTimeMinutes) || 'No due date'}</span><span>{item.assignedToUser ? getUserDisplayName(item.assignedToUser) : item.assignedTo || 'Unassigned'}</span></div>
               <WorklistActions actorName={props.actorName} currentUserId={props.currentUserId} agencies={[]} wholesaleAccounts={[]} contacts={contacts} tags={tags} users={actionUsers} returnTo={returnTo}
+                evidence={item.detail ? <WorklistDetail detail={item.detail} /> : undefined}
                 createVisitAction={createVisit} updateItemAction={updateWorklistItem} updateStatusAction={updateWorklistStatus}
                 item={{ id: item.id, title: item.title, detail: splitReactivationPurchasedAgainDetail(item.detail).detail, editDetail: item.detail,
                   dueDate: formatDateOnlyInputValue(item.dueDate), dueTime: formatTimeMinutesInput(item.dueTimeMinutes), assignedToUserId: item.assignedToUserId,

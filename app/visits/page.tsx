@@ -87,8 +87,10 @@ export default async function VisitsPage({
       {params.status === 'updated' ? <p className="toast-notice page-status">Visit updated.</p> : null}
 
       <LiveFilterForm className="card filter-form visit-filter" label="Filter visits">
-        <input name="q" defaultValue={q} placeholder="Filter summary, outcomes, next steps, rep" />
-        <select name="type" defaultValue={type}>
+        <label className="sr-only" htmlFor="visit-search">Search visits</label>
+        <input id="visit-search" name="q" type="search" defaultValue={q} placeholder="Filter summary, outcomes, next steps, rep" />
+        <label className="sr-only" htmlFor="visit-type">Account type</label>
+        <select id="visit-type" name="type" defaultValue={type}>
           <option value="">All types</option>
           <option value="agency">Retail</option>
           <option value="wholesale">Restaurants</option>

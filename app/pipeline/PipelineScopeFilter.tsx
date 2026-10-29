@@ -23,8 +23,9 @@ export function PipelineScopeFilter({
     const timer = setTimeout(() => update("q", q), 250);
     return () => clearTimeout(timer);
   }, [q, params]);
+  const scopeCount = Number(Boolean(params.get("territory"))) + Number(Boolean(params.get("team")));
   return (
-    <div className="card form-grid">
+    <div className="pipeline-filters">
       <label>
         Find tracked account
         <input
@@ -34,24 +35,31 @@ export function PipelineScopeFilter({
           placeholder="Name or city"
         />
       </label>
-      <RecordPicker
-        name="territory"
-        label="Filter territory"
-        options={territories.map((t) => ({ value: t.id, label: t.name }))}
-        defaultValue={params.get("territory") ?? ""}
-        placeholder="All territories"
-        clearLabel="All territories"
-        onChange={(id) => update("territory", id)}
-      />
-      <RecordPicker
-        name="team"
-        label="Filter team"
-        options={teams.map((t) => ({ value: t.id, label: t.name }))}
-        defaultValue={params.get("team") ?? ""}
-        placeholder="All teams"
-        clearLabel="All teams"
-        onChange={(id) => update("team", id)}
-      />
+      <details className="pipeline-scope-details compact-details" open={scopeCount > 0}>
+        <summary>Territory and team{scopeCount ? ` · ${scopeCount} active` : ''}</summary>
+        <div className="pipeline-scope-options">
+          <RecordPicker
+            key={`territory:${params.get("territory") ?? ""}`}
+            name="territory"
+            label="Filter territory"
+            options={territories.map((t) => ({ value: t.id, label: t.name }))}
+            defaultValue={params.get("territory") ?? ""}
+            placeholder="All territories"
+            clearLabel="All territories"
+            onChange={(id) => update("territory", id)}
+          />
+          <RecordPicker
+            key={`team:${params.get("team") ?? ""}`}
+            name="team"
+            label="Filter team"
+            options={teams.map((t) => ({ value: t.id, label: t.name }))}
+            defaultValue={params.get("team") ?? ""}
+            placeholder="All teams"
+            clearLabel="All teams"
+            onChange={(id) => update("team", id)}
+          />
+        </div>
+      </details>
     </div>
   );
 }

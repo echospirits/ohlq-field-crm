@@ -12,6 +12,7 @@ export function OpportunitySearch({ value, state = '', rating, mode, territory }
   }, [value]);
 
   return <LiveFilterForm className="opportunity-search" label="Search restaurant opportunities" role="search">
+    <input type="hidden" name="page" value="1" />
     {rating ? <input type="hidden" name="rating" value={rating} /> : null}
     {mode ? <input type="hidden" name="mode" value={mode} /> : null}
     {territory ? <input type="hidden" name="territory" value={territory} /> : null}

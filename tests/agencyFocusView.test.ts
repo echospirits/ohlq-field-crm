@@ -19,7 +19,7 @@ test('agency action filter URLs retain account and search context with safe enco
   assert.equal(agencyFocusHref({ q: ' ' }), '/agency-focus');
 });
 
-test('agency focus exposes decision metrics and reasons without evidence dropdowns', () => {
+test('agency focus keeps the decisive reason visible and preserves supporting metrics and action context', () => {
   const source = readFileSync('app/agency-focus/page.tsx', 'utf8');
   assert.match(source, /requireFeatureForUser\(currentUser, 'AGENCY_INTELLIGENCE'\)/);
   assert.match(source, /className="agency-focus-metrics"/);
@@ -27,6 +27,8 @@ test('agency focus exposes decision metrics and reasons without evidence dropdow
     assert.ok(source.includes(`<dt>${label}</dt>`));
   }
   assert.match(source, /aria-label="Recommendation evidence"/);
+  assert.match(source, /Why this recommendation\?/);
+  assert.match(source, /className="agency-focus-key-reason"/);
   assert.doesNotMatch(source, /View evidence|opportunity-evidence/);
   assert.match(source, /reason: stringList\(item.reasons\).join\(' '\), returnTo,/);
   assert.match(source, /take: AGENCY_FOCUS_PAGE_SIZE \+ 1/);
@@ -53,7 +55,8 @@ test('pagination preserves filters, validates input, and search resets to the fi
 
 test('shared Intelligence navigation group appears on desktop and mobile without replacing primary tabs', () => {
   const source = readFileSync('app/components/AppNavigation.tsx', 'utf8');
-  assert.equal((source.match(/<IntelligenceMenu /g) ?? []).length, 2);
+  assert.equal((source.match(/<IntelligenceMenu /g) ?? []).length, 1);
+  assert.match(source, /<SidebarDisclosure label="Intelligence"/);
   assert.match(source, /getIntelligenceNavigationItems\(enabledFeatures, isAdmin, isPlatformAdmin\)/);
   assert.match(source, /label: 'Intelligence', items/);
   assert.match(source, /event.currentTarget.open = false/);

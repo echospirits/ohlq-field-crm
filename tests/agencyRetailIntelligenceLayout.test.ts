@@ -2,14 +2,14 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
-test('agency retail intelligence is one default-open panel after activity', () => {
+test('agency intelligence uses one gated account tab and retains its supporting section order', () => {
   const page = readFileSync('app/agencies/[id]/page.tsx', 'utf8');
-  assert.match(page, /id="intelligence" initialOpen summary="Retail Intelligence"/);
-  const panel = page.indexOf('initialOpen summary="Retail Intelligence"');
-  assert.ok(panel > page.indexOf('id="activity"'));
+  assert.match(page, /hasAgencyIntelligence \|\| hasWholesaleOpportunities/);
+  const panel = page.indexOf("id: 'intelligence', label: 'Intelligence'");
+  assert.ok(panel > page.indexOf("id: 'overview'"));
   assert.ok(page.indexOf('<AgencyIntelligencePanel', panel) < page.indexOf('<AgencyRetailMarketIntelligence', panel));
   assert.ok(page.indexOf('<AgencyRetailMarketIntelligence', panel) < page.indexOf('<AgencyStoreIntelligence', panel));
-  assert.match(page.slice(panel), /<\/AnchoredDetails> : null}\s*<\/>/);
+  assert.doesNotMatch(page, /summary="Retail Intelligence"/);
 });
 
 test('intelligence children retain anchors without duplicate top-level disclosures or IDs', () => {

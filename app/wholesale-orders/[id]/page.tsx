@@ -34,7 +34,7 @@ export default async function WholesaleOrderDetailPage({ params, searchParams }:
     {query.status && statusMessage[query.status] ? <p className="toast-notice" role="status">{statusMessage[query.status]}</p> : null}
     <div className="wholesale-order-detail-grid">
       <article className="card">
-        <div className="section-heading"><div><span className="page-eyebrow">Order details</span><h2>Customer and seller</h2></div><span className="pill">{completionLabel}</span></div>
+        <div className="section-heading"><div><h2>Customer and seller</h2></div><span className="pill">{completionLabel}</span></div>
         <dl className="wholesale-order-detail-list">
           <div><dt>Customer</dt><dd>{order.customer.name}{order.customer.dba ? <><br />DBA {order.customer.dba}</> : null}</dd></div>
           <div><dt>Permit</dt><dd>{order.customer.permitNumber}</dd></div>
@@ -45,7 +45,7 @@ export default async function WholesaleOrderDetailPage({ params, searchParams }:
         </dl>
       </article>
       <article className="card">
-        <div className="section-heading"><div><span className="page-eyebrow">Status history</span><h2>Order lifecycle</h2></div></div>
+        <div className="section-heading"><div><h2>Order lifecycle</h2></div></div>
         <dl className="wholesale-order-detail-list">
           <div><dt>PDF Generated</dt><dd>{formatEasternDateTime(order.createdAt)} by {order.createdBy.displayName}</dd></div>
           {order.sentAt ? <div><dt>Sent</dt><dd>{formatEasternDateTime(order.sentAt)}{order.sentBy?.displayName ? ` by ${order.sentBy.displayName}` : ''}</dd></div> : null}
@@ -62,7 +62,7 @@ export default async function WholesaleOrderDetailPage({ params, searchParams }:
       </article>
     </div>
     <section className="card wholesale-order-lines-detail">
-      <div className="section-heading"><div><span className="page-eyebrow">Invoice</span><h2>Products</h2></div><strong>{formatOrderCurrency(order.totalCents)}</strong></div>
+      <div className="section-heading"><div><h2>Products</h2></div><strong>{formatOrderCurrency(order.totalCents)}</strong></div>
       <div className="table-scroll"><table className="responsive-table"><thead><tr><th>Item code</th><th>Product</th><th>Quantity</th><th>Price per bottle</th><th>Subtotal</th></tr></thead><tbody>
         {order.lines.map((line, index) => <tr key={`${line.itemCode}-${index}`}><td data-label="Item code">{line.itemCode}</td><td data-label="Product">{line.itemName}</td><td data-label="Quantity">{line.quantityBottles}</td><td data-label="Price per bottle">{formatOrderCurrency(line.unitPriceCents)}</td><td data-label="Subtotal">{formatOrderCurrency(line.unitPriceCents * line.quantityBottles)}</td></tr>)}
       </tbody></table></div>

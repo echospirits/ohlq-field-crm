@@ -1,3 +1,4 @@
+import { getWorklistOverdueLabel } from '../../lib/worklistPresentation';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
@@ -15,6 +16,7 @@ import { splitReactivationPurchasedAgainDetail } from '../../lib/ohlqWholesaleRe
 import { prisma } from '../../lib/prisma';
 import { getOrganizationFeatures, requireOrganizationContext } from '../../lib/organizations';
 import { getAgenciesForVisitPicker, getWholesaleAccountsForVisitPicker } from '../../lib/visitPickerOptions';
+import { getWorklistSearchAlternatives } from '../../lib/worklistSearch';
 import {
   getWorklistCategoryForLocationSelection,
   getWorklistLocationFallbackLabel,
@@ -207,12 +209,7 @@ export default async function Alerts({
   }
 
   if (q) {
-    where.OR = [
-      { title: { contains: q, mode: 'insensitive' } },
-      { detail: { contains: q, mode: 'insensitive' } },
-      { assignedTo: { contains: q, mode: 'insensitive' } },
-      { createdBy: { contains: q, mode: 'insensitive' } },
-    ];
+    where.OR = await getWorklistSearchAlternatives(q, organizationId);
   }
 
   const [items, agencyOptions, wholesaleOptions, contacts, users, tags] = await Promise.all([
@@ -282,12 +279,11 @@ export default async function Alerts({
 
   return (
     <>
-      <header className="page-heading page-header">
+      <header className="page-heading page-header worklist-heading">
         <div>
-          <span className="page-eyebrow">My work</span>
           <h1>Worklist</h1>
           <p className="muted">
-            Your follow-ups, organized by what needs attention first.
+            Follow-ups that need attention.
           </p>
         </div>
         <a className="btn secondary" href="#quick-task">Add task</a>
@@ -299,19 +295,18 @@ export default async function Alerts({
       {params.created === 'invalid' ? <p className="pill">A title is required.</p> : null}
       {params.notice ? <p className="pill">{noticeMessages[params.notice] ?? params.notice}</p> : null}
 
+      <div className="worklist-toolbar">
       <nav className="scope-tabs" aria-label="Task owner">
         <Link aria-current={!params.owner || params.owner === 'all' ? 'page' : undefined} href={ownerHref('all')}>Team work</Link>
         <Link aria-current={params.owner === 'mine' ? 'page' : undefined} href={ownerHref('mine')}>My work</Link>
         <Link aria-current={params.owner === 'unassigned' ? 'page' : undefined} href={ownerHref('unassigned')}>Unassigned</Link>
       </nav>
-      {items.length === 300 ? <p className="field-note">Showing the first 300 matches. Narrow the filters to find more specific work.</p> : null}
-      {items.length === 0 ? <p className="empty-state">No tasks match this view. Adjust the filters or add a task below.</p> : null}
-      <div className="worklist-layout">
-        <details className="card compact-details filter-panel">
-          <summary>Filters · status, category, source, search</summary>
+      <LiveFilterForm className="worklist-search" label="Search work" role="search"><label className="sr-only" htmlFor="worklist-search">Search work</label><input defaultValue={q} id="worklist-search" name="q" placeholder="Search work" type="search" /></LiveFilterForm>
+        <details className="worklist-filters">
+          <summary>Filters</summary>
           <LiveFilterForm label="Filter worklist items">
-            <label>Status</label>
-            <select name="status" defaultValue={statusFilter}>
+            <label htmlFor="worklist-status">Status</label>
+            <select id="worklist-status" name="status" defaultValue={statusFilter}>
               <option value="ACTIVE">Active only</option>
               <option value="ALL">All statuses</option>
               {Object.values(WorklistStatus).map((status) => (
@@ -321,8 +316,8 @@ export default async function Alerts({
               ))}
             </select>
 
-            <label>Category</label>
-            <select name="category" defaultValue={categoryFilter}>
+            <label htmlFor="worklist-category">Category</label>
+            <select id="worklist-category" name="category" defaultValue={categoryFilter}>
               <option value="ALL">All categories</option>
               {Object.values(WorklistCategory).map((category) => (
                 <option key={category} value={category}>
@@ -331,8 +326,8 @@ export default async function Alerts({
               ))}
             </select>
 
-            <label>Source</label>
-            <select name="source" defaultValue={sourceFilter}>
+            <label htmlFor="worklist-source">Source</label>
+            <select id="worklist-source" name="source" defaultValue={sourceFilter}>
               <option value="ALL">All sources</option>
               {visibleSources.map((source) => (
                 <option key={source} value={source}>
@@ -341,10 +336,12 @@ export default async function Alerts({
               ))}
             </select>
 
-            <label>Search</label>
-            <input name="q" defaultValue={q} placeholder="Search title, detail, owner, creator" />
           </LiveFilterForm>
         </details>
+      </div>
+      {items.length === 300 ? <p className="field-note">Showing the first 300 matches. Narrow the filters to find more specific work.</p> : null}
+      {items.length === 0 ? <p className="empty-state">No tasks match this view. Adjust the filters or add a task below.</p> : null}
+      <div className="worklist-layout">
 
         {groups.map((group) => (
           <section className="worklist-section" key={group.title}>
@@ -359,8 +356,8 @@ export default async function Alerts({
             <table className="responsive-table worklist-table">
               <thead>
                 <tr>
-                  <th>Item</th>
-                  <th>Location / Due</th>
+                  <th>Account / task</th>
+                  <th>Due</th>
                   <th>Owner</th>
                   <th>Actions</th>
                 </tr>
@@ -379,8 +376,20 @@ export default async function Alerts({
                   return (
                     <tr className={hoursConflict ? `worklist-hours-row--${hoursConflict.accountType}` : undefined} id={`worklist-${item.id}`} key={item.id}>
                       <td data-label="Item">
-                        <strong>{item.title}</strong>
-                        <details className="task-context"><summary>Task details</summary><div className="inline-meta">
+                        {location ? <Link className="worklist-account-link" href={location.href}>{location.name}</Link> : <strong>{getWorklistLocationFallbackLabel(item)}</strong>}
+                        <span className="worklist-task-title">{item.title}</span>
+                        {location && targetedAccountKeys.has(`${location.type === 'agency' ? 'AGENCY' : 'WHOLESALE'}:${location.id}`) ? <TargetAccountMarker /> : null}
+
+                      </td>
+                      <td data-label="Due">
+                        {getWorklistOverdueLabel(item.dueDate, item.status) ? <strong className="worklist-overdue-label">{getWorklistOverdueLabel(item.dueDate, item.status)}</strong> : null}
+                        <div className="muted">{formatWorklistDue(item.dueDate, item.dueTimeMinutes) || 'No due date'}</div>
+                        {hoursConflict ? <span className={`worklist-hours-indicator worklist-hours-indicator--${hoursConflict.accountType}`}>{hoursConflict.label}</span> : null}
+                      </td>
+                      <td data-label="Owner">{item.assignedToUser ? getUserDisplayName(item.assignedToUser) : item.assignedTo || 'Unassigned'}</td>
+                      <td data-label="Actions">
+                        <WorklistActions
+                          evidence={<><div className="inline-meta">
                           <span className="pill">{categoryLabels[item.category]}</span><span className="pill">{sourceLabels[item.source]}</span>
                           <span className="pill">{statusLabels[item.status]}</span>
                         </div>
@@ -390,25 +399,7 @@ export default async function Alerts({
                           {item.completedByUser ? `; completed by ${getUserDisplayName(item.completedByUser)}` : ''}
                           {item.cancelledByUser ? `; cancelled by ${getUserDisplayName(item.cancelledByUser)}` : ''}
                         </div>
-                        </details>
-                      </td>
-                      <td data-label="Location / Due">
-                        {location ? (
-                          <>
-                          <Link className="table-link" href={location.href}>
-                            {location.name}
-                          </Link>
-                          {targetedAccountKeys.has(`${location.type === 'agency' ? 'AGENCY' : 'WHOLESALE'}:${location.id}`) ? <TargetAccountMarker /> : null}
-                          </>
-                        ) : (
-                          <strong>{getWorklistLocationFallbackLabel(item)}</strong>
-                        )}
-                        <div className="muted">{formatWorklistDue(item.dueDate, item.dueTimeMinutes) || 'No due date'}</div>
-                        {hoursConflict ? <span className={`worklist-hours-indicator worklist-hours-indicator--${hoursConflict.accountType}`}>{hoursConflict.label}</span> : null}
-                      </td>
-                      <td data-label="Owner">{item.assignedToUser ? getUserDisplayName(item.assignedToUser) : item.assignedTo || 'Unassigned'}</td>
-                      <td data-label="Actions">
-                        <WorklistActions
+                        </>}
                           actorName={getUserDisplayName(currentUser)}
                           currentUserId={currentUser.id}
                           agencies={agencyOptions}

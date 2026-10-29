@@ -74,8 +74,7 @@ export default async function NewVisitPage({
       <>
         <PageHeader
           description="Find a nearby store, review its Echo inventory and recent sales, then log your visit."
-          eyebrow="Field activity"
-          title="Log Retail Visit"
+            title="Log Retail Visit"
         />
         {params.status ? <p className="toast-notice page-status">{statusMessages[params.status] ?? params.status}</p> : null}
 
@@ -156,7 +155,6 @@ export default async function NewVisitPage({
     <>
       <PageHeader
         description="Capture the conversation and choose the next step."
-        eyebrow="Field activity"
         title="Log Visit"
       />
       {params.status ? <p className="toast-notice page-status">{statusMessages[params.status] ?? params.status}</p> : null}

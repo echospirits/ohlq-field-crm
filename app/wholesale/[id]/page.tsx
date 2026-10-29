@@ -5,7 +5,6 @@ import { activityLabels } from '../../../lib/crm/activity';
 import { Suspense } from 'react';
 import { AccountWorklist } from '../../components/AccountWorklist';
 import { AddressLink, PhoneLink } from '../../components/AccountContactLinks';
-import { AnchoredDetails } from '../../components/AnchoredDetails';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
@@ -26,7 +25,7 @@ import { AccountTagPanel } from '../../tags/AccountTagPanel';
 import { TagBadges } from '../../tags/TagBadges';
 import { VisitActivityTable, type SupplementalActivity } from '../../visits/VisitActivityTable';
 import { WholesaleRecentPurchasesCard } from '../WholesaleRecentPurchasesCard';
-import { AccountWorkspaceNavigation } from '../../components/AccountWorkspaceNavigation';
+import { AccountWorkspace } from '../../components/AccountWorkspace';
 import { OpportunityAccountPanel } from '../OpportunityAccountPanel';
 import { ContextualActions } from '../../components/ContextualActions';
 import { listWholesaleOrders } from '../../../lib/wholesaleOrders';
@@ -270,26 +269,25 @@ export default async function WholesaleActivityPage({
     <>
       <header className="page-heading page-header account-workspace-heading">
         <div>
-          <span className="page-eyebrow">Restaurant · {account.city || 'Location not set'}</span>
-          <h1>{account.name}</h1>
+          <h1>{account.name}</h1><p className="account-kind">Restaurant · {account.city || 'Location not set'}</p><p className="account-location">{[account.address, account.city, account.state, account.zip].filter(Boolean).join(', ')}</p>
           {overlay?.isTargeting ? <p><strong className="target-account-marker">TARGET ACCOUNT</strong></p> : null}
           {account.tags.length ? <TagBadges tags={account.tags.map((assignment) => assignment.tag)} /> : null}
         </div>
-        <div className="page-heading-actions">
-          <TargetAccountControl accountType={SalesAccountType.WHOLESALE} externalAccountId={id} isTargeting={overlay?.isTargeting ?? false} allowStop returnTo={`/wholesale/${id}`} />
-          {hasDirectWholesaleOrders ? <Link className="btn compact-btn secondary" href={`/wholesale/${account.id}/direct-order`}>Create order</Link> : null}
-          <ContextualActions
+        <div className="page-heading-actions"><ContextualActions
             context={{ accountName: account.name, returnTo: `/wholesale/${account.id}`, sourceLabel: account.name, sourceType: 'WHOLESALE_DETAIL', wholesaleAccountId: account.id }}
             currentUserId={user.id}
             users={actionUsers}
-          />
+           variant="account" address={[account.address, account.city, account.state, account.zip].filter(Boolean).join(', ')} phone={account.phone} secondaryActions={<>
+          <TargetAccountControl accountType={SalesAccountType.WHOLESALE} externalAccountId={id} isTargeting={overlay?.isTargeting ?? false} allowStop returnTo={`/wholesale/${id}`} />
+          {hasDirectWholesaleOrders ? <Link className="btn compact-btn secondary" href={`/wholesale/${account.id}/direct-order`}>Create order</Link> : null}
+
           {isAdminRole(user.role) ? (
             <Link className="btn compact-btn secondary" href={`/wholesale/${account.id}/edit`}>Edit</Link>
           ) : null}
           {isAdminRole(user.role) && !account.officialAccountId ? (
             <Link className="btn compact-btn secondary" href={`/wholesale/${account.id}/merge`}>Merge account</Link>
           ) : null}
-        </div>
+        </>} /></div>
       </header>
       {salesStatusSummary ? <AccountSalesStatusPanel compact accountType={SalesAccountType.WHOLESALE} externalAccountId={id} returnTo={`/wholesale/${id}`} {...salesStatusSummary} /> : null}
       {query.status ? <p className="toast-notice" role="status">{statusMessages[query.status] ?? query.status}</p> : null}
@@ -298,26 +296,72 @@ export default async function WholesaleActivityPage({
       {query.placementStatus ? (
         <p className="pill">{menuPlacementStatusMessages[query.placementStatus] ?? query.placementStatus}</p>
       ) : null}
-      <AccountWorkspaceNavigation sections={[
-        { href: '#overview', label: 'Overview' },
-        { href: '#account-memory', label: 'Notes + contacts' },
-        { href: '#account-worklist', label: 'Outstanding work' },
-        { href: '#placements', label: 'Placements' },
-        { href: '#purchases', label: 'Purchases' },
-        ...(hasWholesaleOpportunities ? [{ href: '#intelligence', label: 'Intelligence' }] : []),
-        { href: '#activity', label: 'Activity' },
-      ]} />
-
-      <Suspense fallback={<section className="card" aria-busy="true"><p role="status">Loading account profile…</p></section>}>
-        <AccountProfile organizationId={organizationId} accountType="WHOLESALE" accountId={account.id} />
-      </Suspense>
+      <AccountWorkspace key={account.id} panels={[
+{ id: 'overview', label: 'Overview', content: <>
       <AccountMemoryPanel users={actionUsers} accountId={account.id} accountType="WHOLESALE" contacts={accountContacts} notes={overlay?.notes ?? null} returnTo={`/wholesale/${account.id}`} />
 
       <Suspense fallback={<section id="account-worklist" className="card account-workspace-section account-worklist" aria-busy="true"><h2>Outstanding work</h2><p role="status">Loading outstanding work…</p></section>}>
         <AccountWorklist accountId={account.id} accountName={account.name} accountType="WHOLESALE" currentUserId={user.id} actorName={getUserDisplayName(user)} organizationId={organizationId} enabledFeatures={enabledFeatures} />
       </Suspense>
 
-      <AnchoredDetails className="account-overview-details account-workspace-section" id="overview" initialOpen summary="Account details, visit totals & tags">
+
+<Suspense fallback={<p aria-busy="true" role="status">Loading account briefing…</p>}><AccountBriefing account={{ accountType: "WHOLESALE", accountId: account.id }} actor={{ organizationId, userId: user.id }} lastPurchaseAt={salesStatusSummary?.lastPurchaseAt} /></Suspense></> },
+{ id: 'placements', label: 'Placements', content: <>
+        <MenuPlacementPanel
+          accountId={backingAccount?.id ?? null}
+          filters={{
+            q: placementQ,
+            status: placementStatusFilter,
+            placementType: placementTypeFilter,
+          }}
+          placements={menuPlacements}
+          returnTo={`/wholesale/${account.id}`}
+          users={users}
+          visits={legacyVisits}
+          wholesaleAccountId={account.id}
+        />
+      </> },
+{ id: 'purchases', label: 'Purchases', content: <>
+        <WholesaleRecentPurchasesCard purchases={purchases} />
+      </> },
+...(hasWholesaleOpportunities ? [{ id: 'intelligence', label: 'Intelligence', content: <>
+        <Suspense fallback={<p aria-busy="true" role="status">Loading opportunity intelligence…</p>}><OpportunityAccountPanel wholesaleAccountId={account.id} currentUserId={user.id} returnTo={`/wholesale/${account.id}`} users={actionUsers} /></Suspense>
+      </> }] : []),
+{ id: 'activity', label: 'Activity', content: <>      <section className="dashboard-section account-workspace-section">
+        <div className="section-heading">
+          <h2>Activity</h2>
+          <span className="pill">{visits.length + filedOrders.length + communicationActivities.length + salesStatusHistory.length + targetingHistory.length + workAndEvents.length}</span>
+        </div>
+
+        <VisitActivityTable contactMap={contactMap} visits={visits} supplementalEvents={filedOrders.map((order): SupplementalActivity => ({
+          actor: order.filedSource === WholesaleOrderFiledSource.MANUAL ? order.filedBy?.displayName : 'OHLQ sales match',
+          at: order.filedAt!,
+          detail: `${formatDateOnly(order.saleDate)} · ${formatOrderCurrency(order.totalCents)} · ${order.lines.length} item${order.lines.length === 1 ? '' : 's'}`,
+          href: `/wholesale-orders/${order.id}`,
+          id: order.id,
+          title: 'Direct restaurant order filed',
+        })).concat(communicationActivities.map((activity): SupplementalActivity => ({
+          actor: getUserDisplayName(activity.createdByUser), at: activity.occurredAt,
+          detail: [activity.summary ?? (['EMAIL_INITIATED', 'CALL_INITIATED'].includes(activity.activityType) ? getCommunicationTitle(activity.activityType === 'EMAIL_INITIATED' ? 'EMAIL_INITIATED' : 'CALL_INITIATED', activity.contact?.name ?? 'Contact') : activity.contact?.name), activity.outcome, activity.visibility === 'PRIVATE' ? 'Only you' : null].filter(Boolean).join(' · '), id: activity.id,
+          href: activity.createdByUserId === user.id ? activity.externalUrl ?? "" : "",
+          title: activityLabels[activity.activityType], type: activityLabels[activity.activityType], source: activity.source, contactIds: activity.contactIds.length ? activity.contactIds : activity.contactId ? [activity.contactId] : [],
+        }))).concat(salesStatusHistory.map((event) => ({
+          actor: event.changedByUserId ? userNames.get(event.changedByUserId) ?? 'Former team member' : 'Neat',
+          at: event.changedAt,
+          detail: event.previousStatus ? `${SALES_STATUS_LABELS[event.previousStatus]} → ${SALES_STATUS_LABELS[event.newStatus]}` : `Set to ${SALES_STATUS_LABELS[event.newStatus]}`,
+          id: `sales-status-${event.id}`,
+          href: '',
+          title: event.source === 'SALES_DATA' ? 'Purchase detected' : 'Sales status changed',
+        }))).concat(targetingHistory.map((event) => ({
+          actor: event.changedByUserId ? userNames.get(event.changedByUserId) ?? 'Former team member' : 'Neat',
+          at: event.changedAt,
+          detail: event.isTargeting ? 'TARGET ACCOUNT' : 'Targeting stopped',
+          href: '',
+          id: `targeting-${event.id}`,
+          title: event.isTargeting ? 'Account targeted' : 'Targeting stopped',
+        }))).concat(workAndEvents)} />
+      </section></> },
+{ id: 'account-details', label: 'Details', content: <><Suspense fallback={<section className="card" aria-busy="true"><p role="status">Loading account profile…</p></section>}><AccountProfile organizationId={organizationId} accountType="WHOLESALE" accountId={account.id} /></Suspense>
       <div className="grid account-summary-grid account-workspace-section">
         <div className="card metric-card">
           <h3>Logged visits</h3>
@@ -366,70 +410,8 @@ export default async function WholesaleActivityPage({
           tags={tags}
         />
       </div>
-      </AnchoredDetails>
-
-      <AnchoredDetails className="account-overview-details account-workspace-section" id="placements" summary="Menu placements">
-        <MenuPlacementPanel
-          accountId={backingAccount?.id ?? null}
-          filters={{
-            q: placementQ,
-            status: placementStatusFilter,
-            placementType: placementTypeFilter,
-          }}
-          placements={menuPlacements}
-          returnTo={`/wholesale/${account.id}`}
-          users={users}
-          visits={legacyVisits}
-          wholesaleAccountId={account.id}
-        />
-      </AnchoredDetails>
-
-      <AnchoredDetails className="account-overview-details account-workspace-section" id="purchases" summary="Recent purchases">
-        <WholesaleRecentPurchasesCard purchases={purchases} />
-      </AnchoredDetails>
-
-      {hasWholesaleOpportunities ? <AnchoredDetails className="account-overview-details account-workspace-section" id="intelligence" summary="Opportunity intelligence">
-        <Suspense fallback={<p aria-busy="true" role="status">Loading opportunity intelligence…</p>}>
-          <OpportunityAccountPanel wholesaleAccountId={account.id} currentUserId={user.id} returnTo={`/wholesale/${account.id}`} users={actionUsers} />
-        </Suspense>
-      </AnchoredDetails> : null}
-
-      <section className="dashboard-section account-workspace-section" id="activity">
-        <div className="section-heading">
-          <h2>Activity</h2>
-          <span className="pill">{visits.length + filedOrders.length + communicationActivities.length + salesStatusHistory.length + targetingHistory.length + workAndEvents.length}</span>
-        </div>
-        <Suspense fallback={<p aria-busy="true" role="status">Loading account briefing…</p>}>
-          <AccountBriefing account={{ accountType: "WHOLESALE", accountId: account.id }} actor={{ organizationId, userId: user.id }} lastPurchaseAt={salesStatusSummary?.lastPurchaseAt} />
-        </Suspense>
-        <VisitActivityTable contactMap={contactMap} visits={visits} supplementalEvents={filedOrders.map((order): SupplementalActivity => ({
-          actor: order.filedSource === WholesaleOrderFiledSource.MANUAL ? order.filedBy?.displayName : 'OHLQ sales match',
-          at: order.filedAt!,
-          detail: `${formatDateOnly(order.saleDate)} · ${formatOrderCurrency(order.totalCents)} · ${order.lines.length} item${order.lines.length === 1 ? '' : 's'}`,
-          href: `/wholesale-orders/${order.id}`,
-          id: order.id,
-          title: 'Direct restaurant order filed',
-        })).concat(communicationActivities.map((activity): SupplementalActivity => ({
-          actor: getUserDisplayName(activity.createdByUser), at: activity.occurredAt,
-          detail: [activity.summary ?? (['EMAIL_INITIATED', 'CALL_INITIATED'].includes(activity.activityType) ? getCommunicationTitle(activity.activityType === 'EMAIL_INITIATED' ? 'EMAIL_INITIATED' : 'CALL_INITIATED', activity.contact?.name ?? 'Contact') : activity.contact?.name), activity.outcome, activity.visibility === 'PRIVATE' ? 'Only you' : null].filter(Boolean).join(' · '), id: activity.id,
-          href: activity.createdByUserId === user.id ? activity.externalUrl ?? "" : "",
-          title: activityLabels[activity.activityType], type: activityLabels[activity.activityType], source: activity.source, contactIds: activity.contactIds.length ? activity.contactIds : activity.contactId ? [activity.contactId] : [],
-        }))).concat(salesStatusHistory.map((event) => ({
-          actor: event.changedByUserId ? userNames.get(event.changedByUserId) ?? 'Former team member' : 'Neat',
-          at: event.changedAt,
-          detail: event.previousStatus ? `${SALES_STATUS_LABELS[event.previousStatus]} → ${SALES_STATUS_LABELS[event.newStatus]}` : `Set to ${SALES_STATUS_LABELS[event.newStatus]}`,
-          id: `sales-status-${event.id}`,
-          href: '',
-          title: event.source === 'SALES_DATA' ? 'Purchase detected' : 'Sales status changed',
-        }))).concat(targetingHistory.map((event) => ({
-          actor: event.changedByUserId ? userNames.get(event.changedByUserId) ?? 'Former team member' : 'Neat',
-          at: event.changedAt,
-          detail: event.isTargeting ? 'TARGET ACCOUNT' : 'Targeting stopped',
-          href: '',
-          id: `targeting-${event.id}`,
-          title: event.isTargeting ? 'Account targeted' : 'Targeting stopped',
-        }))).concat(workAndEvents)} />
-      </section>
+      </> }
+      ]} initialSection={query.placementStatus || placementQ || placementStatusFilter || placementTypeFilter ? 'placements' : query.tagStatus ? 'account-details' : 'overview'} />
     </>
   );
 }

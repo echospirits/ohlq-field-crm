@@ -32,15 +32,14 @@ export async function ScheduleEvents({
     }),
   ]);
   return (
-    <section className="card" id="events">
-      <details>
-        <summary>Events and staff schedule · {events.length}</summary>
+      <details className="section-disclosure schedule-events" id="events">
+        <summary><strong>Events and staff schedule</strong><span className="disclosure-meta">{events.length ? `${events.length} ${events.length === 1 ? 'event' : 'events'}` : 'None scheduled'}</span></summary>
         <p className="field-note">
           Upcoming events and the past 30 days, up to 100 events. All times
           include a timezone.
         </p>
         {events.length ? (
-          <ul>
+          <ul className="schedule-event-list">
             {events.map((e) => (
               <li key={e.id}>
                 <Link href={`/events/${e.id}`}>{e.title}</Link> ·{" "}
@@ -62,7 +61,7 @@ export async function ScheduleEvents({
         ) : (
           <p>No events scheduled.</p>
         )}
-        <details>
+        <details className="compact-details">
           <summary>Add event or shift</summary>
           <EventEditor
             users={users.map((u) => ({
@@ -72,6 +71,5 @@ export async function ScheduleEvents({
           />
         </details>
       </details>
-    </section>
   );
 }

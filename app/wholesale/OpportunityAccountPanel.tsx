@@ -80,7 +80,7 @@ function ResearchSummary({ research, researchOnly = false }: { research: Account
   const links = [...new Set([research.websiteUrl, research.cocktailMenuUrl, ...sources].filter((url): url is string => Boolean(url)))];
   return <section className="account-research-summary" aria-label="Account research summary">
     <div className="account-research-heading">
-      <div><span className="page-eyebrow">Public account research</span><h3>What we found</h3></div>
+      <div><h3>Public account research</h3></div>
       <small className="muted">Last researched {research.lastRefreshedAt ? formatEasternDateTime(research.lastRefreshedAt) : 'Unavailable'}</small>
     </div>
     <dl className="account-research-signals">
@@ -165,7 +165,7 @@ export async function OpportunityAccountPanel({ agencyId, wholesaleAccountId, cu
     ...opportunities.map((item) => ({ at: item.detectedAt, kind: 'opportunity', title: `${item.title} detected`, detail: item.recommendedAction })),
   ].sort((a, b) => b.at.getTime() - a.at.getTime()).slice(0, 40);
   return <>
-    <section className="card account-opportunity-panel"><div className="section-heading account-opportunity-heading"><div><span className="page-eyebrow">Why care right now?</span><h2>Opportunity intelligence</h2></div><Link className="btn secondary compact-btn" href="/opportunities">View inbox</Link></div>
+    <section className="card account-opportunity-panel"><div className="section-heading account-opportunity-heading"><div><h2>Opportunity intelligence</h2></div><Link className="btn secondary compact-btn" href="/opportunities">View inbox</Link></div>
       <WholesaleAssessmentSummary value={currentAssessment?.assessment} status={currentAssessment?.assessmentStatus} reason={currentAssessment?.assessmentReason} pending={Boolean(currentAssessment?.refreshRequestedAt)} />
       <IntelligenceFacts facts={[
         { label: 'Chosen pursuits', value: opportunities.length },

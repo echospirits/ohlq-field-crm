@@ -32,6 +32,10 @@ import { LiveFilterForm } from '../components/LiveFilterForm';
 import { AccountViewNavigation } from '../components/AccountViewNavigation';
 import { NearbyAccountsSection } from '../components/NearbyAccountsSection';
 import { TargetAccountMarker } from '../components/TargetAccountMarker';
+import { readWholesaleDirectory } from '../../lib/wholesaleDirectory';
+import { directoryPage, DIRECTORY_PAGE_SIZE } from '../../lib/directoryPagination';
+import { DirectoryPagination } from '../components/DirectoryPagination';
+import { AnchoredDetails } from '../components/AnchoredDetails';
 
 export const metadata = buildPageMetadata('Restaurant Accounts');
 
@@ -78,8 +82,7 @@ type WholesaleTableRow = {
   locationText: string | null;
 };
 
-const MAX_WHOLESALE_ACCOUNT_ROWS = 25000;
-const WHOLESALE_PAGE_SIZE = 300;
+const WHOLESALE_PAGE_SIZE = DIRECTORY_PAGE_SIZE;
 
 const wholesaleSortColumns: Array<{ key: WholesaleSortKey; label: string }> = [
   { key: 'name', label: 'Name' },
@@ -422,26 +425,16 @@ export default async function WholesalePage({
   const requestedSort = ['opportunityScore', 'opportunityPriority'].includes(params.sort ?? '') ? 'commercialRating' : params.sort;
   const sortKey = isWholesaleSortKey(requestedSort, visibleSortColumns) ? requestedSort : 'name';
   const sortDirection = getSortDirection(params.dir, sortKey);
-  const requestedPage = Number.parseInt(params.page ?? '1', 10);
   const accountWhere: Prisma.WholesaleAccountWhereInput = {
     isActive: true,
     ...(q ? wholesaleSearchWhere(q, organizationId, hasWholesaleOpportunities) : {}),
   };
 
-  const [accounts, tags] = await Promise.all([
-    prisma.wholesaleAccount.findMany({
-      take: MAX_WHOLESALE_ACCOUNT_ROWS,
-      where: accountWhere,
-      include: {
-        licenseeIds: {
-          orderBy: [{ isPrimary: 'desc' }, { licenseeId: 'asc' }],
-          select: { licenseeId: true },
-        },
-      },
-      orderBy: [{ name: 'asc' }, { licenseeId: 'asc' }],
-    }),
+  const [directory, tags] = await Promise.all([
+    readWholesaleDirectory({ where: accountWhere, sort: sortKey, direction: sortDirection, page: params.page }),
     prisma.tag.findMany({ where: { organizationId }, orderBy: [{ name: 'asc' }] }),
   ]);
+  const { accounts } = directory;
   const accountIds = accounts.map((account) => account.id);
   const targetingOverlays = await prisma.organizationAccountOverlay.findMany({ where: { organizationId, accountType: 'WHOLESALE', externalAccountId: { in: accountIds }, isTargeting: true }, select: { externalAccountId: true } });
   const targetedIds = new Set(targetingOverlays.map((item) => item.externalAccountId));
@@ -512,42 +505,43 @@ export default async function WholesalePage({
       locationText: locationText || null,
     };
   });
-  const sortedRows = sortWholesaleRows(activeRows, sortKey, sortDirection);
-  const totalPages = Math.max(1, Math.ceil(sortedRows.length / WHOLESALE_PAGE_SIZE));
-  const currentPage = Math.min(Math.max(Number.isFinite(requestedPage) ? requestedPage : 1, 1), totalPages);
-  const startIndex = (currentPage - 1) * WHOLESALE_PAGE_SIZE;
-  const tableRows = sortedRows.slice(startIndex, startIndex + WHOLESALE_PAGE_SIZE);
-  const firstRowNumber = sortedRows.length > 0 ? startIndex + 1 : 0;
-  const lastRowNumber = Math.min(startIndex + WHOLESALE_PAGE_SIZE, sortedRows.length);
+  const sortedRows = directory.serverPaged ? activeRows : sortWholesaleRows(activeRows, sortKey, sortDirection);
+  const totalRows = directory.total;
+  const pagination = directoryPage(params.page, totalRows);
+  const { page: currentPage, pages: totalPages } = pagination;
+  const tableRows = directory.serverPaged ? sortedRows : sortedRows.slice(pagination.skip, pagination.skip + WHOLESALE_PAGE_SIZE);
 
   return (
     <>
       <header className="page-heading page-header">
         <div>
-          <span className="page-eyebrow">Accounts</span>
-          <h1>Restaurant Accounts</h1>
-          <p className="muted">Current Ohio accounts from the OHLQ Account Master, plus manually created accounts.</p>
+          <h1>Restaurants</h1>
+          <p className="muted">Find an account and plan your next visit.</p>
         </div>
+        <a className="btn secondary compact-btn" href="#new-restaurant">Add account</a>
       </header>
       <AccountViewNavigation active="wholesale" />
       {!q ? <NearbyAccountsSection type="wholesale" /> : null}
 
-      <LiveFilterForm className="filter-form narrow-filter" label="Filter restaurant accounts">
-        <input name="q" defaultValue={q} placeholder="Filter name, licensee ID, menu placement, phone" />
+      <LiveFilterForm className="filter-form directory-filter" label="Filter restaurant accounts">
+        <label className="sr-only" htmlFor="restaurant-search">Search restaurants</label>
+        <input id="restaurant-search" name="q" type="search" defaultValue={q} placeholder="Name, licensee ID, city, or phone" />
         <input name="page" type="hidden" value="1" />
-        <label>Sort by</label>
-        <select name="sort" defaultValue={sortKey}>
+        <details className="directory-sort"><summary>Sort: {visibleSortColumns.find(column => column.key === sortKey)?.label}</summary>
+        <label htmlFor="restaurant-sort">Sort by</label>
+        <select id="restaurant-sort" name="sort" defaultValue={sortKey}>
           {visibleSortColumns.map((column) => (
             <option key={column.key} value={column.key}>
               {column.label}
             </option>
           ))}
         </select>
-        <label>Direction</label>
-        <select name="dir" defaultValue={sortDirection}>
+        <label htmlFor="restaurant-direction">Direction</label>
+        <select id="restaurant-direction" name="dir" defaultValue={sortDirection}>
           <option value="asc">Ascending</option>
           <option value="desc">Descending</option>
         </select>
+        </details>
       </LiveFilterForm>
       {params.status === 'saved' ? <p className="pill">Restaurant account saved.</p> : null}
       {params.status === 'invalid' ? <p className="pill">An account name and valid state are required.</p> : null}
@@ -555,8 +549,67 @@ export default async function WholesalePage({
         <p className="pill">Those Licensee IDs are already split across multiple restaurant accounts.</p>
       ) : null}
 
-      <details className="card compact-details admin-panel">
-        <summary>Create restaurant account</summary>
+
+
+      <DirectoryPagination path="/wholesale" params={params} page={currentPage} total={totalRows} />
+
+      <div className="table-scroll wholesale-table-scroll">
+        <table className="responsive-table account-directory-table restaurant-directory-table">
+          <thead>
+            <tr>
+              {visibleSortColumns.map((column) => (
+                <SortableHeader
+                  currentSortDirection={sortDirection}
+                  currentSortKey={sortKey}
+                  key={column.key}
+                  label={column.label}
+                  params={params}
+                  sortKey={column.key}
+                />
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {tableRows.map((row) => (
+              <tr className="account-directory-row" key={row.id}>
+                <td className="account-directory-name-cell" data-label="Name">
+                  <Link className="table-link account-directory-name-link" href={row.nameHref ?? '/wholesale'}>
+                    {row.name}
+                  </Link>
+                  {targetedIds.has(row.id) ? <TargetAccountMarker /> : null}
+                  <span className="account-directory-mobile-only account-directory-location">
+                    {row.locationText ? <AddressLink address={row.locationText} /> : (row.licenseeIdsText ? `Licensee ${row.licenseeIdsText}` : 'Location unavailable')}
+                  </span>
+                  {(hasWholesaleOpportunities && row.commercialRating !== null) || row.mostRecentVisit ? <span className="account-directory-mobile-only account-directory-context">
+                    {hasWholesaleOpportunities && row.commercialRating !== null ? <CommercialOpportunityStars rating={row.commercialRating} status={row.assessmentStatus} pending={row.pending} stale={row.stale} /> : null}
+                    {row.mostRecentVisit ? <span>Last visit {formatEasternDate(row.mostRecentVisit)}</span> : null}
+                  </span> : null}
+                </td>
+                <td className="account-directory-secondary-cell" data-label="Licensee IDs">{row.licenseeIdsText}</td>
+                <td className="account-directory-secondary-cell" data-label="Address"><AddressLink address={row.locationText}>{row.address}</AddressLink></td>
+                <td className="account-directory-secondary-cell" data-label="City">{row.city}</td>
+                <td className="account-directory-secondary-cell" data-label="Retail ID">{row.agencyId}</td>
+                <td className="account-directory-secondary-cell" data-label="Most Recent Visit">{formatEasternDate(row.mostRecentVisit)}</td>
+                {hasWholesaleOpportunities ? <><td className="account-directory-secondary-cell" data-label="Commercial opportunity"><CommercialOpportunityStars rating={row.commercialRating} status={row.assessmentStatus} pending={row.pending} stale={row.stale} />{row.evidenceMode ? <small className="muted"> {row.evidenceMode}</small> : null}</td>
+                <td className="account-directory-secondary-cell" data-label="Next Action">{row.nextAction ?? '—'}</td>
+                </> : null}
+                <td className="account-directory-actions-cell" data-label="Actions">
+                  <Link className="btn compact-btn" href={row.actionHref ?? '/wholesale'}>
+                    {row.actionLabel}
+                  </Link>
+                  {row.phone ? <a aria-label={`Call ${row.name}`} className="btn secondary compact-btn account-directory-mobile-only" href={`tel:${row.phone}`}>Call</a> : null}
+                  {row.directionsHref ? <a aria-label={`Directions to ${row.name}`} className="btn secondary compact-btn account-directory-mobile-only" href={row.directionsHref} rel="noreferrer" target="_blank">Directions</a> : null}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {totalPages > 1 ? <DirectoryPagination path="/wholesale" params={params} page={currentPage} total={totalRows} /> : null}
+      {q && sortedRows.length === 0 ? (
+        <p className="muted activity-empty">No active or official restaurant accounts match that search.</p>
+      ) : null}
+      <AnchoredDetails className="card compact-details admin-panel" id="new-restaurant" summary="Add restaurant account">
         <ActionForm action={createWholesale} className="wholesale-create-form">
           <fieldset className="wholesale-create-section">
             <legend>Account</legend>
@@ -590,98 +643,7 @@ export default async function WholesalePage({
           ) : null}
           <SubmitButton type="submit">Save restaurant account</SubmitButton>
         </ActionForm>
-      </details>
-
-      <div className="section-heading">
-        <h2>Accounts</h2>
-        <span className="pill">{sortedRows.length}</span>
-        <span className="pill">
-          {firstRowNumber}-{lastRowNumber}
-        </span>
-      </div>
-
-      <div className="table-scroll wholesale-table-scroll">
-        <table className="responsive-table account-directory-table">
-          <thead>
-            <tr>
-              {visibleSortColumns.map((column) => (
-                <SortableHeader
-                  currentSortDirection={sortDirection}
-                  currentSortKey={sortKey}
-                  key={column.key}
-                  label={column.label}
-                  params={params}
-                  sortKey={column.key}
-                />
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {tableRows.map((row) => (
-              <tr className="account-directory-row" key={row.id}>
-                <td className="account-directory-name-cell" data-label="Name">
-                  <Link className="table-link account-directory-name-link" href={row.nameHref ?? '/wholesale'}>
-                    {row.name}
-                  </Link>
-                  {targetedIds.has(row.id) ? <TargetAccountMarker /> : null}
-                  <span className="account-directory-mobile-only account-directory-location">
-                    {row.locationText ? <AddressLink address={row.locationText} /> : (row.licenseeIdsText ? `Licensee ${row.licenseeIdsText}` : 'Location unavailable')}
-                  </span>
-                  <span className="account-directory-mobile-only account-directory-context">
-                    {hasWholesaleOpportunities ? <CommercialOpportunityStars rating={row.commercialRating} status={row.assessmentStatus} pending={row.pending} stale={row.stale} /> : null}
-                    <span>{row.nextAction ?? (row.mostRecentVisit ? `Last visit ${formatEasternDate(row.mostRecentVisit)}` : 'Not visited yet')}</span>
-                  </span>
-                </td>
-                <td className="account-directory-secondary-cell" data-label="Licensee IDs">{row.licenseeIdsText}</td>
-                <td className="account-directory-secondary-cell" data-label="Address"><AddressLink address={row.locationText}>{row.address}</AddressLink></td>
-                <td className="account-directory-secondary-cell" data-label="City">{row.city}</td>
-                <td className="account-directory-secondary-cell" data-label="Retail ID">{row.agencyId}</td>
-                <td className="account-directory-secondary-cell" data-label="Most Recent Visit">{formatEasternDate(row.mostRecentVisit)}</td>
-                {hasWholesaleOpportunities ? <><td className="account-directory-secondary-cell" data-label="Commercial opportunity"><CommercialOpportunityStars rating={row.commercialRating} status={row.assessmentStatus} pending={row.pending} stale={row.stale} />{row.evidenceMode ? <small className="muted"> {row.evidenceMode}</small> : null}</td>
-                <td className="account-directory-secondary-cell" data-label="Next Action">{row.nextAction ?? '—'}</td>
-                </> : null}
-                <td className="account-directory-actions-cell" data-label="Actions">
-                  <Link className="btn compact-btn" href={row.actionHref ?? '/wholesale'}>
-                    {row.actionLabel}
-                  </Link>
-                  {row.phone ? <a aria-label={`Call ${row.name}`} className="btn secondary compact-btn account-directory-mobile-only" href={`tel:${row.phone}`}>Call</a> : null}
-                  {row.directionsHref ? <a aria-label={`Directions to ${row.name}`} className="btn secondary compact-btn account-directory-mobile-only" href={row.directionsHref} rel="noreferrer" target="_blank">Directions</a> : null}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {totalPages > 1 ? (
-        <div className="pagination-row">
-          {currentPage > 1 ? (
-            <Link
-              className="btn compact-btn secondary"
-              href={buildPageHref({ page: currentPage - 1, params, sortDirection, sortKey })}
-            >
-              Previous
-            </Link>
-          ) : (
-            <span className="pill">Previous</span>
-          )}
-          <span className="muted">
-            Page {currentPage} of {totalPages}
-          </span>
-          {currentPage < totalPages ? (
-            <Link
-              className="btn compact-btn secondary"
-              href={buildPageHref({ page: currentPage + 1, params, sortDirection, sortKey })}
-            >
-              Next
-            </Link>
-          ) : (
-            <span className="pill">Next</span>
-          )}
-        </div>
-      ) : null}
-      {q && sortedRows.length === 0 ? (
-        <p className="muted activity-empty">No active or official restaurant accounts match that search.</p>
-      ) : null}
+      </AnchoredDetails>
     </>
   );
 }

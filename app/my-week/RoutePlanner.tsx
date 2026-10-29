@@ -25,9 +25,10 @@ export function RoutePlanner({
     setResult(null);
   };
   return (
-    <details className="card">
+    <details className="section-disclosure schedule-route">
       <summary>
-        Plan my route · {date} · {stops.length} stops
+        <strong>Plan my route</strong>
+        <span className="disclosure-meta">{stops.length ? `${stops.length} ${stops.length === 1 ? 'stop' : 'stops'}` : 'No stops scheduled'}</span>
       </summary>
       <p>
         Uses your open Worklist tasks for this date. Review existing appointment
@@ -88,9 +89,9 @@ export function RoutePlanner({
             submitLabel="Save reviewed stop order"
           >
             <input name="date" type="hidden" value={date} />
-            <ol>
+            <ol className="route-stop-list">
               {order.map((stop, i) => (
-                <li className="card" key={stop.id}>
+                <li key={stop.id}>
                   <input name="stopId" type="hidden" value={stop.id} />
                   <input
                     name="stopVersion"

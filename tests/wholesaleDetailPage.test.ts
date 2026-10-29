@@ -17,9 +17,10 @@ test('Wholesale activity timeline loads only the viewing tenant portfolio purcha
   assert.match(panel, /where: \{ organizationId, wholesaleAccountId, \.\.\.getTenantAccountSalesEventWhere\(tenantConfig\) \}/);
 });
 
-test('Wholesale account overview opens by default and displays source-attributed business hours', () => {
+test('Wholesale account details retain source-attributed hours in the shared account workspace', () => {
   const page = readFileSync('app/wholesale/[id]/page.tsx', 'utf8');
-  assert.match(page, /id="overview" initialOpen summary="Account details, visit totals & tags"/);
+  assert.match(page, /id: 'account-details', label: 'Details'/);
+  assert.match(page, /<AccountWorkspace/);
   assert.match(page, /readBusinessHours\(account\.targetPublicResearch\?\.identitySnapshot\)/);
   assert.match(page, />Current hours</);
   assert.match(page, /Source:/);

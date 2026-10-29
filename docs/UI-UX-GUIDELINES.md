@@ -75,6 +75,7 @@ When requirements compete, prefer this order:
 - Collapse empty or low-value sections. Do not stack repeated zero-value cards when one concise state conveys the same information.
 - Keep field-facing rows compact enough to scan several records per screen. Use whitespace to separate decisions and action groups, not every individual field.
 - Avoid nested cards when a heading, divider, or compact row communicates the hierarchy. Do not turn every desktop table cell into a labeled mobile block.
+- Navigation and optional sections use text hierarchy, compact disclosure rows, spacing and thin dividers. Do not wrap each collapsed section in a large white rounded card. Reserve bounded surfaces for forms, overlays and content that benefits from a distinct working area.
 - Preserve important safety or workflow explanations, but keep them concise and place extended help behind a Help or Learn more disclosure.
 
 ## Worklist and task interactions

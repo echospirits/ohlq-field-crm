@@ -262,7 +262,7 @@ export function TasterVisitForm({ action, agencies }: TasterVisitFormProps) {
           <section className="taster-inventory-panel" aria-label={`Echo inventory at ${selectedAgency.name}`}>
             <div className="section-heading taster-inventory-heading">
               <div>
-                <span className="page-eyebrow">Store snapshot</span>
+
                 <h2>Current Echo inventory</h2>
               </div>
               {agencyContext ? <span className="pill">{agencyContext.inventory.length} items</span> : null}

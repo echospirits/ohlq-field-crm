@@ -168,7 +168,7 @@ test('wholesale detail renders the Edit link only for Echo admins', () => {
       account: { id: 'shared-account', name: 'Account', city: 'Columbus', tags: [], officialAccountId: 'official' },
       isAdminRole, hasDirectWholesaleOrders: false, actionUsers: [],
       Link: ({ children, ...props }: { children: React.ReactNode; href: string }) => React.createElement('a', props, children),
-      TargetAccountControl: () => null, ContextualActions: () => null, TagBadges: () => null,
+      TargetAccountControl: () => null, ContextualActions: ({ secondaryActions }: { secondaryActions: React.ReactNode }) => React.createElement(React.Fragment, null, secondaryActions), TagBadges: () => null,
     };
     runInNewContext(code, context);
     const html = renderToStaticMarkup(context.header as React.ReactElement);
