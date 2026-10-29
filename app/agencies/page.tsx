@@ -118,12 +118,12 @@ export default async function AgenciesPage({
         </div>
       </header>
       <AccountViewNavigation active="agencies" />
-      {!q ? <NearbyAccountsSection type="agency" /> : null}
       <LiveFilterForm className="filter-form narrow-filter" label="Filter retail accounts">
         <label className="sr-only" htmlFor="retail-search">Search retail accounts</label>
         <input id="retail-search" name="q" type="search" defaultValue={q} placeholder="Name, retail ID, address, or phone" />
         <input name="page" type="hidden" value="1" />
       </LiveFilterForm>
+      {!q ? <NearbyAccountsSection type="agency" /> : null}
       <DirectoryPagination path="/agencies" params={params} page={pagination.page} total={total} />
 
       {agencies.length === 0 ? <p className="notice">No retail accounts match your search in the states enabled for your organization.</p> : null}

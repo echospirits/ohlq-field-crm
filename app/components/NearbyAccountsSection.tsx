@@ -8,7 +8,7 @@ import { useCurrentLocation } from './useCurrentLocation';
 
 const visitFormatter = new Intl.DateTimeFormat('en-US', { day: 'numeric', month: 'short' });
 const lastVisitLabel = (value: string | null) =>
-  value ? `Last visit ${visitFormatter.format(new Date(value))}` : 'Never visited';
+  value ? `Last visit ${visitFormatter.format(new Date(value))}` : null;
 
 export function NearbyAccountsSection({ type }: { type: 'agency' | 'wholesale' }) {
   const { location, requestLocation, status } = useCurrentLocation();
@@ -53,11 +53,8 @@ export function NearbyAccountsSection({ type }: { type: 'agency' | 'wholesale' }
   if (accounts.length === 0) return null;
 
   return (
-    <section className="nearby-accounts card" aria-label={`Nearby ${type} accounts`}>
-      <div className="section-heading nearby-heading">
-        <h2>Nearby</h2>
-        <span className="pill">Within 10 mi</span>
-      </div>
+    <details className="nearby-accounts section-disclosure">
+      <summary><strong>Nearby accounts</strong><span className="disclosure-meta">{accounts.length} shown · Within 10 mi</span></summary>
       <div className="nearby-account-list">
         {accounts.map((account) => (
           <Link
@@ -74,7 +71,7 @@ export function NearbyAccountsSection({ type }: { type: 'agency' | 'wholesale' }
           </Link>
         ))}
       </div>
-    </section>
+    </details>
   );
 }
 

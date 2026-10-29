@@ -521,8 +521,6 @@ export default async function WholesalePage({
         <a className="btn secondary compact-btn" href="#new-restaurant">Add account</a>
       </header>
       <AccountViewNavigation active="wholesale" />
-      {!q ? <NearbyAccountsSection type="wholesale" /> : null}
-
       <LiveFilterForm className="filter-form directory-filter" label="Filter restaurant accounts">
         <label className="sr-only" htmlFor="restaurant-search">Search restaurants</label>
         <input id="restaurant-search" name="q" type="search" defaultValue={q} placeholder="Name, licensee ID, city, or phone" />
@@ -543,6 +541,7 @@ export default async function WholesalePage({
         </select>
         </details>
       </LiveFilterForm>
+      {!q ? <NearbyAccountsSection type="wholesale" /> : null}
       {params.status === 'saved' ? <p className="pill">Restaurant account saved.</p> : null}
       {params.status === 'invalid' ? <p className="pill">An account name and valid state are required.</p> : null}
       {params.status === 'duplicate-licensee' ? (

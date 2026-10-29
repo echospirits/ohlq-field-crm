@@ -35,6 +35,14 @@ async function main() {
     './EventEditor': { EventEditor: () => h('p', null, 'Event editor fixture; no records are saved.') },
   });
   const scheduleEvents = await events.ScheduleEvents({ organizationId: 'fixture' });
+  const nearby = load('app/components/NearbyAccountsSection.tsx', {
+    'next/link': link,
+    react: { useEffect: () => undefined, useState: (initial: unknown) => [Array.isArray(initial) ? [
+      { id: 'nearby-one', name: 'Nearby fixture account', city: 'Columbus', distanceMiles: 0.4, lastVisitAt: null },
+      { id: 'nearby-two', name: 'Previously visited fixture', city: 'Columbus', distanceMiles: 1.2, lastVisitAt: '2026-10-27T16:00:00Z' },
+    ] : initial, () => undefined] },
+    './useCurrentLocation': { useCurrentLocation: () => ({ location: { latitude: 0, longitude: 0, accuracy: 10 }, status: 'ready', requestLocation: () => undefined }) },
+  });
   const styles = ['styles.css', 'crm/crm.css', 'redesign.css', 'theme.css', 'field-workspace.css', 'workspace-foundation.css'].map(p => readFileSync(`app/${p}`, 'utf8')).join('\n');
   const permissions = { enabledFeatures: [...FEATURE_KEYS], isAdmin: true, isPlatformAdmin: false, isTaster: false };
   const brief = { lastContact: null, lastMeaningful: null, lastVisit: null, lastFollowUp: null,
@@ -53,6 +61,7 @@ async function main() {
       h('body', null, h('aside', null, h('div', { className: 'app-brand' }, h('strong', null, 'Neat')), h(nav.AppSidebarNavigation, permissions)),
         h('main', { id: 'main-content' }, h('header', { className: 'page-header page-heading' }, h('h1', null, 'My Schedule')),
           h('p', { className: 'muted' }, 'Interface fixture · no records are saved'),
+          h(nearby.NearbyAccountsSection, { type: 'wholesale' }),
           h(route.RoutePlanner, { date: '2026-10-29', stops: [], omitted: 0 }), scheduleEvents,
           h('details', { className: 'card compact-details' }, h('summary', null, 'Account details and evidence'), h('p', null, 'Optional details remain available.')),
           h(AccountBriefingView, { briefing: brief }),
@@ -71,6 +80,12 @@ async function main() {
       assert.ok(dimensions.height <= 85, `${size} route disclosure consumes ${dimensions.height}px`);
       assert.equal(dimensions.background, 'rgba(0, 0, 0, 0)', 'Navigation disclosure should not be a white box');
       assert.equal(dimensions.radius, '0px');
+      assert.equal(await page.locator('.nearby-accounts').getAttribute('open'), null);
+      await page.getByText('Nearby accounts', { exact: true }).click();
+      await page.getByRole('link', { name: /Nearby fixture account/ }).waitFor();
+      assert.equal(await page.locator('.nearby-account-row').count(), 2);
+      assert.equal(await page.getByText('Never visited', { exact: false }).count(), 0);
+      assert.ok(await page.getByText('Last visit', { exact: false }).count());
       await page.getByText('Plan my route', { exact: true }).click();
       await page.getByText('No account stops assigned to you on this date.', { exact: false }).waitFor();
       await page.getByText('Events and staff schedule', { exact: true }).click();

@@ -165,3 +165,29 @@ main .dashboard-details-content > .card { border: 0; border-radius: 0; box-shado
   .schedule-supporting-sections > details > summary .disclosure-meta { margin-left: auto; }
   .mobile-more-menu a { min-height: 44px; }
 }
+
+/* Location-aware suggestions stay secondary to the directory search. */
+.nearby-accounts.section-disclosure .nearby-account-list { display: block; }
+.nearby-accounts.section-disclosure .nearby-account-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 16px;
+  min-height: 44px;
+  padding: 10px 0;
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  box-shadow: none;
+  color: var(--text);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.nearby-accounts.section-disclosure .nearby-account-row strong { font-size: 14px; font-weight: 600; }
+.nearby-accounts.section-disclosure .nearby-account-row span { font-size: 12px; color: var(--muted); }
+.nearby-accounts.section-disclosure .nearby-account-row:hover strong { text-decoration: underline; text-underline-offset: 3px; }
+@media (max-width: 900px) {
+  .nearby-accounts.section-disclosure .nearby-account-row strong { flex-basis: 100%; }
+}
