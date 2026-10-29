@@ -1,10 +1,10 @@
 # Unreleased
 
-Neat **0.4.0** was released October 28, 2026. [Release notes](0.4.0.md). Communications retirement is complete. No new development version or feature cycle is open; await a new owner instruction.
+Neat **0.4.1** was released October 28, 2026. [Release notes](0.4.1.md). The separate 0.5.0-dev field-workspace changes remain in TST and require their own production authorization.
 
 ## Changes
 
-- Candidate 0.4.1: Reduce account-loading waterfalls, display accessible loading states for secondary sections, and skip directory state lookups for identity-only reads that cannot select account relations. Preserves tenant/state enforcement. No schema, migration, environment or feature-flag changes. Separate 0.5.0-dev field-workspace work is excluded. See [candidate validation](0.4.1-validation.md).
+None beyond release closeout and validation evidence.
 
 ## Entry template
 

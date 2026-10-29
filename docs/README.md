@@ -4,7 +4,7 @@ Start with [implementation progress](engineering/implementation-progress.md) and
 
 ## Current release
 
-**0.4.0 is released to production.** Communications, mailbox/appointment capture, business SMS, contact suggestions and the communication assistant are retired. Existing Contacts, manual interactions, history/briefing and Worklist/calendar remain. [Release notes](releases/0.4.0.md), [completed checklist](releases/0.4.0-checklist.md), [validation](releases/communications-retirement-validation.md). No new development cycle is open.
+**0.4.1 is released to production** with account-loading performance improvements. [Release notes](releases/0.4.1.md), [validation](releases/0.4.1-validation.md). The separate 0.5.0-dev field-workspace changes remain in TST. The preceding [0.4.0 Communications retirement](releases/0.4.0.md) remains in effect; Contacts, manual interactions, history/briefing and Worklist/calendar remain.
 
 ## architecture
 

@@ -1,8 +1,8 @@
 # Repository Agent Instructions
 
-## Released 0.4.0: development closed
+## Released 0.4.1: selective performance hotfix
 
-The owner-authorized Communications retirement was released to main/production as **0.4.0** on October 28, 2026. The scoped work is complete; no new development cycle is open. Do not add unrelated features, refactors, upgrades or migrations without a new owner instruction.
+The owner-authorized account performance hotfix was released to main/production as **0.4.1** on October 28, 2026. See [release notes](docs/releases/0.4.1.md) and [validation](docs/releases/0.4.1-validation.md). The separately authorized 0.5.0-dev field-workspace work remains in TST; its promotion requires a separate production release instruction. Do not add unrelated features, refactors, upgrades or migrations without a new owner instruction.
 
 Preserve the historical 0.3.0 and 0.4.0 candidate/release refs and records. See [0.4.0 release notes](docs/releases/0.4.0.md), [checklist](docs/releases/0.4.0-checklist.md) and [validation](docs/releases/communications-retirement-validation.md). Communications runtime integrations are retired; stored records/migrations remain. This work does not authorize database deletion, provider-account changes or hosted configuration changes.
 
