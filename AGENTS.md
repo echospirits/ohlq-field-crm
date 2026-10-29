@@ -1,8 +1,8 @@
 # Repository Agent Instructions
 
-## Candidate 0.4.2: forecast source download hotfix
+## Released 0.4.2: forecast source download hotfix
 
-The owner authorized publishing the tested Bailment date-control and Partner DC loading fixes and verifying the production forecast-only import. Package only that scope as **0.4.2**, preserving the already released 0.4.1 account performance hotfix. See [0.4.2 validation](docs/releases/0.4.2-validation.md) and [checklist](docs/releases/0.4.2-checklist.md). The separately authorized 0.5.0-dev field-workspace work remains in TST; its promotion requires a separate production release instruction. Do not add unrelated features, refactors, upgrades or migrations.
+The owner-approved Bailment date-control and Partner DC loading fixes are released as **0.4.2**. Both live production downloads/imports and forecast refresh are verified. Preserve the released 0.4.1 account performance hotfix. See [release notes](docs/releases/0.4.2.md), [validation](docs/releases/0.4.2-validation.md) and [checklist](docs/releases/0.4.2-checklist.md). The separately authorized 0.5.0-dev field-workspace work remains in TST; its promotion requires a separate production release instruction. Do not add unrelated features, refactors, upgrades or migrations.
 
 Preserve the historical 0.3.0 and 0.4.0 candidate/release refs and records. See [0.4.0 release notes](docs/releases/0.4.0.md), [checklist](docs/releases/0.4.0-checklist.md) and [validation](docs/releases/communications-retirement-validation.md). Communications runtime integrations are retired; stored records/migrations remain. This work does not authorize database deletion, provider-account changes or hosted configuration changes.
 

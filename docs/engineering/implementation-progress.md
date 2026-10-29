@@ -1,6 +1,6 @@
 # Integrated CRM implementation progress
 
-> Current release: 0.4.1 selectively improves account loading and identity reads; [validation](../releases/0.4.1-validation.md). Separate 0.5.0-dev field-workspace work remains in TST and has not been promoted.
+> Current release: 0.4.2 repairs automated Bailment and Partner DC downloads; both sources and forecast refresh passed live production verification. [Validation](../releases/0.4.2-validation.md). The 0.4.1 account performance improvements remain live. Separate 0.5.0-dev field-workspace work remains in TST and has not been promoted.
 
 > Current release update, October 28, 2026: after the released 0.3.0 freeze, the owner authorized retiring Communications, mailbox/imported-appointment capture, business SMS, contact suggestions and the communication assistant. These runtime features are removed in released `0.4.0`; ordinary Contacts, manual interactions, history, briefing and Worklist/calendar remain. [Current validation](../releases/communications-retirement-validation.md). Earlier delivery records below describe historical implementations.
 

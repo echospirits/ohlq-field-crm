@@ -4,7 +4,7 @@ Start with [implementation progress](engineering/implementation-progress.md) and
 
 ## Current release
 
-**0.4.1 is released to production** with account-loading performance improvements. [Release notes](releases/0.4.1.md), [validation](releases/0.4.1-validation.md). The separate 0.5.0-dev field-workspace changes remain in TST. The preceding [0.4.0 Communications retirement](releases/0.4.0.md) remains in effect; Contacts, manual interactions, history/briefing and Worklist/calendar remain.
+**0.4.2 is released to production** with repaired and verified automated Bailment/Partner DC downloads and forecast refresh. [Release notes](releases/0.4.2.md), [validation](releases/0.4.2-validation.md). The 0.4.1 account performance improvements remain live; separate 0.5.0-dev field-workspace changes remain in TST. The preceding [0.4.0 Communications retirement](releases/0.4.0.md) remains in effect; Contacts, manual interactions, history/briefing and Worklist/calendar remain.
 
 ## architecture
 
