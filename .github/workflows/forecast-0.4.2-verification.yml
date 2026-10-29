@@ -1,0 +1,83 @@
+name: Verify Neat 0.4.2 forecast source recovery
+
+# One authorized release verification, not another recurring import schedule.
+on:
+  push:
+    branches: [main]
+    paths:
+      - package.json
+      - lib/ohlqAnnualSalesReport.ts
+      - lib/ohlqPartnerDcReady.ts
+      - .github/workflows/forecast-0.4.2-verification.yml
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    if: >-
+      ${{ github.repository == 'echospirits/ohlq-field-crm'
+          && github.ref == 'refs/heads/main'
+          && github.event.head_commit.message == 'Release Neat 0.4.2: repair forecast source downloads' }}
+    name: Verify production forecast sources only
+    environment: production
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    # Match the existing production OHLQ lock without cancelling its imports.
+    concurrency:
+      group: ohlq-annual-sales-sync-production
+      cancel-in-progress: false
+    env:
+      APP_ENV: production
+      DATABASE_ENVIRONMENT: production
+      DATABASE_TARGET_ID: ${{ vars.DATABASE_TARGET_ID }}
+      EXPECTED_DATABASE_HOST: ${{ vars.EXPECTED_DATABASE_HOST }}
+      PRODUCTION_BASE_URL: ${{ vars.PRODUCTION_BASE_URL }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      OHLQ_OPS_USERNAME: ${{ secrets.OHLQ_OPS_USERNAME }}
+      OHLQ_OPS_PASSWORD: ${{ secrets.OHLQ_OPS_PASSWORD }}
+      OHLQ_TENANT_CREDENTIAL_ENCRYPTION_KEY: ${{ secrets.OHLQ_TENANT_CREDENTIAL_ENCRYPTION_KEY }}
+      OHLQ_MICROSOFT_USERNAME: ${{ secrets.OHLQ_MICROSOFT_USERNAME }}
+      OHLQ_MICROSOFT_PASSWORD: ${{ secrets.OHLQ_MICROSOFT_PASSWORD }}
+      OHLQ_BROWSER_CHANNEL: ""
+      OHLQ_HEADLESS: "1"
+      OHLQ_IMPORT_ENABLED: "true"
+      OHLQ_USE_PERSISTENT_BROWSER_CONTEXT: "1"
+      OHLQ_USE_SERVERLESS_CHROMIUM: "0"
+    steps:
+      - name: Check out the release
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Verify the authorized release version
+        shell: bash
+        run: |
+          test "$DATABASE_TARGET_ID" = "ohlq-field-crm"
+          node -e "if (require('./package.json').version !== '0.4.2') { console.error('Expected release version 0.4.2.'); process.exit(1); }"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Validate existing production secrets
+        shell: bash
+        run: |
+          for name in DATABASE_URL OHLQ_OPS_USERNAME OHLQ_OPS_PASSWORD OHLQ_TENANT_CREDENTIAL_ENCRYPTION_KEY OHLQ_MICROSOFT_USERNAME OHLQ_MICROSOFT_PASSWORD; do
+            if [[ -z "${!name}" ]]; then
+              echo "Missing existing production secret: $name" >&2
+              exit 1
+            fi
+          done
+
+      - name: Download and import forecast sources and refresh forecasts
+        run: npm run sync:production-sources -- --environment production --apply
+
+      # Existing source logic keeps exports/screenshots in private runner temp.
+      # No source artifact, credential repair, other import, or migration runs.

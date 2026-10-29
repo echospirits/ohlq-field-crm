@@ -1,8 +1,8 @@
 # Repository Agent Instructions
 
-## Released 0.4.1: selective performance hotfix
+## Candidate 0.4.2: forecast source download hotfix
 
-The owner-authorized account performance hotfix was released to main/production as **0.4.1** on October 28, 2026. See [release notes](docs/releases/0.4.1.md) and [validation](docs/releases/0.4.1-validation.md). The separately authorized 0.5.0-dev field-workspace work remains in TST; its promotion requires a separate production release instruction. Do not add unrelated features, refactors, upgrades or migrations without a new owner instruction.
+The owner authorized publishing the tested Bailment date-control and Partner DC loading fixes and verifying the production forecast-only import. Package only that scope as **0.4.2**, preserving the already released 0.4.1 account performance hotfix. See [0.4.2 validation](docs/releases/0.4.2-validation.md) and [checklist](docs/releases/0.4.2-checklist.md). The separately authorized 0.5.0-dev field-workspace work remains in TST; its promotion requires a separate production release instruction. Do not add unrelated features, refactors, upgrades or migrations.
 
 Preserve the historical 0.3.0 and 0.4.0 candidate/release refs and records. See [0.4.0 release notes](docs/releases/0.4.0.md), [checklist](docs/releases/0.4.0-checklist.md) and [validation](docs/releases/communications-retirement-validation.md). Communications runtime integrations are retired; stored records/migrations remain. This work does not authorize database deletion, provider-account changes or hosted configuration changes.
 
