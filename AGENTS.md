@@ -1,8 +1,8 @@
 # Repository Agent Instructions
 
-## Current development scope: 0.5.0 UI and navigation
+## Current release: 0.5.0; development frozen
 
-The owner authorized the approved interface mockups, consistent desktop submenus and a concise account briefing, then explicitly expanded the scope to a whole-application UI/UX and performance audit and promotion to **main**. Complete the improvements in **0.5.0-dev**, then freeze and promote the exact tested **0.5.0** candidate through the release checklist. Follow [the plan](docs/releases/0.5.0-plan.md) and [UNRELEASED](docs/releases/UNRELEASED.md). No unrelated features, dependency upgrades or migrations are included.
+The authorized interface, navigation and application-wide UI/UX and performance improvements are released as **0.5.0** to TST and main. Development remains frozen; no new development cycle is opened. See [release notes](docs/releases/0.5.0.md), [checklist](docs/releases/0.5.0-checklist.md), [validation](docs/releases/0.5.0-validation.md) and [UNRELEASED](docs/releases/UNRELEASED.md). Historical candidate/release refs remain preserved. No unrelated features, dependency upgrades or migrations were included.
 
 Preserve the historical 0.3.0 and 0.4.0 candidate/release refs and records. See [0.4.0 release notes](docs/releases/0.4.0.md), [checklist](docs/releases/0.4.0-checklist.md) and [validation](docs/releases/communications-retirement-validation.md). Communications runtime integrations are retired; stored records/migrations remain. This work does not authorize database deletion, provider-account changes or hosted configuration changes.
 
