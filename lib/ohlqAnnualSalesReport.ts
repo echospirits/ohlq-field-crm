@@ -1,4 +1,5 @@
 import fs from 'fs';
+import { assertOhlqSourceFreshness } from './ohlqSourceFreshness';
 import os from 'os';
 import path from 'path';
 import Papa from 'papaparse';
@@ -1259,11 +1260,7 @@ async function downloadOhlqPartnerMasterFromPage(
   await firstDataRow.waitFor({ state: 'visible', timeout: 30_000 });
 
   const reportDate = (await firstDataRow.getByRole('cell').nth(0).innerText()).trim();
-  if (reportDate !== runtime.runDateIso) {
-    throw new Error(
-      `The newest ${config.displayName} is dated ${reportDate || 'unknown'}; expected today's Eastern date ${runtime.runDateIso}.`,
-    );
-  }
+  assertOhlqSourceFreshness(config.displayName, reportDate, runtime.runDateIso);
 
   const filename = config.filename(reportDate);
   const downloadLink = firstDataRow.getByRole('link').first();

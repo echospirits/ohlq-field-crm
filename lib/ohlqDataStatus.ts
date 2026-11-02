@@ -1,4 +1,5 @@
 import { retryDatabaseStatusWrite } from './databaseStatusRetry';
+import type { OhlqSourceNotUpdatedError } from './ohlqSourceFreshness';
 import {
   OhlqReportDataSource,
   OhlqReportRunStatus,
@@ -141,6 +142,28 @@ export async function recordOhlqReportRunCompleted({
       skippedRows: importResult.skippedRows,
       status: OhlqReportRunStatus.COMPLETED,
     },
+  }));
+}
+
+export async function recordOhlqReportRunWarning({ db = prisma, error, reportDate, source }: {
+  db?: PrismaClient;
+  error: OhlqSourceNotUpdatedError;
+  reportDate: string;
+  source: OhlqReportDataSource;
+}) {
+  const completedAt = new Date();
+  const reportDateValue = toOhlqDateOnlyUtc(reportDate);
+  const values = {
+    completedAt,
+    status: OhlqReportRunStatus.WARNING,
+    errorMessage: trimError(error),
+    diagnostics: { warningCode: 'SOURCE_NOT_UPDATED', availableDate: error.availableDate, expectedDate: error.expectedDate },
+  };
+  // Do not stamp lastSuccessfulAt or claim any rows were imported.
+  return retryDatabaseStatusWrite(() => db.ohlqReportImportStatus.upsert({
+    where: { dataSource_reportDate: { dataSource: source, reportDate: reportDateValue } },
+    create: { ...values, dataSource: source, reportDate: reportDateValue, startedAt: completedAt },
+    update: values,
   }));
 }
 

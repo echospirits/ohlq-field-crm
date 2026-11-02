@@ -13,6 +13,7 @@ test('product discovery cannot block sales or inventory and remains a visible fa
   assert.match(step('Download and import current OHLQ Brand Master'), /--defer-product-discovery/);
   const discovery = step('Discover organization products after core imports');
   assert.match(discovery, /!cancelled\(\).*steps.brand_master.outcome == 'success'/);
+  assert.match(discovery, /steps.brand_master.outputs.imported != 'false'/);
   assert.doesNotMatch(discovery, /continue-on-error/);
   assert.ok(workflow.indexOf('- name: Download and import tenant OHLQ inventory') < workflow.indexOf('- name: Discover organization products after core imports'));
   assert.ok(workflow.indexOf('- name: Discover organization products after core imports') < workflow.indexOf('- name: Refresh post-import intelligence and retention'));

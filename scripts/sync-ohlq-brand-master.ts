@@ -1,4 +1,7 @@
 import fs from 'node:fs';
+import { OhlqSourceNotUpdatedError } from '../lib/ohlqSourceFreshness';
+import { reportOhlqSourceWarning } from '../lib/ohlqWorkflowWarning';
+import { recordOhlqReportRunWarning } from '../lib/ohlqDataStatus';
 import { OhlqReportDataSource } from '@prisma/client';
 import { assertSideEffectEnabled, validateRuntimeEnvironment } from '../lib/appEnvironment';
 import { loadLocalEnvironmentFile } from '../lib/environmentFile';
@@ -64,7 +67,12 @@ async function main() {
     });
     console.log(JSON.stringify({ brandMasterDownload: download, brandMasterImport: result }, null, 2));
   } catch (error) {
-    await recordOhlqReportRunErrored({
+    if (error instanceof OhlqSourceNotUpdatedError) {
+      if (apply) await recordOhlqReportRunWarning({ error, reportDate, source: OhlqReportDataSource.BRAND_MASTER });
+      reportOhlqSourceWarning(error);
+      return;
+    }
+    if (apply) await recordOhlqReportRunErrored({
       error,
       reportDate,
       source: OhlqReportDataSource.BRAND_MASTER,

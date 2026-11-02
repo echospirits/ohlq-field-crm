@@ -1,4 +1,7 @@
 import { spawn } from 'node:child_process';
+import { OhlqSourceNotUpdatedError } from '../lib/ohlqSourceFreshness';
+import { reportOhlqSourceWarning } from '../lib/ohlqWorkflowWarning';
+import { recordOhlqReportRunWarning } from '../lib/ohlqDataStatus';
 import { OhlqReportDataSource } from '@prisma/client';
 import { assertSideEffectEnabled, validateRuntimeEnvironment } from '../lib/appEnvironment';
 import { loadLocalEnvironmentFile } from '../lib/environmentFile';
@@ -57,6 +60,11 @@ async function main() {
     console.log(JSON.stringify({ accountMasterDownload: download }, null, 2));
     await runImporter(download.outputPath, environment, apply);
   } catch (error) {
+    if (error instanceof OhlqSourceNotUpdatedError) {
+      if (apply) await recordOhlqReportRunWarning({ error, reportDate, source: OhlqReportDataSource.ACCOUNT_MASTER });
+      reportOhlqSourceWarning(error);
+      return;
+    }
     if (apply) {
       await recordOhlqReportRunErrored({
         error,
