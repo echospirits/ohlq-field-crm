@@ -1,16 +1,15 @@
 # Unreleased
 
-Version **0.5.0** is released. Development is frozen; no new development version or feature cycle is opened.
+Version **0.5.1** is released to TST and main. Development is frozen; no new development version or feature cycle is opened.
 
+- [0.5.1 release notes and validation](0.5.1.md)
 - [0.5.0 release notes](0.5.0.md)
-- [Completed release checklist](0.5.0-checklist.md)
-- [Release validation](0.5.0-validation.md)
+- [0.5.0 completed release checklist](0.5.0-checklist.md)
+- [0.5.0 release validation](0.5.0-validation.md)
 
 ## Changes
 
-Owner-authorized 0.5.1 hotfix, November 2, 2026: retail and wholesale address links open the address in Google Maps location search, allowing the user to review the location before choosing directions. Explicit Directions actions retain their existing behavior. Removes device-specific Apple Maps/geo redirects. No schema, migration, dependency, hosted configuration or feature-flag changes. Release evidence: [0.5.1](0.5.1.md). Development remains frozen.
-
-None. The 0.5.0 scope is archived in its release notes.
+None. The 0.5.1 address-link hotfix is archived in its release notes.
 
 ## Entry template
 

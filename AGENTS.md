@@ -1,8 +1,8 @@
 # Repository Agent Instructions
 
-## Current release: 0.5.0; development frozen
+## Current release: 0.5.1; development frozen
 
-The authorized interface, navigation and application-wide UI/UX and performance improvements are released as **0.5.0** to TST and main. Development remains frozen; no new development cycle is opened. See [release notes](docs/releases/0.5.0.md), [checklist](docs/releases/0.5.0-checklist.md), [validation](docs/releases/0.5.0-validation.md) and [UNRELEASED](docs/releases/UNRELEASED.md). Historical candidate/release refs remain preserved. No unrelated features, dependency upgrades or migrations were included.
+The account-address location-link hotfix is released as **0.5.1** to TST and main; see [hotfix notes and validation](docs/releases/0.5.1.md). The authorized interface, navigation and application-wide UI/UX and performance improvements are released as **0.5.0** to TST and main. Development remains frozen; no new development cycle is opened. See [release notes](docs/releases/0.5.0.md), [checklist](docs/releases/0.5.0-checklist.md), [validation](docs/releases/0.5.0-validation.md) and [UNRELEASED](docs/releases/UNRELEASED.md). Historical candidate/release refs remain preserved. No unrelated features, dependency upgrades or migrations were included.
 
 Preserve the historical 0.3.0 and 0.4.0 candidate/release refs and records. See [0.4.0 release notes](docs/releases/0.4.0.md), [checklist](docs/releases/0.4.0-checklist.md) and [validation](docs/releases/communications-retirement-validation.md). Communications runtime integrations are retired; stored records/migrations remain. This work does not authorize database deletion, provider-account changes or hosted configuration changes.
 
