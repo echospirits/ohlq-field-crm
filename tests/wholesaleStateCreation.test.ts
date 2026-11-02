@@ -84,8 +84,10 @@ test('creation has no nested disclosures or Ohio IDs and editing retains both ID
   assert.ok(address.indexOf('City<input') < address.indexOf('<StateField name='));
   assert.ok(address.indexOf('<StateField name=') < address.indexOf('ZIP code<input'));
   const edit = readFileSync(new URL('../app/wholesale/[id]/edit/page.tsx', import.meta.url), 'utf8');
-  assert.match(edit, /name="agencyId"/);
-  assert.match(edit, /name="districtId"/);
+  assert.match(edit, /WholesaleAccountEditFields/);
+  const editFields = readFileSync(new URL('../app/components/WholesaleAccountEditFields.tsx', import.meta.url), 'utf8');
+  assert.match(editFields, /name="agencyId"/);
+  assert.match(editFields, /name="districtId"/);
 });
 
 test('a valid but unentitled state returns a clear error before account reads or writes', async () => {

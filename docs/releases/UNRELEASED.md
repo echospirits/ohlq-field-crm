@@ -9,7 +9,9 @@ Version **0.5.1** is released to TST and main. Development is frozen; no new dev
 
 ## Changes
 
-None. The 0.5.1 address-link hotfix and same-version [OHLQ warning correction](0.5.0-ohlq-warnings.md) are released and archived. Development remains frozen.
+Owner-authorized 0.5.2 hotfix, November 2, 2026: Account Research failures can be edited and saved inline using the canonical restaurant account editor. Current values load on demand; Save/Cancel preserve the research-page context and errors retain drafts. No migration, dependency upgrade, provider activation, configuration or feature-flag change. Scope: [0.5.2](0.5.2.md); gates: [validation](0.5.2-validation.md). Development remains frozen.
+
+The 0.5.1 address-link hotfix and same-version [OHLQ warning correction](0.5.0-ohlq-warnings.md) are released and archived. Development remains frozen.
 
 ## Entry template
 

@@ -20,6 +20,7 @@ import { PageHeader, SectionHeading } from '../../components/PageChrome';
 import { LiveFilterForm } from '../../components/LiveFilterForm';
 import { checkAccountResearchPilot, continueAccountResearchPilot, startAccountResearchPilot, uploadAccountResearchCsv } from './actions';
 import { AgencyHoursResearchQueue } from './AgencyHoursResearchQueue';
+import { ResearchFailureList } from './ResearchFailureList';
 import { readOperatingHoursSchedule } from '../../../lib/operatingHours';
 
 export const metadata = buildPageMetadata('Account Research');
@@ -278,11 +279,19 @@ export default async function AccountResearchPage({ searchParams }: { searchPara
       <details className="dashboard-section dashboard-details" id="research-failures">
         <summary><span><strong>Failures to fix</strong><small>{unresolvedFailures.length.toLocaleString()} account{unresolvedFailures.length === 1 ? '' : 's'} with a location match that may need correction</small></span><span className="pill">{unresolvedFailures.length.toLocaleString()}</span></summary>
         <div className="dashboard-details-content">
-          {unresolvedFailures.length === 0 ? <div className="empty-state"><h3>No account failures need attention</h3><p>API limits, billing interruptions, and other operational issues are marked unsuccessful and returned to the research queue instead.</p></div> : <div className="card research-job-list">{unresolvedFailures.map((attempt) => {
+          <ResearchFailureList failures={unresolvedFailures.map((attempt) => {
             const failedAt = attempt.reviewedAt ?? attempt.completedAt ?? attempt.updatedAt;
             const snapshot = attempt.inputSnapshot && typeof attempt.inputSnapshot === 'object' ? attempt.inputSnapshot as { address?: string | null; city?: string | null; zip?: string | null } : null;
-            return <div key={attempt.id}><span><strong><Link href={`/wholesale/${attempt.wholesaleAccount.id}`}>{attempt.wholesaleAccount.name}</Link></strong><small>{[attempt.wholesaleAccount.city, attempt.wholesaleAccount.licenseeId].filter(Boolean).join(' · ')}</small><small>{accountResearchFailureReason(attempt)}</small>{snapshot ? <small className="muted">Submitted location: {[snapshot.address, snapshot.city, snapshot.zip].filter(Boolean).join(', ')}</small> : null}</span><span><strong>Needs correction</strong><small>{formatEasternDateTime(failedAt)}</small><Link href={`/wholesale/${attempt.wholesaleAccount.id}`}>Open restaurant account</Link></span></div>;
-          })}</div>}
+            return {
+              id: attempt.id,
+              accountId: attempt.wholesaleAccount.id,
+              name: attempt.wholesaleAccount.name,
+              identity: [attempt.wholesaleAccount.city, attempt.wholesaleAccount.licenseeId].filter(Boolean).join(' · '),
+              reason: accountResearchFailureReason(attempt),
+              submittedLocation: snapshot ? [snapshot.address, snapshot.city, snapshot.zip].filter(Boolean).join(', ') : '',
+              failedAt: formatEasternDateTime(failedAt),
+            };
+          })} />
         </div>
       </details>
 

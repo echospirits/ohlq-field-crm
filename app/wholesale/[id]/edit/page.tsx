@@ -1,282 +1,19 @@
-import { after } from 'next/server';
-import { refreshTenantOpportunityScoresForAccounts } from '../../../../lib/accountResearchScoring';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-import { SubmitButton } from '../../../components/SubmitButton';
-import { ActionForm } from '../../../components/ActionForm';
-import { StateField } from '../../../components/StateField';
-import { normalizeUsState, stateScopedLicenseeIds } from '../../../../lib/usStates';
-import { revalidatePath } from 'next/cache';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
-import { AccountType } from '@prisma/client';
+import { SubmitButton } from '../../../components/SubmitButton';
+import { ActionForm } from '../../../components/ActionForm';
+import { WholesaleAccountEditFields } from '../../../components/WholesaleAccountEditFields';
+import { PageHeader } from '../../../components/PageChrome';
 import { buildPageMetadata } from '../../../../lib/appBrand';
 import { requireEchoAdmin } from '../../../../lib/auth';
 import { prisma } from '../../../../lib/prisma';
-import { getGeocodeResetForAddressChange } from '../../../../lib/location/geocode';
-import { getWholesaleAddressProtectionForEdit } from '../../../../lib/wholesaleAddressProtection';
-import { PageHeader } from '../../../components/PageChrome';
-import {
-  chooseWholesaleOfficialAccountCandidate,
-  getWholesaleOfficialAccountSearchConditions,
-  getWholesaleOfficialLookupLicenseeIds,
-  getPrimaryWholesaleLicenseeId,
-  getWholesaleEditableValuesFromOfficialAccount,
-  getWholesaleLicenseeIdConflictWhere,
-  getWholesaleLicenseeIdValues,
-  isGeneratedWholesaleLicenseeId,
-  mergeWholesaleEditableValuesWithOfficialDefaults,
-  moveWholesaleLicenseeIdToPrimary,
-  normalizeWholesaleLicenseeId,
-  parseWholesaleLicenseeIds,
-  syncWholesaleAccountLicenseeIds,
-  type WholesaleAccountEditableValues,
-  wholesaleLicenseeIdListsMatch,
-} from '../../../../lib/wholesaleAccounts';
+import { getWholesaleLicenseeIdValues } from '../../../../lib/wholesaleAccounts';
+import { updateWholesaleAccount } from './actions';
 
 export const metadata = buildPageMetadata('Edit Account');
-
-const toOptional = (value: FormDataEntryValue | null | undefined) => {
-  const trimmed = String(value ?? '').trim();
-  return trimmed.length > 0 ? trimmed : null;
-};
-
-async function findOfficialWholesaleAccountByLicenseeIds({
-  existingLicenseeId,
-  existingLicenseeIds,
-  licenseeIds,
-}: {
-  existingLicenseeId: string | null;
-  existingLicenseeIds: string[];
-  licenseeIds: string[];
-}) {
-  const lookupLicenseeIds = getWholesaleOfficialLookupLicenseeIds({
-    existingLicenseeId,
-    existingLicenseeIds,
-    licenseeIds,
-  });
-  const searchConditions = getWholesaleOfficialAccountSearchConditions(lookupLicenseeIds);
-
-  if (searchConditions.length === 0) {
-    return null;
-  }
-
-  const candidates = await prisma.account.findMany({
-    where: {
-      type: AccountType.BAR_RESTAURANT,
-      OR: searchConditions,
-    },
-    select: {
-      address: true,
-      agencyRefId: true,
-      city: true,
-      county: true,
-      deliveryDay: true,
-      districtId: true,
-      id: true,
-      licenseeId: true,
-      name: true,
-      officialWholesale: { select: { id: true } },
-      ownership: true,
-      phone: true,
-      state: true,
-      zip: true,
-    },
-    take: 250,
-  });
-
-  const agencyRefIds = Array.from(
-    new Set(candidates.map((candidate) => candidate.agencyRefId).filter(Boolean) as string[]),
-  );
-  const liquorAgencies =
-    agencyRefIds.length > 0
-      ? await prisma.account.findMany({
-          where: {
-            agencyId: { in: agencyRefIds },
-            type: AccountType.LIQUOR_AGENCY,
-          },
-          select: {
-            address: true,
-            agencyId: true,
-            city: true,
-            state: true,
-            zip: true,
-          },
-        })
-      : [];
-
-  return chooseWholesaleOfficialAccountCandidate({
-    candidates,
-    liquorAgencies,
-    lookupLicenseeIds,
-  });
-}
-
-async function updateWholesaleAccount(formData: FormData) {
-  'use server';
-
-  await requireEchoAdmin();
-
-  const id = toOptional(formData.get('id'));
-  const state = normalizeUsState(String(formData.get('state') ?? 'OH'));
-  if (!state) return { error: 'Enter a valid US state name or two-letter abbreviation.' };
-  const submittedLicenseeIds = stateScopedLicenseeIds(parseWholesaleLicenseeIds(
-    String(formData.get('licenseeIds') ?? formData.get('licenseeId') ?? ''),
-  ), state);
-  const submittedLicenseeId = getPrimaryWholesaleLicenseeId(submittedLicenseeIds);
-  const name = toOptional(formData.get('name'));
-
-  if (!id || !submittedLicenseeId || !name) {
-    redirect(id ? `/wholesale/${id}/edit?status=invalid` : '/wholesale?status=invalid');
-  }
-
-  const existingAccount = await prisma.wholesaleAccount.findUnique({
-    where: { id },
-    select: {
-      address: true,
-      agencyId: true,
-      addressImportProtected: true,
-      city: true,
-      cityImportProtected: true,
-      county: true,
-      deliveryDay: true,
-      districtId: true,
-      id: true,
-      licenseeId: true,
-      licenseeIds: { select: { licenseeId: true } },
-      mergedIntoId: true,
-      name: true,
-      officialAccountId: true,
-      ownership: true,
-      phone: true,
-      state: true,
-      zip: true,
-      zipImportProtected: true,
-    },
-  });
-
-  if (!existingAccount) {
-    notFound();
-  }
-  if (existingAccount.mergedIntoId) {
-    redirect(`/wholesale/${existingAccount.mergedIntoId}`);
-  }
-
-  const existingLicenseeIds = getWholesaleLicenseeIdValues(existingAccount);
-  const licenseeIdsChanged = !wholesaleLicenseeIdListsMatch(existingLicenseeIds, submittedLicenseeIds);
-  const shouldRefreshOfficialAccount = state === 'OH' && (licenseeIdsChanged || Boolean(existingAccount.officialAccountId));
-  const officialAccount = shouldRefreshOfficialAccount
-    ? await findOfficialWholesaleAccountByLicenseeIds({
-        existingLicenseeId: existingAccount.licenseeId,
-        existingLicenseeIds,
-        licenseeIds: submittedLicenseeIds,
-      })
-    : null;
-  const officialLicenseeId = normalizeWholesaleLicenseeId(officialAccount?.licenseeId);
-  const shouldPromoteOfficialLicenseeId =
-    isGeneratedWholesaleLicenseeId(existingAccount.licenseeId) || isGeneratedWholesaleLicenseeId(submittedLicenseeId);
-  const licenseeIds =
-    shouldPromoteOfficialLicenseeId && officialLicenseeId
-      ? moveWholesaleLicenseeIdToPrimary(submittedLicenseeIds, officialLicenseeId)
-      : submittedLicenseeIds;
-  const licenseeId = getPrimaryWholesaleLicenseeId(licenseeIds);
-
-  if (!licenseeId) {
-    redirect(`/wholesale/${id}/edit?status=invalid`);
-  }
-
-  const accountWithLicenseeId = await prisma.wholesaleAccount.findFirst({
-    where: getWholesaleLicenseeIdConflictWhere(licenseeIds, id),
-    select: { id: true },
-  });
-
-  if (accountWithLicenseeId && accountWithLicenseeId.id !== id) {
-    redirect(`/wholesale/${id}/edit?status=duplicate-licensee`);
-  }
-
-  const submittedValues: WholesaleAccountEditableValues = {
-    address: toOptional(formData.get('address')),
-    agencyId: toOptional(formData.get('agencyId')),
-    city: toOptional(formData.get('city')),
-    county: toOptional(formData.get('county')),
-    deliveryDay: toOptional(formData.get('deliveryDay')),
-    districtId: toOptional(formData.get('districtId')),
-    name,
-    ownership: toOptional(formData.get('ownership')),
-    phone: toOptional(formData.get('phone')),
-    state,
-    zip: toOptional(formData.get('zip')),
-  };
-  const officialAccountChanged = Boolean(officialAccount && officialAccount.id !== existingAccount.officialAccountId);
-
-  if (officialAccount?.officialWholesale && officialAccount.officialWholesale.id !== id) {
-    redirect(`/wholesale/${id}/edit?status=duplicate-official`);
-  }
-
-  const existingValues: WholesaleAccountEditableValues = {
-    address: existingAccount.address,
-    agencyId: existingAccount.agencyId,
-    city: existingAccount.city,
-    county: existingAccount.county,
-    deliveryDay: existingAccount.deliveryDay,
-    districtId: existingAccount.districtId,
-    name: existingAccount.name,
-    ownership: existingAccount.ownership,
-    phone: existingAccount.phone,
-    state: existingAccount.state ?? 'OH',
-    zip: existingAccount.zip,
-  };
-  const addressProtection = getWholesaleAddressProtectionForEdit(existingAccount, submittedValues);
-  const mergedValues =
-    officialAccount && (licenseeIdsChanged || officialAccountChanged)
-      ? mergeWholesaleEditableValuesWithOfficialDefaults({
-          existingValues,
-          officialValues: getWholesaleEditableValuesFromOfficialAccount(officialAccount),
-          submittedValues,
-        })
-      : submittedValues;
-  const accountValues = {
-    ...mergedValues,
-    address: addressProtection.addressImportProtected ? submittedValues.address : mergedValues.address,
-    city: addressProtection.cityImportProtected ? submittedValues.city : mergedValues.city,
-    zip: addressProtection.zipImportProtected ? submittedValues.zip : mergedValues.zip,
-  };
-
-  await prisma.$transaction(async (tx) => {
-    await tx.wholesaleAccount.update({
-      where: { id },
-      data: {
-        licenseeId,
-        isActive: true,
-        officialAccountId: state !== 'OH' ? null : officialAccount?.id ?? (licenseeIdsChanged ? null : existingAccount.officialAccountId),
-        name: accountValues.name,
-        agencyId: accountValues.agencyId,
-        ownership: accountValues.ownership,
-        address: accountValues.address,
-        city: accountValues.city,
-        county: accountValues.county,
-        state: accountValues.state,
-        zip: accountValues.zip,
-        districtId: accountValues.districtId,
-        deliveryDay: accountValues.deliveryDay,
-        phone: accountValues.phone,
-        ...addressProtection,
-        ...getGeocodeResetForAddressChange(existingValues, accountValues),
-      },
-    });
-    await syncWholesaleAccountLicenseeIds(tx, id, licenseeIds);
-  });
-  await prisma.wholesaleAccountAssessment.updateMany({ where: { wholesaleAccountId: id }, data: { refreshRequestedAt: new Date() } });
-  after(async () => { try { await refreshTenantOpportunityScoresForAccounts({ accountIds: [id] }); } catch { console.warn('Account change assessment refresh remains pending', { accountId: id }); } });
-
-  revalidatePath('/wholesale');
-  revalidatePath(`/wholesale/${id}`);
-  revalidatePath('/visits/new');
-  revalidatePath('/alerts');
-  revalidatePath('/my-week');
-  redirect(`/wholesale/${id}?status=updated`);
-}
 
 const statusMessages: Record<string, string> = {
   invalid: 'Name and at least one Licensee ID are required.',
@@ -324,58 +61,15 @@ export default async function EditWholesaleAccountPage({
 
       <div className="workflow-shell"><div className="card admin-panel">
         <ActionForm action={updateWholesaleAccount}>
-          <input name="id" type="hidden" value={account.id} />
-          <div className="form-grid">
-            <label>
-              Licensee IDs
-              <textarea name="licenseeIds" defaultValue={getWholesaleLicenseeIdValues(account).join('\n')} required rows={3} />
-            </label>
-            <label>
-              <span id="name-label">Account name</span>
-              <input name="name" defaultValue={account.name} required aria-labelledby="name-label" aria-describedby="name-import-help" />
-              <small id="name-import-help" className="muted">Kept during future OHLQ imports.</small>
-            </label>
-            <label>
-              Phone
-              <input name="phone" defaultValue={account.phone ?? ''} />
-            </label>
-            <label>
-              Retail ID
-              <input name="agencyId" defaultValue={account.agencyId ?? ''} />
-            </label>
-            <label>
-              <span id="address-label">Address</span>
-              <input name="address" defaultValue={account.address ?? ''} aria-labelledby="address-label" aria-describedby="address-import-help" />
-              <small id="address-import-help" className="muted">{account.addressImportProtected ? 'Kept during OHLQ imports.' : 'Manual changes are kept during OHLQ imports.'}</small>
-            </label>
-            <label>
-              <span id="city-label">City</span>
-              <input name="city" defaultValue={account.city ?? ''} aria-labelledby="city-label" aria-describedby="city-import-help" />
-              <small id="city-import-help" className="muted">{account.cityImportProtected ? 'Kept during OHLQ imports.' : 'Manual changes are kept during OHLQ imports.'}</small>
-            </label>
-            <label>
-              County
-              <input name="county" defaultValue={account.county ?? ''} />
-            </label>
-            <StateField defaultValue={normalizeUsState(account.state) ?? 'OH'} />
-            <label>
-              <span id="zip-label">Zip</span>
-              <input name="zip" defaultValue={account.zip ?? ''} aria-labelledby="zip-label" aria-describedby="zip-import-help" />
-              <small id="zip-import-help" className="muted">{account.zipImportProtected ? 'Kept during OHLQ imports.' : 'Manual changes are kept during OHLQ imports.'}</small>
-            </label>
-            <label>
-              Ownership
-              <input name="ownership" defaultValue={account.ownership ?? ''} />
-            </label>
-            <label>
-              District ID
-              <input name="districtId" defaultValue={account.districtId ?? ''} />
-            </label>
-            <label>
-              Delivery day
-              <input name="deliveryDay" defaultValue={account.deliveryDay ?? ''} />
-            </label>
-          </div>
+          <WholesaleAccountEditFields account={{
+            id: account.id, name: account.name, licenseeIds: getWholesaleLicenseeIdValues(account),
+            address: account.address, city: account.city, state: account.state, zip: account.zip,
+            phone: account.phone, agencyId: account.agencyId, county: account.county,
+            ownership: account.ownership, districtId: account.districtId, deliveryDay: account.deliveryDay,
+            addressImportProtected: account.addressImportProtected,
+            cityImportProtected: account.cityImportProtected,
+            zipImportProtected: account.zipImportProtected,
+          }} />
           <SubmitButton type="submit">Save restaurant account</SubmitButton>
         </ActionForm>
       </div></div>

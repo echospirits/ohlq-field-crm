@@ -2666,6 +2666,28 @@ fieldset {
   text-align: right;
 }
 
+.research-failure-list { margin-top: 12px; }
+.research-failure-row { min-width: 0; padding: 16px 0; border-top: 1px solid var(--line); }
+.research-failure-summary, .research-failure-identity, .research-failure-status { display: grid; gap: 6px; min-width: 0; }
+.research-failure-summary { gap: 12px; }
+.research-failure-identity { overflow-wrap: anywhere; }
+.research-failure-actions, .research-edit-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.research-failure-actions button, .research-failure-actions a, .research-edit-actions button { min-height: 44px; }
+.research-failure-actions a { display: inline-flex; align-items: center; }
+.research-account-editor { margin-top: 16px; padding: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+.research-account-editor h3 { margin: 0 0 12px; overflow-wrap: anywhere; }
+.research-account-editor .form-grid { grid-template-columns: minmax(0, 1fr); }
+.research-account-editor .form-grid > *, .research-account-editor input, .research-account-editor textarea { min-width: 0; }
+.research-edit-actions { margin-top: 16px; }
+.research-edit-fields { min-width: 0; margin: 0; padding: 0; border: 0; }
+
+@media (min-width: 760px) {
+  .research-failure-summary { grid-template-columns: minmax(0, 1fr) auto; gap: 24px; }
+  .research-failure-status { text-align: right; align-content: start; }
+  .research-failure-actions { justify-content: flex-end; }
+  .research-account-editor .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
 .pagination-actions {
   display: flex;
   align-items: center;
