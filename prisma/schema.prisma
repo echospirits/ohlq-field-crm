@@ -372,6 +372,7 @@ enum OhlqReportRunStatus {
   RUNNING
   COMPLETED
   ERRORED
+  WARNING
 }
 
 enum WholesaleOrderStatus {

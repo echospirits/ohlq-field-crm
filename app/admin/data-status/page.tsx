@@ -3,6 +3,7 @@ export const runtime = 'nodejs';
 export const maxDuration = 300;
 
 import { SubmitButton } from '../../components/SubmitButton';
+import { ohlqStatusLabel } from '../../../lib/ohlqSourceFreshness';
 import { OhlqReportDataSource, OhlqReportRunStatus, UserRole } from '@prisma/client';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
@@ -44,7 +45,7 @@ type SourceCell = {
   errorMessage: string | null;
   lastSuccessfulAt: Date | null;
   source: OhlqReportDataSource;
-  status: 'Not Yet Run' | 'Completed' | 'Errored' | 'Running';
+  status: 'Not Yet Run' | 'Completed' | 'Errored' | 'Running' | 'Warning';
 };
 
 const numberFormatter = new Intl.NumberFormat('en-US');
@@ -69,17 +70,13 @@ const getReportDateRange = () => {
   });
 };
 
-const statusLabel = (status: OhlqReportRunStatus | undefined, count: number): SourceCell['status'] => {
-  if (status === OhlqReportRunStatus.ERRORED) return 'Errored';
-  if (status === OhlqReportRunStatus.RUNNING) return 'Running';
-  if (status === OhlqReportRunStatus.COMPLETED || count > 0) return 'Completed';
-  return 'Not Yet Run';
-};
+const statusLabel = ohlqStatusLabel;
 
 const statusClassName = (status: SourceCell['status']) => {
   if (status === 'Completed') return 'status-pill status-completed';
   if (status === 'Errored') return 'status-pill status-errored';
   if (status === 'Running') return 'status-pill status-running';
+  if (status === 'Warning') return 'status-pill status-running';
   return 'status-pill status-muted';
 };
 
@@ -327,7 +324,8 @@ export default async function DataStatusPage({
 
   const accountMasterMetrics = getAccountMasterMetrics(latestAccountMasterSuccess?.diagnostics);
   const brandMasterMetrics = getBrandMasterMetrics(latestBrandMasterSuccess?.diagnostics);
-  const latestAccountMasterStatus = statusLabel(latestAccountMasterRun?.status, 0);
+  const latestAccountMasterStatus = statusLabel(latestAccountMasterRun?.status, 0, 'ACCOUNT_MASTER', latestAccountMasterRun?.errorMessage);
+  const latestBrandMasterStatus = statusLabel(latestBrandMasterRun?.status, brandMasterRows, 'BRAND_MASTER', latestBrandMasterRun?.errorMessage);
   const legacyBrandMasterDate = latestBrandMasterRow?.updatedAt
     ? formatEasternDateInputValue(latestBrandMasterRow.updatedAt)
     : null;
@@ -385,7 +383,7 @@ export default async function DataStatusPage({
           errorMessage: statusRow?.errorMessage ?? null,
           lastSuccessfulAt: statusRow?.lastSuccessfulAt ?? legacyBrandMasterSuccess,
           source,
-          status: statusLabel(statusRow?.status, count),
+          status: statusLabel(statusRow?.status, count, source, statusRow?.errorMessage),
         } satisfies SourceCell;
       });
 
@@ -469,8 +467,8 @@ export default async function DataStatusPage({
             {latestAccountMasterSuccess ? (
               <span>Source date: {formatOhlqDate(latestAccountMasterSuccess.reportDate)}</span>
             ) : null}
-            {latestAccountMasterRun?.status === OhlqReportRunStatus.ERRORED && latestAccountMasterRun.errorMessage ? (
-              <span className="data-error-text">Latest attempt: {latestAccountMasterRun.errorMessage}</span>
+            {latestAccountMasterRun?.errorMessage ? (
+              <span className={latestAccountMasterStatus === 'Warning' ? 'muted' : 'data-error-text'}>{latestAccountMasterStatus === 'Warning' ? 'Warning' : 'Latest attempt'}: {latestAccountMasterRun.errorMessage}</span>
             ) : null}
           </div>
         </article>
@@ -480,8 +478,8 @@ export default async function DataStatusPage({
               <h2>Brand Master Lookup</h2>
               <p className="muted">OhlqBrandMasterItem</p>
             </div>
-            <span className={statusClassName(statusLabel(latestBrandMasterRun?.status, brandMasterRows))}>
-              {statusLabel(latestBrandMasterRun?.status, brandMasterRows)}
+            <span className={statusClassName(latestBrandMasterStatus)}>
+              {latestBrandMasterStatus}
             </span>
           </div>
           <p className="metric-value">{numberFormatter.format(brandMasterRows)}</p>
@@ -495,8 +493,8 @@ export default async function DataStatusPage({
             <span>Most recent refresh</span>
             <strong>{formatRunTime(latestBrandMasterSuccess?.lastSuccessfulAt ?? latestBrandMasterRow?.updatedAt)}</strong>
             {latestBrandMasterSuccess ? <span>Source date: {formatOhlqDate(latestBrandMasterSuccess.reportDate)}</span> : null}
-            {latestBrandMasterRun?.status === OhlqReportRunStatus.ERRORED && latestBrandMasterRun.errorMessage ? (
-              <span className="data-error-text">Latest attempt: {latestBrandMasterRun.errorMessage}</span>
+            {latestBrandMasterRun?.errorMessage ? (
+              <span className={latestBrandMasterStatus === 'Warning' ? 'muted' : 'data-error-text'}>{latestBrandMasterStatus === 'Warning' ? 'Warning' : 'Latest attempt'}: {latestBrandMasterRun.errorMessage}</span>
             ) : null}
           </div>
         </article>
@@ -536,6 +534,9 @@ export default async function DataStatusPage({
                   <td data-label={DAILY_DATA_SOURCE_CONFIGS.find((config) => config.source === cell.source)?.label} key={cell.source}>
                     <div className="data-status-cell">
                       <span className={statusClassName(cell.status)}>{cell.status}</span>
+                      {cell.status === 'Warning' ? (
+                        <><strong>Import skipped</strong><span className="muted">Previous data retained</span></>
+                      ) : <>
                       <strong>{numberFormatter.format(cell.count)} {cell.source === OhlqReportDataSource.ACCOUNT_MASTER ? 'active' : 'rows'}</strong>
                       {cell.source === OhlqReportDataSource.ACCOUNT_MASTER ? (
                         <span className="data-delta">
@@ -548,8 +549,9 @@ export default async function DataStatusPage({
                           {formatDelta(cell.delta, cell.count)}
                         </span>
                       )}
+                      </>}
                       <span className="muted">Success: {formatRunTime(cell.lastSuccessfulAt)}</span>
-                      {cell.errorMessage ? <details className="compact-details data-status-error"><summary>Latest error</summary><span className="data-error-text">{cell.errorMessage}</span></details> : null}
+                      {cell.errorMessage ? <details className="compact-details data-status-error"><summary>{cell.status === 'Warning' ? 'Source warning' : 'Latest error'}</summary><span className={cell.status === 'Warning' ? 'muted' : 'data-error-text'}>{cell.errorMessage}</span></details> : null}
                       {cell.diagnostics ? (
                         <details className="compact-details">
                           <summary>Import diagnostics</summary>

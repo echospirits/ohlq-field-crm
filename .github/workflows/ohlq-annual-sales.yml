@@ -296,7 +296,7 @@ jobs:
 
       - name: Discover organization products after core imports
         id: product_discovery
-        if: ${{ !cancelled() && steps.brand_master.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.brand_master.outcome == 'success' && steps.brand_master.outputs.imported != 'false' }}
         timeout-minutes: 10
         run: npx tsx scripts/discover-ohlq-products.ts --environment "$APP_ENV"
 
