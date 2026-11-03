@@ -4,7 +4,7 @@ Start with [implementation progress](engineering/implementation-progress.md) and
 
 ## Current release
 
-**0.5.0 is released to TST and production; development remains frozen.** The interface, navigation and browsing improvements preserve the 0.4.1 performance and 0.4.2 source-download fixes. Communications runtime integrations remain retired. See [release notes](releases/0.5.0.md), [checklist](releases/0.5.0-checklist.md), [release validation](releases/0.5.0-validation.md), [interface acceptance](releases/0.5.0-ui-validation.md) and [UNRELEASED](releases/UNRELEASED.md).
+**0.6.0 is the frozen Production Forecasting release candidate; production remains 0.5.2 until verified promotion.** The owner authorized delivery to main on November 3, 2026. See [release notes](releases/0.6.0.md), [candidate checklist](releases/0.6.0-checklist.md), [validation](releases/0.6.0-validation.md) and [UNRELEASED](releases/UNRELEASED.md). Unrelated TST test/tooling remains excluded. Historical [0.5.2](releases/0.5.2.md) and [0.5.0](releases/0.5.0.md) release records remain preserved; Communications runtime integrations remain retired. No new development cycle is opened.
 
 ## architecture
 

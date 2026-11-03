@@ -1,5 +1,10 @@
 // Market adapters normalize source facts before the statistical engine sees them.
-export const MODEL_VERSION = 'production-demand-v1.1';
+export const MODEL_VERSION = 'production-demand-v1.4';
+export const forecastHorizons = [30, 60, 90] as const;
+export type ForecastHorizon = typeof forecastHorizons[number];
+export function parseForecastHorizon(value: unknown): ForecastHorizon {
+  return value === 60 || value === '60' ? 60 : value === 90 || value === '90' ? 90 : 30;
+}
 export const classifications = ['BAILMENT', 'A3A_BAIL', 'A3A_DIST', 'OTHER_OUTBOUND'] as const;
 export type Classification = typeof classifications[number];
 export const includedInDemand = (classification: Classification) => classification !== 'A3A_DIST';
@@ -29,6 +34,7 @@ export type LocationForecast = {
   signals: Signals; backtests: BacktestScore[]; reasons: string[];
 };
 export type ProductForecast = {
+  horizonDays?: ForecastHorizon;
   product: ForecastProduct; start: string; end: string; dataThrough: string | null;
   point: number | null; lower: number | null; upper: number | null; target: number | null;
   confidence: Confidence; safetyFactor: number; locations: LocationForecast[];
@@ -37,6 +43,8 @@ export type ProductForecast = {
   guidance: GuidanceObservation[]; buckets: ForecastBucket[];
   history: { start: string; end: string; actual: number | null; priorYear: number | null }[];
 };
+/** The 30-day root preserves existing snapshots and scalar database columns. */
+export type StoredProductForecast = ProductForecast & { horizons?: Partial<Record<ForecastHorizon, ProductForecast>> };
 export const forecastRules = {
   horizonDays: 30, maxHistoryDays: 1096, minimumDays: 14, maxStaleDays: 7,
   backtestFolds: 8, backtestStepDays: 30, minimumBacktestDays: 60,

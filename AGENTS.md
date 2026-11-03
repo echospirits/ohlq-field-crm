@@ -1,6 +1,8 @@
 # Repository Agent Instructions
 
-## Current release: 0.5.2; development frozen
+## 0.6.0 release candidate frozen; production baseline 0.5.2
+
+The owner authorized promoting the completed 30/60/90-day Production Forecasting changes and the approved exact invoice exclusion to main on November 3, 2026. Version **0.6.0** is the frozen release candidate; production remains 0.5.2 until deployment and database-target verification are recorded. See [release notes](docs/releases/0.6.0.md), [candidate checklist](docs/releases/0.6.0-checklist.md) and [validation](docs/releases/0.6.0-validation.md). Promote only the requested forecasting paths; unrelated TST test/developer-tooling maintenance remains excluded. No new development cycle is opened. Earlier release/freeze statements below describe the released baseline.
 
 The Account Research inline-edit hotfix is released as **0.5.2** to TST and main; see [hotfix notes](docs/releases/0.5.2.md) and [validation](docs/releases/0.5.2-validation.md). The account-address location-link hotfix is released as **0.5.1**; see [its notes](docs/releases/0.5.1.md). The authorized interface, navigation and application-wide UI/UX and performance improvements are released as **0.5.0** to TST and main. Development remains frozen; no new development cycle is opened. See [release notes](docs/releases/0.5.0.md), [checklist](docs/releases/0.5.0-checklist.md), [validation](docs/releases/0.5.0-validation.md) and [UNRELEASED](docs/releases/UNRELEASED.md). Historical candidate/release refs remain preserved. No unrelated features, dependency upgrades or migrations were included in 0.5.2.
 

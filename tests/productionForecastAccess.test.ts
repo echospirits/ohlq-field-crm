@@ -47,8 +47,9 @@ test('mobile and desktop product links carry selected organization and filters i
   const product = { id: 'p', name: 'Rum', code: 'RUM', market: 'OH' };
   const row = summaryFor(forecastProduct(product, [], [], '2026-10-27'));
   const html = renderToStaticMarkup(createElement(ForecastTable, { rows: [row], initial: { q: 'Rum', confidence: 'Low' }, organizationId: echo.id }));
-  assert.equal((html.match(/organization=org_echo_spirits/g) ?? []).length, 2);
-  assert.equal((html.match(/q=Rum/g) ?? []).length, 2);
+  const productLinks = html.match(/href="\/analytics\/production\/p\?[^\"]+"/g) ?? [];
+  assert.equal(productLinks.length, 2);
+  for (const link of productLinks) { assert.match(link, /organization=org_echo_spirits/); assert.match(link, /q=Rum/); assert.match(link, /horizon=30/); }
 });
 
 function importAction(user: ReturnType<typeof actor>) {
