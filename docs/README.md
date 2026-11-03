@@ -4,7 +4,7 @@ Start with [implementation progress](engineering/implementation-progress.md) and
 
 ## Current release
 
-**0.6.0 is the frozen Production Forecasting release candidate; production remains 0.5.2 until verified promotion.** The owner authorized delivery to main on November 3, 2026. See [release notes](releases/0.6.0.md), [candidate checklist](releases/0.6.0-checklist.md), [validation](releases/0.6.0-validation.md) and [UNRELEASED](releases/UNRELEASED.md). Unrelated TST test/tooling remains excluded. Historical [0.5.2](releases/0.5.2.md) and [0.5.0](releases/0.5.0.md) release records remain preserved; Communications runtime integrations remain retired. No new development cycle is opened.
+**0.6.0 is released to TST and production; development remains frozen.** The cumulative forecasting horizons, historical evidence and approved exact source-line exclusion are verified in production. See [release notes](releases/0.6.0.md), [completed checklist](releases/0.6.0-checklist.md), [validation](releases/0.6.0-validation.md) and [UNRELEASED](releases/UNRELEASED.md). Unrelated TST test/tooling remains excluded from production. Historical [0.5.2](releases/0.5.2.md) and [0.5.0](releases/0.5.0.md) release records remain preserved; Communications runtime integrations remain retired. No new development cycle is opened.
 
 ## architecture
 

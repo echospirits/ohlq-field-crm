@@ -1,6 +1,6 @@
 # Production Forecasting source-line exclusion
 
-Owner-authorized correction, November 3, 2026. The original TST-only delivery below is retained as history. The owner subsequently authorized promoting the complete forecasting change to main as **0.6.0**. Production activation is a separate verified step: match the exact retained source line, apply only the approved organization-level rule, preserve other settings and historical records, then refresh and verify all horizons.
+Owner-authorized correction, November 3, 2026. The original TST-only delivery below is retained as history. The complete forecasting change is now released to main as **0.6.0**, and the exact approved exclusion is independently verified and active in production. Original source records, prior predictions and unrelated organization settings remain preserved.
 
 ## Diagnosis
 
@@ -35,4 +35,8 @@ Other direct groups contain real demand and remain relevant. Removing this parti
 
 ## Production release activation
 
-Pending final release evidence. Before applying the rule, verify the production environment/database host and the exact source identity, product, date, location and quantity. Do not copy all TST organization settings or remove original invoice data. Record the production run, retained-prediction/source/settings comparisons, all-horizon results, replay and correct environment/target health after activation. Final application/CI/deployment receipts belong in [0.6.0 validation](0.6.0-validation.md).
+- Exact application candidate `c5dcf07b8cc775488a3be9b69766e748bad3fb6f` is deployed READY and tagged `v0.6.0`. Public health identifies connected `production / ohlq-field-crm`; production identity and the exact native source line were verified before activation.
+- Added only the approved rule: one entry, one native match, 17 proven derived planning scopes omitted. Independent source inputs and all unrelated organization settings were unchanged. No agency-wide exclusion or wholesale TST-settings copy was made.
+- Refreshed model v1.4 into production run `cmw0vk5x60001upv0yb0pc5q7` in 14.14 seconds: 17 products, 85 planning / 102 covered actual series, all 17 prior expected scopes retained for actual settlement. Current grouping absence, cumulative totals, cross-tenant rejection before private queries and same-run replay all passed.
+- Full digest comparisons preserved all **343** older prediction documents/scalar forecasts and complete source contents: 26 imports, 6,070 demand observations and 420 guidance observations. The original invoice is retained. All production product confidence ratings remain Low.
+- Live read-only production desktop/mobile smoke verified persisted horizons, search/detail/back context, five-location detail and no horizontal overflow. See [0.6.0 validation](0.6.0-validation.md) for CI, deployment, production totals and tag receipts. Operational evidence is ignored `output/release-060-production-activation.json` in the production release worktree.
