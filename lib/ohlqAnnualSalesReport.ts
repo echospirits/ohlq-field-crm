@@ -6,6 +6,7 @@ import Papa from 'papaparse';
 import { EASTERN_TIME_ZONE, getZonedDateTimeParts } from './dateTime';
 import { getOhlqReportStorageDirectories } from './ohlqReportStorage';
 import { waitForPartnerDcTable } from './ohlqPartnerDcReady';
+import { parseItemCoverageFootnotes, type CurrentDemandDownload, type CurrentDemandDownloadProduct } from './productionForecasting/operationalSignals/demand';
 import {
   chromium as playwrightChromium,
   type Browser,
@@ -1407,4 +1408,57 @@ export async function downloadOhlqSharedSalesReports(options: OhlqAnnualSalesDow
   );
   if (!annualSalesSummary || !annualSalesSummaryByWholesale) throw new Error('Unable to download both shared OHLQ sales reports.');
   return { annualSalesSummary, annualSalesSummaryByWholesale };
+}
+
+/** Read the same Item Coverage JSON used by the signed-in OPS product table.
+ * Reuses the existing OPS authentication/session. No report HTML or raw errors
+ * are logged, and a failed product never suppresses subsequent products. */
+export async function downloadOhlqCurrentDemand(options: OhlqAnnualSalesDownloadOptions & { itemCodes: string[] }): Promise<CurrentDemandDownload> {
+  const itemCodes = [...new Set(options.itemCodes.map(code => code.trim().toUpperCase()))];
+  if (itemCodes.length > 1000 || itemCodes.some(code => !/^[A-Z0-9][A-Z0-9-]{0,63}$/.test(code))) throw new Error('Current demand requires valid configured item codes.');
+  if (!itemCodes.length) return { products: [] };
+  const products: CurrentDemandDownloadProduct[] = [];
+  let session: Awaited<ReturnType<typeof openBrowserPage>> | null = null;
+  let authenticated = false;
+  try {
+    session = await openBrowserPage(options);
+    await signInToOhlqPartner(session.page, options.partnerCredentials);
+    authenticated = true;
+    let sourceMetadata = parseItemCoverageFootnotes([]);
+    try {
+      await gotoWithRetry(session.page, 'https://ops.ohlq.com/products', { waitUntil: 'domcontentloaded', timeout: 30000 });
+      const footnotes = await session.page.locator('p.footnote').allTextContents();
+      sourceMetadata = parseItemCoverageFootnotes(footnotes, new Date());
+    } catch { /* Publication metadata is optional; missing never becomes midnight. */ }
+    for (const itemCode of itemCodes) {
+      let result: CurrentDemandDownloadProduct = { itemCode, status: 'failed', observedAt: new Date().toISOString(), reason: 'upstream-unavailable' };
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          const response = await session.context.request.get(`https://ops.ohlq.com/product/itemCoverage/${encodeURIComponent(itemCode)}`, { timeout: 20000, maxRedirects: 0 });
+          try {
+            if ([301, 302, 303, 307, 308, 401, 403].includes(response.status())) {
+              result = { itemCode, status: 'failed', observedAt: new Date().toISOString(), reason: 'upstream-authentication' };
+              break;
+            }
+            if (!response.ok()) continue;
+            if (!/application\/json/i.test(response.headers()['content-type'] ?? '')) {
+              result = { itemCode, status: 'failed', observedAt: new Date().toISOString(), reason: 'invalid-response' };
+              continue;
+            }
+            const payload: unknown = await response.json();
+            result = { itemCode, status: 'ok', observedAt: new Date().toISOString(), payload, ...sourceMetadata };
+            break;
+          } finally { await response.dispose(); }
+        } catch {
+          result = { itemCode, status: 'failed', observedAt: new Date().toISOString(), reason: 'upstream-unavailable' };
+        }
+      }
+      products.push(result);
+    }
+  } catch {
+    for (const itemCode of itemCodes) if (!products.some(p => p.itemCode === itemCode)) products.push({ itemCode, status: 'failed', observedAt: new Date().toISOString(), reason: authenticated || !session ? 'upstream-unavailable' : 'upstream-authentication' });
+  } finally {
+    if (session) await closeBrowserPage(session.context, session.browser);
+  }
+  return { products };
 }

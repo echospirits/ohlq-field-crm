@@ -1,0 +1,107 @@
+import os from 'node:os';
+import path from 'node:path';
+import type { PrismaClient } from '@prisma/client';
+import { prisma } from '../../prisma';
+import { ECHO_ORGANIZATION_ID } from '../../echoAccess';
+import { formatDateInputValue } from '../../dateTime';
+import { getOrganizationOhlqCredentials } from '../../ohlqTenantCredentials';
+import { downloadOhlqCurrentDemand } from '../../ohlqAnnualSalesReport';
+import { currentDemandProducts, ingestCurrentDemand } from './demandIngestion';
+import { getOrganizationOperationalCredentials, openDockConfiguration } from './credentials';
+import { OpenDockReadClient } from './opendock';
+import { deliveryAlreadyObservedToday, recordDeliveryAvailability } from './persistence';
+import type { DeliveryAvailabilityResult, OpenDockLocationConfig } from './types';
+
+const defaults = {
+  deliveryCredentials: getOrganizationOperationalCredentials,
+  deliveryClient: (credentials: { email: string; password: string }): Pick<OpenDockReadClient, 'availability'> => new OpenDockReadClient(credentials),
+  deliveryObserved: deliveryAlreadyObservedToday,
+  recordDelivery: recordDeliveryAvailability,
+  products: currentDemandProducts,
+  opsCredentials: getOrganizationOhlqCredentials,
+  downloadDemand: downloadOhlqCurrentDemand,
+  ingestDemand: ingestCurrentDemand,
+};
+export type OperationalSignalServices = typeof defaults;
+function unavailable(location: OpenDockLocationConfig, at: Date, status: 'AUTH_FAILED' | 'UNAVAILABLE' | 'NOT_CONFIGURED', diagnosticCode: string): DeliveryAvailabilityResult {
+  return { market: location.market, locationCode: location.locationCode, locationName: location.locationName, warehouseId: location.warehouseId, loadTypeId: location.loadTypeId, timezone: location.timezone, source: 'OPENDOCK', observedAt: at.toISOString(), status, earliestAvailableAt: null, calendarDays: null, businessDays: null, businessDayMethod: null, checkedThrough: null, diagnosticCode };
+}
+
+/** Existing morning runner only. Signals and warehouses fail independently. */
+export async function syncOperationalSignals({ db = prisma, services: overrides = {}, logger = console, now = new Date() }: {
+  db?: PrismaClient; services?: Partial<OperationalSignalServices>; logger?: Pick<Console, 'log' | 'error'>; now?: Date;
+} = {}) {
+  const services = { ...defaults, ...overrides };
+  const organizations = await db.organization.findMany({
+    where: { id: ECHO_ORGANIZATION_ID, active: true, accountStatus: { notIn: ['SUSPENDED', 'CANCELLED'] }, enabledStates: { has: 'OH' }, features: { some: { featureKey: 'PRODUCTION_FORECASTING', enabled: true } } },
+    select: { id: true, settings: true, timezone: true }, orderBy: { id: 'asc' },
+  });
+  let deliveryObserved = 0, demandObserved = 0, reused = 0, skipped = 0, failed = 0, unavailableDemand = 0;
+  for (const organization of organizations) {
+    if (organization.id !== ECHO_ORGANIZATION_ID) continue;
+    const configuration = openDockConfiguration(organization.settings);
+    if (!configuration.configured) {
+      skipped++;
+      logger.log(JSON.stringify({ organizationId: organization.id, source: 'OPENDOCK', status: 'NOT_CONFIGURED' }));
+    } else {
+      let credentials: { email: string; password: string } | null = null, credentialFailure = false;
+      try { credentials = await services.deliveryCredentials(organization.id, 'OPENDOCK', db); } catch { credentialFailure = true; }
+      let client: Pick<OpenDockReadClient, 'availability'> | null = null;
+      if (credentials) {
+        try { client = services.deliveryClient(credentials); } catch { credentialFailure = true; }
+      }
+      for (const location of configuration.locations) {
+        try {
+          if (await services.deliveryObserved(organization.id, location, now, db)) { reused++; continue; }
+          const result = client
+            ? await client.availability(location, now.toISOString())
+            : unavailable(location, now, credentialFailure ? 'AUTH_FAILED' : 'NOT_CONFIGURED', credentialFailure ? 'CREDENTIALS_UNAVAILABLE' : 'CREDENTIALS_NOT_CONFIGURED');
+          await services.recordDelivery(organization.id, result, db);
+          if (result.status === 'SUCCESS' || result.status === 'NO_AVAILABILITY') deliveryObserved++;
+          else if (result.status === 'NOT_CONFIGURED') skipped++;
+          else failed++;
+          const log = result.status === 'SUCCESS' || result.status === 'NO_AVAILABILITY' || result.status === 'NOT_CONFIGURED' ? logger.log : logger.error;
+          log(JSON.stringify({ organizationId: organization.id, source: 'OPENDOCK', locationCode: location.locationCode, status: result.status }));
+        } catch {
+          failed++;
+          // A malformed provider response must not stop the other warehouse.
+          try { await services.recordDelivery(organization.id, unavailable(location, now, 'UNAVAILABLE', 'INGESTION_FAILED'), db); } catch { /* Retain the last good observation even if status storage is unavailable. */ }
+          logger.error(JSON.stringify({ organizationId: organization.id, source: 'OPENDOCK', locationCode: location.locationCode, status: 'UNAVAILABLE', reason: 'INGESTION_FAILED' }));
+        }
+      }
+    }
+
+    // OPS case demand is independent of delivery setup, source import success and
+    // whether a tenant's OPS credential relation was present in another query.
+    try {
+      const businessDate = formatDateInputValue(now, organization.timezone);
+      const products = await services.products(organization.id, db);
+      const existing = products.length ? await db.currentDemandObservation.findMany({ where: { organizationId: organization.id, productId: { in: products.map(product => product.id) }, businessDate: new Date(businessDate) }, select: { productId: true } }) : [];
+      const completed = new Set(existing.map(row => row.productId));
+      const pending = products.filter(product => !completed.has(product.id));
+      reused += products.length - pending.length;
+      if (!pending.length) continue;
+      const credentials = await services.opsCredentials(organization.id, db).catch(() => null);
+      if (!credentials) {
+        skipped += pending.length;
+        logger.log(JSON.stringify({ organizationId: organization.id, source: 'OPS_OHLQ_ITEM_COVERAGE', status: 'NOT_CONFIGURED', products: pending.length }));
+        continue;
+      }
+      const download = await services.downloadDemand({
+        headless: true, partnerCredentials: credentials, itemCodes: pending.map(product => product.code),
+        debugDir: path.join(os.tmpdir(), 'ohlq-private', organization.id, 'current-demand', 'playwright'),
+        downloadDir: path.join(os.tmpdir(), 'ohlq-private', organization.id, 'current-demand', 'downloads'),
+        logger: { log: () => undefined, error: () => undefined }, useServerlessChromium: process.env.VERCEL === '1',
+      });
+      const result = await services.ingestDemand({ organizationId: organization.id, businessDate, download, db, now });
+      demandObserved += result.available;
+      unavailableDemand += result.unavailable;
+      failed += result.failed;
+      logger.log(JSON.stringify({ organizationId: organization.id, source: 'OPS_OHLQ_ITEM_COVERAGE', status: result.failed ? 'PARTIAL_FAILURE' : result.unavailable ? 'DATA_UNAVAILABLE' : 'COMPLETE', available: result.available, unavailable: result.unavailable, failed: result.failed, reused: result.reused }));
+    } catch {
+      failed++;
+      logger.error(JSON.stringify({ organizationId: organization.id, source: 'OPS_OHLQ_ITEM_COVERAGE', status: 'UNAVAILABLE', reason: 'INGESTION_FAILED' }));
+    }
+  }
+  return { configuredOrganizations: organizations.length, deliveryObserved, demandObserved, reused, skipped, failed, unavailableDemand };
+}

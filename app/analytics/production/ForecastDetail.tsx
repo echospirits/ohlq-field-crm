@@ -2,7 +2,8 @@ import { parseForecastHorizon, shift, type ProductForecast } from '../../../lib/
 import { cases, trend } from '../../../lib/productionForecasting/presentation';
 import { PageHeader, SectionHeading } from '../../components/PageChrome';
 import { ForecastConfidenceHelp } from './ForecastConfidenceHelp';
-export function ForecastDetail({ forecast: f }: { forecast: ProductForecast }) {
+import type { ReactNode } from 'react';
+export function ForecastDetail({ forecast: f, operationalContext }: { forecast: ProductForecast; operationalContext?: ReactNode }) {
   const horizon = parseForecastHorizon(f.horizonDays);
   const maximum = Math.max(1, ...f.history.flatMap(h => [h.actual ?? 0, h.priorYear ?? 0]), horizon === 30 ? f.point ?? 0 : 0);
   return <>
@@ -10,6 +11,7 @@ export function ForecastDetail({ forecast: f }: { forecast: ProductForecast }) {
     <section className="pf-summary card" aria-label={`${horizon}-day production planning summary`}><div><span>{horizon}-day demand forecast</span><strong>{cases(f.point)}{f.point === null ? '' : ' cases'}</strong><small>Range {cases(f.lower)}–{cases(f.upper)}</small></div><div><span>Suggested planning target</span><strong>{cases(f.target)}{f.target === null ? '' : ' cases'}</strong><small>{Math.round(f.safetyFactor * 100)}% uncertainty margin</small></div><div><span>Forecast confidence</span><strong>{f.confidence}</strong><small>Prior-year {horizon} days: {cases(f.priorYear)} cases</small></div></section>
     <p className="muted">Expected outbound demand and a planning target, before subtracting finished inventory. Location ranges are summed conservatively; this is not a calibrated product-level probability interval.</p>
     {f.alerts.map(a => <p className="pf-alert" key={a}>{a}</p>)}
+    {operationalContext}
     <section className="card"><SectionHeading title="Why this forecast?" /><ul>{f.reasons.map(r => <li key={r}>{r}</li>)}</ul><p>Trailing 90-day YoY: {trend(f.yoy)} · recent 30-day trend: {trend(f.recentTrend)}.</p><ForecastConfidenceHelp /></section>
     <section className="card"><SectionHeading title={`Next ${horizon} days`} description={horizon === 30 ? 'Weekly demand buckets sum to the product forecast.' : '30-day segments sum to the selected forecast; these are consecutive periods, not cumulative totals.'} />{f.buckets.length ? <div className={`pf-buckets${horizon !== 30 ? ' pf-buckets-long' : ''}`}>{f.buckets.map(b => <div key={b.start}><strong>{b.label}</strong><span>{b.start.slice(5)} – {b.end.slice(5)}</span><b>{cases(b.cases)} cases</b></div>)}</div> : <p>Forecast breakdown unavailable until this horizon has a saved forecast with usable source history.</p>}</section>
     <section className="card"><SectionHeading title="Fulfillment locations" description={`Expected cases over the next ${horizon} days by location. A-3a Dist is excluded.`} />{!f.locations.length ? <p>No verified outbound locations for this product.</p> : <div className="pf-locations">{f.locations.map(l => {

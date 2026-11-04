@@ -542,6 +542,11 @@ model Organization {
   productionGuidance      ProductionGuidanceObservation[]
   productionForecastRuns  ProductionForecastRun[]
   productionForecasts     ProductionForecastSnapshot[]
+  operationalCredentials OrganizationOperationalCredential[]
+  deliveryAvailability   DeliveryAvailabilityObservation[]
+  deliveryChecks         DeliveryAvailabilityCheck[]
+  currentDemand          CurrentDemandObservation[]
+  currentDemandChecks    CurrentDemandCheck[]
   features                OrganizationFeature[]
   accountOverlays         OrganizationAccountOverlay[]
   accountTargetingHistory AccountTargetingHistory[]
@@ -701,6 +706,8 @@ model OrganizationProduct {
   updatedAt         DateTime                  @updatedAt
   organization      Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   productionDemand ProductionDemandObservation[]
+  currentDemand CurrentDemandObservation[]
+  currentDemandChecks CurrentDemandCheck[]
   productionGuidance ProductionGuidanceObservation[]
   productionForecasts ProductionForecastSnapshot[]
 
@@ -3160,4 +3167,126 @@ model ProductionForecastSnapshot {
   @@unique([organizationId, runId, productId])
   @@index([organizationId, productId, horizonStart])
   @@index([organizationId, horizonEnd, actualEvaluatedAt])
+}
+
+
+// Provider secrets are separate from source observations and ephemeral tokens.
+model OrganizationOperationalCredential {
+  id                String       @id @default(cuid())
+  organizationId    String
+  provider          String
+  usernameEncrypted String
+  passwordEncrypted String
+  usernameHint      String
+  configuredAt      DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  updatedByUserId   String?
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, provider], map: "operational_credential_tenant_provider_key")
+}
+
+// Successful daily observations are immutable, including qualified empty ranges.
+model DeliveryAvailabilityObservation {
+  id                    String       @id @default(cuid())
+  organizationId        String
+  market                String
+  locationCode          String
+  locationName          String
+  warehouseId           String
+  loadTypeId            String
+  timezone              String
+  source                String
+  observedOn            DateTime     @db.Date
+  observedAt            DateTime
+  status                String
+  earliestAvailableAt   DateTime?
+  earliestAvailableDate DateTime?    @db.Date
+  rawEarliestAvailableAt String?
+  calendarDays          Int?
+  businessDays          Int?
+  businessDayMethod     String?
+  checkedThrough        DateTime
+  organization          Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  checks                DeliveryAvailabilityCheck[]
+
+  @@unique([organizationId, market, locationCode, source, observedOn], map: "delivery_observation_tenant_location_day_key")
+  @@unique([organizationId, id], map: "delivery_observation_tenant_id_key")
+  @@index([organizationId, market, locationCode, source, observedAt], map: "delivery_observation_history_idx")
+}
+
+// Latest attempt status can change without replacing a successful daily fact.
+model DeliveryAvailabilityCheck {
+  id             String       @id @default(cuid())
+  organizationId String
+  market         String
+  locationCode   String
+  locationName   String
+  warehouseId    String
+  loadTypeId     String
+  timezone       String
+  source         String
+  observedOn     DateTime     @db.Date
+  attemptedAt    DateTime
+  status         String
+  diagnosticCode String?
+  checkedThrough DateTime?
+  attemptCount   Int          @default(1)
+  observationId  String?
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  observation    DeliveryAvailabilityObservation? @relation(fields: [organizationId, observationId], references: [organizationId, id], onDelete: Restrict)
+
+  @@unique([organizationId, market, locationCode, source, observedOn], map: "delivery_check_tenant_location_day_key")
+  @@index([organizationId, market, locationCode, source, attemptedAt], map: "delivery_check_history_idx")
+}
+
+
+// Current replenishment need is independent of historical outbound forecasting.
+model CurrentDemandObservation {
+  id                 String       @id @default(cuid())
+  organizationId     String
+  productId          String
+  market             String
+  itemCode           String
+  businessDate       DateTime     @db.Date
+  sourceObservedAt   DateTime     @db.Timestamptz(3)
+  sourceUpdatedAt    DateTime?    @db.Timestamptz(3)
+  source             String       @default("OPS_OHLQ_ITEM_COVERAGE")
+  calculationVersion String       @default("agency-min-v1")
+  locationCode       String       @default("UNASSIGNED")
+  grossCases         Decimal      @db.Decimal(14, 4)
+  inboundCases       Decimal?     @db.Decimal(14, 4)
+  demandCases        Decimal?     @db.Decimal(14, 4)
+  cases              Decimal?     @db.Decimal(14, 4)
+  bottlesPerCase     Int
+  agencyCount        Int
+  summary            Json         @default("{}")
+  evidence           Json
+  createdAt          DateTime     @default(now())
+  organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product            OrganizationProduct @relation(fields: [organizationId, productId], references: [organizationId, id], onDelete: Restrict)
+  checks             CurrentDemandCheck[]
+
+  @@unique([organizationId, productId, businessDate], map: "current_demand_tenant_product_day_key")
+  @@unique([organizationId, id], map: "current_demand_tenant_id_key")
+  @@index([organizationId, market, productId, sourceObservedAt], map: "current_demand_history_idx")
+}
+
+model CurrentDemandCheck {
+  id             String       @id @default(cuid())
+  organizationId String
+  productId      String
+  businessDate   DateTime     @db.Date
+  source         String       @default("OPS_OHLQ_ITEM_COVERAGE")
+  checkedAt      DateTime     @db.Timestamptz(3)
+  status         String
+  reason         String?
+  evidence       Json?
+  observationId  String?
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product        OrganizationProduct @relation(fields: [organizationId, productId], references: [organizationId, id], onDelete: Restrict)
+  observation    CurrentDemandObservation? @relation(fields: [organizationId, observationId], references: [organizationId, id], onDelete: Restrict)
+
+  @@unique([organizationId, productId, businessDate], map: "current_demand_check_tenant_product_day_key")
+  @@index([organizationId, productId, checkedAt], map: "current_demand_check_history_idx")
 }
