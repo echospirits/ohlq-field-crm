@@ -8,6 +8,8 @@ When no qualifying Visit exists, the automation reads `Organization.settings.def
 
 TST configuration receipt, November 4, 2026: after the owner supplied and authorized James Clifford (`james@echospirits.com`), an active `USER` record was created in `org_echo_spirits` with stable ID `usr_james_clifford_tst_20261104`. Echo's `settings.defaultReactivationAssigneeUserId` is set to that ID in verified TST only. The organization/member/email relationship was read back in the configuration transaction. No password, invitation or email was created or sent. This ID is a TST record, not a portable production identifier; production promotion must resolve its own verified member ID.
 
+Production configuration receipt for owner-approved release 0.7.1, November 4, 2026: verified existing active Echo USER James Clifford (`james@echospirits.com`) has production ID `cmon2m97d0006ky04ct58wewm`. Echo's production fallback now uses that ID. The existing settings advisory transaction lock, same-organization active-member/admin checks, one-key JSON merge and readback were used; organization audit `audit_qol_reactivation_prod_20261104` records the prior unset value. No production user, password, invitation, task or historical follow-up was changed. The CLI below remains intentionally TST-only; see [release validation](../releases/0.7.1-validation.md).
+
 This uses the existing JSON settings column: **no schema migration or backfill is required**. The guarded TST operator command previews the organization/member and only writes with `--apply`:
 
 ```powershell

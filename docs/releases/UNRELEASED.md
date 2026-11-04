@@ -1,15 +1,15 @@
 # Unreleased
 
-Owner-approved patch **0.7.1** is frozen for selective production promotion of the focused quality-of-life fixes. No new development cycle is opened. See [0.7.1 notes](0.7.1.md), [checklist](0.7.1-checklist.md) and [validation](0.7.1-validation.md). Stable 0.7.0 release records and tag remain preserved.
+No unreleased feature work remains after the owner-approved **0.7.1** QOL production release. Development remains frozen; no new development cycle is opened.
 
-- Production application: `5023578de6bfda370ea547af7b1cb5494bbdfe70`.
-- Stable TST application: `214e0fe0cfb7d3184416408ea400ab0a023f7951`.
-- Both deployments are READY; health verifies `production / ohlq-field-crm / connected` and `test / neon-neat-tst / connected` respectively.
-- Historical [0.6.0 release notes](0.6.0.md) and [Operational Signals production promotion](production-operational-signals-promotion.md) remain preserved.
+- Production application: `066b66ead25095c138ed2f5bd5b739e64ea55ec3`.
+- [0.7.1 release notes](0.7.1.md), [checklist](0.7.1-checklist.md) and [validation](0.7.1-validation.md) record the exact CI, source, configuration, deployment and authenticated acceptance evidence.
+- Historical [0.7.0 release records](0.7.0.md) and earlier tags/records remain preserved. Unrelated TST maintenance was excluded from production.
+- Existing organization JSON fallback was configured for production James; no schema/migration, dependency, hosted environment, entitlement or production user/password/invitation change.
 
 ## Changes
 
-Quality-of-life fixes approved from TST: optional post-Visit Worklist completion, removed Opportunity interruption, Ohio Agency identifier placement, aligned overdue lists, organization inventory on Agency Overview and latest-Visit/configured-fallback Reactivation ownership. Complete technical/configuration/recovery manifest: [0.7.1 release notes](0.7.1.md). No schema migration, dependency or entitlement change; production fallback uses James's own verified production user ID.
+None.
 
 ## Entry template
 
