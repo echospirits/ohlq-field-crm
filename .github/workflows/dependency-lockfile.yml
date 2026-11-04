@@ -27,6 +27,10 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+      - name: Report Node and npm versions
+        run: |
+          node --version
+          npm --version
       # Match the data-load runner and catch incomplete lockfiles before the
       # next scheduled import. This check needs no application credentials.
       - run: npm ci --ignore-scripts --no-audit --no-fund

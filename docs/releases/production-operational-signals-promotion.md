@@ -8,6 +8,7 @@ Owner request: push all changes from this chat to main. This explicitly supersed
 - Tested TST source: `ef41fe8fb5810dd52cadfecab09dd4d8d995a829`; only chat changes from `983a5fd8`, `f531efed`, `13ed8a25`, `ef41fe8f` are promoted.
 - Runtime/Prisma/workflow/dependency-lock foundations at sourcebase `5c391f0a` and productionbase are identical. Preserve main's existing tests, package scripts, TypeScript configuration and historical release records; unrelated TST test pruning/tooling stays excluded.
 - One production adaptation removes TST-specific timing from settings help; actual schedules remain unchanged (production6:47 AM Eastern, TST7:27 AM Eastern).
+- CI preparation adds only a read-only Node/npm version-report step to the existing dependency-lockfile workflow. Its existing pull-request path filter then runs the required check on the exact candidate and records explicit version evidence; workflow permissions, dependency installation and application behavior are unchanged. This avoids relying on an unavailable desktop/browser dispatch.
 - Forecast engine/model/service and package/lock versions remain unchanged. Separate operational observations cannot change forecast values.
 
 ## Validation gates
