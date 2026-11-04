@@ -1,6 +1,10 @@
 # Repository Agent Instructions
 
-## Current release: 0.6.0; development frozen
+## Authorized stable release: 0.7.0 interface upgrade
+
+On November 4, 2026, the owner approved the redesigned TST interface and explicitly requested promotion to main. Package and validate stable **0.7.0** through the selective production release workflow. Promote the approved UI changes from TST application commit `a9d850380e90caceebc3f3376d4e294b293216a3` onto verified production base `4f39e5b89703373c6730d2d590e3262da93c6648`; preserve main's existing forecasting/Operational Signals runtime, tests, scripts, TypeScript configuration and CI workflow. Unrelated TST maintenance stays excluded. See [release notes](docs/releases/0.7.0.md), [checklist](docs/releases/0.7.0-checklist.md), [validation](docs/releases/0.7.0-validation.md) and [UNRELEASED](docs/releases/UNRELEASED.md). Run exact-candidate gates and verify production READY/health before tagging. No new development cycle, schema/migration, dependency upgrade, provider/credential change or hosted configuration change is authorized. Development remains frozen outside this bounded release task; historical release refs remain preserved.
+
+## Released baseline: 0.6.0
 
 Owner-authorized exception completed: this chat's Production Forecasting Operational Signals changes were selectively promoted from tested TST `ef41fe8fb5810dd52cadfecab09dd4d8d995a829` to main application `c94f5c3ef6f35e74f46648445571ba970136ecb0`. Version `0.6.0` is retained; no new development cycle or release tag was created, the statistical forecast model is unchanged, and unrelated TST maintenance remains excluded. Production OpenDock activation and authenticated desktop/tablet/mobile acceptance are verified. See `docs/releases/production-operational-signals-promotion.md` for production validation and the initial background demand-ingestion status. Historical release refs remain unchanged.
 

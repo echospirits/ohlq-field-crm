@@ -45,31 +45,22 @@ export default async function TagDetailPage({
     <>
       <PageHeader
         actions={<Link className="btn secondary" href="/tags">Back to tags</Link>}
-        description={tag.description || 'Accounts currently carrying this tag.'}
+        description={tag.description || undefined}
         eyebrow="Account organization"
         title={<><TagBadges tags={[tag]} /> accounts</>}
       />
 
-      <div className="grid account-summary-grid">
-        <div className="card metric-card">
-          <h3>Accounts with tag</h3>
-          <p className="metric-value">{tag.locationTags.length}</p>
-        </div>
-        <div className="card metric-card">
-          <h3>Tag created</h3>
-          <p className="metric-caption">
-            {formatEasternDateTime(tag.createdAt)} by{' '}
-            {tag.createdByUser ? getUserDisplayName(tag.createdByUser) : 'Unknown user'}
-          </p>
-        </div>
-      </div>
+      <dl className="metric-strip">
+        <div><dt>Accounts</dt><dd>{tag.locationTags.length}</dd></div>
+        <div><dt>Created</dt><dd>{formatEasternDateTime(tag.createdAt)} · {tag.createdByUser ? getUserDisplayName(tag.createdByUser) : 'Unknown user'}</dd></div>
+      </dl>
 
       <section className="content-section">
       <SectionHeading count={tag.locationTags.length} title="Tagged accounts" />
       {tag.locationTags.length === 0 ? (
         <EmptyState description="Apply this tag from a retail account or restaurant account workspace." title="No accounts have this tag" />
       ) : (
-        <div className="table-scroll"><table className="responsive-table">
+        <div className="table-scroll" role="region" aria-label="Tagged accounts" tabIndex={0}><table className="responsive-table comparison-table">
           <thead>
             <tr>
               <th>Account</th>

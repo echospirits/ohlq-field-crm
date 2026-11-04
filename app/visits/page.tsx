@@ -7,8 +7,8 @@ import { requireUser } from '../../lib/auth';
 import { prisma } from '../../lib/prisma';
 import { requireOrganizationContext } from '../../lib/organizations';
 import { LiveFilterForm } from '../components/LiveFilterForm';
-import { EmptyState, PageHeader, SectionHeading } from '../components/PageChrome';
-import { VisitActivityTable } from './VisitActivityTable';
+import { EmptyState, PageHeader } from '../components/PageChrome';
+import { VisitHistoryTable } from './VisitHistoryTable';
 
 export const metadata = buildPageMetadata('Visits');
 
@@ -73,13 +73,14 @@ export default async function VisitsPage({
 
   const agencyMap = Object.fromEntries(agencies.map((agency) => [agency.id, agency.name]));
   const wholesaleMap = Object.fromEntries(wholesale.map((account) => [account.id, account.name]));
-  const contactMap = Object.fromEntries(contacts.map((contact) => [contact.id, contact.name]));
+  const contactMap = Object.fromEntries([...contacts.map((contact) => [contact.id, contact.name]), ...visits.flatMap((visit) => visit.contacts.map(({ contact }) => [contact.id, contact.name]))]);
 
   return (
     <>
       <PageHeader
         actions={<Link className="btn" href="/visits/new">Log visit</Link>}
-        description="Review field activity, outcomes, follow-ups, and supporting photos across every account."
+        count={visits.length}
+        meta={visits.length === 300 ? 'First 300 matching visits · Newest first' : 'Newest first'}
         eyebrow="Activity"
         title="Visits"
       />
@@ -98,13 +99,8 @@ export default async function VisitsPage({
       </LiveFilterForm>
 
       <section className="content-section">
-        <SectionHeading
-          count={visits.length}
-          description={q || type ? 'Filtered to the current search.' : 'Most recent activity, newest first.'}
-          title="Visit history"
-        />
       {visits.length > 0 ? (
-        <VisitActivityTable
+        <VisitHistoryTable
           contactMap={contactMap}
           visits={visits.map((visit) => {
             const locationName =

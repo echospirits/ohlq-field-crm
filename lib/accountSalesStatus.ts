@@ -30,7 +30,7 @@ export const VISIT_SALES_STATUS_OPTIONS = SALES_STATUS_OPTIONS.filter(({ value }
 
 export const SALES_STATUS_LABELS = Object.fromEntries(SALES_STATUS_OPTIONS.map(({ value, label }) => [value, label])) as Record<AccountSalesStatus, string>;
 export const BUYING_STATE_LABELS = {
-  NEVER_PURCHASED: 'Never purchased',
+  NEVER_PURCHASED: 'No recorded purchase',
   ACTIVE: 'Active purchaser',
   LAPSED: 'Lapsed purchaser',
 } as const;

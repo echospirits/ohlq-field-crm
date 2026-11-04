@@ -99,7 +99,7 @@ export function AppSidebarNavigation({ enabledFeatures, isAdmin, isPlatformAdmin
   if (isTaster) {
     return (
       <nav aria-label="Primary navigation" className="app-sidebar-nav">
-        <Link aria-current="page" className="app-nav-link app-nav-primary" href="/visits/new">
+        <Link aria-current={pathname === '/visits/new' ? 'page' : undefined} className="app-nav-link app-nav-primary" href="/visits/new">
           Log Visit
         </Link>
         <NavLink item={{ href: '/admin/data-status', key: 'data-health', label: 'Data Status', section: 'utility' }} pathname={pathname} />
@@ -120,8 +120,8 @@ export function AppSidebarNavigation({ enabledFeatures, isAdmin, isPlatformAdmin
 
       <NavGroupLinks group={{ label: 'My Work', items: workItems.filter((item) => !['analytics', 'production-forecasting'].includes(item.key)) }} pathname={pathname} />
       <NavGroupLinks group={{ label: 'Accounts', items: accountItems }} pathname={pathname} />
-      <SidebarDisclosure label="Intelligence" items={getIntelligenceNavigationItems(enabledFeatures, isAdmin, isPlatformAdmin)} pathname={pathname} />
-      <SidebarDisclosure label="Insights & setup" items={workItems.filter((item) => ['analytics', 'production-forecasting'].includes(item.key))} pathname={pathname} />
+      <IntelligenceMenu enabledFeatures={enabledFeatures} isAdmin={isAdmin} isPlatformAdmin={isPlatformAdmin} pathname={pathname} />
+      <NavGroupLinks group={{ label: 'Insights', items: workItems.filter((item) => ['analytics', 'production-forecasting'].includes(item.key)) }} pathname={pathname} />
       {!isAdmin && !isPlatformAdmin ? <NavLink item={{ href: '/admin/data-status', key: 'data-health', label: 'Data Status', section: 'utility' }} pathname={pathname} /> : null}
 
       {isAdmin || isPlatformAdmin ? <AdministrationMenu enabledFeatures={enabledFeatures} hasOrganizationAdminAccess={isAdmin} isPlatformAdmin={isPlatformAdmin} pathname={pathname} /> : null}

@@ -1,16 +1,33 @@
 # Unreleased
 
-Version **0.6.0** is released to TST and main. Production deployment, exact source-line exclusion, retained-history checks and live forecasting smoke tests are verified. Application commit `c5dcf07b8cc775488a3be9b69766e748bad3fb6f` is tagged `v0.6.0`. Development remains frozen; no new version or feature cycle is opened.
+Stable **0.7.0** is in owner-authorized release preparation. On November 4, 2026, the owner approved the TST interface and requested main promotion. This manifest describes the selective UI upgrade; exact-candidate validation and production delivery are pending until recorded. No new development cycle is opened.
 
-- [0.6.0 release notes and technical manifest](0.6.0.md)
-- [0.6.0 completed checklist](0.6.0-checklist.md)
-- [0.6.0 validation](0.6.0-validation.md)
-- [Source-line exclusion validation](production-invoice-exclusion-validation.md)
-- [0.5.2 release notes and validation](0.5.2.md)
+- [0.7.0 release notes and technical manifest](0.7.0.md)
+- [0.7.0 release checklist](0.7.0-checklist.md)
+- [0.7.0 validation](0.7.0-validation.md)
+- [0.6.0 release notes](0.6.0.md)
+- [Operational Signals production promotion record](production-operational-signals-promotion.md)
 
 ## Changes
 
-### Production Forecasting - Operational Signals
+### 0.7.0 - Echo-informed working interface
+
+- Approved source: TST application `a9d850380e90caceebc3f3376d4e294b293216a3`, reviewed at TST receipt `071eb21f47ca1e4fb3e45939c1e97f15094906a9`. Production base: `4f39e5b89703373c6730d2d590e3262da93c6648`.
+- Shared visual system: Copper/Patina accents, Chalkboard navigation/text, neutral working surfaces, readable type, compact headings/toolbars, modest radii and aligned numbers in light and dark themes. Existing Echo organization color data is retained; shared CSS owns the approved product palette.
+- Browsing and visibility: semantic comparison tables for Pipeline, intelligence and forecasts; useful directory columns, next commitments, saved account profile/plan facts, task context and actionable sync/source failures remain visible. Infrequent editing/setup actions stay secondary.
+- Daily work: visible scheduled events and overdue work, record-first Tags/Users, retained visit account/contact context, read-before-edit event details and compact global Visit History comparison alongside existing account timelines.
+- Analytics/admin: compact metrics and operational summaries, visible purchasing continuity/relationship/source-health facts and shorter labels. Material warnings, source limits and recovery guidance remain visible.
+- Presentation fixes: Pipeline shows the earliest open commitment, including overdue/undated work, while retaining existing future-only attention inputs. Missing purchase evidence reads `No recorded purchase`. Paused calendar sync is neutral; actual errors stay alerts. History Clear filters resets all picker/date state.
+- No schema/migration/backfill, dependency, provider, credential, scheduled workflow, entitlement or hosted environment-setting change. Existing queries, actions, forecast calculations, tenant/state/role checks, idempotency, history and calendar effects remain intact.
+- Preserve production-specific OpenDock timing/help. Main already contains Operational Signals; its provider/schema/workflow changes are not introduced by this UI release.
+- Exclude unrelated TST test pruning, `test:focus`, scratch TypeScript exclusions, CI differences and test/developer-tooling documentation. Main's existing test coverage/tooling is retained, with only UI-related regression changes.
+- Scope and evidence: [application UI audit](../design/neat-tst-ui-audit-2026-11-04.md), [release plan](0.7.0-plan.md) and [validation](0.7.0-validation.md). Earlier TST test totals or a Vercel build do not replace exact stable-candidate gates.
+
+## Historical production manifest
+
+The following 0.6.0 entry is preserved from production for provenance. It is already deployed, not additional scope introduced by the 0.7.0 UI promotion. Its queued-ingestion status is historical evidence, not a refreshed status claim.
+
+### Preserved 0.6.0 Operational Signals manifest
 
 - User-visible: **Yes**. Owner-authorized selective promotion of this chat's TST changes to main under existing version `0.6.0`; no new cycle or release tag. Historical `v0.6.0` remains unchanged.
 - Production status: application `c94f5c3ef6f35e74f46648445571ba970136ecb0` is READY on `crm.echospirits.com`; health verifies `production / ohlq-field-crm / connected`. Exact-candidate Node22/npm10 CI,1018 tests,typecheck,build and scoped migration checks passed. Owner independently configured production OpenDock; November4 08:12 EST API observations match native LTL calendars (GPT November10 06:00,6days; GRN November9 06:00,5days). Authenticated desktop/tablet/mobile dashboard/detail review passed. Initial production OPS demand ingestion remains pending; existing morning jobs started from pre-feature code.

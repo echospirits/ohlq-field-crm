@@ -1,1 +1,50 @@
-.pf-operational-section{min-width:0;border-top:1px solid var(--line);padding-top:16px}.pf-operational-section h2{margin:0 0 8px}.pf-operational-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.pf-operational-heading a{min-height:44px;display:inline-flex;align-items:center}.pf-delivery-grid{display:grid;gap:16px;min-width:0}.pf-delivery-location{min-width:0}.pf-delivery-location h3{margin:8px 0;font-size:1rem}.pf-delivery-location h3 span{font-weight:400;color:var(--muted)}.pf-delivery-location p{margin:8px 0;line-height:1.5}.pf-current-demand{min-width:0;font-variant-numeric:tabular-nums}.pf-current-demand strong{display:block}.pf-current-demand p{line-height:1.5}.pf-significant-demand>strong{color:var(--accent)}.pf-demand-disclosure{border-top:1px solid var(--line);padding-top:4px}.pf-demand-disclosure summary{min-height:44px}.pf-demand-method{font-size:.85rem}.pf-operational-history{max-width:100%;overflow-x:auto;margin:8px 0;font-variant-numeric:tabular-nums}.pf-operational-history table{width:100%;border-collapse:collapse;font-size:.8rem}.pf-operational-history th,.pf-operational-history td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);vertical-align:top}.pf-operational-history th{font-weight:600}.pf-operational-form{max-width:620px;display:grid;gap:16px}.pf-operational-form label{display:grid;gap:6px}.pf-operational-form input{min-width:0;width:100%;min-height:44px}.pf-operational-form button{min-height:44px;width:fit-content}.pf-operational-form fieldset{border:0;padding:0;min-width:0}.pf-operational-form legend{font-weight:600;margin-bottom:12px}.pf-operational-form fieldset label+label{margin-top:12px}@media(min-width:650px){.pf-delivery-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:24px}.pf-operational-history th,.pf-operational-history td{padding:10px 8px}}
+.pf-operational-section { min-width: 0; border-top: 1px solid var(--line); padding-top: 12px; }
+.pf-operational-section h2 { margin: 0; font-size: 1.125rem; }
+.pf-operational-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; margin-bottom: 8px; }
+.pf-operational-heading a { min-height: 44px; display: inline-flex; align-items: center; font-size: .8125rem; }
+.pf-delivery-comparison { max-width: 100%; overflow-x: auto; }
+.pf-delivery-comparison > table { width: 100%; border-collapse: collapse; font-size: .8125rem; }
+.pf-delivery-comparison > table > thead > tr > th { background: var(--panel-2); font-size: .75rem; font-weight: 600; }
+.pf-delivery-comparison > table > :is(thead, tbody) > tr > :is(td, th) { padding: 6px 8px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
+.pf-delivery-comparison > table > tbody > tr > th { width: 70px; }
+.pf-delivery-comparison > table > tbody > tr > th strong { font-size: .875rem; }
+.pf-delivery-comparison > table > :is(thead, tbody) > tr > .numeric { text-align: right; font-variant-numeric: tabular-nums; }
+.pf-delivery-comparison > table > tbody > tr > .pf-delivery-lead { width: 80px; }
+.pf-delivery-comparison .pf-delivery-lead > strong { font-size: 1rem; }
+.pf-delivery-comparison p { margin: 6px 0; }
+.pf-delivery-comparison strong { font-weight: 600; }
+.pf-delivery-comparison .pf-delivery-slot > strong { font-size: .8125rem; }
+.pf-delivery-comparison small { font-size: .75rem; }
+.pf-delivery-stale { color: var(--theme-warning-ink, var(--text)); }
+.pf-delivery-freshness { display: flex; flex-wrap: wrap; gap: 2px 16px; margin-top: 6px; color: var(--muted); font-size: .75rem; line-height: 1.4; }
+.pf-delivery-method > summary { font-size: .8125rem; padding-block: 6px; }
+.pf-current-demand { min-width: 0; font-variant-numeric: tabular-nums; }
+.pf-current-demand > strong { display: block; }
+.pf-current-demand p { line-height: 1.5; font-size: .875rem; }
+.pf-current-demand > details { margin-top: 8px; font-variant-numeric: normal; }
+.pf-significant-demand > strong { color: var(--accent); }
+.pf-operational-history { max-width: 100%; overflow-x: auto; margin: 8px 0; font-variant-numeric: tabular-nums; }
+.pf-operational-history table { width: 100%; border-collapse: collapse; font-size: .8125rem; }
+.pf-operational-history th, .pf-operational-history td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.pf-operational-history .numeric { text-align: right; }
+.pf-operational-history th { font-weight: 600; }
+.pf-operational-form { max-width: 700px; display: grid; gap: 12px; }
+.pf-operational-form label { display: grid; gap: 6px; }
+.pf-operational-form input { min-width: 0; width: 100%; min-height: 44px; }
+.pf-operational-form button { min-height: 44px; width: fit-content; }
+.pf-operational-form fieldset { border: 0; padding: 0; min-width: 0; }
+.pf-operational-form legend { font-weight: 600; margin-bottom: 12px; }
+.pf-operational-form fieldset label + label { margin-top: 12px; }
+.pf-delivery-method { font-size: .8125rem; }
+.pf-delivery-method p { max-width: 72ch; }
+.pf-warehouse-mapping { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: .875rem; }
+@media (max-width: 360px) {
+  .pf-delivery-comparison > table, .pf-delivery-comparison > table > tbody { display: block; }
+  .pf-delivery-comparison > table > thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .pf-delivery-comparison > table > tbody > tr { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding-block: 12px; border-bottom: 1px solid var(--line); }
+  .pf-delivery-comparison > table > tbody > tr > :is(td, th) { min-width: 0; width: auto; padding: 0; border: 0; overflow-wrap: anywhere; }
+  .pf-delivery-comparison > table > tbody > tr > th { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; width: auto; }
+  .pf-delivery-comparison > table > tbody > tr > .pf-delivery-lead { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 12px; width: auto; text-align: left; }
+  .pf-delivery-lead::before { content: 'Calendar days out'; color: var(--muted); font-size: .75rem; }
+  .pf-delivery-comparison .pf-delivery-lead small { flex-basis: 100%; }
+}

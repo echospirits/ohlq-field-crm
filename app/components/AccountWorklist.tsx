@@ -44,7 +44,6 @@ export async function AccountWorklist(props: {
     <section className="card account-workspace-section account-worklist" id="account-worklist" aria-labelledby="account-worklist-heading">
       <div className="section-heading"><h2 id="account-worklist-heading">Outstanding work</h2><span className="pill">{items.length}</span></div>
       {items.length === 0 ? <p className="muted">No outstanding work. Use More actions to create a follow-up.</p> : <>
-        <p className="field-note">Team tasks for this account, including unassigned work.</p>
         {worklistGroups.filter((group) => group !== 'Finished').map((group) => {
           const grouped = items.filter((item) => getWorklistGroup(item) === group);
           return grouped.length ? <div className="account-worklist-group" key={group}>
@@ -52,8 +51,8 @@ export async function AccountWorklist(props: {
             {grouped.map((item) => <article className="account-worklist-item" key={item.id} aria-label={item.title}>
               <strong className="account-worklist-title">{item.title}</strong>
               <div className="inline-meta">{item.status === 'IN_PROGRESS' ? <span>In progress</span> : null}{getWorklistOverdueLabel(item.dueDate, item.status) ? <strong className="worklist-overdue-label">{getWorklistOverdueLabel(item.dueDate, item.status)}</strong> : null}<span>{formatWorklistDue(item.dueDate, item.dueTimeMinutes) || 'No due date'}</span><span>{item.assignedToUser ? getUserDisplayName(item.assignedToUser) : item.assignedTo || 'Unassigned'}</span></div>
+              {item.detail ? <WorklistDetail detail={item.detail} /> : null}
               <WorklistActions actorName={props.actorName} currentUserId={props.currentUserId} agencies={[]} wholesaleAccounts={[]} contacts={contacts} tags={tags} users={actionUsers} returnTo={returnTo}
-                evidence={item.detail ? <WorklistDetail detail={item.detail} /> : undefined}
                 createVisitAction={createVisit} updateItemAction={updateWorklistItem} updateStatusAction={updateWorklistStatus}
                 item={{ id: item.id, title: item.title, detail: splitReactivationPurchasedAgainDetail(item.detail).detail, editDetail: item.detail,
                   dueDate: formatDateOnlyInputValue(item.dueDate), dueTime: formatTimeMinutesInput(item.dueTimeMinutes), assignedToUserId: item.assignedToUserId,

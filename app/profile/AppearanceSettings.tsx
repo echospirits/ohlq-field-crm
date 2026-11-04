@@ -42,7 +42,7 @@ export function AppearanceSettings({ darkMode }: { darkMode: boolean }) {
   return <section className="appearance-section" aria-labelledby="appearance-heading">
     <h2 id="appearance-heading">Appearance</h2>
     <div className="appearance-setting">
-      <div><strong id="dark-mode-label">Dark mode</strong><p id="dark-mode-help" className="muted">Use darker surfaces in low light. Saves automatically for your account on mobile and desktop.</p></div>
+      <div><strong id="dark-mode-label">Dark mode</strong><p id="dark-mode-help" className="muted">Saved automatically across your devices.</p></div>
       <button type="button" className="appearance-switch secondary" role="switch" aria-checked={enabled} aria-labelledby="dark-mode-label" aria-describedby="dark-mode-help" aria-busy={pending} disabled={pending} onClick={toggle}>
         <span className="appearance-switch-track" aria-hidden="true"><span /></span><span>{pending ? 'Saving…' : enabled ? 'On' : 'Off'}</span>
       </button>

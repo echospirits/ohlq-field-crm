@@ -2,9 +2,10 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 export const maxDuration = 300;
 
+import '../admin-workspace.css';
 import { SubmitButton } from '../../components/SubmitButton';
 import { WeeklyDigestStatus } from '@prisma/client';
-import { APP_NAME, buildPageMetadata } from '../../../lib/appBrand';
+import { buildPageMetadata } from '../../../lib/appBrand';
 import { getUserDisplayName, requireAdminSession } from '../../../lib/auth';
 import { requireOrganizationContext } from '../../../lib/organizations';
 import { formatEasternDateTime } from '../../../lib/dateTime';
@@ -48,10 +49,8 @@ export default async function WeeklyDigestAdminPage({
   const rendered = renderTenantWeeklyDigestEmail(digest);
 
   return (
-    <>
+    <div className="admin-workspace">
       <PageHeader
-        description={<>Preview and send controls for the Friday morning {APP_NAME} weekly email.</>}
-        eyebrow="Administration"
         title="Weekly Digest"
       />
 
@@ -68,7 +67,7 @@ export default async function WeeklyDigestAdminPage({
       ) : null}
 
       <section className="dashboard-section">
-        <SectionHeading actions={<span className="pill">Tenant brief</span>} description="The same tenant-wide brief goes to every active user with an email address, including Tasters." title="Preview" />
+        <SectionHeading actions={<span className="pill">Tenant brief</span>} description="All active users with email, including Tasters" title="Preview" />
 
         <div className="card admin-panel digest-admin-panel">
           <p>{digest.organization.displayName} &middot; {recipientCount} active users with email</p>
@@ -100,8 +99,8 @@ export default async function WeeklyDigestAdminPage({
       </section>
 
       <section className="dashboard-section">
-        <SectionHeading count={recentLogs.length} description="Recipient-level outcomes from recent digest runs." title="Recent digest logs" />
-        <div className="table-scroll"><table className="responsive-table">
+        <SectionHeading count={recentLogs.length} title="Recent digest logs" />
+        <div className="table-scroll" role="region" aria-label="Recent recipient delivery outcomes" tabIndex={0}><table className="responsive-table comparison-table">
           <thead>
             <tr>
               <th>Recipient</th>
@@ -136,6 +135,6 @@ export default async function WeeklyDigestAdminPage({
           </tbody>
         </table></div>
       </section>
-    </>
+    </div>
   );
 }

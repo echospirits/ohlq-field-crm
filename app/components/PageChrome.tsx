@@ -3,15 +3,18 @@ import type { ReactNode } from 'react';
 type PageHeaderProps = {
   actions?: ReactNode;
   description?: ReactNode;
+  meta?: ReactNode;
+  count?: number;
   eyebrow?: string;
   title: ReactNode;
 };
 
-export function PageHeader({ actions, description, title }: PageHeaderProps) {
+export function PageHeader({ actions, count, description, meta, title }: PageHeaderProps) {
   return (
     <header className="page-heading page-header">
       <div>
-        <h1>{title}</h1>
+        <div className="page-title-row"><h1>{title}</h1>{typeof count === 'number' ? <span className="result-count">{count.toLocaleString()}</span> : null}</div>
+        {meta ? <div className="page-header-meta">{meta}</div> : null}
         {description ? <p className="muted">{description}</p> : null}
       </div>
       {actions ? <div className="page-heading-actions">{actions}</div> : null}

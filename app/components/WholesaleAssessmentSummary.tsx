@@ -16,6 +16,12 @@ export function WholesaleAssessmentSummary({ value, actions, pending = false, st
     <div className="assessment-heading">{!compact ? <span>Commercial opportunity</span> : null}<CommercialOpportunityStars rating={assessment.rating} status={status} pending={pending} stale={stale} /><span className={compact ? 'assessment-evidence-mode' : 'pill'}>{evidenceModeLabel[assessment.evidenceMode]}</span></div>
     <strong>{assessment.title}</strong>
     {compact ? <p className="assessment-key-reason">{assessment.reasons[0]}</p> : <ul>{assessment.reasons.slice(0, 2).map(reason => <li key={reason}>{reason}</li>)}</ul>}
+    {!compact ? <dl className="metric-strip assessment-working-facts">
+      <div><dt>Compatible / 30d · 750ml eq</dt><dd>{assessment.evidenceMode === 'RESEARCH_ONLY' ? 'Research only' : quantity(commercial.compatible750Per30)}</dd></div>
+      <div><dt>Sales coverage through</dt><dd>{assessment.coverage.through ?? 'Unavailable'}</dd></div>
+      <div><dt>Represented days</dt><dd>{quantity(commercial.representedDays)}</dd></div>
+    </dl> : null}
+    {assessment.evidenceMode !== 'SALES_BACKED' || status === 'SOURCE_ERROR' || status === 'ERROR' ? <p className="assessment-data-limit">{assessment.evidenceMode === 'RESEARCH_ONLY' ? 'Qualitative fit; purchase volumes unavailable.' : 'Partial or failed source coverage; review evidence before comparing.'}</p> : null}
     {actions}
     <details className="compact-details"><summary>{compact ? 'Why this recommendation?' : 'Commercial evidence and details'}</summary>
       {compact && assessment.reasons.length ? <ul>{assessment.reasons.map(reason => <li key={reason}>{reason}</li>)}</ul> : null}

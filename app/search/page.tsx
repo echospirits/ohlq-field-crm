@@ -102,7 +102,6 @@ export default async function SearchPage({ searchParams }: { searchParams?: Prom
         <div>
 
           <h1>Find accounts and work</h1>
-          <p className="muted">Search retail accounts, restaurant accounts, active Opportunities, and work in one place.</p>
         </div>
       </header>
 
@@ -113,7 +112,7 @@ export default async function SearchPage({ searchParams }: { searchParams?: Prom
       {!canSearch ? (
         <section className="card search-empty-state">
           <h2>Search across Neat</h2>
-          <p className="muted">Enter at least two characters. Names, IDs, addresses, cities, contacts, and task details are searchable.</p>
+          <p className="muted">Enter at least two characters: account, ID, city, contact or task.</p>
         </section>
       ) : totalResults === 0 ? (
         <section className="card search-empty-state">

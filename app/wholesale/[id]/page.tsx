@@ -1,5 +1,6 @@
 import { accountWorkAndEvents } from '../../../lib/crm/accountTimeline';
 import { AccountProfile } from '../../components/AccountProfile';
+import { AccountSalesPlan } from '../../components/AccountSalesPlan';
 import { AccountBriefing } from '../../components/AccountBriefing';
 import { activityLabels } from '../../../lib/crm/activity';
 import { Suspense } from 'react';
@@ -303,7 +304,8 @@ export default async function WholesaleActivityPage({
       <Suspense fallback={<section id="account-worklist" className="card account-workspace-section account-worklist" aria-busy="true"><h2>Outstanding work</h2><p role="status">Loading outstanding work…</p></section>}>
         <AccountWorklist accountId={account.id} accountName={account.name} accountType="WHOLESALE" currentUserId={user.id} actorName={getUserDisplayName(user)} organizationId={organizationId} enabledFeatures={enabledFeatures} />
       </Suspense>
-
+      {salesStatusSummary ? <Suspense fallback={<p role="status" aria-busy="true">Loading account plan…</p>}><AccountSalesPlan account={{ accountType: 'WHOLESALE', accountId: account.id }} /></Suspense> : null}
+      <Suspense fallback={<p role="status" aria-busy="true">Loading account profile…</p>}><AccountProfile organizationId={organizationId} accountType="WHOLESALE" accountId={account.id} /></Suspense>
 
 <Suspense fallback={<p aria-busy="true" role="status">Loading account briefing…</p>}><AccountBriefing account={{ accountType: "WHOLESALE", accountId: account.id }} actor={{ organizationId, userId: user.id }} lastPurchaseAt={salesStatusSummary?.lastPurchaseAt} /></Suspense></> },
 { id: 'placements', label: 'Placements', content: <>
@@ -361,7 +363,7 @@ export default async function WholesaleActivityPage({
           title: event.isTargeting ? 'Account targeted' : 'Targeting stopped',
         }))).concat(workAndEvents)} />
       </section></> },
-{ id: 'account-details', label: 'Details', content: <><Suspense fallback={<section className="card" aria-busy="true"><p role="status">Loading account profile…</p></section>}><AccountProfile organizationId={organizationId} accountType="WHOLESALE" accountId={account.id} /></Suspense>
+{ id: 'account-details', label: 'Details', content: <>
       <div className="grid account-summary-grid account-workspace-section">
         <div className="card metric-card">
           <h3>Logged visits</h3>

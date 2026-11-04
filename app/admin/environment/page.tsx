@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
+import '../admin-workspace.css';
 import { buildPageMetadata } from '../../../lib/appBrand';
 import { APP_VERSION } from '../../../lib/appVersion';
 import {
@@ -31,8 +32,8 @@ export default async function EnvironmentDiagnosticsPage() {
   const commit = process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 12) || process.env.GIT_COMMIT_SHA?.slice(0, 12) || 'Local build';
 
   return (
-    <>
-      <PageHeader eyebrow="Administration" title="Environment diagnostics" description="Safe deployment identity and side-effect status. Secret values are never displayed." />
+    <div className="admin-workspace">
+      <PageHeader title="Environment diagnostics" />
       <section className="card admin-panel">
         <dl className="integration-summary">
           <div><dt>Environment</dt><dd>{getEnvironmentLabel()}</dd></div>
@@ -50,6 +51,6 @@ export default async function EnvironmentDiagnosticsPage() {
           <div><dt>Webhook registration</dt><dd>{display(sideEffects.webhookRegistration)}</dd></div>
         </dl>
       </section>
-    </>
+    </div>
   );
 }

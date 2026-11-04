@@ -59,6 +59,7 @@ function activityPage(authorized = true) {
     target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX,
   } }).outputText;
   const dependencies: Record<string, unknown> = {
+    '../admin-workspace.css': {},
     'react/jsx-runtime': require('react/jsx-runtime'), 'next/link': { default: 'a' },
     '../../../lib/auth': { requireEchoAdmin: async () => { if (!authorized) throw Error('denied'); return { id: 'admin', organizationId: ECHO, role: UserRole.ADMIN }; } },
     '../../../lib/organizations': { requireOrganizationContext: async () => { contexts++; return { organizationId: ECHO }; } },
@@ -68,7 +69,7 @@ function activityPage(authorized = true) {
       return { filters: { from: new Date('2026-10-01'), to: new Date('2026-10-28'), q: '', activity: 'all', sort: 'newest', organizationId: ECHO }, rows: [], summaries: [], total: 0, page: 1, pages: 1 };
     } },
     '../../components/PageChrome': {
-      PageHeader: ({ title, description }: any) => createElement('header', null, createElement('h1', null, title), createElement('p', null, description)),
+      PageHeader: ({ title, description, meta }: any) => createElement('header', null, createElement('h1', null, title), meta ? createElement('div', null, meta) : null, createElement('p', null, description)),
       SectionHeading: ({ title }: any) => createElement('h2', null, title), EmptyState: ({ title }: any) => createElement('p', null, title),
     },
     '../../components/LiveFilterForm': { LiveFilterForm: ({ children, ...props }: any) => createElement('form', props, children) },

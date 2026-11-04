@@ -34,33 +34,36 @@ export function CurrentDemandSummary({ row, forecast30, expanded = false }: { ro
       <p>Last successful observation: {operationalTime(row?.sourceObservedAt ?? null)}</p>
       <p>Coverage source as of: {row?.sourceUpdatedAt ? operationalTime(row.sourceUpdatedAt) : 'Source refresh time could not be verified'}</p>
       {row?.checkedAt && (!current || row.retained) ? <p>Latest attempt: {operationalTime(row.checkedAt)} · {row.status.toLowerCase()}</p> : null}
-      <p className="muted">Only MIN agencies are included. Each agency’s bottle gap is rounded up to whole cases before summing. Agency inventory may lag same-day shipments and receipts; in-transit stock is not independently reconciled. This estimate is separate from the statistical forecast.</p>
+      <p className="muted">Overnight agency inventory may lag same-day shipments and receipts; in-transit stock is not independently reconciled.</p><details className="compact-details"><summary>Agency replenishment method and limits</summary><p className="muted">Only MIN agencies are included. Each agency’s bottle gap is rounded up to whole cases before summing. This estimate is separate from the statistical forecast.</p></details>
     </> : <small>{row?.sourceUpdatedAt ? `Source as of ${operationalTime(row.sourceUpdatedAt)}` : row?.sourceObservedAt ? `Observed ${operationalTime(row.sourceObservedAt)} · source refresh time unverified` : row?.reason === 'SOURCE_INELIGIBLE' ? 'Excluded by OPS status' : row?.status === 'FAILED' ? 'Latest check failed' : row?.status === 'UNAVAILABLE' ? 'Source unavailable' : 'Awaiting morning check'}</small>}
   </div>;
 }
 export function DeliveryAvailability({ data, showSetup = false, now = new Date() }: { data: DeliveryData; showSetup?: boolean; now?: Date }) {
+  const firstCheck = data.warehouses[0]?.lastSuccessfulCheckAt;
+  const checkTimezone = data.warehouses[0]?.timezone;
+  const sharedCheck = firstCheck && data.warehouses.every(w => w.lastSuccessfulCheckAt === firstCheck && w.timezone === checkTimezone) ? firstCheck : null;
+  const allBaselinesUnknown = data.warehouses.length > 0 && data.warehouses.every(w => w.baseline.typicalDays === null);
   return <section className="pf-operational-section" aria-labelledby="delivery-availability-heading">
     <div className="pf-operational-heading"><h2 id="delivery-availability-heading">OHLQ Delivery Availability</h2>{showSetup ? <Link href="/analytics/production/settings">Configure OpenDock</Link> : null}</div>
-    <p className="muted">Next available LTL delivery · calendar days from the observation date.</p>
-    <div className="pf-delivery-grid">{data.warehouses.map(w => {
+    <div className="pf-delivery-comparison table-scroll" role="region" aria-label="Warehouse LTL delivery availability" tabIndex={0}><table className="comparison-table"><caption className="sr-only">Next available LTL delivery. Calendar days are counted from the observation date.</caption><thead><tr><th scope="col">Warehouse</th><th scope="col">Next LTL delivery</th><th scope="col" className="numeric">Calendar days out</th></tr></thead><tbody>{data.warehouses.map(w => {
       const observation = w.latestObservation;
       const passed = observation?.earliestAvailableAt ? Date.parse(observation.earliestAvailableAt) <= now.getTime() : false;
       const failed = w.latestCheck && !['SUCCESS', 'NO_AVAILABILITY'].includes(w.latestCheck.status);
-      return <article key={w.locationCode} className="pf-delivery-location">
-        <h3>{w.locationCode} <span>{w.locationName}</span></h3>
-        {observation?.status === 'SUCCESS' && observation.earliestAvailableAt ? <>
-          <p><span>{w.freshness === 'current' && !passed ? 'Next available' : 'Last observed availability'}: </span><strong>{operationalTime(observation.earliestAvailableAt, w.timezone)}</strong></p>
-          <p><strong>{observation.calendarDays} calendar days out</strong>{observation.businessDays !== null ? ` · ${observation.businessDays} operating business days` : ''}{w.freshness !== 'current' ? ' · stale observation' : ''}</p>
-          {passed ? <p className="muted">This observed slot has passed. The next morning check will update availability.</p> : null}
-        </> : observation?.status === 'NO_AVAILABILITY' ? <p>{w.freshness === 'current' ? 'No appointments' : 'Last observed: no appointments'} in the checked range through {operationalTime(observation.checkedThrough, w.timezone)}{w.freshness !== 'current' ? ' · stale observation' : ''}.</p> : <p>{w.configured ? 'Awaiting a successful OpenDock check.' : 'OpenDock is not configured.'}</p>}
-        {w.baseline.typicalDays !== null ? <p>{w.baseline.classification ?? 'Comparison unavailable'}<small>Typical {w.baseline.stage === 'PRIOR_YEAR_SEASONAL' ? 'this time of year' : 'for the available history'}: {cases(w.baseline.typicalDays)} days · {w.baseline.sampleDays} observations</small></p> : <p className="muted">Insufficient history for a typical lead time.</p>}
-        <small>Last successful check: {operationalTime(w.lastSuccessfulCheckAt, w.timezone)}</small>
-        {failed ? <p className="pf-warning" role="status">Latest check did not succeed ({operationalTime(w.latestCheck!.attemptedAt, w.timezone)}). The last successful observation is retained.</p> : null}
-        <details className="compact-details"><summary>{w.locationCode} availability history</summary>
-          <p className="muted">Observed daily. A failed check never means zero days. Seasonal comparisons need at least 14 distinct historical days; nearby-season and trailing 90-day history provide fallbacks. Differences within one day or 20% of typical stay about average.</p>
-          {w.history.length ? <div className="pf-operational-history" role="region" aria-label={`${w.locationCode} daily delivery history`} tabIndex={0}><table><thead><tr><th scope="col">Observed</th><th scope="col">Days out</th><th scope="col">Next available</th></tr></thead><tbody>{w.history.map(o => <tr key={o.id}><td>{o.observedOn}</td><td>{o.calendarDays ?? 'No slot in range'}</td><td>{o.earliestAvailableAt ? operationalTime(o.earliestAvailableAt, w.timezone) : 'None in checked range'}</td></tr>)}</tbody></table></div> : <p>No historical observations yet.</p>}
-        </details>
-      </article>;
-    })}</div>
+      return <tr key={w.locationCode}>
+        <th scope="row"><strong>{w.locationCode}</strong><small>{w.locationName}</small></th>
+        <td className="pf-delivery-slot">
+          {observation?.status === 'SUCCESS' && observation.earliestAvailableAt ? <><span className="sr-only">{w.freshness === 'current' && !passed ? 'Next available' : 'Last observed availability'}: </span><strong>{operationalTime(observation.earliestAvailableAt, w.timezone)}</strong>{w.freshness !== 'current' || passed ? <small className="pf-delivery-stale">Last observed availability · {w.freshness !== 'current' ? 'stale observation' : 'slot has passed'}</small> : null}</> : observation?.status === 'NO_AVAILABILITY' ? <span>{w.freshness === 'current' ? 'No appointments' : 'Last observed: no appointments'} in the checked range through {operationalTime(observation.checkedThrough, w.timezone)}{w.freshness !== 'current' ? ' · stale observation' : ''}.</span> : <span>{w.configured ? 'Awaiting a successful OpenDock check.' : 'OpenDock is not configured.'}</span>}
+          {!sharedCheck ? <small className="pf-delivery-checked">Last successful check: {operationalTime(w.lastSuccessfulCheckAt, w.timezone)}</small> : null}
+          {passed ? <small className="pf-delivery-stale">This observed slot has passed. The next morning check will update availability.</small> : null}
+          {failed ? <p className="pf-warning" role="status">Latest check did not succeed ({operationalTime(w.latestCheck!.attemptedAt, w.timezone)}). The last successful observation is retained.</p> : null}
+        </td>
+        <td className="numeric pf-delivery-lead">{observation?.status === 'SUCCESS' && observation.earliestAvailableAt ? <><strong>{observation.calendarDays}<span className="sr-only"> calendar days out{w.freshness !== 'current' ? ' · stale observation' : ''}</span></strong>{observation.businessDays !== null ? <small>{observation.businessDays} operating business days</small> : null}</> : <span>Unavailable</span>}{!allBaselinesUnknown ? w.baseline.typicalDays !== null ? <small>{w.baseline.classification ?? 'Comparison unavailable'} · typical {cases(w.baseline.typicalDays)} days · {w.baseline.sampleDays} observations</small> : <small>Insufficient history for a typical lead time.</small> : null}</td>
+      </tr>;
+    })}</tbody></table></div>
+    {sharedCheck || allBaselinesUnknown ? <div className="pf-delivery-freshness">{sharedCheck ? <span>Last successful check: {operationalTime(sharedCheck, checkTimezone)}</span> : null}{allBaselinesUnknown ? <span>Typical lead time: unavailable<span className="sr-only">. Insufficient history for a typical lead time{data.warehouses.length > 1 ? ' at either warehouse' : ''}.</span></span> : null}</div> : null}
+    <details className="compact-details pf-delivery-method"><summary>Availability history and comparison method</summary>
+      <p>Availability is an observed slot, not a booking. Lead times use calendar days from the observation date. A failed check never means zero days. Seasonal comparisons need at least 14 distinct historical days; nearby-season and trailing 90-day history provide fallbacks. Differences within one day or 20% of typical stay about average.</p>
+      {data.warehouses.map(w => <section key={w.locationCode}><h3>{w.locationCode} availability history</h3>{w.history.length ? <div className="pf-operational-history" role="region" aria-label={`${w.locationCode} daily delivery history`} tabIndex={0}><table><thead><tr><th scope="col">Observed</th><th scope="col" className="numeric">Days out</th><th scope="col">Next available</th></tr></thead><tbody>{w.history.map(o => <tr key={o.id}><td>{o.observedOn}</td><td className="numeric">{o.calendarDays ?? 'No slot in range'}</td><td>{o.earliestAvailableAt ? operationalTime(o.earliestAvailableAt, w.timezone) : 'None in checked range'}</td></tr>)}</tbody></table></div> : <p>No historical observations yet.</p>}</section>)}
+    </details>
   </section>;
 }

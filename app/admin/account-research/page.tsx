@@ -16,6 +16,7 @@ import { deriveSettledPilotStatus, getLatestAccountResearchPilot } from '../../.
 import { formatEasternDateTime } from '../../../lib/dateTime';
 import { prisma } from '../../../lib/prisma';
 import { requireFeatureForUser, requireOrganizationContext } from '../../../lib/organizations';
+import '../admin-workspace.css';
 import { PageHeader, SectionHeading } from '../../components/PageChrome';
 import { LiveFilterForm } from '../../components/LiveFilterForm';
 import { checkAccountResearchPilot, continueAccountResearchPilot, startAccountResearchPilot, uploadAccountResearchCsv } from './actions';
@@ -187,8 +188,8 @@ export default async function AccountResearchPage({ searchParams }: { searchPara
   const agencyHoursPageCount = Math.max(1, Math.ceil(matchingAgencyHoursQueue.length / AGENCY_HOURS_QUEUE_PAGE_SIZE));
 
   return (
-    <>
-      <PageHeader actions={<Link className="btn secondary" href="/opportunities">View opportunities</Link>} description={view === 'agencies' ? 'Find and verify public operating hours for Ohio Retail accounts. The queue highlights missing hours; each lookup starts only when you choose Research hours.' : 'Research the accounts where public evidence can materially improve an opportunity decision. Structured findings are applied automatically only after exact-location validation.'} eyebrow="Administration" title="Account Research" />
+    <div className="admin-workspace">
+      <PageHeader actions={<Link className="btn secondary" href="/opportunities">View opportunities</Link>} title="Account Research" />
       {message ? <p className="toast-notice page-status" role="status">{message}</p> : null}
       {params.detail ? <p className="card danger-text research-import-errors">{params.detail}</p> : null}
 
@@ -204,7 +205,7 @@ export default async function AccountResearchPage({ searchParams }: { searchPara
           <div className="card metric-card"><h3>Need address details</h3><p className="metric-value">{(agencyHoursQueue.length - addressReadyAgencyCount).toLocaleString()}</p><p className="muted">Open a Retail record to complete its location</p></div>
         </div>
         <section className="dashboard-section" id="agency-hours-queue">
-          <SectionHeading count={matchingAgencyHoursQueue.length} description="This Retail queue is populated from saved hours, so adding or confirming a schedule removes the account from the list. Research is manual in TST and production; the Retail detail page keeps its direct research shortcut." title="Retail public-hours queue" />
+          <SectionHeading count={matchingAgencyHoursQueue.length} description="Missing saved hours · manual public lookup" title="Retail public-hours queue" />
           {!availability.available ? <p className="card muted">Public lookup is unavailable here. You can still open a Retail and enter known hours manually.</p> : null}
           <LiveFilterForm action="/admin/account-research" className="agency-hours-queue-search" label="Search Retail hours queue" role="search">
             <input name="view" type="hidden" value="agencies" />
@@ -230,12 +231,31 @@ export default async function AccountResearchPage({ searchParams }: { searchPara
       <div className="grid target-import-stats">
         <div className="card metric-card"><h3>Needing intelligence</h3><p className="metric-value">{automaticStatus.queueCount}</p><p className="muted">Prioritized across all tenant activity; oldest routine refreshes come last</p></div>
         <div className="card metric-card"><h3>Accounts researched</h3><p className="metric-value">{completedCount}</p><p className="muted">Completed public research across all accounts</p></div>
-        <div className="card metric-card"><h3>Failures to fix</h3><p className="metric-value">{unresolvedFailures.length.toLocaleString()}</p><p className="muted">Account identity or location issues that may need a correction. Operationally unsuccessful attempts return to the research queue.</p></div>
+        <div className="card metric-card"><h3><a href="#research-failures">Failures to fix</a></h3><p className="metric-value">{unresolvedFailures.length.toLocaleString()}</p><p className="muted">Account identity or location issues that may need a correction. Operationally unsuccessful attempts return to the research queue.</p></div>
         <div className="card metric-card"><h3>Latest update</h3><p className="metric-value metric-date">{formatEasternDateTime(latestResearch?.updatedAt) || 'Never'}</p></div>
       </div>
 
+      <section className="dashboard-section workspace-section" id="research-failures">
+        <SectionHeading title="Failures to fix" count={unresolvedFailures.length} />
+        <div className="dashboard-details-content">
+          <ResearchFailureList failures={unresolvedFailures.map((attempt) => {
+            const failedAt = attempt.reviewedAt ?? attempt.completedAt ?? attempt.updatedAt;
+            const snapshot = attempt.inputSnapshot && typeof attempt.inputSnapshot === 'object' ? attempt.inputSnapshot as { address?: string | null; city?: string | null; zip?: string | null } : null;
+            return {
+              id: attempt.id,
+              accountId: attempt.wholesaleAccount.id,
+              name: attempt.wholesaleAccount.name,
+              identity: [attempt.wholesaleAccount.city, attempt.wholesaleAccount.licenseeId].filter(Boolean).join(' · '),
+              reason: accountResearchFailureReason(attempt),
+              submittedLocation: snapshot ? [snapshot.address, snapshot.city, snapshot.zip].filter(Boolean).join(', ') : '',
+              failedAt: formatEasternDateTime(failedAt),
+            };
+          })} />
+        </div>
+      </section>
+
       <section className="dashboard-section">
-        <SectionHeading description={`Production checks the queue once daily and durably paces requests in ${ACCOUNT_RESEARCH_SUBMISSION_WAVE_SIZE}-account waves. Each scheduled or manually invoked workflow run submits no more than ${ACCOUNT_RESEARCH_AUTOMATIC_DAILY_LIMIT} accounts or reserves more than ${formatUsdMicros(ACCOUNT_RESEARCH_AUTOMATIC_DAILY_BUDGET_MICROS)}. Commercial recalculation continues independently using saved sales, portfolio prices and research.`} title="Automatic research" />
+        <SectionHeading description={`Daily · ${ACCOUNT_RESEARCH_SUBMISSION_WAVE_SIZE}-account waves · ${ACCOUNT_RESEARCH_AUTOMATIC_DAILY_LIMIT} accounts / ${formatUsdMicros(ACCOUNT_RESEARCH_AUTOMATIC_DAILY_BUDGET_MICROS)} limit per run`} title="Automatic research" />
         <article className="card research-workflow-card">
           <div className="research-pilot-summary">
             <div><span className={`status-badge ${automationAvailability.available ? '' : 'muted'}`}>{automationAvailability.available ? 'Enabled' : 'Disabled here'}</span><strong>{automaticStatus.queueCount.toLocaleString()} accounts queued</strong><small>{automaticStatus.submittedToday.toLocaleString()} attempts today · {automaticStatus.uniqueAccountsSubmittedToday.toLocaleString()} unique accounts</small></div>
@@ -243,12 +263,12 @@ export default async function AccountResearchPage({ searchParams }: { searchPara
             <div><strong>{automaticStatus.latestRun ? automaticRunStatusLabel : 'No automatic run yet'}</strong><small>{automaticStatus.approvedToday.toLocaleString()} applied · {automaticStatus.failedToday.toLocaleString()} failed · {automaticStatus.unsuccessfulToday.toLocaleString()} unsuccessful · {automaticStatus.rejectedToday.toLocaleString()} declined today</small>{automaticStatus.latestRun ? <small>{formatUsdMicros(automaticStatus.latestRun.estimatedSpendMicros)} estimated · started {formatEasternDateTime(automaticStatus.latestRun.startedAt)}</small> : <small>The production scheduler will create the first run when enabled.</small>}</div>
           </div>
           {!automationAvailability.available ? <p className="muted">Automatic OpenAI research is intentionally disabled in this environment. Manual test runs remain available.</p> : null}
-          <p className="muted">All active restaurant accounts with a complete address can enter the research queue. Priority still favors unscored accounts, identity changes and near-term tenant activity.</p>
+          <p className="muted">Eligible: active restaurant accounts with a complete address.</p>
         </article>
       </section>
 
       <section className="dashboard-section">
-        <SectionHeading description={`Run a small, manually triggered ${ACCOUNT_RESEARCH_PILOT_MAX_ACCOUNTS}-account check in either environment. It reserves no more than ${formatUsdMicros(ACCOUNT_RESEARCH_PILOT_BUDGET_MICROS)} before contacting OpenAI.`} title="Manual test run" />
+        <SectionHeading title="Manual test run" />
         {!pilot ? (
           <article className="card research-workflow-card">
             <div className="research-pilot-callout">
@@ -271,32 +291,13 @@ export default async function AccountResearchPage({ searchParams }: { searchPara
               {canStartNewPilot ? <form action={startAccountResearchPilot}><SubmitButton type="submit" disabled={!availability.available}>Start new {ACCOUNT_RESEARCH_PILOT_MAX_ACCOUNTS}-account test</SubmitButton></form> : null}
             </div>
             {canStartNewPilot && !availability.available ? <p className="danger-text">A new test run is unavailable: {!availability.enabled ? 'manual research is disabled' : !availability.hasKey ? 'the OpenAI key is missing' : availability.configurationError}.</p> : null}
-            <p className="muted">Only one {ACCOUNT_RESEARCH_SUBMISSION_WAVE_SIZE}-account wave can run at a time. Check and apply the current wave before sending the next. Costs are metered estimates from response tokens and web-search calls. The application never reserves more than {formatUsdMicros(ACCOUNT_RESEARCH_PILOT_BUDGET_MICROS)}; the OpenAI project budget remains the final billing backstop.</p>
+            <p className="muted">One {ACCOUNT_RESEARCH_SUBMISSION_WAVE_SIZE}-account wave at a time. Check and apply it before submitting the next. Costs are estimates; the {formatUsdMicros(ACCOUNT_RESEARCH_PILOT_BUDGET_MICROS)} reservation limit and OpenAI project budget remain in effect.</p>
           </article>
         )}
       </section>
 
-      <details className="dashboard-section dashboard-details" id="research-failures">
-        <summary><span><strong>Failures to fix</strong><small>{unresolvedFailures.length.toLocaleString()} account{unresolvedFailures.length === 1 ? '' : 's'} with a location match that may need correction</small></span><span className="pill">{unresolvedFailures.length.toLocaleString()}</span></summary>
-        <div className="dashboard-details-content">
-          <ResearchFailureList failures={unresolvedFailures.map((attempt) => {
-            const failedAt = attempt.reviewedAt ?? attempt.completedAt ?? attempt.updatedAt;
-            const snapshot = attempt.inputSnapshot && typeof attempt.inputSnapshot === 'object' ? attempt.inputSnapshot as { address?: string | null; city?: string | null; zip?: string | null } : null;
-            return {
-              id: attempt.id,
-              accountId: attempt.wholesaleAccount.id,
-              name: attempt.wholesaleAccount.name,
-              identity: [attempt.wholesaleAccount.city, attempt.wholesaleAccount.licenseeId].filter(Boolean).join(' · '),
-              reason: accountResearchFailureReason(attempt),
-              submittedLocation: snapshot ? [snapshot.address, snapshot.city, snapshot.zip].filter(Boolean).join(', ') : '',
-              failedAt: formatEasternDateTime(failedAt),
-            };
-          })} />
-        </div>
-      </details>
-
       <details className="dashboard-section dashboard-details" id="research-history">
-        <summary><span><strong>Account research history</strong><small>{researchHistoryCount.toLocaleString()} accounts with saved research · collapsed by default</small></span><span className="pill">{researchHistoryCount.toLocaleString()}</span></summary>
+        <summary><span><strong>Account research history</strong><small>{researchHistoryCount.toLocaleString()} accounts with saved research</small></span><span className="pill">{researchHistoryCount.toLocaleString()}</span></summary>
         <div className="dashboard-details-content">
         {researchHistory.length === 0 ? <div className="card empty-state"><h3>No completed research yet</h3><p>Completed, validated account research will appear here.</p></div> : <div className="card research-job-list">{researchHistory.map((item) => {
           const latestJob = item.wholesaleAccount.accountResearchJobs[0];
@@ -313,7 +314,7 @@ export default async function AccountResearchPage({ searchParams }: { searchPara
       </details>
 
       <section className="dashboard-section">
-        <SectionHeading description="Keep the reviewed CSV workflow available for corrections, third-party research, and recovery." title="Manual CSV fallback" />
+        <SectionHeading title="Manual CSV fallback" />
         <div className="card research-workflow-card">
           <div className="segmented-submit"><a className="btn secondary" href="/api/admin/account-research/export?limit=100">Download next 100 accounts</a><a className="btn secondary" href="/api/admin/account-research/export?limit=200">Download next 200 accounts</a></div>
           <details className="research-evidence-disclosure"><summary>Show the manual ChatGPT research prompt</summary><pre className="research-prompt">{`Research every account in the attached CRM account-research CSV using current public web sources. Return a downloadable CSV with exactly the same columns and exactly one row for every input row.
@@ -327,6 +328,6 @@ Keep every identity column unchanged and verify findings against the exact stree
         </form>
       </section>
       </>}
-    </>
+    </div>
   );
 }

@@ -38,15 +38,17 @@ test('forecast table renders 34 forecast cases and 30 current-demand cases indep
   assert.match(text(html), /88% of the 30-day forecast · separate estimate/);
   assert.match(text(html), /not added to any forecast or planning target/);
   assert.doesNotMatch(html, />64(?: cases)?</, 'current demand must never be added to the statistical forecast');
-  assert.match(html, /Immediate demand · 30 cases/);
-  assert.match(html, /30-day forecast<strong>34 cases<\/strong>/);
+  assert.match(cells[2], /data-label="Immediate demand estimate"/);
+  assert.match(cells[1], /data-label="30-day forecast"/);
+  assert.equal((html.match(/class="pf-current-demand/g) ?? []).length, 1, 'one record renders once for both viewport layouts');
 });
 
 test('table and expanded per-product summary agree on the current demand total and warehouse components', () => {
   const row = demand();
   const table = text(renderToStaticMarkup(createElement(ForecastTable, { rows: [forecast], currentDemand: { rum: row } })));
   const detail = text(renderDemand(row, true));
-  assert.match(table, /Immediate demand · 30 cases/);
+  assert.match(table, /Immediate demand estimate/);
+  assert.match(table, /30 cases To agency MIN/);
   assert.match(detail, /^30 cases Agency replenishment to MIN/);
   assert.match(detail, /GPT: 18 · GRN: 12/);
   assert.equal(row.byWarehouse.GPT! + row.byWarehouse.GRN!, row.demandCases);
@@ -137,7 +139,8 @@ test('operational source normalization leaves all three cumulative statistical f
     const selected = horizon === 30 ? after : after.horizons![horizon]!;
     const html = text(renderToStaticMarkup(createElement(ForecastTable, { rows: [summaryFor(selected)], horizon, currentDemand: { rum: demand() } })));
     assert.match(html, new RegExp(`${horizon}-day forecast`));
-    assert.match(html, /Immediate demand · 30 cases/);
+    assert.match(html, /Immediate demand estimate/);
+    assert.match(html, /30 cases To agency MIN/);
     if (horizon !== 30) assert.doesNotMatch(html, /% of the 30-day forecast/);
   }
 });
@@ -168,7 +171,7 @@ test('delivery UI withholds a typical lead time until sufficient history and kee
   const html = renderToStaticMarkup(createElement(DeliveryAvailability, { data: deliveryData(configured, missing), now: new Date(observedAt) }));
   assert.match(text(html), /GPT Groveport Next available: .*3 calendar days out/);
   assert.match(text(html), /GRN Green OpenDock is not configured/);
-  assert.equal((html.match(/Insufficient history for a typical lead time/g) ?? []).length, 2);
+  assert.match(text(html), /Insufficient history for a typical lead time at either warehouse/);
   assert.doesNotMatch(html, /About average|More than average|Less than average|0 calendar days out/);
   assert.doesNotMatch(html, /operating business days/, 'missing source calendar must not invent business-day counts');
 });

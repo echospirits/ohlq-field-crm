@@ -10,10 +10,15 @@ const label = (value: string) => value.toLowerCase().replaceAll('_', ' ').replac
 const confidence = (value: string) => value === 'INSUFFICIENT_DATA' ? 'Insufficient data' : `${label(value)} confidence`;
 
 function ProductFitRows({ fits }: { fits: AgencyProductMarketFit[] }) {
-  return <div className="store-fit-list">{fits.map((fit) => <details key={fit.id} className="store-fit-row">
-    <summary><span><strong>{fit.itemName}</strong><small>{label(fit.recommendationType)} · {confidence(fit.confidence)} · Through {formatDateOnly(fit.asOfDate)}</small></span><span className="store-fit-score">{fit.confidence === 'INSUFFICIENT_DATA' ? 'Collecting evidence' : `${fit.fitScore}/100`}</span></summary>
-    <div><p>{fit.category ? label(fit.category) : 'Category unknown'} · Product price {money(fit.targetPrice750)} / 750ml · {fit.peerBuyerCount} peer buyers</p><ul>{Array.isArray(fit.reasons) ? fit.reasons.filter((reason): reason is string => typeof reason === 'string').map((reason, index) => <li key={index}>{reason}</li>) : null}</ul></div>
-  </details>)}</div>;
+  return <div className="table-scroll" role="region" aria-label="Product fit comparison" tabIndex={0}><table className="comparison-table product-fit-comparison-table"><thead><tr><th scope="col">Product</th><th scope="col">Fit</th><th scope="col" className="numeric">Price / 750ml</th><th scope="col" className="numeric">Peer buyers</th><th scope="col">Evidence</th></tr></thead><tbody>{fits.map((fit) => {
+    const reasons = Array.isArray(fit.reasons) ? fit.reasons.filter((reason): reason is string => typeof reason === 'string') : [];
+    return <tr key={fit.id}>
+      <th scope="row" data-label="Product"><strong>{fit.itemName}</strong><small>{fit.category ? label(fit.category) : 'Category unknown'}</small></th>
+      <td data-label="Fit"><strong>{fit.confidence === 'INSUFFICIENT_DATA' ? 'Collecting evidence' : `${fit.fitScore}/100`}</strong><small>{label(fit.recommendationType)} · {confidence(fit.confidence)}</small></td>
+      <td className="numeric" data-label="Price / 750ml">{money(fit.targetPrice750)}</td><td className="numeric" data-label="Peer buyers">{fit.peerBuyerCount}</td>
+      <td data-label="Evidence">{reasons[0] ? <p className="intelligence-key-reason">{reasons[0]}</p> : null}<small>Through {formatDateOnly(fit.asOfDate)}</small>{reasons.length > 1 ? <details className="compact-details"><summary>More evidence ({reasons.length - 1})</summary><ul>{reasons.slice(1).map((reason, index) => <li key={index}>{reason}</li>)}</ul></details> : null}</td>
+    </tr>;
+  })}</tbody></table></div>;
 }
 
 function Evidence({ source }: { source: StoreContext['store']['source'] }) {
@@ -40,7 +45,7 @@ export function AgencyStoreIntelligence({ agencyId, context }: { agencyId: strin
   return <section id="store-intelligence" className="retail-intelligence-section" aria-labelledby="store-context-heading">
       <div className="store-intelligence-body">
         <h3 id="store-context-heading">Store & neighborhood</h3>
-        {!context ? <p className="muted">Store ownership, format, and area context have not been recorded yet. Add confirmed details below to build this account’s profile.</p> : <div className="store-context-sections">
+        {!context ? <p className="muted">Store and area context have not been recorded yet.</p> : <div className="store-context-sections">
           <section><h3>Store & buying decisions</h3><dl className="store-facts">
             <div><dt>Ownership</dt><dd>{context.store.ownership}{context.store.chainName ? ` · ${context.store.chainName}` : ''}</dd></div>
             <div><dt>Format</dt><dd>{context.store.format}</dd></div><div><dt>Buying decisions</dt><dd>{context.store.buying}</dd></div>
@@ -68,7 +73,7 @@ export function AgencyRetailMarketIntelligence({ market, fits }: { market: Agenc
         </> : <><h3>What sells here</h3><p className="muted">Retail market data is not available yet. It is prepared after a completed sales import.</p></>}
       </div>
       <div className="store-intelligence-body retail-product-fit">
-        <h3>Products to investigate</h3><p className="muted">Exploratory fit based on observed category, price, and peer demand. Scores are not a probability of success. Store context is available for review and is not yet included in scoring.</p>
+        <h3>Products to investigate</h3><p className="muted">Exploratory fit · not a success probability. Store context is excluded from scoring.</p>
         {fits.length ? <>
           <ProductFitRows fits={fits.slice(0, 5)} />
           {fits.length > 5 ? <details className="store-fit-more"><summary>More products ({fits.length - 5})</summary><ProductFitRows fits={fits.slice(5)} /></details> : null}

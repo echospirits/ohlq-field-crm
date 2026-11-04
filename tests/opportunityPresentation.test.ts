@@ -28,10 +28,12 @@ test('returns no component chart for older explanations without stored component
   assert.deepEqual(parseOpportunityScoreComponents(['Review current sales']), []);
 });
 
-test('wholesale opportunities use the compact intelligence row and live search pattern', () => {
+test('wholesale opportunities compare fit and coverage while retaining live search and current assessments', () => {
   const page = readFileSync('app/opportunities/page.tsx', 'utf8');
   const search = readFileSync('app/opportunities/OpportunitySearch.tsx', 'utf8');
-  assert.match(page, /className="opportunity-results"/);
+  assert.match(page, /className="comparison-table intelligence-comparison-table restaurant-opportunities-table"/);
+  assert.match(page, />Compatible \/ 30d<\/th>/);
+  assert.match(page, />Source coverage<\/th>/);
   assert.match(page, /opportunity-row/);
   assert.match(page, /WholesaleAssessmentSummary/);
   assert.doesNotMatch(page, /className="card opportunity-card"/);

@@ -38,7 +38,7 @@ export default async function LoginPage({
         </div>
       </div>
       <p className="muted">Sign in to your Echo Spirits account.</p>
-      {params.status ? <p className="pill">{statusMessages[params.status] ?? params.status}</p> : null}
+      {params.status ? <p className="pill" role="status">{statusMessages[params.status] ?? params.status}</p> : null}
       <LoginForm />
     </div>
   );

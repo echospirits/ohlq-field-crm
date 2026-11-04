@@ -4,6 +4,7 @@ import { getCurrentUser, getUserDisplayName } from '../lib/auth';
 import { APP_COMPANY, APP_DESCRIPTION, APP_NAME } from '../lib/appBrand';
 import { isAdminRole, isTasterRole } from '../lib/userAccess';
 import { getOrganizationContext, getOrganizationFeatures } from '../lib/organizations';
+import { ECHO_ORGANIZATION_ID } from '../lib/echoAccess';
 import Link from 'next/link';
 import { AppBreadcrumbs, AppSidebarNavigation, MobileTabbar } from './components/AppNavigation';
 import { GlobalSearchForm } from './components/GlobalSearchForm';
@@ -14,6 +15,8 @@ import './redesign.css';
 import './theme.css';
 import './field-workspace.css';
 import './workspace-foundation.css';
+import './field-data.css';
+import './daily-work.css';
 import { AppearanceSync } from './components/AppearanceSync';
 import { UsageTracker } from './components/UsageTracker';
 import { getAppEnvironment, getEnvironmentLabel } from '../lib/appEnvironment';
@@ -47,7 +50,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const isAdmin = Boolean(user && isAdminRole(user.role) && (!isPlatformAdmin || organizationContext));
   const tenantAppName = organizationContext?.organization.appName || APP_NAME;
   const tenantCompany = organizationContext?.organization.displayName || APP_COMPANY;
-  const tenantTheme = organizationContext
+  // Echo's approved product palette is owned by the shared theme. Preserve
+  // configured brand overrides for any future non-Echo organization context.
+  const tenantTheme = organizationContext && organizationContext.organization.id !== ECHO_ORGANIZATION_ID
     ? ({
         '--accent': organizationContext.organization.brandPrimaryColor,
         '--accent-hover': `color-mix(in oklab, ${organizationContext.organization.brandPrimaryColor} 82%, black)`,

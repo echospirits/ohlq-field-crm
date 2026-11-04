@@ -43,7 +43,7 @@ async function main() {
     ] : initial, () => undefined] },
     './useCurrentLocation': { useCurrentLocation: () => ({ location: { latitude: 0, longitude: 0, accuracy: 10 }, status: 'ready', requestLocation: () => undefined }) },
   });
-  const styles = ['styles.css', 'crm/crm.css', 'redesign.css', 'theme.css', 'field-workspace.css', 'workspace-foundation.css'].map(p => readFileSync(`app/${p}`, 'utf8')).join('\n');
+  const styles = ['styles.css', 'crm/crm.css', 'redesign.css', 'theme.css', 'field-workspace.css', 'workspace-foundation.css', 'daily-work.css', 'field-data.css'].map(p => readFileSync(`app/${p}`, 'utf8')).join('\n');
   const permissions = { enabledFeatures: [...FEATURE_KEYS], isAdmin: true, isPlatformAdmin: false, isTaster: false };
   const brief = { lastContact: null, lastMeaningful: null, lastVisit: null, lastFollowUp: null,
     health: { score: null, reasons: [], missing: ['Meaningful contact history'], contactDays: 30 },
@@ -88,7 +88,7 @@ async function main() {
       assert.ok(await page.getByText('Last visit', { exact: false }).count());
       await page.getByText('Plan my route', { exact: true }).click();
       await page.getByText('No account stops assigned to you on this date.', { exact: false }).waitFor();
-      await page.getByText('Events and staff schedule', { exact: true }).click();
+      assert.equal(await page.locator('section.schedule-events').count(), 1, 'Events are visible in the schedule');
       await page.getByText('Add event or shift', { exact: true }).waitFor();
       await page.getByText('Relationship evidence', { exact: true }).click();
       await page.getByText('Missing data is not zero performance.', { exact: false }).waitFor();

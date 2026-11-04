@@ -1,4 +1,5 @@
 import { AccountDocuments } from "./AccountDocuments";
+import Link from "next/link";
 import { prisma } from "../../lib/prisma";
 import {
   accountKinds,
@@ -64,9 +65,26 @@ export async function AccountProfile({
           select: { name: true },
         })
     : null;
+  const category = c.categories.find((entry) => entry.id === d.kind)?.name
+    ?? (d.kind ? d.kind.toLowerCase().replaceAll("_", " ") : "Not recorded");
+  const savedFields = c.fields.flatMap((field) => {
+    const value = d.custom?.[field.id];
+    if (value === null || value === undefined || value === "") return [];
+    return [{ label: field.name, value: typeof value === "boolean" ? value ? "Yes" : "No" : String(value) }];
+  });
   return (
-    <details className="card">
-      <summary>Account profile, territory &amp; team</summary>
+    <section className="workspace-section account-profile-summary" aria-label="Account profile">
+      <h2>Account profile</h2>
+      <dl className="read-summary account-profile-facts">
+        <div><dt>Category</dt><dd>{category}</dd></div>
+        <div><dt>Territory</dt><dd>{c.territories.find((entry) => entry.id === d.territoryId)?.name ?? 'Unassigned'}</dd></div>
+        <div><dt>Team</dt><dd>{c.teams.find((entry) => entry.id === d.teamId)?.name ?? 'Unassigned'}</dd></div>
+        {d.parent ? <div><dt>Parent account</dt><dd><Link href={`/${d.parent.accountType === 'AGENCY' ? 'agencies' : 'wholesale'}/${encodeURIComponent(d.parent.accountId)}`}>{parent?.name ?? 'Parent account'}</Link></dd></div> : null}
+        {savedFields.map((field) => <div key={field.label}><dt>{field.label}</dt><dd>{field.value}</dd></div>)}
+      </dl>
+      {d.documents?.some((document) => /^https:\/\//i.test(document.url)) ? <div className="account-document-links" aria-label="Account documents">{d.documents.filter((document) => /^https:\/\//i.test(document.url)).map((document, index) => <a href={document.url} key={`${document.url}-${index}`} target="_blank" rel="noopener noreferrer">{document.name || 'Document'}<span className="sr-only"> (opens in a new tab)</span></a>)}</div> : null}
+      <details className="compact-details account-profile-editor">
+      <summary>Edit profile, territory &amp; team</summary>
       <CrmForm
         action={saveAccountMetadataAction}
         submitLabel="Save account profile"
@@ -159,6 +177,7 @@ export async function AccountProfile({
           directory or purchase records.
         </p>
       </CrmForm>
-    </details>
+      </details>
+    </section>
   );
 }

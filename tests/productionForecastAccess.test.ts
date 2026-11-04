@@ -43,12 +43,12 @@ test('forecast discovery appears in desktop and mobile navigation for platform a
   assert.equal(getNavigationItems('work', ['PRODUCTION_FORECASTING']).some(i => i.key === 'production-forecasting'), true);
   assert.equal(getMoreNavigationItems(false, ['PRODUCTION_FORECASTING']).some(i => i.key === 'production-forecasting'), true);
 });
-test('mobile and desktop product links carry selected organization and filters into detail', () => {
+test('one responsive product link carries selected organization and filters into detail', () => {
   const product = { id: 'p', name: 'Rum', code: 'RUM', market: 'OH' };
   const row = summaryFor(forecastProduct(product, [], [], '2026-10-27'));
   const html = renderToStaticMarkup(createElement(ForecastTable, { rows: [row], initial: { q: 'Rum', confidence: 'Low' }, organizationId: echo.id }));
   const productLinks = html.match(/href="\/analytics\/production\/p\?[^\"]+"/g) ?? [];
-  assert.equal(productLinks.length, 2);
+  assert.equal(productLinks.length, 1);
   for (const link of productLinks) { assert.match(link, /organization=org_echo_spirits/); assert.match(link, /q=Rum/); assert.match(link, /horizon=30/); }
 });
 

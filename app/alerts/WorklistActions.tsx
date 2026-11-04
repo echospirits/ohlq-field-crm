@@ -90,6 +90,8 @@ export function WorklistActions({
   const closeDialog = useCallback(() => setOpenAction(null), []);
   useDialogFocus(dialogRef, openAction !== null, closeDialog);
   const initialSummary = [item.title, item.detail].filter(Boolean).join('\n\n');
+  const calendarFailed = item.calendarSyncStatus === 'ERROR';
+  const calendarMessage = calendarFailed ? 'Calendar sync failed' : `Calendar ${(item.calendarSyncStatus ?? 'status unavailable').toLowerCase().replaceAll('_', ' ')}`;
 
   return (
     <div className="action-row task-actions">
@@ -106,8 +108,7 @@ export function WorklistActions({
       </ActionForm>
 
       <button className="secondary" type="button" onClick={() => setOpenAction('reschedule')}>Reschedule</button>
-
-
+      {item.calendarSyncError || calendarFailed ? <p className={calendarFailed ? 'notice danger worklist-sync-error' : 'worklist-calendar-status'} role={calendarFailed ? 'alert' : 'status'}>{calendarMessage}{item.calendarSyncError ? `: ${item.calendarSyncError}` : '. Review calendar settings and retry.'}</p> : null}
       <details className="compact-details worklist-edit-details">
         <summary aria-label="More task actions"><NavigationIcon name="more" /><span className="sr-only">Edit, reassign, or cancel</span></summary>
         {evidence ? <div className="worklist-task-evidence">{evidence}</div> : null}
@@ -121,7 +122,7 @@ export function WorklistActions({
             <label>Time <span className="optional-label">Optional</span><input name="dueTime" type="time" defaultValue={item.dueTime} /></label>
             <label>Assigned to<select name="assignedToUserId" defaultValue={item.assignedToUserId ?? ''}><option value="">-- Unassigned --</option>{users.map((user) => <option key={user.id} value={user.id}>{user.name}</option>)}</select></label>
           </div>
-          {item.calendarSyncStatus ? <p className="field-note">Calendar: {item.calendarSyncStatus.toLowerCase().replaceAll('_', ' ')}{item.calendarSyncError ? ` - ${item.calendarSyncError}` : ''}</p> : null}
+          {item.calendarSyncStatus && !item.calendarSyncError ? <p className="field-note">Calendar: {item.calendarSyncStatus.toLowerCase().replaceAll('_', ' ')}</p> : null}
           <SubmitButton type="submit">Save task</SubmitButton>
         </ActionForm>
       <ActionForm action={updateStatusAction}>

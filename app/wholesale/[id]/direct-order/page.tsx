@@ -43,7 +43,7 @@ export default async function DirectWholesaleOrderPage({ params }: { params: Pro
   const licenseeIds = getWholesaleLicenseeIdValues(account);
 
   return <>
-    <PageHeader eyebrow="Ohio restaurant" title="Create Direct Restaurant Order" description={`Prepare an A-3a PDF for ${account.name}. Nothing is emailed or transmitted.`} actions={<Link className="btn secondary" href={`/wholesale/${account.id}`}>Back to account</Link>} />
+    <PageHeader eyebrow="Ohio restaurant" title="Create Direct Restaurant Order" description={account.name} actions={<Link className="btn secondary" href={`/wholesale/${account.id}`}>Back to account</Link>} />
     {readyLocations.length === 0 ? <article className="card empty-state"><h2>A-3a location setup required</h2><p>Add the seller name and address for an active A-3a location before creating a restaurant PDF.</p><Link className="btn" href="/admin/organization">Configure organization</Link></article> : organizationProducts.length === 0 ? <article className="card empty-state"><h2>No organization products are available</h2><p>Confirm the organization's Ohio product selection before creating an order.</p><Link className="btn" href="/admin/organization">Configure products</Link></article> : <DirectWholesaleOrderForm
       account={{
         address: account.address || '', city: account.city || '', dba: account.name,

@@ -114,7 +114,6 @@ export default async function AgenciesPage({
       <header className="page-heading page-header">
         <div>
           <h1>Retail</h1>
-          <p className="muted">Find retail accounts, review account context, and start a visit.</p>
         </div>
       </header>
       <AccountViewNavigation active="agencies" />
@@ -127,20 +126,15 @@ export default async function AgenciesPage({
       <DirectoryPagination path="/agencies" params={params} page={pagination.page} total={total} />
 
       {agencies.length === 0 ? <p className="notice">No retail accounts match your search in the states enabled for your organization.</p> : null}
-      <div className="table-scroll"><table className="responsive-table account-directory-table retail-directory-table">
+      <div className="table-scroll" role="region" aria-label="Retail accounts" tabIndex={0}><table className="responsive-table comparison-table account-directory-table retail-directory-table">
         <thead>
           <tr>
-            <th>Name</th>
-            <th>Retail ID</th>
-            <th>Address</th>
-            <th>City</th>
-            <th>Primary Contact</th>
-            <th>Contact Phone</th>
-            <th>Retail Phone</th>
-            <th>Tags</th>
-            <th>Logged Visits</th>
-            <th>Most Recent Visit</th>
-            <th>Actions</th>
+            <th scope="col">Account</th>
+            <th scope="col">Location</th>
+            <th scope="col">Contact</th>
+            <th scope="col">Visits</th>
+            <th scope="col">Tags</th>
+            <th scope="col">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -157,30 +151,19 @@ export default async function AgenciesPage({
                     {agency.name}
                   </Link>
                   {targetedIds.has(agency.id) ? <TargetAccountMarker /> : null}
-                  <span className="account-directory-mobile-only account-directory-location">
-                    {address ? <AddressLink address={address} /> : `Retail ${agency.agencyId}`}
-                  </span>
-                  {stats.lastVisitAt || agency.primaryContact ? <span className="account-directory-mobile-only account-directory-context">
-                    {[stats.lastVisitAt ? `Last visit ${formatEasternDate(stats.lastVisitAt)}` : null, agency.primaryContact].filter(Boolean).join(' · ')}
-                  </span> : null}
+                  <small className="directory-record-id">Retail {agency.agencyId}</small>
                 </td>
-                <td className="account-directory-secondary-cell" data-label="Retail ID">{agency.agencyId}</td>
-                <td className="account-directory-secondary-cell" data-label="Address"><AddressLink address={address}>{agency.address}</AddressLink></td>
-                <td className="account-directory-secondary-cell" data-label="City">{agency.city}</td>
-                <td className="account-directory-secondary-cell" data-label="Primary Contact">{agency.primaryContact}</td>
-                <td className="account-directory-secondary-cell" data-label="Contact Phone"><PhoneLink phone={agency.primaryContactPhone} /></td>
-                <td className="account-directory-secondary-cell" data-label="Retail Phone"><PhoneLink phone={agency.phone} /></td>
+                <td className="account-directory-secondary-cell directory-location-cell" data-label="Location"><AddressLink address={address}>{[agency.address, agency.city, agency.state].filter(Boolean).join(', ') || 'Location unavailable'}</AddressLink></td>
+                <td className="account-directory-secondary-cell" data-label="Contact"><span>{agency.primaryContact || 'No primary contact'}</span>{phone ? <PhoneLink phone={phone} /> : null}{agency.primaryContactPhone && agency.phone && agency.primaryContactPhone !== agency.phone ? <small>Retail: <PhoneLink phone={agency.phone} /></small> : null}</td>
+                <td className="account-directory-secondary-cell" data-label="Visits"><span>{stats.lastVisitAt ? formatEasternDate(stats.lastVisitAt) : 'No recorded visit'}</span><small>{stats.count} logged</small></td>
                 <td className="account-directory-secondary-cell" data-label="Tags">
                   <TagBadges tags={agency.tags.map((assignment) => assignment.tag)} />
                 </td>
-                <td className="account-directory-secondary-cell" data-label="Logged Visits">{stats.count}</td>
-                <td className="account-directory-secondary-cell" data-label="Most Recent Visit">{formatEasternDate(stats.lastVisitAt)}</td>
                 <td className="account-directory-actions-cell" data-label="Actions">
                   <Link className="btn compact-btn" href={`/visits/new?type=agency&agencyId=${agency.id}`}>
                     Log visit
                   </Link>
-                  {phone ? <a aria-label={`Call ${agency.name}`} className="btn secondary compact-btn account-directory-mobile-only" href={`tel:${phone}`}>Call</a> : null}
-                  {directionsHref ? <a aria-label={`Directions to ${agency.name}`} className="btn secondary compact-btn account-directory-mobile-only" href={directionsHref} rel="noreferrer" target="_blank">Directions</a> : null}
+                  {directionsHref ? <a aria-label={`Directions to ${agency.name}`} className="btn secondary compact-btn" href={directionsHref} rel="noreferrer" target="_blank">Directions</a> : null}
                 </td>
               </tr>
             );

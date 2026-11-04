@@ -2,6 +2,8 @@
 
 Audit baseline: TST `5faee9df930bd76b5e56b669f58a57210527f7d5`, inspected 2026-10-10.
 
+The implementation descriptions below are historical. Use the revised [UI/UX Guidelines](../UI-UX-GUIDELINES.md) for design decisions: expose important saved account facts in a compact read view, separate editing from reading, and preserve workflow behavior while allowing presentation changes. Current release scope controls feature availability; retired Communications and Recipes references are not directions to restore those features.
+
 The account is the primary workspace. Preserve notes/contacts then outstanding Worklist, account context and return links. Add communication logging and timeline filtering close to relationship information. Private correspondence must not leak through counts, headings or summaries.
 
 ## Implementation references

@@ -1,0 +1,130 @@
+/* Field data: readable saved facts and comparable records, with shared tokens. */
+.account-directory-table :is(td, th), .pipeline-comparison-table :is(td, th), .intelligence-comparison-table :is(td, th) { vertical-align: top; }
+.account-directory-table td { padding-block: 10px; }
+.account-directory-table :is(td > small, td > span:not(.priority), .directory-phone),
+.pipeline-comparison-table td > small, .intelligence-comparison-table :is(th, td) > small,
+.inventory-comparison-table th > small, .product-fit-comparison-table :is(th, td) > small { display: block; }
+.account-directory-table .directory-record-id { margin-top: 0; color: var(--muted); font-size: .75rem; font-weight: 400; }
+.account-directory-table .directory-location-cell { max-width: 20rem; }
+.account-directory-table .directory-phone { font-size: .8125rem; }
+.account-directory-table .account-directory-actions-cell > .btn { margin: 0 4px 4px 0; }
+.account-directory-table .account-contact-link { min-height: 0; }
+.pipeline-estimates { margin-bottom: 8px; padding: 8px 0; border-block: 1px solid var(--line); }
+.pipeline-estimates .pipeline-estimate-label { margin: 0 0 6px; color: var(--muted); font-size: .75rem; }
+.pipeline-estimates .metric-strip { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px 20px; margin: 0; padding: 0; border: 0; }
+.pipeline-estimates .metric-strip > div { min-width: 0; }
+.pipeline-estimates .metric-strip dd > small { color: var(--muted); font-size: .75rem; font-weight: 400; }
+.pipeline-planning-assumptions { margin-top: 12px; }
+.pipeline-comparison-table { table-layout: auto; }
+.pipeline-comparison-table th:first-child { width: 23%; }
+.pipeline-comparison-table td { min-width: 7rem; }
+.pipeline-comparison-table .pipeline-account-identity { display: flex; flex-direction: column; gap: 3px; }
+.pipeline-comparison-table .pipeline-account-identity > span { color: var(--muted); font-size: .8125rem; font-weight: 400; }
+.pipeline-comparison-table .pipeline-account-identity > a { display: inline-flex; align-items: center; min-height: 44px; }
+.pipeline-comparison-table td > small { color: var(--muted); margin-top: 4px; font-size: .75rem; }
+.pipeline-comparison-table .pipeline-attention { font-size: .8125rem; }
+.account-profile-summary { min-width: 0; }
+.account-profile-summary > h2 { margin: 0 0 10px; }
+.account-profile-facts { margin: 0; }
+.account-profile-facts dd, .account-plan-facts dd { overflow-wrap: anywhere; }
+.account-document-links { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 8px; }
+.account-document-links a { display: inline-flex; align-items: center; min-height: 44px; }
+.account-profile-editor { margin-top: 8px; }
+.account-profile-editor > .crm-form { margin-top: 8px; }
+.account-plan-summary { min-width: 0; padding: 12px 0; border-top: 1px solid var(--line); }
+.account-plan-summary > .section-heading { margin: 0 0 8px; }
+.account-plan-summary h3 { font-size: .875rem; margin: 0; }
+.account-plan-summary > p { display: inline-block; margin: 0 16px 0 0; color: var(--muted); font-size: .8125rem; }
+.account-plan-summary > p + details:not([open]) { display: inline-block; }
+.account-plan-facts { margin: 0; }
+.account-plan-facts .account-plan-objective { grid-column: span 2; }
+.account-plan-facts dd { white-space: pre-wrap; }
+.account-plan-editor { margin-top: 4px; }
+.account-status-age { color: var(--muted); align-self: center; font-size: .75rem; }
+.worklist-task-context { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 4px; color: var(--muted); font-size: .75rem; }
+.worklist-table td[data-label="Item"] > .preserve-lines,
+.account-worklist-item > .preserve-lines { font-size: .8125rem; margin-top: 6px; }
+.worklist-table .worklist-sync-error { flex-basis: 100%; margin: 4px 0; font-size: .8125rem; }
+.worklist-table th:first-child { width: 38%; }
+.worklist-table th:last-child { width: 30%; }
+.intelligence-comparison-table { table-layout: auto; }
+.intelligence-comparison-table th:first-child { min-width: 10rem; }
+.intelligence-comparison-table td:last-child { min-width: 13rem; }
+.intelligence-comparison-table :is(th, td) { overflow-wrap: anywhere; }
+.intelligence-comparison-table :is(th, td) > small { font-size: .75rem; font-weight: 400; color: var(--muted); margin-top: 4px; }
+.intelligence-comparison-table .intelligence-record-name,
+.intelligence-comparison-table .opportunity-row-identity a { display: inline-flex; align-items: center; min-height: 44px; font-weight: 650; }
+.intelligence-comparison-table .intelligence-product-name { display: block; margin-top: 8px; }
+.intelligence-key-reason { margin: 0 0 4px; font-size: .8125rem; line-height: 1.45; }
+.intelligence-row-actions { display: flex; flex-direction: column; align-items: start; gap: 4px; }
+.intelligence-comparison-table .contextual-actions { display: flex; flex-wrap: wrap; align-items: start; gap: 4px; }
+.intelligence-comparison-table .contextual-actions > :is(a,button) { min-height: 44px; padding: 8px 10px; font-size: .8125rem; }
+.intelligence-comparison-table .assessment-actions { display: flex; flex-wrap: wrap; align-items: start; gap: 4px; margin: 0; }
+.intelligence-comparison-table .assessment-actions > :is(p,details) { flex-basis: 100%; margin: 0; }
+.intelligence-comparison-table .assessment-actions p { font-size: .8125rem; line-height: 1.45; }
+.intelligence-comparison-table .wholesale-assessment > strong { font-size: .875rem; }
+.intelligence-comparison-table .wholesale-assessment .assessment-heading { display: flex; flex-wrap: wrap; gap: 4px 8px; }
+.intelligence-comparison-table .wholesale-assessment .assessment-evidence-mode { display: inline-flex; align-items: center; padding: 2px 6px; background: var(--panel-2); color: var(--muted-2); border: 1px solid var(--line); border-radius: 4px; font-size: .75rem; font-weight: 500; }
+.intelligence-comparison-table .opportunity-row-identity > p { margin: 4px 0 0; font-weight: 400; font-size: .8125rem; }
+.intelligence-continuation { display: inline-flex; align-items: center; min-height: 44px; }
+.assessment-working-facts { margin-block: 10px; }
+.assessment-working-facts dd { font-size: .9375rem; }
+.assessment-data-limit { margin: 6px 0; font-size: .8125rem; color: var(--muted); }
+.purchase-comparison-table th:first-child { min-width: 13rem; }
+.purchase-comparison-table th > small { display: block; font-weight: 400; color: var(--muted); }
+.agency-intelligence-stack > .agency-inventory-details { margin: 0; }
+.inventory-comparison-table .numeric, .product-fit-comparison-table .numeric { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.agency-wholesale-influence .agency-intelligence-snapshot { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+
+@media (max-width: 900px) {
+  .account-directory-table .account-directory-name-cell { padding-bottom: 0; }
+  .account-directory-table .directory-location-cell { grid-column: 1 / -1; max-width: none; padding-top: 0; }
+  .account-directory-table .directory-location-cell::before { display: none; }
+  .account-directory-table td[data-label="Tags"]:has(.tag-badges:empty) { display: none; }
+  .account-directory-table .directory-next-action { grid-column: 1 / -1; display: block; }
+  .account-directory-table .directory-next-action::before { display: inline; margin-right: 6px; }
+  .account-directory-table .account-directory-actions-cell { padding-top: 4px; }
+  .account-directory-table .account-directory-actions-cell > .btn { flex: 0 1 auto; margin: 0; padding-inline: 12px; }
+  .account-directory-table .account-directory-name-link { font-size: .9375rem; }
+  .account-directory-table .directory-record-id { display: inline-block; margin: 0; }
+  .account-directory-table .account-contact-link { display: inline-flex; align-items: center; min-height: 44px; }
+  .account-directory-table .directory-location-cell .account-contact-link { min-height: 32px; }
+  .pipeline-estimates .metric-strip { gap: 8px 12px; }
+  .pipeline-estimates .metric-strip dt { font-size: .75rem; }
+  .pipeline-estimates .metric-strip dd { margin-top: 2px; font-size: 1.125rem; }
+  .pipeline-workspace .pipeline-filters { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: end; gap: 6px 8px; margin: 8px 0; }
+  .pipeline-workspace .pipeline-filters > label { min-width: 0; }
+  .pipeline-workspace .pipeline-filters > label input { width: 100%; min-width: 0; }
+  .pipeline-workspace .pipeline-scope-details { min-width: 0; }
+  .pipeline-workspace .pipeline-scope-details > summary { padding-right: 0; }
+  .pipeline-workspace .pipeline-scope-details[open] { grid-column: 1 / -1; }
+  .pipeline-workspace .sales-journey { margin: 6px 0; }
+  .pipeline-workspace > .scope-tabs { margin-block: 6px 12px; }
+  .pipeline-workspace > .dashboard-section > .section-heading { margin-bottom: 8px; }
+  .pipeline-comparison-table, .intelligence-comparison-table { display: block; min-width: 0; width: 100%; }
+  .pipeline-comparison-table thead, .intelligence-comparison-table thead { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .pipeline-comparison-table tbody, .intelligence-comparison-table tbody { display: block; }
+  .pipeline-comparison-table tr, .intelligence-comparison-table tr { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 6px 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+  .pipeline-comparison-table :is(th, td), .intelligence-comparison-table :is(th, td) { display: block; width: auto; min-width: 0; padding: 2px 0; border: 0; font-size: .875rem; text-align: left; }
+  .pipeline-comparison-table th:first-child, .intelligence-comparison-table th:first-child { grid-column: 1 / -1; width: auto; min-width: 0; }
+  .pipeline-comparison-table .pipeline-account-identity { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 0 8px; }
+  .pipeline-comparison-table .pipeline-account-identity > span { grid-column: 1 / -1; }
+  .pipeline-comparison-table td[data-label="Sales / buying"] { order: 1; }
+  .pipeline-comparison-table td[data-label="Owner"] { order: 2; }
+  .pipeline-comparison-table td[data-label="Next follow-up"] { order: 3; grid-column: 1 / -1; }
+  .pipeline-comparison-table td[data-label="Activity / purchase"] { order: 4; grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: baseline; gap: 3px 8px; }
+  .pipeline-comparison-table td[data-label="Activity / purchase"] > small { margin-top: 0; }
+  .pipeline-comparison-table td[data-label="Attention"] { order: 5; }
+  .pipeline-comparison-table td::before, .intelligence-comparison-table td::before { content: attr(data-label); display: block; color: var(--muted); font-size: .75rem; font-weight: 500; margin-bottom: 3px; }
+  .pipeline-comparison-table td[data-label="Attention"], .intelligence-comparison-table td[data-label="Evidence"], .intelligence-comparison-table td[data-label="Actions"] { grid-column: 1 / -1; }
+  .intelligence-comparison-table .intelligence-product-name { margin-top: 3px; }
+  .intelligence-comparison-table td:last-child { min-width: 0; }
+  .intelligence-comparison-table .intelligence-row-actions { flex-direction: row; flex-wrap: wrap; gap: 4px 12px; }
+  .intelligence-comparison-table .intelligence-row-actions > .intelligence-more-actions { flex: 0 1 auto; }
+  .intelligence-comparison-table .intelligence-row-actions > .intelligence-more-actions[open] { flex-basis: 100%; }
+  .intelligence-comparison-table .assessment-actions > .contextual-actions { width: auto; }
+  .intelligence-comparison-table .opportunity-row-identity > div { margin: 0; }
+  .account-profile-facts, .account-plan-facts { gap: 8px 16px; }
+  .account-plan-facts .account-plan-objective { grid-column: 1 / -1; }
+  .agency-wholesale-influence .agency-intelligence-snapshot { grid-template-columns: repeat(3,minmax(0,1fr)); }
+}

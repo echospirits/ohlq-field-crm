@@ -20,7 +20,7 @@ import { getNavigationItems } from '../app/components/navigationConfig';
 test('sales status definitions are centralized, stable, and user friendly', () => {
   assert.deepEqual(SALES_STATUS_OPTIONS.map((option) => option.value), Object.values(AccountSalesStatus));
   assert.equal(SALES_STATUS_LABELS.WAITING_ON_ORDER, 'Waiting on Order');
-  assert.equal(BUYING_STATE_LABELS.NEVER_PURCHASED, 'Never purchased');
+  assert.equal(BUYING_STATE_LABELS.NEVER_PURCHASED, 'No recorded purchase', 'missing purchase evidence must not assert that no purchase ever occurred');
 });
 
 test('sales status is included in Core and independent of Intelligence', () => {
@@ -137,16 +137,17 @@ test('Pipeline, status writes, visit integration, and sales import are server ga
   assert.doesNotMatch(service, /WHOLESALE_OPPORTUNITIES|opportunityEngine/);
 });
 
-test('Pipeline defaults to its account list while the board retains visible filter and disclosure affordances', () => {
+test('Pipeline defaults to its comparison table while the board retains visible filter and disclosure affordances', () => {
   const pipeline = readFileSync('app/pipeline/page.tsx', 'utf8');
   const journey = readFileSync('app/components/SalesStatusJourney.tsx', 'utf8');
   const styles = readFileSync('app/components/salesStatus.css', 'utf8');
   assert.match(pipeline, /const view = params\?\.view === 'board' \? 'board' : params\?\.view === 'stages' \? 'stages' : 'list'/);
-  assert.ok(pipeline.indexOf("href={pipelineHref('board')}") < pipeline.indexOf("href={pipelineHref('list')}"));
+  assert.ok(pipeline.indexOf("href={pipelineHref('list')}") < pipeline.indexOf("href={pipelineHref('board')}"));
+  assert.match(pipeline, /<table className="comparison-table pipeline-comparison-table"/);
   assert.match(pipeline, /<details className="pipeline-kanban-column"/);
   assert.match(pipeline, /open=\{stageRows.length > 0\}/);
   assert.match(pipeline, /<summary><h3>\{option.label\}<\/h3>/);
-  assert.match(pipeline, /href=\{pipelineHref\(view, null\)\}>Clear filter/);
+  assert.match(pipeline, /href=\{pipelineHref\(view, null\)\}>Clear status filter/);
   assert.match(journey, /filterHref \? 'sales-journey--filters'/);
   assert.match(journey, /sales-journey-filter-icon/);
   assert.match(styles, /summary:focus-visible/);

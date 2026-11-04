@@ -40,14 +40,13 @@ export default async function NewWholesaleOrderPage({ searchParams }: { searchPa
   }) : [];
 
   return <>
-    <PageHeader eyebrow="Wholesale orders" title="Choose a wholesale customer" description="Search active Ohio accounts by name, DBA, permit, address, or city." actions={<Link className="btn secondary" href="/wholesale-orders">Back to orders</Link>} />
+    <PageHeader eyebrow="Wholesale orders" title="Choose a wholesale customer" actions={<Link className="btn secondary" href="/wholesale-orders">Back to orders</Link>} />
     <LiveFilterForm className="card wholesale-order-customer-search" label="Find a wholesale customer" role="search">
       <label htmlFor="wholesale-order-customer-q">Customer search</label>
       <div className="search-row">
         <input autoFocus id="wholesale-order-customer-q" name="q" placeholder="Name, permit, address, or city" type="search" defaultValue={q} />
         <button type="submit">Search</button>
       </div>
-      <p className="muted">Search runs across every eligible customer before showing the first {RESULT_LIMIT} matches.</p>
     </LiveFilterForm>
     {!q ? <article className="card empty-state"><h2>Find the customer for this order</h2><p>Enter at least part of a customer name, permit number, street, or city.</p></article> : accounts.length ? <section className="wholesale-order-customer-results" aria-label="Customer search results">
       {accounts.map((account) => <Link className="card wholesale-order-customer-card" href={`/wholesale/${account.id}/direct-order`} key={account.id}>

@@ -4,6 +4,8 @@ Start with [implementation progress](engineering/implementation-progress.md) and
 
 ## Current release
 
+**0.7.0 release preparation is authorized.** On November 4, 2026, the owner approved the redesigned TST interface and requested promotion to main. The stable UI upgrade preserves production forecasting/Operational Signals behavior and main's existing tests/tooling. See [release notes](releases/0.7.0.md), [release checklist](releases/0.7.0-checklist.md), [validation](releases/0.7.0-validation.md) and the [application audit](design/neat-tst-ui-audit-2026-11-04.md). Exact-candidate checks and deployment receipts govern readiness; this preparation statement does not claim a completed production deployment. No new development cycle is opened.
+
 **0.6.0 is released to TST and production; development remains frozen.** The cumulative forecasting horizons, historical evidence and approved exact source-line exclusion are verified in production. See [release notes](releases/0.6.0.md), [completed checklist](releases/0.6.0-checklist.md), [validation](releases/0.6.0-validation.md) and [UNRELEASED](releases/UNRELEASED.md). Unrelated TST test/tooling remains excluded from production. Historical [0.5.2](releases/0.5.2.md) and [0.5.0](releases/0.5.0.md) release records remain preserved; Communications runtime integrations remain retired. No new development cycle is opened.
 
 ## architecture

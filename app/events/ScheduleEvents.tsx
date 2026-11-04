@@ -32,29 +32,21 @@ export async function ScheduleEvents({
     }),
   ]);
   return (
-      <details className="section-disclosure schedule-events" id="events">
-        <summary><strong>Events and staff schedule</strong><span className="disclosure-meta">{events.length ? `${events.length} ${events.length === 1 ? 'event' : 'events'}` : 'None scheduled'}</span></summary>
-        <p className="field-note">
-          Upcoming events and the past 30 days, up to 100 events. All times
-          include a timezone.
-        </p>
+      <section className="workspace-section schedule-events" id="events" aria-labelledby="schedule-events-title">
+        <div className="section-heading"><h2 id="schedule-events-title">Events and staff schedule</h2><span className="pill">{events.length}</span></div>
+        <p className="record-meta">Upcoming and past 30 days{events.length === 100 ? ' · First 100 events' : ''}</p>
         {events.length ? (
           <ul className="schedule-event-list">
             {events.map((e) => (
               <li key={e.id}>
-                <Link href={`/events/${e.id}`}>{e.title}</Link> ·{" "}
-                {e.startsAt.toLocaleString("en-US", {
+                <div className="schedule-event-identity"><Link href={`/events/${e.id}`}>{e.title}</Link><time dateTime={e.startsAt.toISOString()}>{e.startsAt.toLocaleString("en-US", {
                   timeZone: organization.timezone,
                   timeZoneName: "short",
-                })}{" "}
-                · {e.status}
-                <p>
-                  {e.staffUserIds
-                    .map((id) => users.find((u) => u.id === id))
-                    .filter(Boolean)
-                    .map((u) => getUserDisplayName(u!))
-                    .join(", ") || "Staff not assigned"}
-                </p>
+                })}</time>{e.location ? <span className="muted">{e.location}</span> : null}</div>
+                <div className="schedule-event-staff">
+                  {e.staffUserIds.map((id) => { const member = users.find((candidate) => candidate.id === id); return member ? getUserDisplayName(member) : 'Inactive staff member'; }).join(", ") || "Staff not assigned"}
+                </div>
+                <span className="pill">{e.status}</span>
               </li>
             ))}
           </ul>
@@ -70,6 +62,6 @@ export async function ScheduleEvents({
             }))}
           />
         </details>
-      </details>
+      </section>
   );
 }

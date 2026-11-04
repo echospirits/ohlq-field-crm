@@ -1,12 +1,12 @@
 /* Shared field-work presentation. Domain-specific layouts remain in styles.css. */
-body { background: var(--bg); font-size: 15px; line-height: 1.5; }
+body { background: var(--bg); font-size: .9375rem; line-height: 1.5; }
 body::before { display: none; }
 main { min-width: 0; max-width: 1500px; padding: 32px 40px 56px; }
 main > * { min-width: 0; }
 aside { width: 244px; flex: 0 0 244px; background: var(--theme-surface-raised, #f0f1ea); padding: 24px 18px; }
 .app-brand strong { font-size: 29px; font-weight: 750; letter-spacing: -.055em; }
 .app-brand span { color: var(--muted); font-weight: 600; }
-.app-brand { border-left: 3px solid var(--accent); padding-left: 10px; }
+.app-brand { border-left: 0; padding-left: 0; }
 .app-nav-group { border-top: 0; margin-top: 18px; }
 .app-nav-label { font-size: 10px; letter-spacing: .09em; font-weight: 650; }
 aside a { min-height: 40px; padding: 9px 12px; font-size: 13px; font-weight: 550; border-radius: 10px; }

@@ -434,12 +434,12 @@ export function LogVisitForm({
       {initialValues?.returnTo ? <input name="returnTo" readOnly type="hidden" value={initialValues.returnTo} /> : null}
       {photoUploadError ? <p className="toast-notice page-status" role="alert">{photoUploadError}</p> : null}
 
-      {(initialValues?.sourceLabel && initialValues.sourceLabel !== selectedLocation?.name) || initialValues?.productName || initialValues?.reason ? <details className="action-context-summary visit-action-context"><summary>Task &amp; recommendation context</summary>
+      {(initialValues?.sourceLabel && initialValues.sourceLabel !== selectedLocation?.name) || initialValues?.productName || initialValues?.reason ? <section className="action-context-summary visit-action-context" aria-label="Task and recommendation context">
 
         <strong>{initialValues.sourceLabel ?? initialValues.productName}</strong>
         {initialValues.productItemCode && initialValues.productName ? <span>{initialValues.productItemCode} - {initialValues.productName}</span> : null}
         {initialValues.reason ? <small>{initialValues.reason}</small> : null}
-      </details> : null}
+      </section> : null}
 
       <fieldset className="visit-step visit-account-step">
         <legend className={!isChangingLocation && selectedLocation ? 'sr-only' : undefined}>Account</legend>
@@ -676,7 +676,7 @@ export function LogVisitForm({
           : <label className="visit-target-choice"><input name="targetAccount" type="checkbox" value="true" /><span><strong>Target Account</strong><small>Mark this account for active work and refresh its research.</small></span></label>}
       </fieldset> : null}
 
-      {hasLocation ? <details className="visit-contact-details"><summary>{selectedContacts.length ? `Contacts · ${selectedContacts.map((contact) => contact.name).join(', ')}` : 'Contact · Optional'}</summary><fieldset className="visit-step visit-contact-step">
+      {hasLocation ? <fieldset className="visit-step visit-contact-step">
         <legend>{physicalVisit ? 'Who did you meet?' : 'Who was involved?'} <span className="optional-label">Optional</span></legend>
         {visibleContacts.length > 0 ? <div className="visit-contact-chips">
           {visibleContacts.map((contact) => <button
@@ -688,7 +688,7 @@ export function LogVisitForm({
           ><strong>{contact.name}</strong>{contact.role ? <small>{contact.role}</small> : null}{contact.isPrimary ? <span>Primary</span> : null}</button>)}
         </div> : <p className="field-note">No active contacts for this account.</p>}
         <details className="compact-details nested-details">
-          <summary>{selectedContacts.length ? `Selected: ${selectedContacts.map((contact) => contact.name).join(', ')}` : 'Find or add contact'}</summary>
+          <summary>Find or add contact</summary>
           <label htmlFor="visit-contact-search">Search saved contacts</label>
           <input id="visit-contact-search" placeholder="Name, role, email, or phone" type="search" value={contactSearch} onChange={(event) => setContactSearch(event.target.value)} />
           {mode === 'create' ? <div className="form-grid inline-contact-create">
@@ -700,10 +700,9 @@ export function LogVisitForm({
             {contactCreateStatus === 'error' ? <p className="field-note form-error">Contact could not be saved. Try again.</p> : <p className="field-note">Saves to this account and selects the contact without leaving Log Visit.</p>}
           </div> : null}
         </details>
-      </fieldset></details> : null}
+      </fieldset> : null}
 
-      <details className="visit-details">
-        <summary>Add details <span>Contact, voice note, photo, or new account</span></summary>
+      <section className="visit-details" aria-label="Additional visit tools">
         <div className="visit-details-content">
           {mode === 'create' ? <details
             className="compact-details nested-details"
@@ -765,7 +764,7 @@ export function LogVisitForm({
             ))}
           </details> : null}
         </div>
-      </details>
+      </section>
 
       {physicalVisit && visitGuides.length ? <details className="compact-details"><summary>Visit guide</summary><input name="guideSignature" type="hidden" value={JSON.stringify(visitGuides.find(g=>g.accountType===(locationType==='agency'?'AGENCY':'WHOLESALE')))}/><label><input name="guideEnabled" type="checkbox"/>Include these answers with the visit</label>{visitGuides.find(g=>g.accountType===(locationType==='agency'?'AGENCY':'WHOLESALE'))?.questions.map((question,index)=><label key={`${locationType}:${index}`}>{question}<textarea name={`guideAnswer${index}`} maxLength={1500}/></label>)}</details> : null}
       {physicalVisit && mode==='create' && organizationId && currentUserId && (agencyId || wholesaleAccountId) ? <VisitDraft scope={`${organizationId}:${currentUserId}:${locationType}:${locationType==='agency'?agencyId:wholesaleAccountId}:${initialValues?.eventId??''}:${worklistItemId??''}:${initialValues?.opportunityId??''}`} value={{summary,followUpText,followUpDate,followUpTime,followUpMode,selectedOutcomes,submissionKey}} onRestore={draft=>{if(typeof draft.summary==='string')setSummary(draft.summary);if(typeof draft.followUpText==='string')setFollowUpText(draft.followUpText);if(typeof draft.followUpDate==='string')setFollowUpDate(draft.followUpDate);if(typeof draft.followUpTime==='string')setFollowUpTime(draft.followUpTime);if(['none','task'].includes(String(draft.followUpMode)))setFollowUpMode(draft.followUpMode as VisitFollowUpMode);if(Array.isArray(draft.selectedOutcomes))setSelectedOutcomes(draft.selectedOutcomes.filter((v):v is string=>typeof v==='string'));if(typeof draft.submissionKey==='string')setSubmissionKey(draft.submissionKey);}}/> : null}

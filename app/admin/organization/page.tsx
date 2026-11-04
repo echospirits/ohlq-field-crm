@@ -1,3 +1,4 @@
+import '../admin-workspace.css';
 import {PipelineStageSettings} from './PipelineStageSettings';
 import { AccountConfigurationSettings } from './AccountConfigurationSettings';
 import { VisitGuideSettings } from './VisitGuideSettings';
@@ -133,8 +134,8 @@ export default async function OrganizationSetupPage({ searchParams }: { searchPa
   });
   if (!organization) redirect('/');
 
-  return <>
-    <PageHeader eyebrow="Administration" title="Echo Settings" description="Maintain Echo's selling locations, products, data connections, and team workflows." />
+  return <div className="admin-workspace">
+    <PageHeader title="Echo Settings" />
     {status ? <p className="notice" role="status">{status.replaceAll('-', ' ')}</p> : null}
     <EchoDataSettings enabledStates={organization.enabledStates} vendors={organization.vendorIdentifiers} saveStates={saveEchoStates} addVendor={addEchoVendor} />
     <section className="platform-grid">
@@ -164,5 +165,5 @@ export default async function OrganizationSetupPage({ searchParams }: { searchPa
       <div className="section-heading"><div><h2>Product selection</h2><p className="muted">Choose which discovered item codes Echo includes. Echo administrators can maintain Brand Master imports.</p></div><form action={refreshProductCandidates}><SubmitButton className="compact-btn secondary" type="submit">Check for new products</SubmitButton></form></div>
       <ProductSelectionEditor action={saveProductSelection} organizationId={organizationId} products={organization.products.map((product) => ({ id: product.id, itemCode: product.externalItemCode, name: product.displayName, status: product.status }))} />
     </article>
-  </>;
+  </div>;
 }

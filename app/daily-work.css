@@ -1,0 +1,75 @@
+/* Daily work surfaces inherit the shared Echo-derived tokens and controls. */
+.schedule-events { min-width: 0; }
+.schedule-events > .record-meta { margin: 0 0 8px; }
+.schedule-event-list { display: block; list-style: none; padding: 0; margin: 0 0 8px; }
+.schedule-event-list > li { display: grid; grid-template-columns: minmax(0, 1fr) minmax(140px, .55fr) auto; gap: 8px 16px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.schedule-event-identity { display: grid; min-width: 0; gap: 3px; }
+.schedule-event-identity > a { display: inline-flex; align-items: center; min-height: 44px; width: fit-content; font-weight: 650; overflow-wrap: anywhere; }
+.schedule-event-identity > time, .schedule-event-identity > .muted, .schedule-event-staff { font-size: .8125rem; }
+.schedule-event-identity > time { font-variant-numeric: tabular-nums; color: var(--muted); }
+.schedule-event-staff { overflow-wrap: anywhere; }
+.schedule-events > details { margin-top: 8px; }
+.schedule-events > details > form, .event-editor > form { margin-top: 12px; }
+.schedule-events .pill { justify-self: end; }
+.event-comparison-table { min-width: 0; }
+.event-editor { margin: 12px 0 20px; }
+.event-editor > summary { font-weight: 600; }
+.event-overview dd { overflow-wrap: anywhere; }
+.tag-editor, .user-invite-panel { margin: 0 0 16px; }
+.tag-editor > form, .user-invite-panel > form { max-width: 800px; margin: 12px 0 0; }
+.tag-editor > form > textarea { min-height: 80px; }
+.user-manage-details > summary { white-space: nowrap; }
+.user-manage-details[open] { min-width: 250px; }
+.user-manage-details .user-admin-actions { display: flex; flex-wrap: wrap; align-items: start; gap: 12px; padding: 12px 0; }
+.user-roster-table td { vertical-align: top; }
+.visit-action-context { display: grid; gap: 4px; margin: 0 0 16px; padding: 12px 0; border-block: 1px solid var(--line); }
+.visit-action-context small { color: var(--muted); font-size: .8125rem; line-height: 1.5; }
+.field-visit-form .selected-location-card > div { flex: 1; }
+.field-visit-form .selected-location-card strong { overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; line-height: 1.4; }
+.field-visit-form .selected-location-card > button { flex-shrink: 0; align-self: center; }
+section.visit-details { border: 0; padding: 0; margin: 0; }
+section.visit-details > .visit-details-content { display: grid; gap: 8px; padding: 0; }
+.history-filter-status { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin: 8px 0 12px; }
+.history-filter-status > p { margin: 0; }
+.visit-history-table { width: 100%; min-width: 880px; table-layout: fixed; }
+.visit-history-table th:nth-child(1) { width: 14%; }
+.visit-history-table th:nth-child(2) { width: 18%; }
+.visit-history-table th:nth-child(3) { width: 28%; }
+.visit-history-table th:nth-child(4) { width: 22%; }
+.visit-history-table th:nth-child(5) { width: 10%; }
+.visit-history-table th:nth-child(6) { width: 8%; }
+.visit-history-table td { vertical-align: top; overflow-wrap: anywhere; }
+.visit-history-table p { margin: 5px 0; }
+.visit-history-date { font-variant-numeric: tabular-nums; }
+.visit-history-account > a, .visit-history-account > strong { font-weight: 650; }
+.visit-history-account > small, .visit-history-follow-up > small { display: block; margin-top: 5px; color: var(--muted); }
+.visit-history-task-links { display: grid; gap: 4px; margin-top: 6px; }
+.visit-history-task-links > a { min-height: 44px; display: block; padding-block: 8px; line-height: 1.45; }
+.visit-history-task-links > a > span { white-space: nowrap; }
+.visit-history-table .visit-outcome-badges { margin: 0 0 6px; }
+.visit-history-table .visit-outcome-badges > span { font-size: .75rem; }
+.visit-history-actions > a { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; white-space: nowrap; }
+.visit-history-photos > summary { font-size: .8125rem; }
+.wholesale-orders-table :is(th, td):nth-child(5), .wholesale-orders-table :is(th, td):nth-child(6) { text-align: right; font-variant-numeric: tabular-nums; }
+.wholesale-order-detail-grid + .card :is(th, td):nth-child(n+3) { text-align: right; font-variant-numeric: tabular-nums; }
+
+@media (max-width: 900px) {
+  .schedule-event-list > li { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; }
+  .schedule-event-identity { grid-column: 1; }
+  .schedule-event-list .pill { grid-column: 2; grid-row: 1; align-self: start; }
+  .schedule-event-staff { grid-column: 1 / -1; color: var(--muted); }
+  .visit-history-table { display: block; min-width: 0; table-layout: auto; }
+  .visit-history-table thead { display: table-header-group; position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .visit-history-table tbody { display: block; }
+  .visit-history-table tbody > tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; padding: 14px 0; border-bottom: 1px solid var(--line); }
+  .visit-history-table tbody > tr > td { display: block; padding: 0; border: 0; min-width: 0; text-align: left; }
+  .visit-history-table td::before { content: none; }
+  .visit-history-table .visit-history-account { grid-column: 1; grid-row: 1; }
+  .visit-history-table .visit-history-actions { grid-column: 2; grid-row: 1; align-self: start; }
+  .visit-history-table .visit-history-date { grid-column: 1; grid-row: 2; font-size: .8125rem; color: var(--muted); }
+  .visit-history-table .visit-history-rep { grid-column: 2; grid-row: 2; font-size: .8125rem; color: var(--muted); }
+  .visit-history-table .visit-history-notes { grid-column: 1 / -1; grid-row: 3; }
+  .visit-history-table .visit-history-follow-up { grid-column: 1 / -1; grid-row: 4; }
+  .visit-history-table .visit-history-follow-up::before { content: 'Follow-up'; display: block; color: var(--muted); font-size: .75rem; font-weight: 600; margin-bottom: 3px; }
+  .visit-history-table .visit-history-task-links { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+}

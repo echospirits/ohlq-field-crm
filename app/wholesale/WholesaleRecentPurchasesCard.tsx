@@ -73,30 +73,18 @@ function PurchaseList({
   return (
     <>
       {pageCount > 1 ? navigation('top') : null}
-      <div className="ohlq-purchase-list" id={listId}>
+      <div className="table-scroll" id={listId} role="region" aria-label={`${label} purchase comparison`} tabIndex={0}><table className="comparison-table purchase-comparison-table">
+        <thead><tr><th scope="col">Product</th><th className="numeric" scope="col">Bottles</th><th className="numeric" scope="col">Purchase lines</th><th className="numeric" scope="col">Agencies</th><th className="numeric" scope="col">Vendors</th></tr></thead><tbody>
         {items.map((item) => (
-          <article
-            className="ohlq-purchase-row"
-            key={item.itemCode}
-          >
-            <div className="ohlq-item-identity">
-              <div><span className="ohlq-item-code">{item.itemCode}</span><strong>{item.itemName}</strong></div>
-              <span className="muted">
-                {numberFormatter.format(item.purchaseLineCount)} purchase line{item.purchaseLineCount === 1 ? '' : 's'}
-                {' · '}
-                {numberFormatter.format(item.agencyCount)} agenc{item.agencyCount === 1 ? 'y' : 'ies'}
-                {item.vendorCount > 1 ? ` · ${numberFormatter.format(item.vendorCount)} vendors` : ''}
-              </span>
-            </div>
-            <div className="ohlq-item-metrics">
-              <span>
-                <strong>{numberFormatter.format(item.totalBottlesSold)}</strong>
-                <small>bottles</small>
-              </span>
-            </div>
-          </article>
+          <tr key={item.itemCode}>
+            <th scope="row"><strong>{item.itemName}</strong><small className="directory-record-id">{item.itemCode}</small></th>
+            <td className="numeric">{numberFormatter.format(item.totalBottlesSold)}</td>
+            <td className="numeric">{numberFormatter.format(item.purchaseLineCount)}</td>
+            <td className="numeric">{numberFormatter.format(item.agencyCount)}</td>
+            <td className="numeric">{numberFormatter.format(item.vendorCount)}</td>
+          </tr>
         ))}
-      </div>
+        </tbody></table></div>
       {pageCount > 1 ? navigation('bottom') : null}
     </>
   );

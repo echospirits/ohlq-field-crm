@@ -6,6 +6,7 @@ import { requireCrmActor } from "../../../lib/crm/auth";
 import { getUserDisplayName } from "../../../lib/auth";
 import { eventSalesComparison } from "../../../lib/crm/events";
 import { EventEditor } from "../EventEditor";
+import { formatEasternDateTime } from "../../../lib/dateTime";
 export const dynamic = "force-dynamic";
 export default async function EventPage({
   params,
@@ -62,9 +63,22 @@ export default async function EventPage({
     <>
       <Link href="/#events">My Schedule</Link>
       <h1>{event.title}</h1>
+      <section className="workspace-section" aria-label="Event overview">
+        <dl className="read-summary event-overview">
+          <div><dt>Starts</dt><dd>{formatEasternDateTime(event.startsAt)}</dd></div>
+          {event.endsAt ? <div><dt>Ends</dt><dd>{formatEasternDateTime(event.endsAt)}</dd></div> : null}
+          <div><dt>Status</dt><dd><span className="pill">{event.status}</span></dd></div>
+          <div><dt>Location</dt><dd>{event.location || 'Not set'}</dd></div>
+          {account ? <div><dt>Account</dt><dd>{account.name}</dd></div> : null}
+          <div><dt>Staff</dt><dd>{event.staffUserIds.map((staffId) => { const member = users.find((candidate) => candidate.id === staffId); return member ? getUserDisplayName(member) : 'Inactive staff member'; }).join(', ') || 'Staff not assigned'}</dd></div>
+          {event.attendance != null ? <div><dt>Attendance</dt><dd>{event.attendance}</dd></div> : null}
+        </dl>
+        {(event.details as { products?: string }).products ? <p><strong>Products</strong> · {(event.details as { products?: string }).products}</p> : null}
+        {(event.details as { outcomes?: string }).outcomes ? <p className="preserve-lines"><strong>Outcomes</strong> · {(event.details as { outcomes?: string }).outcomes}</p> : null}
+      </section>
       {event.source === "EVENTBRITE" ? (
-        <section className="card">
-          <h2>Latest Eventbrite details</h2>
+        <details className="compact-details">
+          <summary>Latest Eventbrite details</summary>
           <p className="field-note">
             Imported provider values for review; saving your local schedule does
             not publish changes to Eventbrite.
@@ -88,9 +102,10 @@ export default async function EventPage({
                 {key}: {String(value)}
               </p>
             ))}
-        </section>
+        </details>
       ) : null}
-      <section className="card">
+      <details className="compact-details event-editor">
+        <summary>Edit event</summary>
         <EventEditor
           event={{
             ...event,
@@ -101,8 +116,8 @@ export default async function EventPage({
           users={users.map((u) => ({ id: u.id, name: getUserDisplayName(u) }))}
           accountName={account?.name}
         />
-      </section>
-      <section className="card">
+      </details>
+      <section className="workspace-section">
         <h2>Execution and follow-up</h2>
         {event.externalAccountId ? (
           <Link className="btn" href={`/visits/new?${visit}`}>
@@ -116,12 +131,11 @@ export default async function EventPage({
         )}
         <VisitActivityTable visits={event.visits} contactMap={{}} />
       </section>
-      <section className="card">
+      <section className="workspace-section">
         <h2>Observed sales before and after</h2>
         <p>
-          This comparison describes recorded purchases. It does not establish
-          that the event caused a change. Event-day sales are excluded; source
-          dates are report dates, not exact order times.
+          Recorded purchases do not establish event impact. Event-day sales are excluded;
+          source dates are report dates, not exact order times.
         </p>
         {comparison.available ? (
           <>
@@ -131,14 +145,11 @@ export default async function EventPage({
                 ? "Same period last year"
                 : "Immediately preceding period"}
             </p>
-            <p>
-              Before: {comparison.before?.bottles ?? "Unknown"} bottles (
-              {comparison.before?.coveredDays}/{comparison.days} covered days)
-            </p>
-            <p>
-              After: {comparison.after?.bottles ?? "Unknown"} bottles (
-              {comparison.after?.coveredDays}/{comparison.days} covered days)
-            </p>
+            <div className="table-scroll" role="region" aria-label="Event sales comparison" tabIndex={0}><table className="comparison-table event-comparison-table">
+              <thead><tr><th>Period</th><th className="numeric">Bottles</th><th className="numeric">Covered days</th></tr></thead>
+              <tbody><tr><th scope="row">Before</th><td className="numeric">{comparison.before?.bottles ?? "Unknown"}</td><td className="numeric">{comparison.before?.coveredDays ?? "Unknown"}/{comparison.days}</td></tr>
+              <tr><th scope="row">After</th><td className="numeric">{comparison.after?.bottles ?? "Unknown"}</td><td className="numeric">{comparison.after?.coveredDays ?? "Unknown"}/{comparison.days}</td></tr></tbody>
+            </table></div>
             <p className="field-note">
               Tenant products only. A total is shown only with complete daily
               ledger coverage; future or missing days are unknown.

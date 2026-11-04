@@ -282,9 +282,6 @@ export default async function Alerts({
       <header className="page-heading page-header worklist-heading">
         <div>
           <h1>Worklist</h1>
-          <p className="muted">
-            Follow-ups that need attention.
-          </p>
         </div>
         <a className="btn secondary" href="#quick-task">Add task</a>
       </header>
@@ -303,7 +300,7 @@ export default async function Alerts({
       </nav>
       <LiveFilterForm className="worklist-search" label="Search work" role="search"><label className="sr-only" htmlFor="worklist-search">Search work</label><input defaultValue={q} id="worklist-search" name="q" placeholder="Search work" type="search" /></LiveFilterForm>
         <details className="worklist-filters">
-          <summary>Filters</summary>
+          <summary>Filters · {statusFilter === 'ACTIVE' ? 'Active' : statusFilter === 'ALL' ? 'All statuses' : statusLabels[statusFilter as WorklistStatus]}{categoryFilter !== 'ALL' ? ` · ${categoryLabels[categoryFilter as WorklistCategory]}` : ''}{sourceFilter !== 'ALL' ? ` · ${sourceLabels[sourceFilter as WorklistSource]}` : ''}</summary>
           <LiveFilterForm label="Filter worklist items">
             <label htmlFor="worklist-status">Status</label>
             <select id="worklist-status" name="status" defaultValue={statusFilter}>
@@ -353,7 +350,7 @@ export default async function Alerts({
           {group.items.length === 0 ? (
             <p className="muted">No matching items.</p>
           ) : (
-            <table className="responsive-table worklist-table">
+            <table className="responsive-table comparison-table worklist-table">
               <thead>
                 <tr>
                   <th>Account / task</th>
@@ -379,7 +376,8 @@ export default async function Alerts({
                         {location ? <Link className="worklist-account-link" href={location.href}>{location.name}</Link> : <strong>{getWorklistLocationFallbackLabel(item)}</strong>}
                         <span className="worklist-task-title">{item.title}</span>
                         {location && targetedAccountKeys.has(`${location.type === 'agency' ? 'AGENCY' : 'WHOLESALE'}:${location.id}`) ? <TargetAccountMarker /> : null}
-
+                        <div className="worklist-task-context"><span>{statusLabels[item.status]}</span><span>{sourceLabels[item.source]}</span></div>
+                        <WorklistDetail detail={item.detail} />
                       </td>
                       <td data-label="Due">
                         {getWorklistOverdueLabel(item.dueDate, item.status) ? <strong className="worklist-overdue-label">{getWorklistOverdueLabel(item.dueDate, item.status)}</strong> : null}
@@ -389,11 +387,7 @@ export default async function Alerts({
                       <td data-label="Owner">{item.assignedToUser ? getUserDisplayName(item.assignedToUser) : item.assignedTo || 'Unassigned'}</td>
                       <td data-label="Actions">
                         <WorklistActions
-                          evidence={<><div className="inline-meta">
-                          <span className="pill">{categoryLabels[item.category]}</span><span className="pill">{sourceLabels[item.source]}</span>
-                          <span className="pill">{statusLabels[item.status]}</span>
-                        </div>
-                        <WorklistDetail detail={item.detail} />
+                          evidence={<><span className="muted">{categoryLabels[item.category]}</span>
                         <div className="muted item-meta">
                           Created by {item.createdByUser ? getUserDisplayName(item.createdByUser) : item.createdBy || 'Unknown user'}
                           {item.completedByUser ? `; completed by ${getUserDisplayName(item.completedByUser)}` : ''}

@@ -26,13 +26,26 @@ export async function AccountSalesPlan({ account }: { account: CrmAccount }) {
       select: { crmPreferences: true },
     }),
     stages = readPipelineStages(org.crmPreferences).stages;
+  const stage = effectivePipelineStage(stages, overlay?.salesPlan, overlay?.salesStatus ?? null);
+  const money = (value: number) => value.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+  const hasPlan = Object.values(plan).some((value) => value !== null && value !== '');
   return (
-    <details className="compact-details">
-      <summary>Account plan &amp; forecast</summary>
-      <p className="muted">
-        Estimates are planning assumptions. Purchasing history remains the
-        evidence of an order. Manage next actions in the account Worklist.
-      </p>
+    <section className="account-plan-summary" aria-label="Account plan">
+      <div className="section-heading"><h3>Account plan</h3>{plan.estimatedRevenue !== null || plan.estimatedVolume !== null ? <small className="muted">Planning estimates · not recorded revenue</small> : null}</div>
+      {hasPlan ? <dl className="read-summary account-plan-facts">
+        {stage ? <div><dt>Stage</dt><dd>{stage.name}</dd></div> : null}
+        {plan.objectives ? <div className="account-plan-objective"><dt>Objective</dt><dd>{plan.objectives}</dd></div> : null}
+        {plan.products ? <div><dt>Target products</dt><dd>{plan.products}</dd></div> : null}
+        {plan.estimatedRevenue !== null ? <div><dt>Revenue estimate</dt><dd>{money(plan.estimatedRevenue)}</dd></div> : null}
+        {plan.estimatedVolume !== null ? <div><dt>Bottles estimate</dt><dd>{plan.estimatedVolume.toLocaleString('en-US')}</dd></div> : null}
+        {plan.probability !== null ? <div><dt>Probability</dt><dd>{plan.probability}%</dd></div> : null}
+        {plan.expectedCloseDate ? <div><dt>Expected close</dt><dd>{plan.expectedCloseDate}</dd></div> : null}
+        {plan.competitors ? <div><dt>Competitors</dt><dd>{plan.competitors}</dd></div> : null}
+        {plan.objections ? <div><dt>Objections</dt><dd>{plan.objections}</dd></div> : null}
+        {plan.placementEvidence ? <div><dt>Placement evidence</dt><dd>{plan.placementEvidence}</dd></div> : null}
+      </dl> : <p className="muted">No account plan recorded.</p>}
+      <details className="compact-details account-plan-editor">
+      <summary>{hasPlan ? 'Edit account plan' : 'Add account plan'}</summary>
       <CrmForm action={saveSalesPlanAction} submitLabel="Save account plan">
         <input name="accountType" type="hidden" value={account.accountType} />
         <input name="accountId" type="hidden" value={account.accountId} />
@@ -141,6 +154,7 @@ export async function AccountSalesPlan({ account }: { account: CrmAccount }) {
           />
         </label>
       </CrmForm>
-    </details>
+      </details>
+    </section>
   );
 }

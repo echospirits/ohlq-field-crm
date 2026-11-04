@@ -456,7 +456,6 @@ export function WorklistScheduler({ view, anchorDate, items, currentUserId, user
     <header className="scheduler-header">
       <div>
         <h2 id="scheduler-title">{view === 'day' ? formatDay(anchorDate) : weekLabel}</h2>
-        <p className="muted">{view === 'day' ? 'Schedule your day. Date-only work stays in Anytime.' : 'Drag work to schedule it. Tap a day on mobile to see its timeline.'}</p>
       </div>
       <div className="scheduler-header-actions">
         <nav className="scheduler-date-nav" aria-label={view === 'day' ? 'Choose day' : 'Choose week'}>
@@ -493,7 +492,7 @@ export function WorklistScheduler({ view, anchorDate, items, currentUserId, user
           </section>
           <section className="scheduler-tray-subsection" aria-labelledby="scheduler-overdue-title">
             <div className="section-heading"><h4 id="scheduler-overdue-title">Overdue or undated</h4><span className="pill">{visibleTray.length}</span></div>
-            <p className="muted">Recent overdue work (past 30 days) and tasks with no date.</p>
+            <p className="record-meta">Past 30 days · Assigned to you</p>
           {visibleTray.length ? visibleTray.map((item) => <button className="scheduler-tray-item" draggable key={item.id} onClick={() => openEdit(item)} onDragStart={(event) => startDrag(event, item)} type="button">
             <strong>{item.title}</strong><span><SchedulerAccountLabel item={item} /></span>
             <small>{item.dueDate ? `Overdue · ${formatDateOnlyInputValue(new Date(`${item.dueDate}T00:00:00.000Z`))}` : 'No date set'}</small>
@@ -504,7 +503,7 @@ export function WorklistScheduler({ view, anchorDate, items, currentUserId, user
         {renderCalendar(weekDates, 'scheduler-calendar-week')}
         <section className="scheduler-tray scheduler-week-tray" aria-labelledby="scheduler-week-tray-title">
           <div className="section-heading"><h3 id="scheduler-week-tray-title">Unscheduled / Overdue</h3><span className="pill">{visibleTray.length}</span></div>
-          <p className="muted">Undated tasks and overdue work from the past 30 days, assigned to you.</p>
+          <p className="record-meta">Past 30 days · Assigned to you</p>
           {visibleTray.length ? visibleTray.map((item) => <button className="scheduler-tray-item" draggable key={item.id} onClick={() => openEdit(item)} onDragStart={(event) => startDrag(event, item)} type="button">
             <strong>{item.title}</strong><span><SchedulerAccountLabel item={item} /></span>
             <small>{item.dueDate ? `Overdue · ${formatDateOnlyInputValue(new Date(`${item.dueDate}T00:00:00.000Z`))}` : 'No date set'}</small>
@@ -515,16 +514,16 @@ export function WorklistScheduler({ view, anchorDate, items, currentUserId, user
 
     <div className="scheduler-mobile">
       {emptyDay ? emptyDayView : renderMobileDay(view === 'day' ? anchorDate : mobileDate)}
-      {!emptyDay ? <details className="scheduler-mobile-tray">
-        <summary>Unscheduled / recent overdue <span className="pill">{visibleTray.length}</span></summary>
+      {!emptyDay && visibleTray.length > 0 ? <section className="scheduler-mobile-tray" aria-labelledby="scheduler-mobile-tray-title">
+        <div className="section-heading"><h3 id="scheduler-mobile-tray-title">Overdue or undated</h3><span className="pill">{visibleTray.length}</span></div>
         <div>
-          <p className="muted">Overdue work from the past 30 days and undated tasks assigned to you.</p>
+          <p className="record-meta">Past 30 days · Assigned to you</p>
           {visibleTray.length ? visibleTray.map((item) => <button className="scheduler-tray-item" key={item.id} onClick={() => openEdit(item)} type="button">
             <strong>{item.title}</strong><span><SchedulerAccountLabel item={item} /></span>
             <small>{item.dueDate ? `Overdue · ${formatDateOnlyInputValue(new Date(`${item.dueDate}T00:00:00.000Z`))}` : 'No date set'}</small>
           </button>) : <p className="muted">No overdue or undated work.</p>}
         </div>
-      </details> : null}
+      </section> : null}
     </div>
 
     <p aria-live="polite" className={feedback ? `scheduler-feedback${feedbackIsError ? ' scheduler-feedback-error' : ''}` : 'visually-hidden'} role={feedbackIsError ? 'alert' : 'status'}>{feedback}</p>

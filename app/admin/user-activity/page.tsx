@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import '../admin-workspace.css';
 import { requireEchoAdmin } from '../../../lib/auth';
 import { requireOrganizationContext } from '../../../lib/organizations';
 import { prisma } from '../../../lib/prisma';
@@ -23,8 +24,8 @@ export default async function UserActivityPage({ searchParams }: { searchParams:
     const query = new URLSearchParams({ from: dateText(filters.from), to: dateText(filters.to), q: filters.q, activity: filters.activity, sort: filters.sort, ...changes });
     return `/admin/user-activity?${query}`;
   };
-  return <>
-    <PageHeader eyebrow="Echo administration" title="User activity" description="See logins and active days for Echo Spirits users." />
+  return <div className="admin-workspace">
+    <PageHeader title="User activity" meta="Echo Spirits users · UTC" />
     <LiveFilterForm className="card activity-filters" label="Filter user activity" key={`${dateText(filters.from)}-${dateText(filters.to)}-${filters.organizationId}`}>
       <input type="hidden" name="page" value="1" />
       <label>Search users<input type="search" name="q" defaultValue={filters.q} placeholder="Name or email" /></label>
@@ -34,7 +35,7 @@ export default async function UserActivityPage({ searchParams }: { searchParams:
       <label>Sort history<select name="sort" defaultValue={filters.sort}><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="logins">Most logins</option></select></label>
       <Link className="btn secondary" href="/admin/user-activity">Clear filters</Link>
     </LiveFilterForm>
-    <details className="card activity-help"><summary>What counts as activity?</summary><p>A successful sign-in counts as a login and an active day. Opening or interacting with Neat in the foreground also counts as an active day, even if the user stays signed in. Idle tabs and background refreshes do not count. Multiple visits on a day share one record.</p><p>Days and times use UTC. Tracking starts with this feature; earlier activity is unavailable. This measures access, not time spent or work completed. History remains after sign-out or user deactivation.</p></details>
+    <details className="activity-help compact-details"><summary>What counts as activity?</summary><p>A successful sign-in counts as a login and an active day. Opening or interacting with Neat in the foreground also counts as an active day, even if the user stays signed in. Idle tabs and background refreshes do not count. Multiple visits on a day share one record.</p><p>Days and times use UTC. Tracking starts with this feature; earlier activity is unavailable. This measures access, not time spent or work completed. History remains after sign-out or user deactivation.</p></details>
     <section className="content-section">
       <SectionHeading title="Activity summary" description={`Matching activity from ${dateText(filters.from)} through ${dateText(filters.to)} (UTC). Earlier activity before tracking began is unavailable.`} />
       <div className="activity-summaries">{summaries.map((summary) => <article className="card" key={summary.organizationId ?? 'none'}>
@@ -44,12 +45,12 @@ export default async function UserActivityPage({ searchParams }: { searchParams:
     </section>
     <section className="content-section" aria-label="Daily user history">
       <SectionHeading title="Daily user history" count={total} description={total ? `Page ${page} of ${pages} · up to 50 daily records per page` : undefined} />
-      {rows.length ? <div className="activity-history">{rows.map((row) => <article className="activity-row" key={`${row.userId}-${dateText(row.day)}`}>
-        <div className="activity-identity"><strong>{row.userName}</strong>{row.email ? <span className="muted">{row.email}</span> : null}</div>
-        <div><time dateTime={dateText(row.day)}>{dateText(row.day)}</time><span className="muted">First activity {timeText(row.firstActivityAt)}</span></div>
-        <div><strong>{row.loginCount ? `${row.loginCount} ${row.loginCount === 1 ? 'login' : 'logins'}` : 'App use'}</strong><span className="muted">{row.lastLoginAt ? `Latest login ${timeText(row.lastLoginAt)}` : 'Used an existing session'}</span></div>
-      </article>)}</div> : <EmptyState title="No recorded activity matches" description="Try another date range or clear filters. Tracking begins when this feature is deployed; older activity is unavailable." action={<Link className="btn secondary" href="/admin/user-activity">Clear filters</Link>} />}
+      {rows.length ? <div className="table-scroll" role="region" aria-label="Daily user activity comparison" tabIndex={0}><table className="comparison-table activity-history-table"><thead><tr><th scope="col">User</th><th scope="col">Activity date · UTC</th><th scope="col" className="numeric">Logins / access</th></tr></thead><tbody>{rows.map(row => <tr key={`${row.userId}-${dateText(row.day)}`}>
+        <th scope="row">{row.userName}{row.email ? <small>{row.email}</small> : null}</th>
+        <td data-label="Activity date · UTC"><time dateTime={dateText(row.day)}>{dateText(row.day)}</time><small>First activity {timeText(row.firstActivityAt)}</small></td>
+        <td data-label="Logins / access" className="numeric"><strong>{row.loginCount ? `${row.loginCount} ${row.loginCount === 1 ? 'login' : 'logins'}` : 'App use'}</strong><small>{row.lastLoginAt ? `Latest login ${timeText(row.lastLoginAt)}` : 'Used an existing session'}</small></td>
+      </tr>)}</tbody></table></div> : <EmptyState title="No recorded activity matches" description="Try another date range or clear filters. Tracking begins when this feature is deployed; older activity is unavailable." action={<Link className="btn secondary" href="/admin/user-activity">Clear filters</Link>} />}
       {pages > 1 ? <nav className="activity-pagination" aria-label="Activity history pages">{page > 1 ? <Link className="btn secondary" href={link({ page: String(page - 1) })}>Previous</Link> : <span aria-disabled="true" className="muted">Previous</span>}<span>Page {page} of {pages}</span>{page < pages ? <Link className="btn secondary" href={link({ page: String(page + 1) })}>Next</Link> : <span aria-disabled="true" className="muted">Next</span>}</nav> : null}
     </section>
-  </>;
+  </div>;
 }

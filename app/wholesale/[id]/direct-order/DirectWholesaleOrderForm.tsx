@@ -144,13 +144,13 @@ export function DirectWholesaleOrderForm({
   }
 
   return <section className="direct-order-shell">
-    <div className="notice direct-order-safety"><strong>Safe pilot:</strong> this workflow saves the order in Neat and downloads its PDF. It cannot send email to OHLQ.</div>
+    <div className="notice direct-order-safety"><strong>Save and download only.</strong> Neat will not email or transmit this order.</div>
     <article className="card direct-order-card">
       <div className="section-heading"><div><h2>A-3a selling location</h2></div></div>
       <label>Selling location<select onChange={(event) => setDirectSaleLocationId(event.target.value)} value={directSaleLocationId}>{locations.map((location) => <option key={location.id} value={location.id}>{location.label} · Store {location.storeId}</option>)}</select></label>
     </article>
     <article className="card direct-order-card">
-      <div className="section-heading"><div><h2>Wholesale customer information</h2><p className="muted">Correcting these values changes this PDF only.</p></div></div>
+      <div className="section-heading"><div><h2>Customer</h2><p className="record-meta">Changes apply to this PDF only.</p></div></div>
       <div className="form-grid">
         <label>Customer name<input onChange={(event) => updateCustomer('name', event.target.value)} required value={customer.name} /></label>
         <label>Customer DBA<input onChange={(event) => updateCustomer('dba', event.target.value)} value={customer.dba} /></label>
@@ -164,7 +164,7 @@ export function DirectWholesaleOrderForm({
       <fieldset className="direct-order-choice"><legend>Is this an F2 Permit?</legend><label><input checked={!customer.f2Permit} name="f2Permit" onChange={() => updateCustomer('f2Permit', false)} type="radio" /> No</label><label><input checked={customer.f2Permit} name="f2Permit" onChange={() => updateCustomer('f2Permit', true)} type="radio" /> Yes</label></fieldset>
     </article>
     <article className="card direct-order-card">
-      <div className="section-heading"><div><h2>Products and quantities</h2><p className="muted">Wholesale prices come from the latest Ohio Brand Master and can be corrected for this order.</p></div></div>
+      <div className="section-heading"><div><h2>Products and quantities</h2><p className="record-meta">Latest Ohio Brand Master prices · Editable for this order</p></div></div>
       <label>Sales date<input onChange={(event) => setSelectedSaleDate(event.target.value)} type="date" value={selectedSaleDate} /></label>
       <datalist id="direct-order-products">{products.map((product) => <option key={product.itemCode} value={product.itemCode}>{product.itemName}</option>)}</datalist>
       <div className="direct-order-lines">{lines.map((line, index) => {

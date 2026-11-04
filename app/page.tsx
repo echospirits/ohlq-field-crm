@@ -357,7 +357,6 @@ export default async function Dashboard({ searchParams }: { searchParams?: Promi
       <header className="page-heading page-header dashboard-heading">
         <div>
           <h1>My Schedule</h1>
-          <p className="muted">Your work for the day and week ahead.</p>
         </div>
       </header>
 
@@ -381,7 +380,6 @@ export default async function Dashboard({ searchParams }: { searchParams?: Promi
         <div className="quick-action-panel">
           <Link className="quick-action-card quick-action-primary" href="/visits/new">
             <strong>Log visit</strong>
-            <span>Start with account search</span>
           </Link>
           <Link className="quick-action-card" href="/alerts">
             <strong>Worklist</strong>

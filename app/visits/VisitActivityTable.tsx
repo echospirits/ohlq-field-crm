@@ -37,7 +37,7 @@ type VisitActivityTableProps = {
 
 export type SupplementalActivity = NonNullable<VisitActivityTableProps['supplementalEvents']>[number];
 
-const followUpLabel = (visit: VisitActivity) => {
+export const followUpLabel = (visit: VisitActivity) => {
   if (visit.worklistItems.length > 0) {
     const openCount = visit.worklistItems.filter((item) => item.status === 'OPEN' || item.status === 'IN_PROGRESS').length;
     return openCount > 0 ? `${openCount} open worklist ${openCount === 1 ? 'item' : 'items'}` : 'Worklist item completed';

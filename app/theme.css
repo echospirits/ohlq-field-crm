@@ -2,32 +2,35 @@
    fallbacks while sharing these tokens in dark mode. No image inversion. */
 html[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #171c18;
-  --bg-2: #1c221d;
-  --panel: #202721;
-  --panel-2: #2a332b;
-  --panel-3: #344035;
-  --text: #edf0e8;
-  --muted: #bbc4b5;
-  --muted-2: #cbd3c5;
-  --line: #556151;
-  --line-strong: #85917b;
+  --bg: #172126;
+  --bg-2: #1b272c;
+  --panel: #202c31;
+  --panel-2: #29373d;
+  --panel-3: #35464d;
+  --text: #eff3f2;
+  --muted: #b5c3c5;
+  --muted-2: #c7d1d2;
+  --line: #40535a;
+  --line-strong: #72898f;
   --border: var(--line);
   --surface: var(--panel);
-  --action: #44583c;
-  --action-hover: #506748;
-  --accent-soft: #b8d8a430;
-  --sage: #2e3e2a;
-  --clay: #49322d;
-  --success: #9cdbad;
-  --danger: #ffb4ad;
-  --warning: #f5d28e;
+  --action: #885731;
+  --action-hover: #a2673a;
+  --accent: #e5b58f;
+  --accent-hover: #f5d0b0;
+  --accent-2: #76d5c3;
+  --accent-soft: #23443d;
+  --sage: #23443d;
+  --clay: #49362e;
+  --success: #8ed3ae;
+  --danger: #ffb4ab;
+  --warning: #ead092;
   --shadow: 0 6px 24px #00000040;
   --theme-surface: var(--panel);
   --theme-surface-raised: var(--panel-2);
   --theme-text: var(--text);
   --theme-muted: var(--muted);
-  --theme-link: #c2dda9;
+  --theme-link: #e5b58f;
   --theme-border: var(--line-strong);
   --theme-action: var(--action);
   --theme-success-surface: #293e2f;
@@ -57,8 +60,8 @@ html[data-theme="dark"] {
 }
 
 /* Readable links and charts for every tenant, independent of brand contrast. */
-html[data-theme="dark"] body { --accent: #c2dda9 !important; --accent-hover: #d8efc5 !important; --accent-2: #a6dedb !important; }
-html[data-theme="dark"] :focus-visible { outline-color: #c2dda9; }
+html[data-theme="dark"] body { --accent: #e5b58f !important; --accent-hover: #f5d0b0 !important; --accent-2: #76d5c3 !important; }
+html[data-theme="dark"] :focus-visible { outline-color: #76d5c3; }
 html[data-theme="dark"] input::placeholder,
 html[data-theme="dark"] textarea::placeholder { color: var(--muted); }
 html[data-theme="dark"] input[readonly] { background: var(--panel-2); }

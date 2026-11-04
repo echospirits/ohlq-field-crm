@@ -167,7 +167,7 @@ export function EventEditor({
           </button>
         </div>
       ))}
-      <details>
+      <details open={Boolean(details.products || details.outcomes || event?.attendance != null || details.samples != null || details.cost != null)}>
         <summary>Products, results, and cost</summary>
         <label>
           Products and quantities

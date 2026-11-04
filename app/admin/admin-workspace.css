@@ -1,0 +1,48 @@
+.admin-workspace { display: grid; gap: 16px; min-width: 0; }
+.admin-workspace > .page-header { margin-bottom: 0; }
+.admin-workspace .table-scroll { max-width: 100%; overflow-x: auto; }
+.admin-workspace .comparison-table { width: 100%; border-collapse: collapse; font-size: .875rem; }
+.admin-workspace .comparison-table th, .admin-workspace .comparison-table td { text-align: left; padding: 10px 12px; vertical-align: top; border-bottom: 1px solid var(--line); }
+.admin-workspace .comparison-table thead th { font-size: .75rem; font-weight: 600; }
+.admin-workspace .comparison-table .numeric { text-align: right; font-variant-numeric: tabular-nums; }
+.admin-workspace .comparison-table small { display: block; margin-top: 4px; color: var(--muted); font-size: .75rem; line-height: 1.4; font-weight: 400; }
+.admin-workspace .comparison-table p { margin: 6px 0; font-size: .8125rem; max-width: 50ch; }
+.admin-workspace .comparison-table a { display: inline-flex; align-items: center; min-height: 44px; }
+.admin-source-table { min-width: 650px; }
+.admin-workspace .metric-card { padding: 10px 0; background: transparent; border: 0; border-radius: 0; box-shadow: none; }
+.admin-workspace .metric-card h3 { font-size: .8125rem; font-weight: 500; margin: 0 0 4px; color: var(--muted); }
+.admin-workspace .metric-card .metric-value { font-size: 1.25rem; font-weight: 650; font-variant-numeric: tabular-nums; margin: 0; }
+.admin-workspace .metric-card .muted { font-size: .75rem; margin: 4px 0 0; }
+.admin-workspace .dashboard-metrics { padding-block: 8px; border-block: 1px solid var(--line); }
+.admin-workspace .data-status-cell { display: grid; gap: 4px; min-width: 150px; }
+.admin-workspace .data-status-cell > p { margin: 4px 0 0; }
+.admin-workspace .data-status-source-warning { color: var(--theme-warning-ink, var(--text)); }
+.admin-workspace .data-status-table { min-width: 1000px; }
+.admin-workspace .data-status-table td, .admin-workspace .data-status-table th { padding: 10px 12px; }
+.admin-workspace .data-status-table th:first-child { min-width: 110px; }
+.admin-workspace .data-status-action-form { margin-top: 12px; }
+.admin-workspace .data-status-form-note { grid-column: 1 / -1; font-size: .8125rem; max-width: 70ch; }
+.admin-workspace .activity-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.admin-workspace .activity-stats dt { font-size: .8125rem; color: var(--muted); }
+.admin-workspace .activity-stats dd { margin: 4px 0 0; font-size: 1.25rem; font-variant-numeric: tabular-nums; }
+.admin-workspace .activity-history-table { min-width: 600px; }
+.admin-workspace .activity-history-table th:first-child { min-width: 180px; }
+.admin-workspace .activity-help { border: 0; border-bottom: 1px solid var(--line); background: transparent; padding: 0; }
+.admin-workspace .activity-help p { max-width: 72ch; font-size: .8125rem; }
+.admin-workspace .strategy-summary-table { min-width: 620px; }
+.admin-workspace .strategy-edit-list { display: grid; gap: 0; }
+.admin-workspace .strategy-edit-list > details { border-bottom: 1px solid var(--line); }
+.admin-workspace .strategy-edit-list .form-grid { margin-block: 12px; }
+.admin-workspace .integration-summary dd { overflow-wrap: anywhere; }
+@media (max-width: 700px) {
+  .admin-workspace .activity-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .admin-workspace .activity-history-table { min-width: 0; }
+  .admin-workspace .activity-history-table, .admin-workspace .activity-history-table tbody { display: block; }
+  .admin-workspace .activity-history-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .admin-workspace .activity-history-table tr { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; border-bottom: 1px solid var(--line); padding: 12px 0; }
+  .admin-workspace .activity-history-table :is(th, td) { border: 0; padding: 0; min-width: 0; }
+  .admin-workspace .activity-history-table tbody th { grid-column: 1 / -1; }
+  .admin-workspace .activity-history-table td::before { content: attr(data-label); display: block; color: var(--muted); font-size: .75rem; }
+  .admin-workspace .activity-history-table .numeric { text-align: left; }
+}
+.admin-workspace .opportunity-performance-table table { min-width: 1000px; } .admin-workspace .opportunity-performance-table :is(th, td):not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }

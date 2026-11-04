@@ -29,7 +29,7 @@ function ChecklistControl({ order, field }: { order: Order; field: 'sent' | 'pai
 }
 
 function OrdersTable({ orders }: { orders: Order[] }) {
-  return <div className="table-scroll wholesale-order-table-scroll"><table className="responsive-table wholesale-orders-table">
+  return <div className="table-scroll wholesale-order-table-scroll" role="region" aria-label="Wholesale orders" tabIndex={0}><table className="responsive-table comparison-table wholesale-orders-table">
     <thead><tr><th>Sale date</th><th>Customer</th><th>Permit</th><th>A-3a store</th><th>Items</th><th>Total</th><th>Submitted by</th><th>Status</th><th className="check-column">Sent</th><th className="check-column">Paid</th><th className="check-column">Filed</th><th><span className="sr-only">Order details</span></th></tr></thead>
     <tbody>{orders.map((order) => <tr key={order.id}>
       <td data-label="Sale date">{formatDateOnly(order.saleDate)}</td><td data-label="Customer"><Link className="table-link" href={`/wholesale/${order.wholesaleAccountId}`}>{order.customer.dba || order.customer.name}</Link></td><td data-label="Permit">{order.customer.permitNumber}</td><td data-label="A-3a store">{order.seller.name} · {order.seller.storeId}</td><td data-label="Items">{order.lines.length}</td><td data-label="Total">{formatOrderCurrency(order.totalCents)}</td><td data-label="Submitted by">{order.createdBy.displayName}</td>
@@ -63,9 +63,9 @@ export default async function WholesaleOrdersPage({ searchParams }: { searchPara
   const outstandingHref = (page: number) => `/wholesale-orders?${new URLSearchParams({ ...(page > 1 ? { outstandingPage: String(page) } : {}) })}`;
   const completedHref = (page: number) => `/wholesale-orders?${new URLSearchParams({ showCompleted: '1', ...(page > 1 ? { completedPage: String(page) } : {}) })}`;
   return <>
-    <PageHeader eyebrow="Accounts" title="Wholesale Orders" description="Create and track A-3a direct wholesale orders." actions={<Link className="btn" href="/wholesale-orders/new">Create Wholesale Order</Link>} />
+    <PageHeader eyebrow="Accounts" title="Wholesale Orders" actions={<Link className="btn" href="/wholesale-orders/new">Create order</Link>} />
     {query.status === 'updated' ? <p className="toast-notice" role="status">Order checklist updated.</p> : null}
-    <section aria-labelledby="outstanding-orders-heading" className="wholesale-order-section"><div className="section-heading"><div><h2 id="outstanding-orders-heading">Outstanding Orders</h2><p className="muted">Check Sent, Paid, and Filed. An order completes when all three are checked.</p></div><span className="pill">{outstanding.totalCount}</span></div>
+    <section aria-labelledby="outstanding-orders-heading" className="wholesale-order-section"><div className="section-heading"><div><h2 id="outstanding-orders-heading">Outstanding Orders</h2><p className="record-meta">Complete when Sent, Paid and Filed are checked.</p></div><span className="pill">{outstanding.totalCount}</span></div>
       {outstanding.orders.length ? <><OrdersTable orders={outstanding.orders} /><Pagination href={outstandingHref} label="Outstanding order" page={outstanding.page} pages={outstandingPages} total={outstanding.totalCount} /></> : <article className="card empty-state"><h3>No outstanding orders</h3><p>Newly generated wholesale PDFs will appear here.</p></article>}
     </section>
     <details className="card wholesale-order-completed" open={query.showCompleted === '1'}><summary><span><strong>Completed Orders</strong></span><span className="pill">{completed.totalCount}</span></summary><div className="wholesale-order-completed-content">{completed.orders.length ? <><OrdersTable orders={completed.orders} /><Pagination href={completedHref} label="Completed order" page={completed.page} pages={completedPages} total={completed.totalCount} /></> : <div className="empty-state"><h3>No completed orders yet</h3><p>Orders move here after Sent, Paid, and Filed are all checked.</p></div>}</div></details>

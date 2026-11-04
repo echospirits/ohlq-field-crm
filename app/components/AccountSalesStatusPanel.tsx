@@ -1,4 +1,3 @@
-import { AccountSalesPlan } from './AccountSalesPlan';
 import { SalesAccountType, type AccountSalesStatus } from '@prisma/client';
 import { getUserDisplayName } from '../../lib/auth';
 import { BUYING_STATE_LABELS, SALES_STATUS_LABELS, SALES_STATUS_OPTIONS, type BuyingState } from '../../lib/accountSalesStatus';
@@ -41,7 +40,7 @@ export function AccountSalesStatusPanel({
     <div className="account-sales-status-current">
       <span><small>Sales Status</small><strong>{statusIsExplicit ? SALES_STATUS_LABELS[status] : 'Not set'}</strong></span>
       <span><small>Buying State</small><strong>{BUYING_STATE_LABELS[buyingState]}</strong></span>
-
+      <small className="account-status-age">{timeInStatus(statusUpdatedAt)}</small>
     </div>
     <details className="account-status-editor"><summary>Update status</summary>
       <span className="account-sales-status-meta"><small>{timeInStatus(statusUpdatedAt)}</small>{statusUpdatedAt ? <span>{formatEasternDate(statusUpdatedAt)}{changedBy ? ` · ${getUserDisplayName(changedBy)}` : ''}</span> : <span>{statusIsExplicit ? 'Saved status' : 'No saved status'}</span>}</span>
@@ -57,7 +56,6 @@ export function AccountSalesStatusPanel({
       </select>
       <SubmitButton className="compact-btn" pendingLabel="Saving…">Save</SubmitButton>
     </form>
-    <AccountSalesPlan account={{ accountType, accountId: externalAccountId }} />
     </details>
     </div>
   </section>;

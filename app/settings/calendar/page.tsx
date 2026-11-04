@@ -103,12 +103,12 @@ export default async function CalendarSettingsPage({ searchParams }: { searchPar
   const syncAvailable = Boolean(calendarEnabled && connection?.syncEnabled && !connection.requiresReconnect);
   return (
     <>
-      <PageHeader eyebrow="Account" title="Calendar integration" description="Put dated Neat follow-ups on your calendar and keep schedule changes in sync." />
+      <PageHeader eyebrow="Account" title="Calendar integration" />
       {!calendarEnabled ? <p className="toast-notice page-status calendar-sync-notice">Calendar connections and synchronization are disabled in this environment.</p> : null}
       {params.status ? <p role="status" className={'toast-notice page-status' + (['connected', 'updated', 'disconnected', 'checked'].includes(params.status) ? '' : ' calendar-sync-notice')}>{messages[params.status] ?? 'Calendar action could not be completed. Try again.'}</p> : null}
-      <p className="muted">Google date and time changes update Neat at the daily check. Use Check and sync now for an immediate update. Task titles, notes, owners, and completion are managed in Neat.</p>
       <div className="workflow-shell"><section className="card admin-panel calendar-settings-card">
-        <div className="section-heading"><div><h2>Google Calendar</h2><p className="muted">Each user connects their own account. Neat follow-ups continue to work when no calendar is connected.</p></div><span className="pill">{connection ? (connection.requiresReconnect ? 'Reconnect required' : connection.syncEnabled ? 'Connected' : 'Sync paused') : 'Not connected'}</span></div>
+        <div className="section-heading"><div><h2>Google Calendar</h2><p className="record-meta">Your account · Dated Worklist follow-ups</p></div><span className="pill">{connection ? (connection.requiresReconnect ? 'Reconnect required' : connection.syncEnabled ? 'Connected' : 'Sync paused') : 'Not connected'}</span></div>
+        {!connection ? <p className="muted">Neat follow-ups work without a calendar connection.</p> : null}
         {!connection ? (calendarEnabled ? <a className="button-link" href="/api/calendar/google/connect">Connect Google Calendar</a> : null) : (
           <>
             <dl className="integration-summary">
@@ -131,7 +131,7 @@ export default async function CalendarSettingsPage({ searchParams }: { searchPar
               <form action={checkCalendarChanges}><input type="hidden" name="restoreRemoved" value="true" /><SubmitButton className="secondary" disabled={!syncAvailable} pendingLabel="Restoring…" type="submit">Restore removed events</SubmitButton></form>
               <form action={disconnectCalendar}><SubmitButton className="secondary" type="submit">Disconnect</SubmitButton></form>
             </div> : null}
-            {calendarEnabled ? <p className="muted">Restore removed events recreates deleted Google events for active, dated Neat follow-ups. It does not delete or complete Neat tasks.</p> : null}
+            {calendarEnabled ? <details className="compact-details calendar-help"><summary>Sync behavior and restoring events</summary><p>Google date and time changes update Neat at the daily check; Check and sync now applies them immediately. Manage task titles, notes, owners and completion in Neat.</p><p>Restore removed events recreates deleted Google events for active, dated Neat follow-ups. It does not delete or complete Neat tasks.</p></details> : null}
           </>
         )}
       </section></div>

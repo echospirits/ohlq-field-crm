@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 export const maxDuration = 300;
 
+import '../admin-workspace.css';
 import { SubmitButton } from '../../components/SubmitButton';
 import { ohlqStatusLabel } from '../../../lib/ohlqSourceFreshness';
 import { OhlqReportDataSource, OhlqReportRunStatus, UserRole } from '@prisma/client';
@@ -391,14 +392,22 @@ export default async function DataStatusPage({
     });
 
   return (
-    <>
+    <div className="admin-workspace">
       <PageHeader
-        description="Monitor OHLQ report health, source freshness, and import coverage by report date."
-        eyebrow="Administration"
         title="Data Status"
       />
       {brandMasterStatusMessage(params) ? <p className="toast-notice page-status">{brandMasterStatusMessage(params)}</p> : null}
-      {canRefresh ? <details className="card compact-details admin-panel" open>
+      <section className="workspace-section" aria-label="Data source summary">
+        <SectionHeading title="Source overview" />
+        <div className="table-scroll" role="region" aria-label="Data source rows and successful imports" tabIndex={0}><table className="comparison-table admin-source-table"><thead><tr><th scope="col">Source</th><th scope="col" className="numeric">Loaded rows</th><th scope="col">Latest successful import</th><th scope="col">Status / latest changes</th></tr></thead><tbody>
+          {OHLQ_DATA_SOURCE_CONFIGS.map(config => <tr key={config.source}>
+            <th scope="row">{config.label}</th><td className="numeric">{numberFormatter.format(totalRowsBySource[config.source])}</td><td>{formatRunTime(lastSuccessBySource.get(config.source))}</td><td><a href="#daily-row-counts">Daily run history</a></td>
+          </tr>)}
+          <tr><th scope="row">Account Master</th><td className="numeric">{typeof latestAccountMasterSuccess?.rowCount === 'number' ? numberFormatter.format(latestAccountMasterSuccess.rowCount) : 'Unavailable'}<small>Active restaurant accounts</small></td><td>{formatRunTime(latestAccountMasterSuccess?.lastSuccessfulAt)}{latestAccountMasterSuccess ? <small>Source {formatOhlqDate(latestAccountMasterSuccess.reportDate)}</small> : null}</td><td><span className={statusClassName(latestAccountMasterStatus)}>{latestAccountMasterStatus}</span>{latestAccountMasterSuccess ? <small>{numberFormatter.format(accountMasterMetrics.created)} created · {numberFormatter.format(accountMasterMetrics.updated)} updated · {numberFormatter.format(accountMasterMetrics.deactivated)} deactivated</small> : null}{latestAccountMasterRun?.errorMessage ? <p className={latestAccountMasterStatus === 'Warning' ? 'muted' : 'data-error-text'}>{latestAccountMasterStatus === 'Warning' ? 'Warning' : 'Latest attempt'}: {latestAccountMasterRun.errorMessage}</p> : null}</td></tr>
+          <tr><th scope="row">Brand Master Lookup</th><td className="numeric">{numberFormatter.format(brandMasterRows)}<small>SKU/item lookup rows</small></td><td>{formatRunTime(latestBrandMasterSuccess?.lastSuccessfulAt ?? latestBrandMasterRow?.updatedAt)}{latestBrandMasterSuccess ? <small>Source {formatOhlqDate(latestBrandMasterSuccess.reportDate)}</small> : null}</td><td><span className={statusClassName(latestBrandMasterStatus)}>{latestBrandMasterStatus}</span>{latestBrandMasterSuccess ? <small>{numberFormatter.format(brandMasterMetrics.created)} created · {numberFormatter.format(brandMasterMetrics.updated)} updated · {numberFormatter.format(brandMasterMetrics.removed)} removed</small> : null}{latestBrandMasterRun?.errorMessage ? <p className={latestBrandMasterStatus === 'Warning' ? 'muted' : 'data-error-text'}>{latestBrandMasterStatus === 'Warning' ? 'Warning' : 'Latest attempt'}: {latestBrandMasterRun.errorMessage}</p> : null}</td></tr>
+        </tbody></table></div>
+      </section>
+      {canRefresh ? <details className="card compact-details admin-panel">
         <summary>Run OHLQ Data Refresh</summary>
         <form action="/api/admin/ohlq-manual-import" method="post" className="data-status-action-form">
           <label>
@@ -422,84 +431,6 @@ export default async function DataStatusPage({
         </form>
       </details> : null}
 
-      <section className="data-source-grid" aria-label="Data source summary">
-        {OHLQ_DATA_SOURCE_CONFIGS.map((config) => (
-          <article className="card data-source-summary" key={config.source}>
-            <div>
-              <h2>{config.label}</h2>
-              <p className="muted">{config.tableName}</p>
-            </div>
-            <p className="metric-value">{numberFormatter.format(totalRowsBySource[config.source])}</p>
-            <p className="muted metric-caption">Total rows loaded</p>
-            <div className="data-source-meta">
-              <span>Most recent successful run</span>
-              <strong>{formatRunTime(lastSuccessBySource.get(config.source))}</strong>
-            </div>
-          </article>
-        ))}
-        <article className="card data-source-summary">
-          <div className="data-source-heading">
-            <div>
-              <h2>Account Master</h2>
-              <p className="muted">WholesaleAccount</p>
-            </div>
-            <span className={statusClassName(latestAccountMasterStatus)}>{latestAccountMasterStatus}</span>
-          </div>
-          <p className="metric-value">{numberFormatter.format(latestAccountMasterSuccess?.rowCount ?? 0)}</p>
-          <p className="muted metric-caption">Active restaurant accounts after last load</p>
-          <div className="account-master-metrics" aria-label="Latest Account Master changes">
-            <div>
-              <strong>{numberFormatter.format(accountMasterMetrics.created)}</strong>
-              <span>Created</span>
-            </div>
-            <div>
-              <strong>{numberFormatter.format(accountMasterMetrics.deactivated)}</strong>
-              <span>Deleted / deactivated</span>
-            </div>
-            <div>
-              <strong>{numberFormatter.format(accountMasterMetrics.updated)}</strong>
-              <span>Updated</span>
-            </div>
-          </div>
-          <div className="data-source-meta">
-            <span>Most recent successful load</span>
-            <strong>{formatRunTime(latestAccountMasterSuccess?.lastSuccessfulAt)}</strong>
-            {latestAccountMasterSuccess ? (
-              <span>Source date: {formatOhlqDate(latestAccountMasterSuccess.reportDate)}</span>
-            ) : null}
-            {latestAccountMasterRun?.errorMessage ? (
-              <span className={latestAccountMasterStatus === 'Warning' ? 'muted' : 'data-error-text'}>{latestAccountMasterStatus === 'Warning' ? 'Warning' : 'Latest attempt'}: {latestAccountMasterRun.errorMessage}</span>
-            ) : null}
-          </div>
-        </article>
-        <article className="card data-source-summary">
-          <div className="data-source-heading">
-            <div>
-              <h2>Brand Master Lookup</h2>
-              <p className="muted">OhlqBrandMasterItem</p>
-            </div>
-            <span className={statusClassName(latestBrandMasterStatus)}>
-              {latestBrandMasterStatus}
-            </span>
-          </div>
-          <p className="metric-value">{numberFormatter.format(brandMasterRows)}</p>
-          <p className="muted metric-caption">SKU/item lookup rows loaded</p>
-          <div className="account-master-metrics" aria-label="Latest Brand Master changes">
-            <div><strong>{numberFormatter.format(brandMasterMetrics.created)}</strong><span>Created</span></div>
-            <div><strong>{numberFormatter.format(brandMasterMetrics.removed)}</strong><span>Removed</span></div>
-            <div><strong>{numberFormatter.format(brandMasterMetrics.updated)}</strong><span>Updated</span></div>
-          </div>
-          <div className="data-source-meta">
-            <span>Most recent refresh</span>
-            <strong>{formatRunTime(latestBrandMasterSuccess?.lastSuccessfulAt ?? latestBrandMasterRow?.updatedAt)}</strong>
-            {latestBrandMasterSuccess ? <span>Source date: {formatOhlqDate(latestBrandMasterSuccess.reportDate)}</span> : null}
-            {latestBrandMasterRun?.errorMessage ? (
-              <span className={latestBrandMasterStatus === 'Warning' ? 'muted' : 'data-error-text'}>{latestBrandMasterStatus === 'Warning' ? 'Warning' : 'Latest attempt'}: {latestBrandMasterRun.errorMessage}</span>
-            ) : null}
-          </div>
-        </article>
-      </section>
-
       {canRefresh ? <details className="card compact-details admin-panel desktop-admin-panel">
         <summary>Import OHLQ Brand Master CSV</summary>
         <form action={importBrandMaster} encType="multipart/form-data">
@@ -512,10 +443,10 @@ export default async function DataStatusPage({
         </form>
       </details> : null}
 
-      <section className="dashboard-section">
-        <SectionHeading actions={<span className="pill">Last {visibleDays} report dates</span>} description="Row presence and run status by source and reporting day." title="Daily Row Counts" />
+      <section className="dashboard-section" id="daily-row-counts">
+        <SectionHeading actions={<span className="pill">Last {visibleDays} report dates</span>} title="Daily Row Counts" />
 
-        <div className="table-scroll"><table className="responsive-table data-status-table data-status-table-compact">
+        <div className="table-scroll" role="region" aria-label="Daily source row counts and run status" tabIndex={0}><table className="comparison-table data-status-table data-status-table-compact">
           <thead>
             <tr>
               <th>Report date</th>
@@ -551,7 +482,7 @@ export default async function DataStatusPage({
                       )}
                       </>}
                       <span className="muted">Success: {formatRunTime(cell.lastSuccessfulAt)}</span>
-                      {cell.errorMessage ? <details className="compact-details data-status-error"><summary>{cell.status === 'Warning' ? 'Source warning' : 'Latest error'}</summary><span className={cell.status === 'Warning' ? 'muted' : 'data-error-text'}>{cell.errorMessage}</span></details> : null}
+                      {cell.errorMessage ? <p className={cell.status === 'Warning' ? 'data-status-source-warning' : 'data-error-text'}><strong>{cell.status === 'Warning' ? 'Source warning' : 'Latest error'}: </strong>{cell.errorMessage}</p> : null}
                       {cell.diagnostics ? (
                         <details className="compact-details">
                           <summary>Import diagnostics</summary>
@@ -566,6 +497,6 @@ export default async function DataStatusPage({
           </tbody>
         </table></div>
       </section>
-    </>
+    </div>
   );
 }

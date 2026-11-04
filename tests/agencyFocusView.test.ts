@@ -19,16 +19,17 @@ test('agency action filter URLs retain account and search context with safe enco
   assert.equal(agencyFocusHref({ q: ' ' }), '/agency-focus');
 });
 
-test('agency focus keeps the decisive reason visible and preserves supporting metrics and action context', () => {
+test('agency focus exposes comparison facts and the decisive reason while preserving action context', () => {
   const source = readFileSync('app/agency-focus/page.tsx', 'utf8');
   assert.match(source, /requireFeatureForUser\(currentUser, 'AGENCY_INTELLIGENCE'\)/);
-  assert.match(source, /className="agency-focus-metrics"/);
-  for (const label of ['On hand', 'Minimum', 'Sales / 7d', 'Sales / 30d', 'Fit score', 'Peer carry']) {
-    assert.ok(source.includes(`<dt>${label}</dt>`));
+  assert.match(source, /<table className="comparison-table intelligence-comparison-table retail-intelligence-table"/);
+  for (const label of ['Account / product', 'Next action', 'On hand / min', 'Sales · 7 / 30d', 'Evidence', 'Actions']) {
+    assert.ok(source.includes(`>${label}</th>`));
   }
+  for (const value of ['item.onHand', 'item.minimum', 'item.retailSales7', 'item.retailSales30', 'item.fitScore', 'item.peerCarryPercent']) assert.ok(source.includes(value));
   assert.match(source, /aria-label="Recommendation evidence"/);
   assert.match(source, /Why this recommendation\?/);
-  assert.match(source, /className="agency-focus-key-reason"/);
+  assert.match(source, /className="intelligence-key-reason agency-focus-key-reason"/);
   assert.doesNotMatch(source, /View evidence|opportunity-evidence/);
   assert.match(source, /reason: stringList\(item.reasons\).join\(' '\), returnTo,/);
   assert.match(source, /take: AGENCY_FOCUS_PAGE_SIZE \+ 1/);
@@ -55,8 +56,8 @@ test('pagination preserves filters, validates input, and search resets to the fi
 
 test('shared Intelligence navigation group appears on desktop and mobile without replacing primary tabs', () => {
   const source = readFileSync('app/components/AppNavigation.tsx', 'utf8');
-  assert.equal((source.match(/<IntelligenceMenu /g) ?? []).length, 1);
-  assert.match(source, /<SidebarDisclosure label="Intelligence"/);
+  assert.equal((source.match(/<IntelligenceMenu /g) ?? []).length, 2, 'desktop and mobile share the authorized Intelligence destinations');
+  assert.doesNotMatch(source, /<SidebarDisclosure label="Intelligence"/, 'frequent desktop intelligence links are visible without expansion');
   assert.match(source, /getIntelligenceNavigationItems\(enabledFeatures, isAdmin, isPlatformAdmin\)/);
   assert.match(source, /label: 'Intelligence', items/);
   assert.match(source, /event.currentTarget.open = false/);

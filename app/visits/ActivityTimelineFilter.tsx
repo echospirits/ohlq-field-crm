@@ -14,10 +14,12 @@ export function ActivityTimelineFilter({
   entries,
   children,
   contacts,
+  tableHead,
 }: {
   entries: TimelineFilterEntry[];
   children: ReactNode;
   contacts: Record<string, string>;
+  tableHead?: ReactNode;
 }) {
   const [type, setType] = useState(""),
     [source, setSource] = useState(""),
@@ -26,6 +28,7 @@ export function ActivityTimelineFilter({
     [opportunity, setOpportunity] = useState(""),
     [start, setStart] = useState(""),
     [end, setEnd] = useState("");
+  const [filterResetKey, setFilterResetKey] = useState(0);
   const nodes = Children.toArray(children);
   const matches = entries
     .map((e, i) => ({ e, node: nodes[i] }))
@@ -44,11 +47,12 @@ export function ActivityTimelineFilter({
       value,
       label: value,
     }));
+  const activeFilters = [type, source, staff, contact ? contacts[contact] ?? 'Archived contact' : '', opportunity ? 'Opportunity selected' : '', start ? `From ${start} UTC` : '', end ? `Through ${end} UTC` : ''].filter(Boolean);
   return (
     <>
       <details className="compact-details">
-        <summary>Filter account history</summary>
-        <div className="form-grid">
+        <summary>Filter history{activeFilters.length ? ` · ${activeFilters.length} active` : ''}</summary>
+        <div className="form-grid" key={filterResetKey}>
           <RecordPicker
             name="historyType"
             label="Activity type"
@@ -111,19 +115,14 @@ export function ActivityTimelineFilter({
             />
           </label>
         </div>
-        <p className="field-note">
-          Filters apply to the loaded history. Source permissions are enforced
-          before records reach this page.
-        </p>
       </details>
-      <p aria-live="polite">
-        {matches.length} of {entries.length} loaded records
-      </p>
-      <div className="visit-activity-list">
+      <div className="history-filter-status"><p className="record-meta" aria-live="polite">{matches.length} of {entries.length} loaded records{activeFilters.length ? ` · ${activeFilters.join(' · ')}` : ''}</p>
+      {activeFilters.length ? <button className="secondary" type="button" onClick={() => { setType(''); setSource(''); setStaff(''); setContact(''); setOpportunity(''); setStart(''); setEnd(''); setFilterResetKey((current) => current + 1); }}>Clear filters</button> : null}</div>
+      {tableHead ? <div className="table-scroll" role="region" aria-label="Visit history" tabIndex={0}><table className="comparison-table visit-history-table"><thead>{tableHead}</thead><tbody>{matches.map(({ node }) => node)}</tbody></table></div> : <div className="visit-activity-list">
         {matches.map(({ e, node }) => (
           <div key={e.id}>{node}</div>
         ))}
-      </div>
+      </div>}
       {!matches.length ? (
         <p className="muted">No loaded history matches these filters.</p>
       ) : null}

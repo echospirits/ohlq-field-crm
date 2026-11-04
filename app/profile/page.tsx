@@ -83,7 +83,6 @@ export default async function ProfilePage({
   return (
     <>
       <PageHeader
-        description="Keep your contact information current and secure your account."
         eyebrow="Account"
         title="Profile"
       />
@@ -127,7 +126,7 @@ export default async function ProfilePage({
         </form>
         {!isTasterRole(user.role) ? <div className="profile-integration-link">
           <h2>Calendar</h2>
-          <p className="muted">Connect your own Google Calendar for dated worklist follow-ups.</p>
+          <p className="muted">Your dated Worklist follow-ups.</p>
           <Link className="button-link secondary" href="/settings/calendar">Calendar settings</Link>
         </div> : null}
         <div className="profile-integration-link">

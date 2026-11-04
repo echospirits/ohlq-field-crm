@@ -45,46 +45,31 @@ export default async function TagsPage({
   return (
     <>
       <PageHeader
-        description="Create reusable account tags, choose their colors, and audit where they are applied."
         eyebrow="Accounts"
         title="Tags"
       />
       <AccountViewNavigation active="tags" />
       {params.status ? <p className="toast-notice page-status">{statusMessages[params.status] ?? params.status}</p> : null}
 
-      <div className="grid">
-        <div className="card">
-          <h2>Create / update tag</h2>
+      <details className="compact-details tag-editor" open={tags.length === 0}>
+          <summary>Create or update tag</summary>
           <form action={createTag}>
             <label htmlFor="tag-name">Name</label>
             <input id="tag-name" name="name" placeholder="Priority account, Menu target, Key buyer" required />
 
             <label htmlFor="tag-color">Color</label>
-            <input id="tag-color" name="color" type="color" defaultValue="#7c9cff" />
+            <input id="tag-color" name="color" type="color" defaultValue="#885731" />
 
             <label htmlFor="tag-description">Description</label>
             <textarea id="tag-description" name="description" rows={3} placeholder="How this tag should be used" />
 
             <SubmitButton type="submit">Save tag</SubmitButton>
           </form>
-        </div>
-
-        <div className="card">
-          <h2>Useful tag ideas</h2>
-          <div className="tag-idea-list">
-            <span>High priority</span>
-            <span>Menu opportunity</span>
-            <span>Display target</span>
-            <span>Decision maker met</span>
-            <span>Needs follow-up</span>
-            <span>Do not contact</span>
-          </div>
-        </div>
-      </div>
+      </details>
 
       <section className="content-section">
-      <SectionHeading count={tags.length} description="Reusable labels available across retail and restaurant workspaces." title="Tag library" />
-      {tags.length > 0 ? <div className="table-scroll"><table className="responsive-table">
+      <SectionHeading count={tags.length} title="Tag library" />
+      {tags.length > 0 ? <div className="table-scroll" role="region" aria-label="Tag library" tabIndex={0}><table className="responsive-table comparison-table tag-library-table">
         <thead>
           <tr>
             <th>Tag</th>
@@ -102,7 +87,7 @@ export default async function TagsPage({
                 <TagBadges tags={[tag]} />
               </td>
               <td data-label="Description">{tag.description}</td>
-              <td data-label="Accounts">
+              <td data-label="Accounts" className="numeric">
                 <Link href={`/tags/${tag.id}`}>{tag._count.locationTags}</Link>
               </td>
               <td data-label="Created">{formatEasternDate(tag.createdAt)}</td>
@@ -116,7 +101,7 @@ export default async function TagsPage({
                   </Link>
                   <form action={deleteTag}>
                     <input name="id" type="hidden" value={tag.id} />
-                    <SubmitButton className="secondary" type="submit">
+                    <SubmitButton className="secondary danger-btn" type="submit">
                       Delete
                     </SubmitButton>
                   </form>

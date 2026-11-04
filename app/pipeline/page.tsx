@@ -1,6 +1,7 @@
 import {readPipelineStages,effectivePipelineStage} from '../../lib/crm/pipelineStages';
 import { readAccountConfiguration } from '../../lib/crm/accountConfiguration';
 import { PipelineScopeFilter } from './PipelineScopeFilter';
+import { pipelineCommitmentDue, selectPipelineCommitments } from './presentation';
 import { healthRules } from '../../lib/crm/health';
 import { pipelineForecast } from '../../lib/crm/pipeline';
 import { visibleActivityWhere } from '../../lib/crm/activity';
@@ -72,11 +73,9 @@ export default async function PipelinePage({ searchParams }: { searchParams?: Pr
     const key = activity.agencyId ? `AGENCY:${activity.agencyId}` : `WHOLESALE:${activity.wholesaleAccountId}`;
     if (!lastVisitByKey.has(key) || lastVisitByKey.get(key)! < activity.occurredAt) lastVisitByKey.set(key, activity.occurredAt);
   });
-  const nextActionByKey = new Map<string, { dueDate: Date | null; title: string }>();
-  worklist.filter((item) => item.dueDate && item.dueDate >= now).forEach((item) => {
-    const key = item.agencyId ? `AGENCY:${item.agencyId}` : `WHOLESALE:${item.wholesaleAccountId}`;
-    if (!nextActionByKey.has(key)) nextActionByKey.set(key, item);
-  });
+  const nextActionByKey = selectPipelineCommitments(worklist);
+  // Keep attention-model inputs unchanged while showing overdue/unscheduled work.
+  const futureActionByKey = selectPipelineCommitments(worklist.filter((item) => item.dueDate && item.dueDate >= now));
   const wholesalePurchaseById = new Map<string, Date>();
   wholesalePurchases.forEach((purchase) => { if (!wholesalePurchaseById.has(purchase.wholesaleAccountId)) wholesalePurchaseById.set(purchase.wholesaleAccountId, purchase.reportDate); });
   const agencyPurchaseByNumber = new Map<string, Date>();
@@ -87,8 +86,9 @@ export default async function PipelinePage({ searchParams }: { searchParams?: Pr
     const key = `${overlay.accountType}:${overlay.externalAccountId}`;
     const lastPurchaseAt = overlay.accountType === SalesAccountType.AGENCY ? agencyPurchaseByNumber.get((account as typeof agencies[number]).agencyId) ?? null : wholesalePurchaseById.get(overlay.externalAccountId) ?? null;
     const nextAction = nextActionByKey.get(key) ?? null;
+    const nextActionDue = nextAction ? pipelineCommitmentDue(nextAction.dueDate, now) : null;
     const lastActivityAt = lastVisitByKey.get(key) ?? null;
-    return [{ ...overlay, account, buyingState: getBuyingState(lastPurchaseAt, now, rules.purchaseDays), lastActivityAt, lastPurchaseAt, nextAction, attention: getNeedsAttentionReasons({ status: overlay.salesStatus, statusUpdatedAt: overlay.salesStatusUpdatedAt, lastActivityAt, lastPurchaseAt, nextActionAt: nextAction?.dueDate ?? null, thresholds: { noMeaningfulActivityDays: ["RETAIL_CHAIN","HOSPITALITY_GROUP"].includes(String((overlay.crmDetails as {kind?:string}).kind)) ? rules.chainContactDays : overlay.accountType === "AGENCY" ? rules.agencyContactDays : rules.wholesaleContactDays, waitingOnOrderDays: rules.waitingDays }, now }) }];
+    return [{ ...overlay, account, buyingState: getBuyingState(lastPurchaseAt, now, rules.purchaseDays), lastActivityAt, lastPurchaseAt, nextAction, nextActionDue, attention: getNeedsAttentionReasons({ status: overlay.salesStatus, statusUpdatedAt: overlay.salesStatusUpdatedAt, lastActivityAt, lastPurchaseAt, nextActionAt: futureActionByKey.get(key)?.dueDate ?? null, thresholds: { noMeaningfulActivityDays: ["RETAIL_CHAIN","HOSPITALITY_GROUP"].includes(String((overlay.crmDetails as {kind?:string}).kind)) ? rules.chainContactDays : overlay.accountType === "AGENCY" ? rules.agencyContactDays : rules.wholesaleContactDays, waitingOnOrderDays: rules.waitingDays }, now }) }];
   });
   const forecast = pipelineForecast(allRows);
   const rows = allRows.filter((row) => !selectedStatus || row.salesStatus === selectedStatus);
@@ -97,22 +97,26 @@ export default async function PipelinePage({ searchParams }: { searchParams?: Pr
   const nameFor = (type: SalesAccountType, id: string) => type === SalesAccountType.AGENCY ? agenciesById.get(id)?.name : wholesaleById.get(id)?.name;
 
   return <div className="pipeline-workspace">
-    <PageHeader eyebrow="Accounts" title="Pipeline" description="Review relationships and choose the next account to move forward." />
-    <details className="card crm-panel compact-details"><summary>Forecast · {money(forecast.weighted)} weighted estimate</summary>
-      <p>{forecast.valued} of {forecast.accounts} open accounts have estimates; {money(forecast.unweighted)} before probability weighting.</p>
-      <p className="muted">USD assumptions from account plans. Purchasing, Nurture, and Lost accounts are excluded. {forecast.missingProbability} valued accounts have no probability and contribute zero to the weighted estimate. This is not recorded revenue.</p>
-    </details>
+    <PageHeader title="Pipeline" />
+    <section className="pipeline-estimates" aria-label="Account-plan estimates">
+      <p className="pipeline-estimate-label">Plan estimates · USD{forecast.missingProbability ? ` · ${forecast.missingProbability} without probability` : ''}</p>
+      <dl className="metric-strip">
+        <div><dt>Weighted estimate</dt><dd>{money(forecast.weighted)}</dd></div>
+        <div><dt>Before weighting</dt><dd>{money(forecast.unweighted)}</dd></div>
+        <div><dt>Accounts valued</dt><dd>{forecast.valued} <small>of {forecast.accounts} open</small></dd></div>
+      </dl>
+    </section>
     <PipelineScopeFilter {...readAccountConfiguration(preferences.crmPreferences)} />
     <SalesStatusJourney currentStatus={selectedStatus} counts={counts} filterHref={(status) => pipelineHref(view, selectedStatus === status ? null : status)} />
     <nav className="scope-tabs" aria-label="Pipeline view">
+      <Link href={pipelineHref('list')} aria-current={view === 'list' ? 'page' : undefined}>Table</Link>
       <Link href={pipelineHref('board')} aria-current={view === 'board' ? 'page' : undefined}>Kanban board</Link>
       {detailedStages.length ? <Link href={pipelineHref('stages')} aria-current={view === 'stages' ? 'page' : undefined}>Detailed stages</Link> : null}
-      <Link href={pipelineHref('list')} aria-current={view === 'list' ? 'page' : undefined}>List</Link>
       {selectedStatus ? <Link href={pipelineHref(view, null)}>Clear status filter</Link> : null}
     </nav>
 
     {view==='stages'?<section className="pipeline-kanban" aria-label="Detailed sales stages">{[...detailedStages.map(s=>({id:s.id,name:s.name})),{id:'',name:'No current detailed stage'}].map(stage=>{const group=rows.filter(r=>(effectivePipelineStage(detailedStages,r.salesPlan,r.salesStatus)?.id??'')===stage.id);return<details className="pipeline-kanban-column" open={group.length > 0} key={stage.id}><summary><h3>{stage.name}</h3><span className="pill">{group.length}</span></summary>{group.map(r=><article className="pipeline-kanban-card" key={`${r.accountType}:${r.externalAccountId}`}><Link href={`/${r.accountType==='AGENCY'?'agencies':'wholesale'}/${r.externalAccountId}`}>{r.account.name}</Link><span>{SALES_STATUS_LABELS[r.salesStatus!]}</span><span>{BUYING_STATE_LABELS[r.buyingState]}</span></article>)}</details>})}</section>:view === 'board' ? <section className="dashboard-section" aria-label="Accounts by sales status">
-      <div className="section-heading"><div><h2>Accounts by status</h2><p className="muted">Open an account to update its status or log a visit.</p></div><span className="pill">{rows.length} account{rows.length === 1 ? '' : 's'}</span></div>
+      <div className="section-heading"><div><h2>Accounts by status</h2></div><span className="pill">{rows.length} account{rows.length === 1 ? '' : 's'}</span></div>
       <div className="pipeline-kanban">
         {SALES_STATUS_OPTIONS.filter((option) => !selectedStatus || selectedStatus === option.value).map((option) => {
           const stageRows = rows.filter((row) => row.salesStatus === option.value);
@@ -123,7 +127,7 @@ export default async function PipelinePage({ searchParams }: { searchParams?: Pr
               <span className="muted">{row.accountType === SalesAccountType.AGENCY ? 'Retail' : 'Restaurants'}{row.account.city ? ` · ${row.account.city}` : ''}</span>
               <span>{BUYING_STATE_LABELS[row.buyingState]} · {daysInStatus(row.salesStatusUpdatedAt!)} days in status</span>
               <span className="muted">{row.assignedUserId ? usersById.get(row.assignedUserId) ?? 'Former team member' : 'Unassigned'}</span>
-              <span><strong>Next:</strong> {row.nextAction ? `${row.nextAction.title}${row.nextAction.dueDate ? ` · ${formatEasternDate(row.nextAction.dueDate)}` : ''}` : 'No follow-up scheduled'}</span>
+              <span><strong>Next:</strong> {row.nextAction ? <>{row.nextAction.title}<small>{row.nextActionDue?.date}{row.nextActionDue?.overdue ? ` · ${row.nextActionDue.overdue}` : ''}</small></> : 'No open commitment'}</span>
               {row.attention.length ? <span className="pipeline-kanban-attention">Needs attention: {row.attention.join(' · ')}</span> : null}
             </article>)}
             {!stageRows.length ? <p className="pipeline-kanban-empty">No tracked accounts in {option.label}.</p> : null}
@@ -133,24 +137,27 @@ export default async function PipelinePage({ searchParams }: { searchParams?: Pr
       {!allRows.length ? <p className="muted">Set Sales Status on an <Link href="/agencies">Retail</Link> or <Link href="/wholesale">Restaurant Account</Link> to add it to your pipeline.</p> : null}
     </section> : <section className="dashboard-section">
       <div className="section-heading"><div><h2>{selectedStatus ? SALES_STATUS_LABELS[selectedStatus] : 'Tracked accounts'}</h2></div><span className="pill">{rows.length}</span></div>
-      {rows.length ? <div className="pipeline-account-list">
+      {rows.length ? <div className="table-scroll" role="region" aria-label="Pipeline accounts" tabIndex={0}><table className="comparison-table pipeline-comparison-table">
+        <thead><tr><th scope="col">Account</th><th scope="col">Sales / buying</th><th scope="col">Owner</th><th scope="col">Last activity / purchase</th><th scope="col">Next follow-up</th><th scope="col">Attention</th></tr></thead>
+        <tbody>
         {rows.map((row) => {
           const href = row.accountType === SalesAccountType.AGENCY ? `/agencies/${row.externalAccountId}` : `/wholesale/${row.externalAccountId}`;
-          return <article className="pipeline-account-row" key={`${row.accountType}:${row.externalAccountId}`}>
-            <div className="pipeline-account-identity"><Link href={href}>{row.account.name}</Link>{row.isTargeting ? <small className="target-account-marker">TARGET ACCOUNT</small> : null}<span>{row.accountType === SalesAccountType.AGENCY ? 'Retail' : 'Restaurants'}{row.account.city ? ` · ${row.account.city}` : ''}</span></div>
-            <span><small>Sales Status</small><strong>{SALES_STATUS_LABELS[row.salesStatus!]}</strong></span>
-            <span><small>Buying State</small><strong>{BUYING_STATE_LABELS[row.buyingState]}</strong></span>
-            <span><small>Owner</small><strong>{row.assignedUserId ? usersById.get(row.assignedUserId) ?? 'Former team member' : 'Unassigned'}</strong></span>
-            <span><small>Last activity</small><strong>{formatEasternDate(row.lastActivityAt) || 'None'}</strong></span>
-            <span><small>Last purchase</small><strong>{formatEasternDate(row.lastPurchaseAt) || 'None'}</strong></span>
-            <span><small>Next follow-up</small><strong>{row.nextAction ? `${row.nextAction.title}${row.nextAction.dueDate ? ` · ${formatEasternDate(row.nextAction.dueDate)}` : ''}` : 'None scheduled'}</strong></span>
-            <span><small>Time in status</small><strong>{daysInStatus(row.salesStatusUpdatedAt!)} days</strong></span>
-            <span className={row.attention.length ? 'pipeline-attention needs-attention' : 'pipeline-attention'}><small>Needs Attention</small><strong>{row.attention[0] ?? 'On track'}</strong>{row.attention.length > 1 ? <em>+{row.attention.length - 1} more</em> : null}</span>
-          </article>;
+          return <tr key={`${row.accountType}:${row.externalAccountId}`}>
+            <th scope="row" data-label="Account"><div className="pipeline-account-identity"><Link href={href}>{row.account.name}</Link>{row.isTargeting ? <small className="target-account-marker">TARGET ACCOUNT</small> : null}<span>{row.accountType === SalesAccountType.AGENCY ? 'Retail' : 'Restaurants'}{row.account.city ? ` · ${row.account.city}` : ''}</span></div></th>
+            <td data-label="Sales / buying"><strong>{SALES_STATUS_LABELS[row.salesStatus!]}</strong><small>{BUYING_STATE_LABELS[row.buyingState]} · {daysInStatus(row.salesStatusUpdatedAt!)} days in status</small></td>
+            <td data-label="Owner">{row.assignedUserId ? usersById.get(row.assignedUserId) ?? 'Former team member' : 'Unassigned'}</td>
+            <td data-label="Activity / purchase"><span>{formatEasternDate(row.lastActivityAt) || 'No recorded activity'}</span><small>Purchase: {formatEasternDate(row.lastPurchaseAt) || 'Not recorded'}</small></td>
+            <td data-label="Next follow-up">{row.nextAction ? <><strong>{row.nextAction.title}</strong><small>{row.nextActionDue?.date}</small>{row.nextActionDue?.overdue ? <small className="worklist-overdue-label">{row.nextActionDue.overdue}</small> : null}</> : <span className="muted">No open commitment</span>}</td>
+            <td data-label="Attention" className={row.attention.length ? 'pipeline-attention needs-attention' : 'pipeline-attention'}>{row.attention.length ? row.attention.join(' · ') : <span className="muted">No flagged gaps</span>}</td>
+          </tr>;
         })}
-      </div> : <div className="card empty-state"><h3>No tracked accounts{selectedStatus ? ` in ${SALES_STATUS_LABELS[selectedStatus]}` : ''}</h3><p>Set Sales Status from a Retail or Restaurant Account page, or clear this filter.</p>{selectedStatus ? <Link className="btn secondary" href={pipelineHref(view, null)}>Clear filter</Link> : null}</div>}
+        </tbody>
+      </table></div> : <div className="card empty-state"><h3>No tracked accounts{selectedStatus ? ` in ${SALES_STATUS_LABELS[selectedStatus]}` : ''}</h3><p>Set Sales Status from a Retail or Restaurant Account page, or clear this filter.</p>{selectedStatus ? <Link className="btn secondary" href={pipelineHref(view, null)}>Clear filter</Link> : null}</div>}
     </section>}
 
+    <details className="compact-details pipeline-planning-assumptions"><summary>Planning assumptions</summary>
+      <p className="muted">USD assumptions from account plans. Purchasing, Nurture, and Lost accounts are excluded. {forecast.missingProbability} valued accounts have no probability and contribute zero to the weighted estimate. This is not recorded revenue.</p>
+    </details>
     <div className="pipeline-support-grid">
       <section className="card"><div className="section-heading"><div><h2>Follow-up gaps</h2></div></div>{rows.filter((row) => row.attention.length).slice(0, 10).map((row) => <div className="pipeline-support-row" key={`attention-${row.accountType}-${row.externalAccountId}`}><Link href={row.accountType === SalesAccountType.AGENCY ? `/agencies/${row.externalAccountId}` : `/wholesale/${row.externalAccountId}`}>{row.account.name}</Link><span>{row.attention.join(' · ')}</span></div>)}{!rows.some((row) => row.attention.length) ? <p className="muted">No tracked accounts currently meet the pilot attention rules.</p> : null}</section>
       <section className="card"><div className="section-heading"><div><h2>Status changes</h2></div></div>{recentMovement.map((event) => <div className="pipeline-support-row" key={event.id}><strong>{nameFor(event.accountType, event.externalAccountId) ?? 'Account'}</strong><span>{event.source === 'SALES_DATA' ? 'Purchase detected → Purchasing' : `${event.previousStatus ? SALES_STATUS_LABELS[event.previousStatus] : 'Not set'} → ${SALES_STATUS_LABELS[event.newStatus]}`} · {formatEasternDate(event.changedAt)}</span></div>)}{recentMovement.length === 0 ? <p className="muted">No status movement yet.</p> : null}</section>

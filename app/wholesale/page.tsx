@@ -516,7 +516,6 @@ export default async function WholesalePage({
       <header className="page-heading page-header">
         <div>
           <h1>Restaurants</h1>
-          <p className="muted">Find an account and plan your next visit.</p>
         </div>
         <a className="btn secondary compact-btn" href="#new-restaurant">Add account</a>
       </header>
@@ -552,16 +551,16 @@ export default async function WholesalePage({
 
       <DirectoryPagination path="/wholesale" params={params} page={currentPage} total={totalRows} />
 
-      <div className="table-scroll wholesale-table-scroll">
-        <table className="responsive-table account-directory-table restaurant-directory-table">
+      <div className="table-scroll wholesale-table-scroll" role="region" aria-label="Restaurant accounts" tabIndex={0}>
+        <table className="responsive-table comparison-table account-directory-table restaurant-directory-table">
           <thead>
             <tr>
-              {visibleSortColumns.map((column) => (
+              {visibleSortColumns.filter((column) => ['name', 'address', 'mostRecentVisit', 'commercialRating', 'nextAction', 'actions'].includes(column.key)).map((column) => (
                 <SortableHeader
                   currentSortDirection={sortDirection}
                   currentSortKey={sortKey}
                   key={column.key}
-                  label={column.label}
+                  label={column.key === 'address' ? 'Location' : column.label}
                   params={params}
                   sortKey={column.key}
                 />
@@ -576,28 +575,19 @@ export default async function WholesalePage({
                     {row.name}
                   </Link>
                   {targetedIds.has(row.id) ? <TargetAccountMarker /> : null}
-                  <span className="account-directory-mobile-only account-directory-location">
-                    {row.locationText ? <AddressLink address={row.locationText} /> : (row.licenseeIdsText ? `Licensee ${row.licenseeIdsText}` : 'Location unavailable')}
-                  </span>
-                  {(hasWholesaleOpportunities && row.commercialRating !== null) || row.mostRecentVisit ? <span className="account-directory-mobile-only account-directory-context">
-                    {hasWholesaleOpportunities && row.commercialRating !== null ? <CommercialOpportunityStars rating={row.commercialRating} status={row.assessmentStatus} pending={row.pending} stale={row.stale} /> : null}
-                    {row.mostRecentVisit ? <span>Last visit {formatEasternDate(row.mostRecentVisit)}</span> : null}
-                  </span> : null}
+                  {row.licenseeIdsText || row.agencyId ? <small className="directory-record-id">{[row.licenseeIdsText ? `Licensee ${row.licenseeIdsText}` : null, row.agencyId ? `Retail ${row.agencyId}` : null].filter(Boolean).join(' · ')}</small> : null}
+                  {row.phone ? <a className="directory-phone" href={`tel:${row.phone}`}>{row.phone}</a> : null}
                 </td>
-                <td className="account-directory-secondary-cell" data-label="Licensee IDs">{row.licenseeIdsText}</td>
-                <td className="account-directory-secondary-cell" data-label="Address"><AddressLink address={row.locationText}>{row.address}</AddressLink></td>
-                <td className="account-directory-secondary-cell" data-label="City">{row.city}</td>
-                <td className="account-directory-secondary-cell" data-label="Retail ID">{row.agencyId}</td>
-                <td className="account-directory-secondary-cell" data-label="Most Recent Visit">{formatEasternDate(row.mostRecentVisit)}</td>
+                <td className="account-directory-secondary-cell directory-location-cell" data-label="Location"><AddressLink address={row.locationText}>{[row.address, row.city].filter(Boolean).join(', ') || 'Location unavailable'}</AddressLink></td>
+                <td className="account-directory-secondary-cell" data-label="Most Recent Visit">{formatEasternDate(row.mostRecentVisit) || 'No recorded visit'}</td>
                 {hasWholesaleOpportunities ? <><td className="account-directory-secondary-cell" data-label="Commercial opportunity"><CommercialOpportunityStars rating={row.commercialRating} status={row.assessmentStatus} pending={row.pending} stale={row.stale} />{row.evidenceMode ? <small className="muted"> {row.evidenceMode}</small> : null}</td>
-                <td className="account-directory-secondary-cell" data-label="Next Action">{row.nextAction ?? '—'}</td>
+                <td className="account-directory-secondary-cell directory-next-action" data-label="Next Action">{row.nextAction ?? 'Not available'}</td>
                 </> : null}
                 <td className="account-directory-actions-cell" data-label="Actions">
                   <Link className="btn compact-btn" href={row.actionHref ?? '/wholesale'}>
                     {row.actionLabel}
                   </Link>
-                  {row.phone ? <a aria-label={`Call ${row.name}`} className="btn secondary compact-btn account-directory-mobile-only" href={`tel:${row.phone}`}>Call</a> : null}
-                  {row.directionsHref ? <a aria-label={`Directions to ${row.name}`} className="btn secondary compact-btn account-directory-mobile-only" href={row.directionsHref} rel="noreferrer" target="_blank">Directions</a> : null}
+                  {row.directionsHref ? <a aria-label={`Directions to ${row.name}`} className="btn secondary compact-btn" href={row.directionsHref} rel="noreferrer" target="_blank">Directions</a> : null}
                 </td>
               </tr>
             ))}

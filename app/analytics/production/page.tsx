@@ -29,9 +29,8 @@ export default async function ProductionForecastPage({ searchParams }: { searchP
     getDeliveryAvailabilitySignals(organizationId), getCurrentDemandSignals(organizationId),
   ]);
   const initial = Object.fromEntries(['q', 'market', 'confidence', 'sort'].flatMap(key => typeof query[key] === 'string' ? [[key, query[key]]] : []));
-  return <div className="pf-page"><Link href="/analytics">← Analytics</Link><PageHeader title="Production Forecasting" description={`Expected outbound case demand over the next ${horizon} days.`} actions={isAdminRole(user.role) ? <a className="btn secondary compact-btn" href="#source-import">Import source reports</a> : undefined} />
+  return <div className="pf-page"><Link href="/analytics">← Analytics</Link><PageHeader title="Production Forecasting" actions={isAdminRole(user.role) ? <a className="btn secondary compact-btn" href="#source-import">Import source reports</a> : undefined} />
     <div className="pf-freshness" role="status"><strong>{run ? `${run.horizonStart} – ${run.horizonEnd}` : 'Awaiting first forecast snapshot'}</strong><span>Forecast data through {run?.dataThrough ?? 'unavailable'}{run ? ` · generated ${run.generatedAt.slice(0, 16).replace('T', ' ')} UTC` : ''}</span>{run && run.horizonStart < today ? <span className="pf-warning">This saved horizon is stale. The next successful refresh will create new forecasts.</span> : null}</div>
-    <p className="muted">Targets include an uncertainty margin, before subtracting finished inventory. DC min/max is guidance, not a production limit.</p>
     {latestImports.some(i => i.status !== 'COMPLETE') ? <p className="pf-warning" role="alert">The latest import for a source is incomplete or failed. Forecasts retain its last complete data. Review <a href="#forecast-sources">Sources and data quality</a> before planning.</p> : null}
     <DeliveryAvailability data={delivery} showSetup={isAdminRole(user.role)} />
     <ForecastTable key={horizon} rows={rows} currentDemand={Object.fromEntries(demand.rows.map(row => [row.productId, row]))} initial={initial} horizon={horizon} organizationId={context.platform ? organizationId : undefined} />

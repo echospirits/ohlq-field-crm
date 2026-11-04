@@ -51,8 +51,7 @@ export async function AgencyIntelligencePanel({ agencyId, agencyName, currentUse
   if (!summary) {
     return <section className="agency-intelligence-empty">
       <h3>Next actions</h3>
-      <p>Decision support is waiting for the next complete OHLQ data run.</p>
-      <p className="muted">The engine only publishes recommendations after sales, restaurant, and inventory inputs all complete successfully.</p>
+      <p>Recommendations await a complete sales, restaurant and inventory refresh.</p>
     </section>;
   }
 
@@ -66,7 +65,7 @@ export async function AgencyIntelligencePanel({ agencyId, agencyName, currentUse
   return <div className="agency-intelligence-stack">
     <section className="card agency-intelligence-overview">
       <div className="section-heading agency-intelligence-heading">
-        <h3>What to do here next</h3>
+        <h3>Account signals</h3>
         <DataFreshnessBadge datePrefix="As of" sourceDate={summary.asOfDate} />
       </div>
       <dl className="agency-intelligence-snapshot">
@@ -85,57 +84,34 @@ export async function AgencyIntelligencePanel({ agencyId, agencyName, currentUse
 
     <section className="dashboard-section" id="product-opportunities">
       <div className="section-heading"><h3>Product opportunities</h3><Link className="btn secondary compact-btn" href={`/agency-focus?agencyId=${agencyId}`}>Open Retail Intelligence</Link></div>
-      <div className="agency-product-list">
-        {activeProducts.slice(0, 5).map((product) => <article className="card agency-product-card" key={product.id}>
-          <div className="agency-product-card-heading">
-            <span className="agency-product-title"><span className="ohlq-item-code">{product.itemCode}</span><strong>{product.itemName}</strong><small>{titleCase(product.opportunityState)}</small></span>
-            <span className={`priority priority-${product.priorityBand.toLowerCase()}`}>{product.priorityBand}</span>
-          </div>
-          <p className="agency-product-action"><strong>Next:</strong> {actionLabels[product.recommendedAction]}</p>
-          <ContextualActions
-            context={{ accountName: agencyName, agencyId, agencyProductIntelligenceId: product.id, productItemCode: product.itemCode, productName: product.itemName, reason: stringList(product.reasons).join(' '), returnTo: `/agencies/${agencyId}`, sourceLabel: `${titleCase(product.opportunityState)} - ${product.itemName}`, sourceType: product.opportunityState }}
-            currentUserId={currentUserId}
-            existingFollowUpId={product.worklistItems[0]?.id}
-            users={users}
-          />
-          <details className="opportunity-evidence compact-details nested-details">
-            <summary>View evidence</summary>
-            <div className="agency-product-body">
-            <dl className="agency-product-metrics">
-              <div><dt>On hand</dt><dd>{product.onHand ?? '—'}</dd></div>
-              <div><dt>Minimum</dt><dd>{product.minimum ?? '—'}</dd></div>
-              <div><dt>Sales / 7d</dt><dd>{product.retailSales7}</dd></div>
-              <div><dt>Sales / 30d</dt><dd>{product.retailSales30}</dd></div>
-              <div><dt>Fit</dt><dd>{titleCase(product.fitBand)} · {product.fitScore}</dd></div>
-              <div><dt>Peer carry</dt><dd>{product.peerCarryPercent === null ? '—' : `${Math.round(product.peerCarryPercent)}%`}</dd></div>
-            </dl>
-            <ul className="agency-product-reasons">{stringList(product.reasons).map((reason) => <li key={reason}>{reason}</li>)}</ul>
-            </div>
-          </details>
-        </article>)}
-        {activeProducts.length === 0 ? <p className="card muted activity-empty">No active product issues require attention.</p> : null}
-      </div>
+      {activeProducts.length ? <div className="table-scroll" role="region" aria-label="Product opportunities" tabIndex={0}><table className="comparison-table intelligence-comparison-table account-product-opportunities">
+        <thead><tr><th scope="col">Product</th><th scope="col">Next action</th><th scope="col" className="numeric">On hand / min</th><th scope="col" className="numeric">Sales · 7 / 30d</th><th scope="col">Evidence</th><th scope="col">Actions</th></tr></thead>
+        <tbody>{activeProducts.slice(0, 5).map((product) => <tr key={product.id}>
+          <th scope="row" data-label="Product"><strong>{product.itemName}</strong><small>Item {product.itemCode} · {titleCase(product.opportunityState)}</small></th>
+          <td data-label="Next action"><strong>{actionLabels[product.recommendedAction]}</strong><span className={`priority priority-${product.priorityBand.toLowerCase()}`}>{titleCase(product.priorityBand)}</span></td>
+          <td className="numeric" data-label="On hand / min"><strong>{product.onHand ?? 'Unavailable'}</strong><small>Min {product.minimum ?? 'Unavailable'}</small></td>
+          <td className="numeric" data-label="Sales · 7 / 30d"><strong>{product.retailSales7} / {product.retailSales30}</strong><small>bottles</small></td>
+          <td data-label="Evidence"><p className="intelligence-key-reason">{stringList(product.reasons)[0]}</p><small>Fit {product.fitScore} · {titleCase(product.fitBand)} · Peer carry {product.peerCarryPercent === null ? 'Unavailable' : `${Math.round(product.peerCarryPercent)}%`}</small>{stringList(product.reasons).length > 1 ? <details className="compact-details"><summary>More evidence ({stringList(product.reasons).length - 1})</summary><ul>{stringList(product.reasons).slice(1).map((reason) => <li key={reason}>{reason}</li>)}</ul></details> : null}</td>
+          <td data-label="Actions"><ContextualActions context={{ accountName: agencyName, agencyId, agencyProductIntelligenceId: product.id, productItemCode: product.itemCode, productName: product.itemName, reason: stringList(product.reasons).join(' '), returnTo: `/agencies/${agencyId}`, sourceLabel: `${titleCase(product.opportunityState)} - ${product.itemName}`, sourceType: product.opportunityState }} currentUserId={currentUserId} existingFollowUpId={product.worklistItems[0]?.id} users={users} /></td>
+        </tr>)}</tbody>
+      </table></div> : <p className="muted activity-empty">No active product issues require attention.</p>}
+      {activeProducts.length > 5 ? <Link className="intelligence-continuation" href={`/agency-focus?agencyId=${agencyId}`}>View all {activeProducts.length} product opportunities</Link> : null}
     </section>
 
-    <details className="card compact-details agency-inventory-details" id="current-inventory" open>
-      <summary><span><strong>Current Echo inventory</strong><small>What is actually in this store now</small></span><span className="pill">{currentInventory.length} items</span></summary>
-      <div className="agency-current-inventory-list">
-        {currentInventory.map((product) => <article className="agency-current-inventory-row" key={product.id}>
-          <div className="ohlq-item-identity"><div><span className="ohlq-item-code">{product.itemCode}</span><strong>{product.itemName}</strong></div><span className="muted">{product.inventoryStatus || titleCase(product.inventoryState)}{product.coverageGroup ? ` · ${product.coverageGroup}` : ''}</span></div>
-          <div className="agency-inventory-metrics">
-            <span><strong>{product.onHand ?? '—'}</strong><small>on hand</small></span>
-            <span><strong>{product.minimum ?? '—'}</strong><small>minimum</small></span>
-            <span><strong>{product.retailSales7}</strong><small>7d sales</small></span>
-            <span><strong>{product.retailSales30}</strong><small>30d sales</small></span>
-            <span><strong>{product.daysSinceLastSale ?? '—'}</strong><small>days since sale</small></span>
-          </div>
-        </article>)}
-        {currentInventory.length === 0 ? <p className="muted activity-empty">No current Echo inventory is recorded.</p> : null}
-      </div>
-    </details>
+    <section className="workspace-section agency-inventory-details" id="current-inventory" aria-label="Current Echo inventory">
+      <div className="section-heading"><h3>Current Echo inventory</h3><span className="pill">{currentInventory.length} items</span></div>
+      {currentInventory.length ? <div className="table-scroll" role="region" aria-label="Inventory comparison" tabIndex={0}><table className="comparison-table inventory-comparison-table">
+        <thead><tr><th scope="col">Product</th><th scope="col" className="numeric">On hand</th><th scope="col" className="numeric">Minimum</th><th scope="col" className="numeric">Sales · 7d</th><th scope="col" className="numeric">Sales · 30d</th><th scope="col" className="numeric">Days since sale</th></tr></thead>
+        <tbody>{currentInventory.map((product) => <tr key={product.id}>
+          <th scope="row" data-label="Product"><strong>{product.itemName}</strong><small>{product.itemCode} · {product.inventoryStatus || titleCase(product.inventoryState)}{product.coverageGroup ? ` · ${product.coverageGroup}` : ''}</small></th>
+          <td className="numeric" data-label="On hand">{product.onHand ?? 'Unavailable'}</td><td className="numeric" data-label="Minimum">{product.minimum ?? 'Unavailable'}</td>
+          <td className="numeric" data-label="Sales · 7d">{product.retailSales7}</td><td className="numeric" data-label="Sales · 30d">{product.retailSales30}</td><td className="numeric" data-label="Days since sale">{product.daysSinceLastSale ?? 'Unavailable'}</td>
+        </tr>)}</tbody>
+      </table></div> : <p className="muted activity-empty">No current Echo inventory is recorded.</p>}
+    </section>
 
-    <details className="compact-details agency-wholesale-influence" id="wholesale-influence">
-      <summary><strong>Restaurant influence</strong><span className={`priority priority-${summary.wholesaleInfluenceBand.toLowerCase()}`}>{titleCase(summary.wholesaleInfluenceBand)}</span></summary>
+    <section className="workspace-section agency-wholesale-influence" id="wholesale-influence">
+      <div className="section-heading"><h3>Restaurant influence</h3><span className={`priority priority-${summary.wholesaleInfluenceBand.toLowerCase()}`}>{titleCase(summary.wholesaleInfluenceBand)}</span></div>
       <dl className="agency-intelligence-snapshot">
         <div><dt>Linked</dt><dd>{summary.linkedWholesaleCount}</dd></div>
         <div><dt>Active</dt><dd>{summary.activeWholesaleCount}</dd></div>
@@ -144,7 +120,7 @@ export async function AgencyIntelligencePanel({ agencyId, agencyName, currentUse
         <div><dt>Lapsed</dt><dd>{summary.lapsedWholesaleCount}</dd></div>
         <div><dt>Open opportunities</dt><dd>{summary.openWholesaleOpportunityCount}</dd></div>
       </dl>
-      <ul className="agency-product-reasons">{stringList(summary.wholesaleReasons).map((reason) => <li key={reason}>{reason}</li>)}</ul>
-    </details>
+      {stringList(summary.wholesaleReasons).length ? <details className="compact-details"><summary>Influence evidence</summary><ul className="agency-product-reasons">{stringList(summary.wholesaleReasons).map((reason) => <li key={reason}>{reason}</li>)}</ul></details> : null}
+    </section>
   </div>;
 }

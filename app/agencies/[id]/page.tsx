@@ -1,5 +1,6 @@
 import { accountWorkAndEvents } from '../../../lib/crm/accountTimeline';
 import { AccountProfile } from '../../components/AccountProfile';
+import { AccountSalesPlan } from '../../components/AccountSalesPlan';
 import { AccountBriefing } from '../../components/AccountBriefing';
 import { activityLabels } from '../../../lib/crm/activity';
 import { Suspense } from 'react';
@@ -179,7 +180,8 @@ export default async function AgencyActivityPage({
       <Suspense fallback={<section id="account-worklist" className="card account-workspace-section account-worklist" aria-busy="true"><h2>Outstanding work</h2><p role="status">Loading outstanding work…</p></section>}>
         <AccountWorklist accountId={agency.id} accountName={agency.name} accountType="AGENCY" currentUserId={currentUser.id} actorName={getUserDisplayName(currentUser)} organizationId={organizationId} enabledFeatures={enabledFeatures} />
       </Suspense>
-
+      {salesStatusSummary ? <Suspense fallback={<p role="status" aria-busy="true">Loading account plan…</p>}><AccountSalesPlan account={{ accountType: 'AGENCY', accountId: agency.id }} /></Suspense> : null}
+      <Suspense fallback={<p role="status" aria-busy="true">Loading account profile…</p>}><AccountProfile organizationId={organizationId} accountType="AGENCY" accountId={agency.id} /></Suspense>
 
 <Suspense fallback={<p aria-busy="true" role="status">Loading account briefing…</p>}><AccountBriefing account={{ accountType: "AGENCY", accountId: agency.id }} actor={{ organizationId, userId: currentUser.id }} lastPurchaseAt={salesStatusSummary?.lastPurchaseAt} /></Suspense></> },
 { id: 'sales', label: 'Sales', content: <>
@@ -190,7 +192,6 @@ export default async function AgencyActivityPage({
 
       {hasAgencyIntelligence ? <>
         <div className="retail-intelligence-content">
-          <p className="retail-intelligence-intro muted">Next actions, what sells here, and the store behind the numbers.</p>
           <Suspense fallback={<p aria-busy="true" role="status">Loading retail intelligence…</p>}><AgencyIntelligencePanel agencyId={agency.id} agencyName={agency.name} currentUserId={currentUser.id} organizationId={organizationId} users={actionUsers} /></Suspense>
           <AgencyRetailMarketIntelligence market={marketProfile} fits={marketFits} />
           <AgencyStoreIntelligence agencyId={agency.id} context={storeContext} />
@@ -229,7 +230,7 @@ export default async function AgencyActivityPage({
           title: event.isTargeting ? 'Account targeted' : 'Targeting stopped',
         }))).concat(workAndEvents)} />
       </section></> },
-{ id: 'account-details', label: 'Details', content: <><Suspense fallback={<section className="card" aria-busy="true"><p role="status">Loading account profile…</p></section>}><AccountProfile organizationId={organizationId} accountType="AGENCY" accountId={agency.id} /></Suspense>
+{ id: 'account-details', label: 'Details', content: <>
       <div className="grid account-summary-grid account-workspace-section">
         <div className="card metric-card">
           <h3>Logged visits</h3>

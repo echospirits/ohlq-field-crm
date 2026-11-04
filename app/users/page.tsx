@@ -414,13 +414,12 @@ export default async function UsersPage({
   return (
     <>
       <PageHeader
-        description="Invite teammates, manage access levels, and keep inactive accounts out of field workflows."
         eyebrow="Administration"
         title="Users"
       />
       {params.status ? <p className="toast-notice page-status">{statusMessages[params.status] ?? params.status}</p> : null}
 
-      <details className="card compact-details admin-panel" open>
+      <details className="compact-details admin-panel user-invite-panel" open={users.length === 0}>
         <summary>Invite user</summary>
         <form action={inviteUser}>
           <div className="form-grid">
@@ -459,7 +458,7 @@ export default async function UsersPage({
         description={`${users.filter((user) => user.isActive).length} active · ${users.filter((user) => !user.isActive && !user.passwordHash).length} awaiting activation`}
         title="Team access"
       />
-      <div className="table-scroll"><table className="responsive-table">
+      <div className="table-scroll" role="region" aria-label="Team access" tabIndex={0}><table className="responsive-table comparison-table user-roster-table">
         <thead>
           <tr>
             <th>Name</th>
@@ -494,7 +493,7 @@ export default async function UsersPage({
                     : 'Inactive'}
               </td>
               <td data-label="Admin controls">
-                <div className="user-admin-actions">
+                <details className="compact-details user-manage-details"><summary>Manage<span className="sr-only"> {getUserDisplayName(user)}</span></summary><div className="user-admin-actions">
                   {isAwaitingActivation ? (
                     <form action={sendActivationReminder} className="inline-control-form">
                       <input name="userId" type="hidden" value={user.id} />
@@ -546,7 +545,7 @@ export default async function UsersPage({
                       </form>
                     </details>
                   ) : null}
-                </div>
+                </div></details>
               </td>
               </tr>
             );

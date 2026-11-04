@@ -20,8 +20,8 @@ export async function RelationshipReport({
       maximumFractionDigits: 0,
     }).format(v);
   return (
-    <details className="card">
-      <summary>Relationship execution &amp; Pipeline estimates</summary>
+    <section className="workspace-section relationship-report" aria-labelledby="relationship-report-heading">
+      <h2 id="relationship-report-heading">Relationship execution &amp; Pipeline estimates</h2>
       <p className="muted">
         All organization accounts and products. Execution uses {start}–{end}{" "}
         (UTC). Pipeline and territories show their current state; the sales
@@ -55,23 +55,23 @@ export async function RelationshipReport({
       </p>
       <h3>Execution by staff member</h3>
       {r.staff.length ? (
-        <div className="table-scroll">
-          <table>
+        <div className="table-scroll" role="region" aria-label="Execution by staff member" tabIndex={0}>
+          <table className="comparison-table">
             <thead>
               <tr>
-                <th>Member</th>
-                <th>Physical visits</th>
-                <th>Team interactions</th>
-                <th>Completed Worklist</th>
+                <th scope="col">Member</th>
+                <th scope="col" className="numeric">Physical visits</th>
+                <th scope="col" className="numeric">Team interactions</th>
+                <th scope="col" className="numeric">Completed Worklist</th>
               </tr>
             </thead>
             <tbody>
               {r.staff.map((s, i) => (
                 <tr key={i}>
-                  <th>{s.name}</th>
-                  <td>{s.visits}</td>
-                  <td>{s.communications}</td>
-                  <td>{s.completed}</td>
+                  <th scope="row">{s.name}</th>
+                  <td className="numeric">{s.visits}</td>
+                  <td className="numeric">{s.communications}</td>
+                  <td className="numeric">{s.completed}</td>
                 </tr>
               ))}
             </tbody>
@@ -86,18 +86,17 @@ export async function RelationshipReport({
         observed outcomes.
       </p>
       <h3>Current territory forecast</h3>
-      {r.territories.map((t) => (
-        <p key={t.name}>
-          <strong>{t.name}</strong> · {t.accounts} open accounts ·{" "}
-          {money(t.weighted)} weighted
-        </p>
-      ))}
+      <dl className="relationship-territories">{r.territories.map((t) => (
+        <div key={t.name}>
+          <dt>{t.name}</dt><dd>{t.accounts} open accounts · {money(t.weighted)} weighted</dd>
+        </div>
+      ))}</dl>
       <a
         className="button secondary"
         href={`/analytics/export?report=relationships&preset=custom&start=${start}&end=${end}`}
       >
         Export relationship report CSV
       </a>
-    </details>
+    </section>
   );
 }
