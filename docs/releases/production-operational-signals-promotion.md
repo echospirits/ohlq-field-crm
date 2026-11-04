@@ -13,14 +13,15 @@ Owner request: push all changes from this chat to main. This explicitly supersed
 
 ## Validation gates
 
-- [ ] Exact candidate Node22/npm10 GitHub **Validate dependency lockfile** run.
+- [x] Exact candidate Node22/npm10 GitHub **Validate dependency lockfile** run41831701214, job126580236970, passed for PR6 head `c94f5c3ef6f35e74f46648445571ba970136ecb0`. Explicit logs: Node22.23.4, npm10.9.9, clean install succeeded. GitHub's tested merge `b94cf47886265881c745cb1b29c6cbcc1ae74d6c` and candidate share exact tree `15632efba7db8167bbebef78c4d1cd91866fd765`.
 - [x] Full production-source suite:1018 tests,75 suites,0 failures/skips; typecheck passed. Main's existing tests/tooling remain intact.
-- [ ] Production-candidate build and final diff check.
+- [x] Production-candidate build and final diff check passed. A normal clean install preserved package/lockfile content; client bundles contain no provider-key variable or Neutron API-origin references. Scoped release audit:2 commits,37 paths,one additive migration,no feature-registry change.
 - [x] TST live source acceptance: OPS16 valid observations/17 checks,95 total replenishment cases;2806B GPT10/GRN0 and agency30221 contributes3. Source-ineligible A3A Dist has no demand amount.
 - [x] TST live OpenDock API/calendar agreement: November4 05:27 Eastern, GPT November10 06:00 EST (6calendar days), GRN November6 06:00 EST (2calendar days); repeat action reuses one daily fact per warehouse.
 - [x] TST authenticated desktop/mobile acceptance, failure/empty/stale states, tenant/credential isolation tests; prior990 tests/typecheck/build passed. Production candidate is independently validated above.
 - [x] Verified production-only migration/ledger and retained forecasts. PostgreSQL17 isolated rehearsal passed9 real constraints. Shared production applied only the exact migration; ledger29→30, five empty new tables, all377 forecast full rows unchanged, prior29 ledger records/settings/OPS credentials unchanged. Health remained200/connected.
-- [ ] Main push and READY production deployment/health/affected-route checks.
+- [x] Main fast-forward to exact candidate `c94f5c3ef6f35e74f46648445571ba970136ecb0`; PR6 closed/merged at that SHA. Production deployment `dpl_HkZSe3GuzihyxYJ1ZAN9zjkmEsSd` READY, alias `crm.echospirits.com`, health200 `production / ohlq-field-crm / connected`. Anonymous forecasting request returns a streamed Next login redirect and no private forecast table.
+- [ ] Authenticated production desktop/mobile browser smoke: no browser connection was available after desktop maintenance. TST's authenticated populated/empty/error/mobile acceptance and main's component/auth tests passed; this remaining live acceptance is not claimed complete.
 
 ## Production data and configuration
 
@@ -34,4 +35,8 @@ Owner request: push all changes from this chat to main. This explicitly supersed
 
 ## Delivery status
 
-Promotion validation is in progress. Record final candidate/main SHA, migration rehearsal/application evidence, GitHub CI run, deployment/health and activation limits here before closing delivery. No release tag is created.
+Application promotion is complete. Final application candidate/main SHA is `c94f5c3ef6f35e74f46648445571ba970136ecb0`, version0.6.0. The following documentation receipt preserves that application unchanged. No new release tag is created and historical `v0.6.0` is untouched.
+
+Production OpenDock remains independently unconfigured: an authorized administrator must save/verify the authorized login at `https://crm.echospirits.com/analytics/production/settings`, then select Check delivery availability. No TST secrets/settings/history are copied. OPS current demand will be populated by the production morning source refresh; missing initial observations remain unavailable, not zero. The first new scheduled ingestion run and authenticated production browser smoke remain acceptance limits.
+
+Evidence: [PR6](https://github.com/echospirits/ohlq-field-crm/pull/6), [exact-candidate lockfile job](https://github.com/echospirits/ohlq-field-crm/actions/runs/41831701214/job/126580236970).

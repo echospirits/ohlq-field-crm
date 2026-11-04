@@ -1,7 +1,7 @@
 # Production Forecasting - Operational Signals
 
 ## Target and scope
-- Production continuation: owner subsequently authorized all this chat's changes to main. Selective main candidate starts from `e08aa5a8`; version0.6.0, no new cycle/tag, unrelated TST maintenance excluded. See [production promotion record](docs/releases/production-operational-signals-promotion.md). Prior TST-only decisions below describe the implementation phase and are superseded only for this explicitly authorized promotion.
+- Production continuation completed: owner authorized all this chat's changes to main. Main application `c94f5c3ef6f35e74f46648445571ba970136ecb0`, version0.6.0, promoted from base `e08aa5a8`; no new cycle/tag, unrelated TST maintenance excluded. ExactcandidateCI Node22.23.4/npm10.9.9 passed, main1018 tests/typecheck/build passed, five-table production migration applied with377 forecasts unchanged, deployment READY and production health verified. See [production promotion record](docs/releases/production-operational-signals-promotion.md) for full evidence and independent production setup/browser-acceptance limits. Prior TST-only decisions below describe the implementation phase and are superseded only for this explicitly authorized promotion.
 - Base: `staging/tst` / `5c391f0ace35c4ce20932da8a029db6297b9a4c4`; version `0.6.0` retained by owner instruction. Isolated `codex/production-operational-signals` worktree. No main push, production tag, ERP integration or forecast-engine change.
 - Existing forecast model: `production-demand-v1.4`; cumulative 30/60/90-day model and snapshots remain separate.
 
