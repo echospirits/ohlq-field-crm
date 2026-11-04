@@ -5099,9 +5099,16 @@ legend {
   color: inherit;
   cursor: grab;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  justify-content: stretch;
   gap: 0.2rem;
   margin-top: 0.5rem;
   min-height: 56px;
+  min-width: 0;
+  max-width: 100%;
+  justify-items: start;
+  overflow-wrap: anywhere;
+  white-space: normal;
   padding: 0.55rem;
   text-align: left;
   width: 100%;
@@ -5122,10 +5129,9 @@ legend {
 }
 
 .scheduler-week-tray .scheduler-tray-item {
-  display: inline-grid;
-  margin-right: 0.4rem;
-  max-width: 240px;
-  vertical-align: top;
+  display: grid;
+  margin-right: 0;
+  max-width: 100%;
 }
 
 .scheduler-anytime-board {

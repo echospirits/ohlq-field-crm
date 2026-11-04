@@ -636,7 +636,7 @@ export function LogVisitForm({
         ) : null}
       </fieldset>
 
-      {matchingWorklistItems.length > 0 ? (
+      {!physicalVisit && matchingWorklistItems.length > 0 ? (
         <fieldset className="visit-step visit-worklist-prompt">
           <legend>Complete existing follow-up?</legend>
           <p className="field-note">This account already has follow-up assigned to you. Choose what should happen when this interaction is saved.</p>

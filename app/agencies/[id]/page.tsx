@@ -21,6 +21,8 @@ import { getOrganizationFeatures, requireOrganizationContext } from '../../../li
 import { getOrganizationTenantConfig } from '../../../lib/tenantConfig';
 import { AgencyRecentSalesCard } from '../AgencyRecentSalesCard';
 import { AgencyIntelligencePanel } from '../AgencyIntelligencePanel';
+import { AgencyCurrentInventory } from '../AgencyCurrentInventory';
+import { OhioAgencyNumber } from '../OhioAgencyNumber';
 import { AccountTagPanel } from '../../tags/AccountTagPanel';
 import { TagBadges } from '../../tags/TagBadges';
 import { VisitActivityTable, type SupplementalActivity } from '../../visits/VisitActivityTable';
@@ -153,7 +155,7 @@ export default async function AgencyActivityPage({
     <>
       <header className="page-heading page-header account-workspace-heading">
         <div>
-          <h1>{agency.name}</h1><p className="account-kind">Retail · {agency.city || 'Location not set'}</p><p className="account-location">{[agency.address, agency.city, agency.state, agency.zip].filter(Boolean).join(', ')}</p>
+          <h1>{agency.name}</h1><OhioAgencyNumber agencyId={agency.agencyId} state={agency.state} /><p className="account-kind">Retail · {agency.city || 'Location not set'}</p><p className="account-location">{[agency.address, agency.city, agency.state, agency.zip].filter(Boolean).join(', ')}</p>
           {overlay?.isTargeting ? <p><strong className="target-account-marker">TARGET ACCOUNT</strong></p> : null}
           {agency.tags.length ? <TagBadges tags={agency.tags.map((assignment) => assignment.tag)} /> : null}
         </div>
@@ -175,6 +177,7 @@ export default async function AgencyActivityPage({
       {query.memoryStatus ? <p className="toast-notice" role="status">{query.memoryStatus === 'notes-saved' ? 'Account notes saved.' : query.memoryStatus === 'contact-saved' ? 'Contact saved.' : 'Unable to save that account information.'}</p> : null}
       <AccountWorkspace key={agency.id} panels={[
 { id: 'overview', label: 'Overview', content: <>
+      {agency.state === 'OH' ? <Suspense fallback={<section className="workspace-section" aria-busy="true"><h2>Current Inventory</h2><p role="status">Loading current inventory…</p></section>}><AgencyCurrentInventory agencyNumber={agency.agencyId} config={tenantConfig} organizationId={organizationId} /></Suspense> : null}
       <AccountMemoryPanel users={actionUsers} accountId={agency.id} accountType="AGENCY" contacts={accountContacts} notes={overlay?.notes ?? null} returnTo={`/agencies/${agency.id}`} />
 
       <Suspense fallback={<section id="account-worklist" className="card account-workspace-section account-worklist" aria-busy="true"><h2>Outstanding work</h2><p role="status">Loading outstanding work…</p></section>}>
@@ -242,7 +245,7 @@ export default async function AgencyActivityPage({
         </div>
         <div className="card account-detail-list">
           <h3>Account details</h3>
-          <p><strong>Retail ID</strong><span>{agency.agencyId}</span></p>
+          {agency.state !== 'OH' ? <p><strong>Retail ID</strong><span>{agency.agencyId}</span></p> : null}
           <p>
             <strong>Address</strong>
             <AddressLink address={[agency.address, agency.city, agency.state, agency.zip].filter(Boolean).join(', ')} />

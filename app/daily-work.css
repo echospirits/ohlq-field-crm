@@ -49,11 +49,19 @@ section.visit-details > .visit-details-content { display: grid; gap: 8px; paddin
 .visit-history-table .visit-outcome-badges { margin: 0 0 6px; }
 .visit-history-table .visit-outcome-badges > span { font-size: .75rem; }
 .visit-history-actions > a { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; white-space: nowrap; }
+.scheduler-task-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; min-width: 0; margin-top: 8px; }
+.scheduler-task-list > .scheduler-tray-item { margin: 0; }
+.worklist-table :is(th, td) { overflow-wrap: anywhere; min-width: 0; }
+.worklist-table .contextual-actions { min-width: 0; max-width: 100%; }
 .visit-history-photos > summary { font-size: .8125rem; }
 .wholesale-orders-table :is(th, td):nth-child(5), .wholesale-orders-table :is(th, td):nth-child(6) { text-align: right; font-variant-numeric: tabular-nums; }
 .wholesale-order-detail-grid + .card :is(th, td):nth-child(n+3) { text-align: right; font-variant-numeric: tabular-nums; }
 
 @media (max-width: 900px) {
+  .worklist-table { display: block; }
+  .worklist-table tbody { display: grid; grid-template-columns: minmax(0, 1fr); width: 100%; }
+  .worklist-table tbody > tr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); width: 100%; min-width: 0; margin: 0; }
+  .worklist-table tbody > tr > td[data-label="Item"], .worklist-table tbody > tr > td[data-label="Actions"] { grid-column: 1 / -1; }
   .schedule-event-list > li { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; }
   .schedule-event-identity { grid-column: 1; }
   .schedule-event-list .pill { grid-column: 2; grid-row: 1; align-self: start; }

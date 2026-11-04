@@ -1,0 +1,45 @@
+# Focused quality-of-life validation — November 4, 2026
+
+Owner-authorized TST-only maintenance on stable version **0.7.0**; no new development cycle, production promotion or release tag. Isolated branch `codex/qol-followups-20261104` starts from fetched `staging/tst` application/history commit `78061800`. Unrelated edits in the primary working folder are preserved.
+
+## Behavior audit
+
+Physical Visit capture previously required an explicit Yes/No decision for each eligible assigned Worklist item before saving. Selected completions used a direct update in the Visit transaction. The originating item was linked to the Visit, not silently completed. No blanket completion of every account task was found. Physical Visits now ignore legacy pre-save completion inputs; the optional post-save sheet delegates explicit selections to the normal Worklist completion action, with tenant/account/assignment/status revalidation and preserved calendar/history behavior. Nonphysical conversation behavior remains unchanged.
+
+The old confirmation page could interrupt with **Mark actioned / Keep open** for an originating Opportunity. Its confirmation-only state mutation and UI are removed; Visit relationships/events and independent Opportunity workflows remain.
+
+Agency Overview reads authoritative `Agency.agencyId` and the existing `OhlqAgencyInventoryCurrent` service, with explicit organization and organization-owned/represented product configuration. Inventory is no longer hidden behind Intelligence access or duplicated there. Missing stock/minimums remain unknown, and source freshness/empty/error states remain visible.
+
+The Schedule week tray previously used independent inline-grid items capped at 240px. Shared list containers now provide one aligned column with uniform gaps across day/week/empty-day/mobile; task actions retain their handlers. Worklist table rows also constrain wrapping and mobile grid width.
+
+Reactivation retains its existing date-only 90/30-day windows and commercial/pursuit gates. Assignment uses canonical lowercase `wholesale` LoggedVisits and stable `createdByUserId` relationships, filtering active same-organization assignable users and future visits. The resolver supports each organization's own fallback; the legacy Echo purchase-state automation fails closed for other organizations. Existing valid owners and closed history are retained; invalid active owners are repaired conditionally, and a tenant-unique submission key protects new lapse conditions from concurrent imports.
+
+## TST data/configuration evidence
+
+- Verified Neon project `dawn-frog-33352119` (`neat-crm-tst`), branch `br-divine-forest-avwq2b3g`, database `neondb`; separate production project untouched.
+- TST initially had no James user. The owner explicitly authorized account creation and supplied James Clifford / `james@echospirits.com`. Created active standard `USER` ID `usr_james_clifford_tst_20261104` in `org_echo_spirits`; its existing JSON `settings.defaultReactivationAssigneeUserId` now equals that ID. Transaction readback verified organization, user, email and role. Audit event `audit_qol_reactivation_20261104` records the change under the existing Echo administrator. No password, invitation, email or calendar/provider change.
+- Read-only source comparison at Arena Wine & Spirits (`cmtzof222006glb04vqaybs4m`) found authoritative Agency **30748** and nine current Echo organization products dated November 3, 2026. Example on-hand/minimums: rum **47/44**, spiced rum **30/28**, vodka **28/9**, rye **0/9**; genuine zero inventory remains distinct from missing data.
+- No schema/migration, backfill, dependency, feature-flag or hosted environment change. Production requires its own verified fallback member ID if separately promoted; TST user IDs are not portable configuration.
+
+## Validation and delivery
+
+- Focused behavioral/security regression set: **117 passing**, 13 suites, no failures (`output/qol-20261104/focused-final.log`). Covers Visit creation and explicit completion/history/calendar, task/assignment/tenant boundaries, current inventory scope and Ohio identity, unchanged qualification windows, latest Visit/fallback ownership, repeated/concurrent imports and preserved completed follow-ups.
+- Completed full suite: **1,028 passing**, 76 suites, no failures/skips/cancellations (`output/qol-20261104/tests.log`). Obsolete Opportunity-interruption tests were replaced with the new behavior/security coverage; unique lifecycle and authorization assertions are retained.
+- Strict typecheck and optimized build: **passed** (`typecheck-final.log`, `build-final.log`). Initial checks caught two regression-fixture type declarations; fixed before the completed gates. Exact lockfile installed; no dependency/version changes.
+- Actual hydrated component acceptance: **30 captures** at 320 x 844, 390 x 844 and 1440 x 900 in light/dark, zero page overflow/runtime errors, uniform task-list edges and 8px gaps, checked mobile controls at least 44px. Actual prompt one/all/dismiss/Escape/pending/error/empty/success interactions and Schedule Complete/Save schedule handlers pass. Screenshots were visually inspected. `scripts/qol-browser.ts` uses synthetic data with Next Link/router and React 18 form-status adapters, retaining actual hooks, forms and pending context. These fixture actions do not mutate CRM/provider state. Evidence: `output/playwright/qol-20261104/results.json`.
+- One mechanical UI detector run returned no findings for the changed targets. Shared source review checked server authorization, canonical Worklist side effects, nullable relation filtering and safe completion replay.
+- Schema, migrations, package/lock and GitHub workflows unchanged; no migration gate is required for a JSON setting.
+
+## Hosted TST delivery and authenticated acceptance
+
+- Application commit **`999d324ed93c9a00a07c921dd6f611c8303535e9`** was pushed only to `echospirits/neat-tst`, branch `tst`. Vercel [`dpl_FMp1WACAFJVCxJmrCefYZNkUcu9T`](https://vercel.com/joe-1533s-projects/neat-tst/FMp1WACAFJVCxJmrCefYZNkUcu9T) is **READY** for that exact SHA. Its platform target is the TST project's production branch, not Neat's separate production project.
+- The [TST alias](https://neat-tst.vercel.app) health returned HTTP 200: `{"ok":true,"database":"connected","databaseTarget":"neon-neat-tst","environment":"test"}` on November 4, 2026.
+- Existing owner-authenticated Chrome access verified Agency Overview at **390 x 844** and **1440 x 900**. Agency **30748** sits directly beneath Arena Wine & Spirits; all **nine inventory rows**, stock/minimum values and November 3 freshness matched the TST source comparison above. The mobile page width remained within the viewport.
+- At **390 x 844**, opened Log Visit from that account, retained account/return context and saved an explicitly labeled synthetic TST acceptance Visit (`cmw2hi4yd0001l508cjyq5kpd`). No pre-save task-completion decisions were required. The post-save sheet contained the three assigned acceptance tasks. Database reads proved all three remained **OPEN** after save and again after **Leave open** dismissal, with null completion fields.
+- Reopened the confirmation, completed one item and read back exactly one **COMPLETED**, with the other two **OPEN**. **Complete all (2)** then completed the remaining items. Database readback confirmed all three have the correct actor, tenant, Visit link and completion timestamps. Reloading with no eligible open tasks showed no sheet. No Opportunity-retention decision appeared.
+- Synthetic Worklist IDs `qol_qa_20261104_1`, `_2`, `_3` are all completed; the clearly labeled synthetic Visit and history are retained in TST for traceability. No preexisting customer tasks were altered or deleted. No photo, invitation, email, import or provider operation was requested during this acceptance.
+- Mobile Worklist's two existing overdue rows had matching **left 16px / width 343.2px** at a 390px viewport; page width was 375px (no horizontal overflow), with actions retained and aligned. Populated personal Schedule day/week and additional error/empty/theme cases are covered by the hydrated fixtures above.
+- Browser viewport override was reset. Chrome reported extension-style asynchronous message-channel errors during navigation; no corresponding app failure was observed. The separate actual-component fixture run had zero runtime errors.
+- Remote production/main was re-read after delivery and remains **`b497fb267c279de9d217965bc18a6768131e2e25`**, matching the starting fetched ref. No production push, merge, tag or configuration change occurred. A follow-on documentation receipt commit does not change the tested application tree.
+
+Evidence limits: component fixtures and hosted acceptance do not establish every provider/role/device combination or physical-phone/human acceptance. Reactivation uses focused sample-data service tests rather than triggering statewide imports or changing real historical follow-ups during QA. James's TST account has no password or invitation configured; account sign-in setup is separate from fallback ownership.

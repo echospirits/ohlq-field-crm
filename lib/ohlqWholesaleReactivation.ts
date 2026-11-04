@@ -10,6 +10,8 @@ import { getOhlqLicenseeMatchKeys, normalizeOhlqId } from './ohlqWholesaleMatchi
 import { prisma } from './prisma';
 import { getTenantConfig } from './tenantConfig';
 import { ECHO_ORGANIZATION_ID } from './organizations';
+import { assertEchoOrganization } from './echoAccess';
+import { isValidReactivationAssignee, reactivationAssignmentData, resolveReactivationAssignees } from './reactivationAssignment';
 
 export const OHLQ_WHOLESALE_REACTIVATION_SOURCE = WorklistSource.OHLQ_WHOLESALE_REACTIVATION;
 export const getOhlqWholesaleReactivationTitle = () =>
@@ -446,11 +448,16 @@ export function planWholesaleReactivationWorklistSync({
 
 export async function findOhlqWholesaleReactivationCandidates({
   db = prisma,
+  organizationId = ECHO_ORGANIZATION_ID,
   runAt = new Date(),
 }: {
   db?: PrismaClient;
+  organizationId?: string;
   runAt?: Date;
 } = {}) {
+  // The retained purchase-state columns are Echo-specific. A tenant-aware
+  // assignment setting must not expose this source to another organization.
+  assertEchoOrganization(organizationId);
   const tenantConfig = getTenantConfig();
   const windows = getWholesaleReactivationWindows({ runAt });
   const [lapsedAccounts, recentBuyerAccounts] = await Promise.all([
@@ -586,7 +593,8 @@ export async function syncOhlqWholesaleReactivationWorklist({
   organizationId?: string;
   runAt?: Date;
 } = {}) {
-  const analysis = await findOhlqWholesaleReactivationCandidates({ db, runAt });
+  assertEchoOrganization(organizationId);
+  const analysis = await findOhlqWholesaleReactivationCandidates({ db, organizationId, runAt });
   const sourceItems = await db.worklistItem.findMany({
     where: {
       organizationId,
@@ -596,6 +604,8 @@ export async function syncOhlqWholesaleReactivationWorklist({
     },
     orderBy: { updatedAt: 'desc' },
     select: {
+      assignedToUserId: true,
+      assignedToUser: { select: { organizationId: true, isActive: true, role: true } },
       cancelledAt: true,
       completedAt: true,
       detail: true,
@@ -650,26 +660,55 @@ export async function syncOhlqWholesaleReactivationWorklist({
   const held = new Set([...overlays.map(o => o.externalAccountId), ...heldPursuits.map(p => p.wholesaleAccountId)]);
   const eligible = new Set(assessments.filter(a => a.wholesaleAccount.isActive !== false && !a.wholesaleAccount.tags.some(t => /DO.NOT.PURSUE/i.test(t.tag.name)) && !held.has(a.wholesaleAccountId)).map(a => a.wholesaleAccountId));
   const createCandidates = plan.createCandidates.filter(c => eligible.has(c.wholesaleAccountId));
+  const unassignedItems = plan.updateItems.filter(({ item }) => {
+    const existing = sourceItems.find(sourceItem => sourceItem.id === item.id);
+    return !isValidReactivationAssignee(existing?.assignedToUser, organizationId);
+  });
+  const assignees = await resolveReactivationAssignees({
+    db, organizationId, runAt,
+    wholesaleAccountIds: [...createCandidates.map(candidate => candidate.wholesaleAccountId), ...unassignedItems.map(({ candidate }) => candidate.wholesaleAccountId)],
+  });
+  let createdItems = 0;
 
   for (const candidate of createCandidates) {
-    await db.worklistItem.create({
-      data: {
-        organizationId,
-        category: WorklistCategory.WHOLESALE,
-        createdBy: 'OHLQ sales automation',
-        detail: buildWholesaleReactivationDetail(candidate),
-        dueDate: analysis.windows.dueDate,
-        source: OHLQ_WHOLESALE_REACTIVATION_SOURCE,
-        status: WorklistStatus.OPEN,
-        title: getOhlqWholesaleReactivationTitle(),
-        wholesaleAccountId: candidate.wholesaleAccountId,
-      },
+    try {
+      await db.worklistItem.create({
+        data: {
+          organizationId,
+          // Repeated/concurrent imports share a key for this same lapse condition.
+          submissionKey: `ohlq-reactivation:${candidate.wholesaleAccountId}:${candidate.mostRecentPurchaseDate.toISOString()}`,
+          ...reactivationAssignmentData(assignees.get(candidate.wholesaleAccountId)),
+          category: WorklistCategory.WHOLESALE,
+          createdBy: 'OHLQ sales automation',
+          detail: buildWholesaleReactivationDetail(candidate),
+          dueDate: analysis.windows.dueDate,
+          source: OHLQ_WHOLESALE_REACTIVATION_SOURCE,
+          status: WorklistStatus.OPEN,
+          title: getOhlqWholesaleReactivationTitle(),
+          wholesaleAccountId: candidate.wholesaleAccountId,
+        },
+      });
+      createdItems += 1;
+    } catch (error) {
+      if ((error as { code?: string }).code !== 'P2002') throw error;
+    }
+  }
+
+  for (const { candidate, item } of unassignedItems) {
+    const assignee = assignees.get(candidate.wholesaleAccountId);
+    if (!assignee) continue;
+    const existing = sourceItems.find(sourceItem => sourceItem.id === item.id)!;
+    // Do not overwrite an owner or a completion made since this import read it.
+    await db.worklistItem.updateMany({
+      where: { id: item.id, organizationId, assignedToUserId: existing.assignedToUserId, status: { notIn: inactiveWorklistStatuses } },
+      data: reactivationAssignmentData(assignee),
     });
   }
 
+  let updatedItems = 0;
   for (const { candidate, item } of plan.updateItems) {
-    await db.worklistItem.update({
-      where: { id: item.id },
+    const result = await db.worklistItem.updateMany({
+      where: { id: item.id, organizationId, status: { notIn: inactiveWorklistStatuses } },
       data: {
         category: WorklistCategory.WHOLESALE,
         detail: buildWholesaleReactivationDetail(candidate),
@@ -678,31 +717,34 @@ export async function syncOhlqWholesaleReactivationWorklist({
         title: getOhlqWholesaleReactivationTitle(),
       },
     });
+    updatedItems += result.count;
   }
 
+  let flaggedPurchasedAgainItems = 0;
   for (const { item, purchasedAgainAt } of plan.reviewItems) {
     const existing = sourceItems.find((sourceItem) => sourceItem.id === item.id);
-    await db.worklistItem.update({
-      where: { id: item.id },
+    const result = await db.worklistItem.updateMany({
+      where: { id: item.id, organizationId, status: { notIn: inactiveWorklistStatuses } },
       data: {
         detail: upsertPurchasedAgainReviewMessage(existing?.detail ?? null, purchasedAgainAt),
       },
     });
+    flaggedPurchasedAgainItems += result.count;
   }
 
   return {
     cancelledItems: 0,
-    createdItems: createCandidates.length,
+    createdItems,
     dueDate: formatOhlqDate(analysis.windows.dueDate),
-    flaggedPurchasedAgainItems: plan.reviewItems.length,
+    flaggedPurchasedAgainItems,
     matchedAccountsNeedingAction: analysis.candidates.length,
     openItemsAfterSync:
-      createCandidates.length + plan.updateItems.length + plan.reviewItems.length,
+      createdItems + updatedItems + flaggedPurchasedAgainItems,
     recentStartDate: formatOhlqDate(analysis.windows.recentStartDate),
     skippedRecentlyClosedItems: plan.skippedCandidates.length,
     skippedCommercialOrPursuitState: plan.createCandidates.length - createCandidates.length,
     unmatchedLicenseeIds: analysis.unmatchedLicenseeIds,
-    updatedItems: plan.updateItems.length,
+    updatedItems,
     windowStartDate: formatOhlqDate(analysis.windows.ninetyDayStartDate),
   };
 }
@@ -718,6 +760,7 @@ export async function getOhlqWholesaleReactivationDashboardSummary({
   runAt?: Date;
   take?: number;
 } = {}) {
+  assertEchoOrganization(organizationId);
   const activeSourceWhere = {
     organizationId,
     category: WorklistCategory.WHOLESALE,
@@ -726,7 +769,7 @@ export async function getOhlqWholesaleReactivationDashboardSummary({
     wholesaleAccountId: { not: null },
   };
   const [analysis, topWorklistItems, openWorklistItems] = await Promise.all([
-    findOhlqWholesaleReactivationCandidates({ db, runAt }),
+    findOhlqWholesaleReactivationCandidates({ db, organizationId, runAt }),
     db.worklistItem.findMany({
       where: activeSourceWhere,
       take,

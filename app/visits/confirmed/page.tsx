@@ -1,7 +1,6 @@
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-import { SubmitButton } from '../../components/SubmitButton';
 import { UserRole } from '@prisma/client';
 import Link from 'next/link';
 import { buildPageMetadata } from '../../../lib/appBrand';
@@ -10,8 +9,9 @@ import { requireUser } from '../../../lib/auth';
 import { prisma } from '../../../lib/prisma';
 import { getSignedInHomePath } from '../../../lib/userAccess';
 import { getVisitContinueTarget, type VisitFormOrigin } from '../../../lib/visitConfirmation';
-import { resolveVisitOrigin } from './actions';
-import { getVisitOriginResolution } from '../../../lib/visitOriginResolution';
+import { completeVisitRelatedWork } from './actions';
+import { RelatedWorkPrompt } from './RelatedWorkPrompt';
+import { getVisitRelatedWorkWhere } from '../../../lib/visitRelatedWork';
 import { requireOrganizationContext } from '../../../lib/organizations';
 
 export const metadata = buildPageMetadata('Visit Confirmed');
@@ -23,7 +23,6 @@ export default async function VisitConfirmedPage({
     origin?: string;
     status?: string;
     visitId?: string;
-    resolved?: string;
   }>;
 }) {
   const [params, user] = await Promise.all([(await searchParams) ?? {}, requireUser({ allowTaster: true })]);
@@ -41,13 +40,12 @@ export default async function VisitConfirmedPage({
       createdByUserId: user.id,
     },
     select: {
+      id: true,
       agencyId: true,
       locationType: true,
       wholesaleAccountId: true,
       actionReturnTo: true,
-      salesOpportunity: { select: { title: true, status: true } },
-      agencyProductIntelligence: { select: { itemName: true, opportunityState: true, status: true } },
-      originatingWorklistItem: { select: { id: true, title: true, status: true } },
+      originatingWorklistItemId: true,
     },
   });
 
@@ -62,8 +60,11 @@ export default async function VisitConfirmedPage({
     visit,
   });
   const photoUploadFailed = params.status === 'photo-upload-failed';
-  const resolutionHandled = params.resolved === '1';
-  const resolutionType = getVisitOriginResolution({ originatingTaskStatus: visit.originatingWorklistItem?.status, salesOpportunityStatus: visit.salesOpportunity?.status, agencyOpportunityStatus: visit.agencyProductIntelligence?.status });
+  const relatedWork = user.role === UserRole.TASTER ? [] : await prisma.worklistItem.findMany({
+    where: getVisitRelatedWorkWhere(organizationId, user.id, visit),
+    orderBy: [{ dueDate: 'asc' }, { createdAt: 'asc' }],
+    select: { id: true, title: true, detail: true, dueDate: true, assignedTo: true },
+  });
   const returnTarget = visit.actionReturnTo ? { href: visit.actionReturnTo, label: 'Return to where you started' } : continueTarget;
 
   return (
@@ -79,21 +80,11 @@ export default async function VisitConfirmedPage({
             ? 'Your retail visit, comments, and picture were saved.'
             : `Your ${visit.locationType === 'wholesale' ? 'wholesale' : 'agency'} visit was saved.`}
       </p>
-      {!resolutionHandled && resolutionType === 'task' ? <div className="visit-origin-resolution">
-        <h2>Did this visit address the follow-up?</h2>
-        <p>{visit.originatingWorklistItem?.title}</p>
-        <div className="visit-confirmation-actions">
-          <form action={resolveVisitOrigin}><input name="visitId" type="hidden" value={visitId} /><input name="origin" type="hidden" value={formOrigin} /><SubmitButton name="decision" value="complete-task">Complete task</SubmitButton><SubmitButton className="secondary" name="decision" value="keep-open">Keep task open</SubmitButton></form>
-        </div>
-      </div> : null}
-      {!resolutionHandled && resolutionType === 'opportunity' ? <div className="visit-origin-resolution">
-        <h2>Did this visit address the opportunity?</h2>
-        <p>{visit.salesOpportunity?.title ?? `${visit.agencyProductIntelligence?.itemName} - ${visit.agencyProductIntelligence?.opportunityState.toLowerCase().replaceAll('_', ' ')}`}</p>
-        <div className="visit-confirmation-actions">
-          <form action={resolveVisitOrigin}><input name="visitId" type="hidden" value={visitId} /><input name="origin" type="hidden" value={formOrigin} /><SubmitButton name="decision" value="action-opportunity">Mark actioned</SubmitButton><SubmitButton className="secondary" name="decision" value="keep-open">Keep open</SubmitButton></form>
-        </div>
-      </div> : null}
-      {resolutionHandled ? <p className="toast-notice">Your resolution choice was saved.</p> : null}
+      {relatedWork.length > 0 ? <RelatedWorkPrompt
+        visitId={visit.id}
+        initialItems={relatedWork.map((item) => ({ ...item, dueDate: item.dueDate?.toISOString().slice(0, 10) ?? null }))}
+        completeAction={completeVisitRelatedWork}
+      /> : null}
       <div className="visit-confirmation-actions">
         <Link className="btn" href={returnTarget.href}>
           {returnTarget.label}

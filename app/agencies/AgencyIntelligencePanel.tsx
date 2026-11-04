@@ -59,7 +59,6 @@ export async function AgencyIntelligencePanel({ agencyId, agencyName, currentUse
     actionableStates.includes(product.opportunityState) &&
     visibleStatuses.includes(product.status),
   );
-  const currentInventory = products.filter((product) => product.inventorySnapshotDate !== null);
   const focus = stringList(summary.recommendedFocus);
 
   return <div className="agency-intelligence-stack">
@@ -96,18 +95,6 @@ export async function AgencyIntelligencePanel({ agencyId, agencyName, currentUse
         </tr>)}</tbody>
       </table></div> : <p className="muted activity-empty">No active product issues require attention.</p>}
       {activeProducts.length > 5 ? <Link className="intelligence-continuation" href={`/agency-focus?agencyId=${agencyId}`}>View all {activeProducts.length} product opportunities</Link> : null}
-    </section>
-
-    <section className="workspace-section agency-inventory-details" id="current-inventory" aria-label="Current Echo inventory">
-      <div className="section-heading"><h3>Current Echo inventory</h3><span className="pill">{currentInventory.length} items</span></div>
-      {currentInventory.length ? <div className="table-scroll" role="region" aria-label="Inventory comparison" tabIndex={0}><table className="comparison-table inventory-comparison-table">
-        <thead><tr><th scope="col">Product</th><th scope="col" className="numeric">On hand</th><th scope="col" className="numeric">Minimum</th><th scope="col" className="numeric">Sales · 7d</th><th scope="col" className="numeric">Sales · 30d</th><th scope="col" className="numeric">Days since sale</th></tr></thead>
-        <tbody>{currentInventory.map((product) => <tr key={product.id}>
-          <th scope="row" data-label="Product"><strong>{product.itemName}</strong><small>{product.itemCode} · {product.inventoryStatus || titleCase(product.inventoryState)}{product.coverageGroup ? ` · ${product.coverageGroup}` : ''}</small></th>
-          <td className="numeric" data-label="On hand">{product.onHand ?? 'Unavailable'}</td><td className="numeric" data-label="Minimum">{product.minimum ?? 'Unavailable'}</td>
-          <td className="numeric" data-label="Sales · 7d">{product.retailSales7}</td><td className="numeric" data-label="Sales · 30d">{product.retailSales30}</td><td className="numeric" data-label="Days since sale">{product.daysSinceLastSale ?? 'Unavailable'}</td>
-        </tr>)}</tbody>
-      </table></div> : <p className="muted activity-empty">No current Echo inventory is recorded.</p>}
     </section>
 
     <section className="workspace-section agency-wholesale-influence" id="wholesale-influence">

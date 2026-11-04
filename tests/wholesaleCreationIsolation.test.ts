@@ -39,6 +39,7 @@ function loadFlow(flow: Flow, role: enums.UserRole | null, organizationId: strin
   const visits: RecordData[] = [];
   const contacts: RecordData[] = [];
   const overlays: RecordData[] = [];
+  const worklistItems: RecordData[] = [{ id: 'existing-open-task', organizationId, assignedToUserId: `${organizationId}-caller`, wholesaleAccountId: 'shared-account', agencyId: null, status: 'OPEN' }];
   const user = role ? { id: `${organizationId}-caller`, role, organizationId } : null;
   const wholesaleAccount = {
     findMany: async () => { effects.push('account-read'); return accounts; },
@@ -63,6 +64,11 @@ function loadFlow(flow: Flow, role: enums.UserRole | null, organizationId: strin
       visits.push(data); return { id: 'new-visit', visitAt: new Date(), ...data };
     } },
     loggedVisitContact: { createMany: async () => {} },
+    worklistItem: { updateMany: async ({ where, data }: RecordData) => {
+      const matching = worklistItems.filter((item) => where.id.in.includes(item.id) && item.organizationId === where.organizationId);
+      matching.forEach((item) => Object.assign(item, data));
+      return { count: matching.length };
+    } },
   };
   const context: RecordData = {
     URLSearchParams,
@@ -101,7 +107,7 @@ function loadFlow(flow: Flow, role: enums.UserRole | null, organizationId: strin
     : declarations(readFileSync('app/visits/actions.ts', 'utf8'));
   const code = `${auth}\n${action}\nglobalThis.action = ${flow === 'directory' ? 'createWholesale' : 'createVisit'};`;
   runInNewContext(ts.transpileModule(code, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText, context);
-  return { run: context.action as (data: FormData) => Promise<any>, effects, tags, visits, contacts, overlays };
+  return { run: context.action as (data: FormData) => Promise<any>, effects, tags, visits, contacts, overlays, worklistItems };
 }
 
 function submission(flow: Flow, organizationId: string) {
@@ -207,4 +213,14 @@ test('directory rejects ambiguous licensee matches without canonical or tenant w
   const harness = loadFlow('directory', enums.UserRole.USER, 'tenant-a', accounts);
   await assert.rejects(harness.run(submission('directory', 'tenant-a')), /duplicate-licensee/);
   assert.deepEqual(accounts, before); assert.equal(harness.tags.length, 0);
+});
+
+test('physical Visit ignores legacy completion fields and saves with related work left open', async () => {
+  const h = loadFlow('visit', enums.UserRole.USER, 'tenant-a', [sharedAccount()]);
+  const data = submission('visit', 'tenant-a');
+  data.set('worklistCompletion:existing-open-task', 'complete');
+  await assert.rejects(h.run(data), /REDIRECT:\/visits\/confirmed/);
+  assert.equal(h.visits.length, 1);
+  assert.equal(h.worklistItems[0].status, 'OPEN');
+  assert.equal(h.worklistItems[0].completedAt, undefined);
 });

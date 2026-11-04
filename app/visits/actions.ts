@@ -209,7 +209,7 @@ async function createVisitWithDiagnostics(formData: FormData, diagnostics: Visit
   const worklistItemId = isTaster ? null : toOptional(formData.get('worklistItemId'));
   const salesOpportunityId = isTaster ? null : toOptional(formData.get('opportunityId'));
   const agencyProductIntelligenceId = isTaster ? null : toOptional(formData.get('agencyProductIntelligenceId'));
-  const requestedWorklistCompletionIds = isTaster
+  const requestedWorklistCompletionIds = isTaster || physicalVisit
     ? []
     : getRequestedWorklistCompletionIds(formData.entries());
   const submissionKey = isTaster ? null : toOptional(formData.get('submissionKey'));

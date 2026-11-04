@@ -48,7 +48,7 @@ test('empty saved fits need no catalog queries and inventory display stays indep
   assert.deepEqual(await getAgencyMarketFitsForDisplay({ db, agencyId: 'agency', organizationId: 'tenant' }), []);
   const service = readFileSync('lib/agencyMarketIntelligenceService.ts', 'utf8');
   assert.match(service, /if \(!master \|\| !eligibleItemCodes\.has\(master\.itemCode\)\) return \[\]/);
-  const inventory = readFileSync('app/agencies/AgencyIntelligencePanel.tsx', 'utf8');
-  assert.match(inventory, /const currentInventory = products\.filter\(\(product\) => product\.inventorySnapshotDate !== null\)/);
+  const inventory = readFileSync('app/agencies/AgencyCurrentInventory.tsx', 'utf8');
+  assert.match(inventory, /getCurrentAgencyInventory\(\{ agencyNumber, config, organizationId \}\)/);
   assert.doesNotMatch(inventory, /getAgencyMarketEligibleItemCodes/);
 });

@@ -89,10 +89,12 @@ const agencyRelation = {
 /** Query by the normalized OHLQ agency number (Agency.agencyId), which is also the sales join key. */
 export async function getCurrentAgencyInventory({
   agencyNumber,
+  config,
   db = prisma,
   organizationId,
 }: {
   agencyNumber: string;
+  config?: TenantConfig;
   db?: PrismaClient;
   organizationId: string;
 }) {
@@ -102,7 +104,7 @@ export async function getCurrentAgencyInventory({
   return db.ohlqAgencyInventoryCurrent.findMany({
     where: {
       agencyNumber: normalizedAgencyNumber,
-      ...getTenantAgencyInventoryWhere(undefined, organizationId),
+      ...getTenantAgencyInventoryWhere(config, organizationId),
     },
     include: { agency: agencyRelation },
     orderBy: [{ itemName: 'asc' }, { itemCode: 'asc' }],

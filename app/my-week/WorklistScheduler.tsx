@@ -445,7 +445,7 @@ export function WorklistScheduler({ view, anchorDate, items, currentUserId, user
   const emptyDayView = <>
     <div className="scheduler-empty-day"><h3>No work scheduled for this day</h3><p>No timed or date-only tasks are assigned to you.</p><div className="action-row"><button onClick={() => openAdd(anchorDate, null)} type="button">Schedule work</button><Link className="btn secondary" href="/visits/new">Log a visit</Link></div></div>
     <div className="scheduler-empty-tray"><div><strong>Your overdue or undated work</strong><small>Past 30 days and tasks with no date</small></div><span className="pill">{visibleTray.length}</span></div>
-    {visibleTray.map((item) => <button className="scheduler-tray-item" key={item.id} onClick={() => openEdit(item)} type="button"><strong>{item.title}</strong><span><SchedulerAccountLabel item={item} /></span></button>)}
+    <div className="scheduler-task-list">{visibleTray.map((item) => <button className="scheduler-tray-item" key={item.id} onClick={() => openEdit(item)} type="button"><strong>{item.title}</strong><span><SchedulerAccountLabel item={item} /></span></button>)}</div>
   </>;
 
   return <section className={`worklist-scheduler worklist-scheduler-${view}${emptyDay ? ' worklist-scheduler-empty' : ''}`} aria-labelledby="scheduler-title">
@@ -485,18 +485,18 @@ export function WorklistScheduler({ view, anchorDate, items, currentUserId, user
           <div className="section-heading"><h3 id="scheduler-tray-title">To Do Today</h3><span className="pill">{visibleTray.length + getSchedulerDayItems(items, anchorDate).anytime.length}</span></div>
           <section className="scheduler-tray-subsection" aria-labelledby="scheduler-today-anytime-title">
             <div className="section-heading"><h4 id="scheduler-today-anytime-title">Anytime today</h4><span className="pill">{getSchedulerDayItems(items, anchorDate).anytime.length}</span></div>
-            {getSchedulerDayItems(items, anchorDate).anytime.length ? getSchedulerDayItems(items, anchorDate).anytime.map((item) => <button className="scheduler-tray-item" draggable key={item.id} onClick={() => openEdit(item)} onDragStart={(event) => startDrag(event, item)} type="button">
+            <div className="scheduler-task-list">{getSchedulerDayItems(items, anchorDate).anytime.length ? getSchedulerDayItems(items, anchorDate).anytime.map((item) => <button className="scheduler-tray-item" draggable key={item.id} onClick={() => openEdit(item)} onDragStart={(event) => startDrag(event, item)} type="button">
               <strong>{item.title}</strong><span><SchedulerAccountLabel item={item} /></span>
-            </button>) : <p className="muted">No date-only tasks.</p>}
+            </button>) : <p className="muted">No date-only tasks.</p>}</div>
             <button className="secondary scheduler-tray-add" onClick={() => openAdd(anchorDate, null)} type="button">Add anytime work</button>
           </section>
           <section className="scheduler-tray-subsection" aria-labelledby="scheduler-overdue-title">
             <div className="section-heading"><h4 id="scheduler-overdue-title">Overdue or undated</h4><span className="pill">{visibleTray.length}</span></div>
             <p className="record-meta">Past 30 days · Assigned to you</p>
-          {visibleTray.length ? visibleTray.map((item) => <button className="scheduler-tray-item" draggable key={item.id} onClick={() => openEdit(item)} onDragStart={(event) => startDrag(event, item)} type="button">
+          <div className="scheduler-task-list">{visibleTray.length ? visibleTray.map((item) => <button className="scheduler-tray-item" draggable key={item.id} onClick={() => openEdit(item)} onDragStart={(event) => startDrag(event, item)} type="button">
             <strong>{item.title}</strong><span><SchedulerAccountLabel item={item} /></span>
             <small>{item.dueDate ? `Overdue · ${formatDateOnlyInputValue(new Date(`${item.dueDate}T00:00:00.000Z`))}` : 'No date set'}</small>
-          </button>) : <p className="muted">No overdue or undated work.</p>}
+          </button>) : <p className="muted">No overdue or undated work.</p>}</div>
           </section>
         </aside>
       </div> : <>
@@ -504,10 +504,10 @@ export function WorklistScheduler({ view, anchorDate, items, currentUserId, user
         <section className="scheduler-tray scheduler-week-tray" aria-labelledby="scheduler-week-tray-title">
           <div className="section-heading"><h3 id="scheduler-week-tray-title">Unscheduled / Overdue</h3><span className="pill">{visibleTray.length}</span></div>
           <p className="record-meta">Past 30 days · Assigned to you</p>
-          {visibleTray.length ? visibleTray.map((item) => <button className="scheduler-tray-item" draggable key={item.id} onClick={() => openEdit(item)} onDragStart={(event) => startDrag(event, item)} type="button">
+          <div className="scheduler-task-list">{visibleTray.length ? visibleTray.map((item) => <button className="scheduler-tray-item" draggable key={item.id} onClick={() => openEdit(item)} onDragStart={(event) => startDrag(event, item)} type="button">
             <strong>{item.title}</strong><span><SchedulerAccountLabel item={item} /></span>
             <small>{item.dueDate ? `Overdue · ${formatDateOnlyInputValue(new Date(`${item.dueDate}T00:00:00.000Z`))}` : 'No date set'}</small>
-          </button>) : <p className="muted">No overdue or undated work.</p>}
+          </button>) : <p className="muted">No overdue or undated work.</p>}</div>
         </section>
       </>}
     </div>
@@ -518,10 +518,10 @@ export function WorklistScheduler({ view, anchorDate, items, currentUserId, user
         <div className="section-heading"><h3 id="scheduler-mobile-tray-title">Overdue or undated</h3><span className="pill">{visibleTray.length}</span></div>
         <div>
           <p className="record-meta">Past 30 days · Assigned to you</p>
-          {visibleTray.length ? visibleTray.map((item) => <button className="scheduler-tray-item" key={item.id} onClick={() => openEdit(item)} type="button">
+          <div className="scheduler-task-list">{visibleTray.length ? visibleTray.map((item) => <button className="scheduler-tray-item" key={item.id} onClick={() => openEdit(item)} type="button">
             <strong>{item.title}</strong><span><SchedulerAccountLabel item={item} /></span>
             <small>{item.dueDate ? `Overdue · ${formatDateOnlyInputValue(new Date(`${item.dueDate}T00:00:00.000Z`))}` : 'No date set'}</small>
-          </button>) : <p className="muted">No overdue or undated work.</p>}
+          </button>) : <p className="muted">No overdue or undated work.</p>}</div>
         </div>
       </section> : null}
     </div>

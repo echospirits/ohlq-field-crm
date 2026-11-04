@@ -1,0 +1,13 @@
+.panel { width: min(38rem, 100%); min-width: 0; text-align: left; }
+.list { display: grid; gap: 0; padding: 0; margin: 0; list-style: none; }
+.item { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 12px; padding: 16px 0; border-bottom: 1px solid var(--border); }
+.context { min-width: 0; overflow-wrap: anywhere; }
+.context strong, .meta { display: block; }
+.meta { margin-top: 4px; color: var(--muted); font-size: .875rem; }
+.context p { margin: 8px 0 0; white-space: pre-line; font-size: .875rem; }
+.item button, .actions button { min-height: 44px; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+@media (max-width: 600px) {
+  .modal { align-items: end; padding: 0; }
+  .panel { max-height: 85dvh; border-radius: 12px 12px 0 0; padding-bottom: max(16px, env(safe-area-inset-bottom)); }
+}
