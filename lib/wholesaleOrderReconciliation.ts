@@ -17,6 +17,7 @@ export type WholesaleOrderReconciliationLine = {
 export type WholesaleOrderReconciliationOrder = {
   customerIdentity: string;
   customerPermitNumber: string;
+  customerPermitNumbers?: string[];
   filedSource: 'AUTO_MATCH' | 'MANUAL' | null;
   id: string;
   lines: WholesaleOrderReconciliationLine[];
@@ -24,6 +25,11 @@ export type WholesaleOrderReconciliationOrder = {
   saleDate: Date;
   sellerStoreNumber: string;
   status: 'PDF_GENERATED' | 'SENT' | 'FILED' | 'COMPLETED';
+};
+
+export type WholesaleOrderVendorAlias = {
+  vendorName: string;
+  vendorId: string;
 };
 
 export type WholesaleOrderReconciliationRow = {
@@ -74,6 +80,44 @@ export function normalizeWholesalePermitNumber(value: string) {
     .map((segment) => (/^\d+$/.test(segment) ? segment.replace(/^0+(?=\d)/, '') : segment))
     .join('-');
 }
+
+const permitNumbersForOrder = (order: WholesaleOrderReconciliationOrder) => {
+  const captured = normalizeWholesalePermitNumber(order.customerPermitNumber);
+  const current = new Set((order.customerPermitNumbers ?? []).map(normalizeWholesalePermitNumber).filter(Boolean));
+  // Account aliases apply only while the immutable captured permit still belongs
+  // to that account. Never infer location suffixes from a shared permit family.
+  return current.has(captured) ? current : new Set([captured]);
+};
+
+const resolveOrderVendors = (
+  orders: WholesaleOrderReconciliationOrder[],
+  aliases: WholesaleOrderVendorAlias[],
+  observedVendorIds: Set<string>,
+) => {
+  const idsByName = new Map<string, Set<string>>();
+  for (const alias of aliases) {
+    const name = normalizeExactCode(alias.vendorName);
+    const id = normalizeExactCode(alias.vendorId);
+    if (!name || !id) continue;
+    const ids = idsByName.get(name) ?? new Set<string>();
+    ids.add(id);
+    idsByName.set(name, ids);
+  }
+  const ambiguousOrderIds = new Set<string>();
+  const unresolvedOrderIds = new Set<string>();
+  const resolved = orders.map((order) => ({
+    ...order,
+    lines: order.lines.map((line) => {
+      const vendor = normalizeExactCode(line.vendor);
+      const ids = idsByName.get(vendor);
+      if (ids && ids.size > 1) ambiguousOrderIds.add(order.id);
+      if ((ids && ids.size > 1) || (!ids && !observedVendorIds.has(vendor))) unresolvedOrderIds.add(order.id);
+      return { ...line, vendor: ids ? (ids.size === 1 ? [...ids][0] : '') : vendor };
+    }),
+  }));
+  for (const order of orders) if (order.lines.length === 0) unresolvedOrderIds.add(order.id);
+  return { ambiguousOrderIds, unresolvedOrderIds, orders: resolved };
+};
 
 export function getWholesaleOrderAutomaticMatchKey({
   agencyId,
@@ -174,7 +218,7 @@ const evidenceLinesForOrder = (group: EvidenceGroup, order: WholesaleOrderReconc
 
 const canMatch = (order: WholesaleOrderReconciliationOrder, group: EvidenceGroup) => {
   const latestDate = addUtcDays(order.saleDate, WHOLESALE_ORDER_RECONCILIATION_WINDOW_DAYS);
-  return normalizeWholesalePermitNumber(order.customerPermitNumber) === group.normalizedPermitNumber &&
+  return permitNumbersForOrder(order).has(group.normalizedPermitNumber) &&
     normalizeExactCode(order.sellerStoreNumber) === group.sellerStoreNumber &&
     group.reportDate >= order.saleDate &&
     group.reportDate <= latestDate &&
@@ -185,23 +229,33 @@ export function planWholesaleOrderReconciliation({
   claimedEvidenceKeys = [],
   orders,
   rows,
+  vendorAliases = [],
 }: {
   claimedEvidenceKeys?: string[];
   orders: WholesaleOrderReconciliationOrder[];
   rows: WholesaleOrderReconciliationRow[];
+  vendorAliases?: WholesaleOrderVendorAlias[];
 }): WholesaleOrderReconciliationPlan {
   const claimed = new Set(claimedEvidenceKeys);
   const evidenceGroups = groupEvidence(rows).filter((group) => !claimed.has(group.automaticMatchKey));
-  const openOrders = orders.filter((order) => order.status !== 'FILED');
-  const manualOrders = orders.filter((order) => order.status === 'FILED' && order.filedSource === 'MANUAL');
+  const resolved = resolveOrderVendors(orders, vendorAliases, new Set(rows.map((row) => normalizeExactCode(row.vendor))));
+  const openOrders = resolved.orders.filter((order) => order.status === 'PDF_GENERATED' || order.status === 'SENT');
+  const manualOrders = resolved.orders.filter((order) =>
+    (order.status === 'FILED' || order.status === 'COMPLETED') && order.filedSource === 'MANUAL');
   const relevantOrders = [...openOrders, ...manualOrders];
+  const unresolvedManualOrderIds = new Set(manualOrders
+    .filter((order) => resolved.unresolvedOrderIds.has(order.id)).map((order) => order.id));
   const collidingOrderIds = new Set<string>();
   for (let leftIndex = 0; leftIndex < relevantOrders.length; leftIndex += 1) {
     const left = relevantOrders[leftIndex];
     for (let rightIndex = leftIndex + 1; rightIndex < relevantOrders.length; rightIndex += 1) {
       const right = relevantOrders[rightIndex];
-      if (left.customerIdentity === right.customerIdentity ||
-        normalizeWholesalePermitNumber(left.customerPermitNumber) !== normalizeWholesalePermitNumber(right.customerPermitNumber) ||
+      const rightPermits = permitNumbersForOrder(right);
+      // An unresolved supplier bridge cannot release evidence already reserved by
+      // a manual filing, even when the pending order belongs to the same account.
+      const unresolvedManualReservation = unresolvedManualOrderIds.has(left.id) || unresolvedManualOrderIds.has(right.id);
+      if ((left.customerIdentity === right.customerIdentity && !unresolvedManualReservation) ||
+        ![...permitNumbersForOrder(left)].some((permit) => rightPermits.has(permit)) ||
         normalizeExactCode(left.sellerStoreNumber) !== normalizeExactCode(right.sellerStoreNumber)) continue;
       const leftEnd = addUtcDays(left.saleDate, WHOLESALE_ORDER_RECONCILIATION_WINDOW_DAYS);
       const rightEnd = addUtcDays(right.saleDate, WHOLESALE_ORDER_RECONCILIATION_WINDOW_DAYS);
@@ -215,7 +269,7 @@ export function planWholesaleOrderReconciliation({
   const candidatesByEvidence = new Map<string, WholesaleOrderReconciliationOrder[]>();
 
   for (const order of relevantOrders) {
-    if (collidingOrderIds.has(order.id)) continue;
+    if (collidingOrderIds.has(order.id) || resolved.ambiguousOrderIds.has(order.id)) continue;
     for (const group of evidenceGroups) {
       if (!canMatch(order, group)) continue;
       const orderCandidates = candidatesByOrder.get(order.id) ?? [];
@@ -228,7 +282,9 @@ export function planWholesaleOrderReconciliation({
   }
 
   const openOrderIds = new Set(openOrders.map((order) => order.id));
-  const ambiguousOrderIds = new Set(Array.from(collidingOrderIds).filter((id) => openOrderIds.has(id)));
+  const ambiguousOrderIds = new Set(
+    [...collidingOrderIds, ...resolved.ambiguousOrderIds].filter((id) => openOrderIds.has(id)),
+  );
   const ambiguousEvidenceKeys = new Set<string>();
   const matches: WholesaleOrderReconciliationMatch[] = [];
 
@@ -284,6 +340,7 @@ type WholesaleOrderSnapshot = {
   sentAt: Date | null;
   paidAt: Date | null;
   wholesaleAccountId: string;
+  wholesaleAccount: { licenseeId: string; licenseeIds: { licenseeId: string }[] };
 };
 
 const readLines = (snapshot: Prisma.JsonValue): WholesaleOrderReconciliationLine[] => {
@@ -326,6 +383,7 @@ export async function reconcileWholesaleOrdersAfterOhlqImport({
         sentAt: true,
         status: true,
         wholesaleAccountId: true,
+        wholesaleAccount: { select: { licenseeId: true, licenseeIds: { select: { licenseeId: true } } } },
       },
       where: { organizationId: ECHO_ORGANIZATION_ID, filedAt: null },
     });
@@ -358,6 +416,7 @@ export async function reconcileWholesaleOrdersAfterOhlqImport({
         sentAt: true,
         status: true,
         wholesaleAccountId: true,
+        wholesaleAccount: { select: { licenseeId: true, licenseeIds: { select: { licenseeId: true } } } },
       },
       where: {
         filedSource: 'MANUAL',
@@ -374,6 +433,7 @@ export async function reconcileWholesaleOrdersAfterOhlqImport({
     const orders = snapshots.map((order) => ({
       ...order,
       customerIdentity: order.wholesaleAccountId,
+      customerPermitNumbers: [order.wholesaleAccount.licenseeId, ...order.wholesaleAccount.licenseeIds.map((value) => value.licenseeId)],
       lines: readLines(order.inputSnapshot),
     }));
     const retained = await tx.ohlqAnnualSalesByWholesaleRow.findMany({
@@ -398,6 +458,20 @@ export async function reconcileWholesaleOrdersAfterOhlqImport({
     for (const row of [...retainedRows, ...incomingRows]) {
       rowsByKey.set(incomingRowKey(row), row);
     }
+    const rows = Array.from(rowsByKey.values());
+    const observedItemCodes = [...new Set(rows.map((row) => normalizeExactCode(row.itemCode)))];
+    const catalogItems = observedItemCodes.length ? await tx.ohlqBrandMasterItem.findMany({
+      where: { itemCode: { in: observedItemCodes } },
+      select: { itemCode: true, vendor: true },
+    }) : [];
+    const catalogVendorByItem = new Map(catalogItems.map((item) => [normalizeExactCode(item.itemCode), item.vendor]));
+    // Brand Master stores supplier names; wholesale reports store vendor IDs.
+    // Bridge only exact shared item codes, retaining every observed ID so a
+    // supplier name with conflicting IDs fails closed in the planner.
+    const vendorAliases = rows.flatMap((row): WholesaleOrderVendorAlias[] => {
+      const vendorName = catalogVendorByItem.get(normalizeExactCode(row.itemCode));
+      return vendorName ? [{ vendorName, vendorId: row.vendor }] : [];
+    });
 
     const claimedOrders = await tx.wholesaleOrder.findMany({
       select: { automaticMatchKey: true },
@@ -406,7 +480,8 @@ export async function reconcileWholesaleOrdersAfterOhlqImport({
     const plan = planWholesaleOrderReconciliation({
       claimedEvidenceKeys: claimedOrders.flatMap((order) => order.automaticMatchKey ? [order.automaticMatchKey] : []),
       orders,
-      rows: Array.from(rowsByKey.values()),
+      rows,
+      vendorAliases,
     });
 
     let filedOrders = 0;
