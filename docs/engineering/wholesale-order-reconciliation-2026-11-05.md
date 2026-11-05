@@ -2,6 +2,8 @@
 
 Owner scope, November 5, 2026: investigate why daily imports have not automatically marked wholesale orders Filed and repair the existing process. TST delivery is authorized; production promotion is a separate release task under AGENTS.md. Sent and Paid remain manual.
 
+Production closeout, later November 5: the owner separately approved promotion and reconciliation of the six existing orders. **0.7.2 is deployed as `12c1d995114203609bb92f833449138ec22bd52c` and all six are now AUTO_MATCH Filed**, with zero additional filings on replay. The original findings and TST evidence below are preserved; [0.7.2 validation](../releases/0.7.2-validation.md) records the exact production gates and live receipts.
+
 ## Production findings
 
 - Verified current main `9b4bd8dd8b14ef6b81b628479b3a6780864be2f2`, application version 0.7.1; TST baseline `39b8a2571d17d0f061e17da422321c926a157c23`.
@@ -17,7 +19,7 @@ Owner scope, November 5, 2026: investigate why daily imports have not automatica
 - Use the order account's explicitly stored permit aliases only while its captured permit still appears among that account's identifiers. Preserve every suffix segment and reject unlinked locations. Compare accepted permit sets when checking collisions between distinct customer accounts.
 - Treat manual `FILED` and `COMPLETED` orders as reservations, never new automatic filing candidates. Retain advisory locking, transactional updates, tenant-scoped orders and globally unique evidence claims.
 - Preserve exact store, inclusive sale date through sale date +7 calendar days, positive exact per-product bottle quantities, unique order/evidence pairing and one-use evidence. No fuzzy names, inferred permit suffixes, subset quantity allocation or automatic Sent/Paid changes.
-- No UI, schema, migration, dependency, hosted configuration or provider account change. Production order statuses remain unchanged. The only production data correction is the owner-confirmed account alias described below.
+- No UI, schema, migration, dependency, hosted configuration or provider account change. The initial TST repair phase left production order statuses unchanged; its only production data correction was the owner-confirmed account alias below. Later owner-approved production filing is recorded in the closeout section.
 
 ## Owner-confirmed account identity correction
 
@@ -38,12 +40,22 @@ Owner scope, November 5, 2026: investigate why daily imports have not automatica
 
 The replay uses a local snapshot of actual order/report/catalog/alias values and an in-memory persistence adapter. It performs no production writes. The raw snapshot remains in ignored local scratch output rather than release source.
 
-## Validation and delivery
+## TST validation and original delivery
 
 - Clean locked dependency install, Prisma Client generation, strict typecheck and optimized build passed using Node 24.15.0/npm 11.12.1. The first local build was blocked by sandbox ancestor-directory reads in the existing Workflow bundler; retry outside that filesystem restriction passed without a source/configuration change. Build used an inert localhost database URL and disabled integrations.
 - Focused matching/import/lifecycle/workflow-isolation/PDF checks: **48 passing tests**. Completed full suite: **1,038 tests / 76 suites**, zero failures/skips/cancellations. No schema/migration, dependency, package version or workflow change; `git diff --check` passes.
 - Independent code review found and verified the correction for unresolved historical manual supplier metadata: such a reservation cannot release evidence to a nearby pending order even if the pending order stores a raw vendor ID. Conflicting supplier mappings and overlapping explicit customer aliases fail closed.
 - Initial production-data replay: six checked, five filed in memory, one unlinked Antiques order left open; second pass zero additional filings. After the owner's alias confirmation and readback, a fresh production capture replayed **six checked / six filed / zero outstanding**, then **zero additional filings**. Assertions verify unique evidence claims and unchanged Sent, Paid, original snapshots and manual filing history.
 - Raw captures/replay harness and logs remain in ignored local scratch output. No live production import or production order status write was used for validation. No UI changed, so acceptance focused on the backend adapter and lifecycle/import boundaries.
-- Delivery target is `echospirits/neat-tst:tst`, based on the verified TST baseline above. The task delivery receipt records the exact resulting commit, Vercel deployment and health response. Production code promotion requires a separate instruction under AGENTS.md.
-- Production recovery: recheck retained rows, then run the normal wholesale import/reconciliation after the repair is promoted. Daily retention can remove older October evidence, requiring a normal historical report refresh. Do not fabricate evidence or replace immutable order snapshots.
+- Repair delivery was `e9b778dbb4fae9438a63db161f9d5238c157df57` to `echospirits/neat-tst:tst`, based on the verified TST baseline above. Production promotion followed only after a separate owner instruction under AGENTS.md.
+
+## Production closeout
+
+- Exact selective production application: `12c1d995114203609bb92f833449138ec22bd52c`, tree `173c8111eb0f989c7062e8ed647cfc7c896b0726`, version 0.7.2. Main's extra tests/tooling and forecasting differences remain; all application UI blobs are unchanged.
+- Production candidate passed **1,066 tests / 77 suites**, strict typecheck, a production-configured inert build and exact-tree Node **22.23.4** / npm **10.9.9** CI [run 42082257084](https://github.com/echospirits/ohlq-field-crm/actions/runs/42082257084), job `127438085170`. Main-push CI [42083925037](https://github.com/echospirits/ohlq-field-crm/actions/runs/42083925037) also passed.
+- Production **`dpl_CyPkzhcW7UChNVE8UKFydrsEjATX`** is READY at [crm.echospirits.com](https://crm.echospirits.com). Health returned HTTP 200 with `production / ohlq-field-crm / connected` at 13:30:35 Eastern. The Git ref update did not create a build, so an explicit exact-Git-SHA production deployment inherited the existing project settings; no hosted configuration changed.
+- The real service committed **six checked / six AUTO_MATCH filed / zero unfiled** at 13:30:51 Eastern, followed by **zero additional filings** on immediate replay. Both calls ran in one reviewed driver transaction under the lifecycle lock with exact production endpoint/database/commit and six-order ID guards. All expected report dates and unique claims passed; no downloader/provider or unrelated purchase-state/intelligence operation ran.
+- Preservation assertions cover all non-filing order fields, Sent/Paid timestamps and actors, input snapshots, PDF SHA-256 and the full four existing manual records. Independent post-commit Neon readback confirms **10 total / 0 unfiled / 6 automatic / 4 manual / 6 unique automatic claims / 5 Completed**. Only Lupo's October 6 order newly completed; the other five retained unchecked Sent/Paid as applicable. Receipt: ignored `output/production-072-reconciliation.json`.
+- At 13:31 Eastern, unauthenticated list/detail routes led to login at 390 x 844 and 1440 x 900 without page errors or horizontal overflow; visually checked screenshots show the login surface. The PDF endpoint returned **307 to /login** without exposing a PDF. Signed-in production order-state and cross-tenant acceptance remain **unverified** because no legitimate authenticated automation session was available. Relevant UI/tenant/lifecycle regression tests pass; these limits remain explicit in [0.7.2 validation](../releases/0.7.2-validation.md).
+- Historical evidence remains intact. Any future recovery that needs report rows removed by retention must refresh the actual historical source; do not fabricate evidence or replace immutable order snapshots. Development remains frozen.
+- Annotated `v0.7.2` is published and remotely verified: tag object `c3644bff37d4f297adeb0a763f9f63e5a4d2d5b5` points to application `12c1d995114203609bb92f833449138ec22bd52c`. TST version/docs closeout is pushed at `e649f35c2bb709751710860fc53ff20d4db415f6`. Two metadata hosting attempts timed out during resource provisioning; the previously tested TST repair remains live and healthy. The release validation record contains the exact receipts and limitation.
