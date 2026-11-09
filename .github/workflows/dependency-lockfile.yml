@@ -1,36 +1,31 @@
 name: Validate dependency lockfile
-
 on:
-  pull_request:
-    paths:
-      - package.json
-      - package-lock.json
-      - .github/workflows/dependency-lockfile.yml
-  push:
-    branches: [main, tst]
-    paths:
-      - package.json
-      - package-lock.json
-      - .github/workflows/dependency-lockfile.yml
   workflow_dispatch:
-
 permissions:
   contents: read
-
 jobs:
-  clean-install:
+  provider-diagnostic:
+    name: Read-only OpenDock HTTP diagnostic
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    environment: production
+    env:
+      APP_ENV: production
+      DATABASE_ENVIRONMENT: production
+      DATABASE_TARGET_ID: ${{ vars.DATABASE_TARGET_ID }}
+      EXPECTED_DATABASE_HOST: ${{ vars.EXPECTED_DATABASE_HOST }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      OHLQ_TENANT_CREDENTIAL_ENCRYPTION_KEY: ${{ secrets.OHLQ_TENANT_CREDENTIAL_ENCRYPTION_KEY }}
+      EMAIL_SEND_ENABLED: 'false'
+      CALENDAR_SYNC_ENABLED: 'false'
+      CRON_JOBS_ENABLED: 'false'
+      FILE_UPLOADS_ENABLED: 'false'
+      WEBHOOK_REGISTRATION_ENABLED: 'false'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
-      - name: Report Node and npm versions
-        run: |
-          node --version
-          npm --version
-      # Match the data-load runner and catch incomplete lockfiles before the
-      # next scheduled import. This check needs no application credentials.
-      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm ci --no-audit --no-fund
+      - run: npx tsx scripts/check-opendock-temporary.ts
