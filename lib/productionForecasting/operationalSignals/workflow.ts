@@ -10,6 +10,7 @@ import { currentDemandProducts, ingestCurrentDemand } from './demandIngestion';
 import { getOrganizationOperationalCredentials, openDockConfiguration } from './credentials';
 import { OpenDockReadClient } from './opendock';
 import { deliveryAlreadyObservedToday, recordDeliveryAvailability } from './persistence';
+import { isTemporaryOpenDockFailure, reportOpenDockLookupWarning } from './warnings';
 import type { DeliveryAvailabilityResult, OpenDockLocationConfig } from './types';
 
 const defaults = {
@@ -36,7 +37,7 @@ export async function syncOperationalSignals({ db = prisma, services: overrides 
     where: { id: ECHO_ORGANIZATION_ID, active: true, accountStatus: { notIn: ['SUSPENDED', 'CANCELLED'] }, enabledStates: { has: 'OH' }, features: { some: { featureKey: 'PRODUCTION_FORECASTING', enabled: true } } },
     select: { id: true, settings: true, timezone: true }, orderBy: { id: 'asc' },
   });
-  let deliveryObserved = 0, demandObserved = 0, reused = 0, skipped = 0, failed = 0, unavailableDemand = 0;
+  let deliveryObserved = 0, demandObserved = 0, reused = 0, skipped = 0, failed = 0, unavailableDemand = 0, warnings = 0;
   for (const organization of organizations) {
     if (organization.id !== ECHO_ORGANIZATION_ID) continue;
     const configuration = openDockConfiguration(organization.settings);
@@ -59,9 +60,13 @@ export async function syncOperationalSignals({ db = prisma, services: overrides 
           await services.recordDelivery(organization.id, result, db);
           if (result.status === 'SUCCESS' || result.status === 'NO_AVAILABILITY') deliveryObserved++;
           else if (result.status === 'NOT_CONFIGURED') skipped++;
+          else if (isTemporaryOpenDockFailure(result)) {
+            reportOpenDockLookupWarning(result, message => logger.log(message));
+            warnings++;
+          }
           else failed++;
-          const log = result.status === 'SUCCESS' || result.status === 'NO_AVAILABILITY' || result.status === 'NOT_CONFIGURED' ? logger.log : logger.error;
-          log(JSON.stringify({ organizationId: organization.id, source: 'OPENDOCK', locationCode: location.locationCode, status: result.status }));
+          const log = result.status === 'SUCCESS' || result.status === 'NO_AVAILABILITY' || result.status === 'NOT_CONFIGURED' || isTemporaryOpenDockFailure(result) ? logger.log : logger.error;
+          log(JSON.stringify({ organizationId: organization.id, source: 'OPENDOCK', locationCode: location.locationCode, status: result.status, diagnosticCode: result.diagnosticCode, severity: isTemporaryOpenDockFailure(result) ? 'warning' : undefined }));
         } catch {
           failed++;
           // A malformed provider response must not stop the other warehouse.
@@ -103,5 +108,5 @@ export async function syncOperationalSignals({ db = prisma, services: overrides 
       logger.error(JSON.stringify({ organizationId: organization.id, source: 'OPS_OHLQ_ITEM_COVERAGE', status: 'UNAVAILABLE', reason: 'INGESTION_FAILED' }));
     }
   }
-  return { configuredOrganizations: organizations.length, deliveryObserved, demandObserved, reused, skipped, failed, unavailableDemand };
+  return { configuredOrganizations: organizations.length, deliveryObserved, demandObserved, reused, skipped, failed, unavailableDemand, warnings };
 }

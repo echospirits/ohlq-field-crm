@@ -148,10 +148,84 @@ test('temporary source errors retry with bounded backoff while network exception
     calls++; return calls === 1 ? json({ private: credentials.password }, 503) : slots('2026-11-04T12:00:00Z');
   });
   const success = await new OpenDockReadClient(credentials, { request, sleep: async value => { delays.push(value); } }).availability(gpt, observedAt);
-  assert.equal(success.status, 'SUCCESS'); assert.equal(calls, 2); assert.deepEqual(delays, [250]);
+  assert.equal(success.status, 'SUCCESS'); assert.equal(calls, 2); assert.deepEqual(delays, [1_000]);
   let failedCalls = 0;
   const failure = await new OpenDockReadClient(credentials, { request: mock(() => { failedCalls++; throw Error(credentials.password); }), sleep: noWait }).availability(gpt, observedAt);
   assert.equal(failedCalls, 3); assert.equal(failure.status, 'UNAVAILABLE'); assert.ok(!JSON.stringify(failure).includes(credentials.password));
+});
+
+test('temporary source errors respect Retry-After seconds and HTTP dates before recovering', async t => {
+  const now = Date.parse('2026-11-09T12:00:00Z');
+  t.mock.method(Date, 'now', () => now);
+  for (const [status, retryAfter, delay] of [[429, '2', 2_000], [503, 'Mon, 09 Nov 2026 12:00:05 GMT', 5_000]] as const) {
+    let calls = 0; const delays: number[] = [];
+    const request = mock(url => {
+      if (url.pathname === '/auth/login') return json({ access_token: token });
+      calls++;
+      if (calls > 1) return slots('2026-11-04T12:00:00Z');
+      return new Response(credentials.password, { status, headers: { 'retry-after': retryAfter } });
+    });
+    const result = await new OpenDockReadClient(credentials, { request, sleep: async value => { delays.push(value); } }).availability(gpt, observedAt);
+    assert.equal(result.status, 'SUCCESS'); assert.equal(calls, 2); assert.deepEqual(delays, [delay]);
+    assert.ok(!JSON.stringify(result).includes(credentials.password));
+  }
+});
+
+test('rate limits remain bounded and retain a distinct sanitized diagnostic', async () => {
+  let calls = 0; const delays: number[] = [];
+  const request = mock(() => {
+    calls++;
+    return new Response(credentials.password, { status: 429, headers: { 'retry-after': 'invalid-' + credentials.password } });
+  });
+  const result = await new OpenDockReadClient(credentials, { request, sleep: async value => { delays.push(value); } }).availability(gpt, observedAt);
+  assert.equal(calls, 3); assert.deepEqual(delays, [1_000, 2_000]);
+  assert.equal(result.status, 'UNAVAILABLE'); assert.equal(result.diagnosticCode, 'OPENDOCK_RATE_LIMITED');
+  assert.equal(result.calendarDays, null); assert.equal(result.earliestAvailableAt, null);
+  assert.ok(!JSON.stringify(result).includes(credentials.password));
+});
+
+test('a provider retry delay beyond the remaining budget returns unavailable without retrying early', async () => {
+  for (const retryAfter of ['91', '9'.repeat(400)]) {
+    let calls = 0; const delays: number[] = [];
+    const request = mock(() => { calls++; return new Response('', { status: 429, headers: { 'retry-after': retryAfter } }); });
+    const result = await new OpenDockReadClient(credentials, { request, sleep: async value => { delays.push(value); } }).availability(gpt, observedAt);
+    assert.equal(calls, 1); assert.deepEqual(delays, []);
+    assert.equal(result.status, 'UNAVAILABLE'); assert.equal(result.diagnosticCode, 'OPENDOCK_RATE_LIMITED');
+  }
+});
+
+test('retry backoff does not exceed the retrieval budget after a network failure', async () => {
+  let calls = 0; const delays: number[] = [];
+  const request = mock(() => { calls++; throw new Error(credentials.password); });
+  const result = await new OpenDockReadClient(credentials, { request, totalTimeoutMs: 500, sleep: async value => { delays.push(value); } }).availability(gpt, observedAt);
+  assert.equal(calls, 1); assert.deepEqual(delays, []);
+  assert.equal(result.status, 'UNAVAILABLE'); assert.equal(result.diagnosticCode, 'OPENDOCK_NETWORK_OR_TIMEOUT');
+});
+
+test('response-body transport failures retry, while a complete malformed JSON body remains an error', async () => {
+  for (const recover of [true, false]) {
+    let calls = 0; const delays: number[] = [];
+    const request = mock(url => {
+      if (url.pathname === '/auth/login') return json({ access_token: token });
+      calls++;
+      if (recover && calls > 1) return slots('2026-11-04T12:00:00Z');
+      const body = new ReadableStream({ start(controller) { controller.error(new Error(credentials.password)); } });
+      return new Response(body, { headers: { 'content-type': 'application/json' } });
+    });
+    const result = await new OpenDockReadClient(credentials, { request, sleep: async value => { delays.push(value); } }).availability(gpt, observedAt);
+    assert.equal(calls, recover ? 2 : 3); assert.deepEqual(delays, recover ? [1_000] : [1_000, 2_000]);
+    assert.equal(result.status, recover ? 'SUCCESS' : 'UNAVAILABLE');
+    assert.equal(result.diagnosticCode, recover ? null : 'OPENDOCK_NETWORK_OR_TIMEOUT');
+    assert.ok(!JSON.stringify(result).includes(credentials.password));
+  }
+  let calls = 0;
+  const malformed = mock(url => {
+    if (url.pathname === '/auth/login') return json({ access_token: token });
+    calls++; return new Response('{invalid-json', { headers: { 'content-type': 'application/json' } });
+  });
+  const result = await new OpenDockReadClient(credentials, { request: malformed, sleep: noWait }).availability(gpt, observedAt);
+  assert.equal(calls, 1); assert.equal(result.status, 'INVALID_RESPONSE');
+  assert.equal(result.diagnosticCode, 'OPENDOCK_RESPONSE_FORMAT_CHANGED');
 });
 
 test('redirects, non-JSON portal pages and changed slot structure are rejected without inventing availability', async () => {

@@ -9,7 +9,11 @@ No unreleased feature work remains after the owner-approved **0.7.2** Wholesale 
 
 ## Changes
 
-None.
+### OpenDock lookup recovery — November 9, 2026
+
+- Owner-authorized TST and main reliability correction, retaining version 0.7.2. Temporary OpenDock lookup failures produce visible warnings after safe persistence, preserve prior observations and permit independent imports to complete. Authentication, malformed-response and persistence failures remain errors.
+- Bounded retries honor Retry-After; CI retains safe diagnostic codes for recurring interruptions. No schema, dependency, hosted/provider configuration or UI change. Unrelated TST work remains excluded from production.
+- [Scope, validation and delivery](0.7.2-opendock-reliability.md).
 
 ## Entry template
 

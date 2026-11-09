@@ -63,6 +63,17 @@ function configured(location: OpenDockLocationConfig): boolean {
   try { dateInTimezone(new Date(), location.timezone); return true; } catch { return false; }
 }
 
+function retryDelay(attempt: number, retryAfter: string | null, now: number): number {
+  const backoff = 1_000 * 2 ** attempt;
+  if (!retryAfter) return backoff;
+  const value = retryAfter.trim();
+  // Retry-After permits either non-negative seconds or an HTTP date.
+  // An oversized delay is retained so the deadline check refuses an early retry.
+  if (/^\d+$/.test(value)) return Math.max(backoff, Number(value) * 1_000);
+  const dateDelay = Date.parse(value) - now;
+  return Number.isFinite(dateDelay) ? Math.max(backoff, dateDelay) : backoff;
+}
+
 /**
  * Official carrier API only: no appointment creation, no browser cookies, no redirects.
  * JWTs stay in the scope of a single availability call and never enter returned data.
@@ -83,6 +94,12 @@ export class OpenDockReadClient {
     this.#sleep = options.sleep ?? (milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds)));
     this.#timeoutMs = Math.min(15_000, Math.max(1, options.timeoutMs ?? 15_000));
     this.#totalTimeoutMs = Math.min(90_000, Math.max(1, options.totalTimeoutMs ?? 90_000));
+  }
+
+  async #retry(attempt: number, deadline: number, diagnosticCode: string, retryAfter: string | null = null) {
+    const now = Date.now(), delay = retryDelay(attempt, retryAfter, now);
+    if (attempt >= 2 || delay >= deadline - now) throw new SourceFailure('UNAVAILABLE', diagnosticCode);
+    await this.#sleep(delay);
   }
 
   async #json(path: string, body: object | null, token: string | null, deadline: number): Promise<unknown> {
@@ -114,8 +131,8 @@ export class OpenDockReadClient {
           signal: AbortSignal.timeout(Math.min(remaining, this.#timeoutMs)),
         });
       } catch {
-        if (attempt < 2 && Date.now() < deadline) { await this.#sleep(250 * (attempt + 1)); continue; }
-        throw new SourceFailure('UNAVAILABLE', 'OPENDOCK_NETWORK_OR_TIMEOUT');
+        await this.#retry(attempt, deadline, 'OPENDOCK_NETWORK_OR_TIMEOUT');
+        continue;
       }
       if (response.redirected || response.type === 'opaqueredirect' || (response.status >= 300 && response.status < 400)) {
         throw new SourceFailure('INVALID_RESPONSE', 'OPENDOCK_REDIRECT_REFUSED');
@@ -125,16 +142,24 @@ export class OpenDockReadClient {
         throw new SourceFailure('AUTH_FAILED', 'OPENDOCK_AUTHENTICATION_REQUIRED');
       }
       if (response.status === 429 || [500, 502, 503, 504].includes(response.status)) {
-        if (attempt < 2 && Date.now() < deadline) { await this.#sleep(250 * (attempt + 1)); continue; }
-        throw new SourceFailure('UNAVAILABLE', 'OPENDOCK_UPSTREAM_UNAVAILABLE');
+        await response.body?.cancel().catch(() => undefined);
+        await this.#retry(attempt, deadline, response.status === 429 ? 'OPENDOCK_RATE_LIMITED' : 'OPENDOCK_UPSTREAM_UNAVAILABLE', response.headers.get('retry-after'));
+        continue;
       }
       if (!response.ok) throw new SourceFailure('INVALID_RESPONSE', 'OPENDOCK_REQUEST_REJECTED');
       if (!(response.headers.get('content-type') ?? '').toLowerCase().includes('application/json')
         || Number(response.headers.get('content-length') ?? 0) > MAX_BODY_CHARACTERS) {
         throw new SourceFailure('INVALID_RESPONSE', 'OPENDOCK_RESPONSE_FORMAT_CHANGED');
       }
+      let text: string;
+      try { text = await response.text(); }
+      catch {
+        // A connection can fail after headers arrive. Only completed bodies are
+        // eligible for response-format validation; transport failures may retry.
+        await this.#retry(attempt, deadline, 'OPENDOCK_NETWORK_OR_TIMEOUT');
+        continue;
+      }
       try {
-        const text = await response.text();
         if (text.length > MAX_BODY_CHARACTERS) throw new Error('Oversized response.');
         return JSON.parse(text) as unknown;
       } catch {

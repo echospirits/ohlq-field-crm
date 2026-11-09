@@ -90,7 +90,7 @@ test('source workflow retains legacy service injection and always runs its optio
   const db = { organization: { findMany: async () => [] } } as unknown as PrismaClient;
   const services = { credentials: async () => null, bailment: async () => { throw Error('unused'); }, dc: async () => { throw Error('unused'); }, importCsv: async () => { throw Error('unused'); }, refresh: async () => { throw Error('unused'); } };
   assert.deepEqual(await syncProductionSources({ db, services }), { configuredOrganizations: 0, importedSources: 0 });
-  const operations = async () => { operationalRuns++; return { configuredOrganizations: 1, deliveryObserved: 0, demandObserved: 1, reused: 0, skipped: 1, failed: 0, unavailableDemand: 0 }; };
+  const operations = async () => { operationalRuns++; return { configuredOrganizations: 1, deliveryObserved: 0, demandObserved: 1, reused: 0, skipped: 1, failed: 0, unavailableDemand: 0, warnings: 0 }; };
   assert.deepEqual(await syncProductionSources({ db, services: { ...services, operations } }), { configuredOrganizations: 0, importedSources: 0 });
   assert.equal(operationalRuns, 1);
 });
@@ -105,8 +105,56 @@ test('operational refresh still runs after historical source imports fail', asyn
   const services = {
     credentials: async () => null, bailment: async () => { throw Error('unused'); }, dc: async () => { throw Error('unused'); }, importCsv: async () => { throw Error('unused'); },
     refresh: async () => ({ id: 'forecast', replay: false, products: 0 }),
-    operations: async () => { operationalRuns++; return { configuredOrganizations: 1, deliveryObserved: 1, demandObserved: 0, reused: 0, skipped: 1, failed: 0, unavailableDemand: 0 }; },
+    operations: async () => { operationalRuns++; return { configuredOrganizations: 1, deliveryObserved: 1, demandObserved: 0, reused: 0, skipped: 1, failed: 0, unavailableDemand: 0, warnings: 0 }; },
   };
   await assert.rejects(syncProductionSources({ db, services, logger: { log() {}, error() {} }, now }), /Production source failures/);
   assert.equal(operationalRuns, 1);
+});
+
+function deliveryResult(location: OpenDockLocationConfig, status: DeliveryAvailabilityResult['status'], diagnosticCode: string | null): DeliveryAvailabilityResult {
+  return { market: location.market, locationCode: location.locationCode, locationName: location.locationName,
+    warehouseId: location.warehouseId, loadTypeId: location.loadTypeId, timezone: location.timezone,
+    source: 'OPENDOCK', observedAt: now.toISOString(), status, diagnosticCode,
+    earliestAvailableAt: null, calendarDays: null, businessDays: null, businessDayMethod: null, checkedThrough: null };
+}
+
+test('temporary provider lookup failures persist unavailable state, warn and allow the complete source workflow to succeed', async () => {
+  for (const code of ['OPENDOCK_TIMEOUT', 'OPENDOCK_NETWORK_OR_TIMEOUT', 'OPENDOCK_UPSTREAM_UNAVAILABLE', 'OPENDOCK_RATE_LIMITED']) {
+    const f = fixture();
+    const operations = () => syncOperationalSignals({ ...f, now, services: { ...f.services,
+      deliveryClient: () => ({ availability: async (location: OpenDockLocationConfig) => deliveryResult(location, 'UNAVAILABLE', code) }),
+    } });
+    const result = await operations();
+    assert.equal(result.failed, 0);
+    assert.equal(result.warnings, 2);
+    assert.equal(result.deliveryObserved, 0);
+    assert.equal(result.demandObserved, 1);
+    assert.ok(f.recorded.every(row => row.status === 'UNAVAILABLE' && row.earliestAvailableAt === null));
+    assert.ok(f.logs.some(line => line.includes(code) && line.includes('Previous successful observations retained')));
+    const core = { credentials: async () => null, bailment: async () => { throw Error('unused'); }, dc: async () => { throw Error('unused'); }, importCsv: async () => { throw Error('unused'); }, refresh: async () => { throw Error('unused'); }, operations };
+    assert.deepEqual(await syncProductionSources({ db: { organization: { findMany: async () => [] } } as unknown as PrismaClient, services: core, logger: f.logger }), { configuredOrganizations: 0, importedSources: 0 });
+  }
+});
+
+test('authentication, response validation, unknown unavailable and failed warning persistence still fail operational sources', async () => {
+  for (const [status, code] of [['AUTH_FAILED', 'OPENDOCK_AUTHENTICATION_REQUIRED'], ['INVALID_RESPONSE', 'OPENDOCK_RESPONSE_FORMAT_CHANGED'], ['UNAVAILABLE', 'INGESTION_FAILED'], ['UNAVAILABLE', null]] as const) {
+    const f = fixture();
+    const result = await syncOperationalSignals({ ...f, now, services: { ...f.services,
+      deliveryClient: () => ({ availability: async (location: OpenDockLocationConfig) => deliveryResult(location, status, code) }),
+    } });
+    assert.equal(result.failed, 2);
+    assert.equal(result.warnings, 0);
+    assert.equal(result.demandObserved, 1);
+  }
+  const f = fixture();
+  const operations = () => syncOperationalSignals({ ...f, now, services: { ...f.services,
+    deliveryClient: () => ({ availability: async (location: OpenDockLocationConfig) => deliveryResult(location, 'UNAVAILABLE', 'OPENDOCK_TIMEOUT') }),
+    recordDelivery: async () => { throw new Error('private database exception'); },
+  } });
+  const result = await operations();
+  assert.equal(result.failed, 2);
+  assert.equal(result.warnings, 0);
+  assert.equal(f.logs.some(line => /Previous successful|private database/.test(line)), false);
+  const core = { credentials: async () => null, bailment: async () => { throw Error('unused'); }, dc: async () => { throw Error('unused'); }, importCsv: async () => { throw Error('unused'); }, refresh: async () => { throw Error('unused'); }, operations };
+  await assert.rejects(syncProductionSources({ db: { organization: { findMany: async () => [] } } as unknown as PrismaClient, services: core, logger: f.logger }), /OPERATIONAL_SIGNALS/);
 });
