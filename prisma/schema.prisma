@@ -3322,7 +3322,7 @@ model CurrentDemandCheck {
   @@index([organizationId, productId, checkedAt], map: "current_demand_check_history_idx")
 }
 
-// Daily inventory context is independent of forecasting and agency demand.
+// Timestamped inventory context is independent of forecasting and agency demand.
 model CurrentDcInventoryObservation {
   id                 String       @id @default(cuid())
   organizationId     String
@@ -3346,7 +3346,7 @@ model CurrentDcInventoryObservation {
   product            OrganizationProduct @relation(fields: [organizationId, productId], references: [organizationId, id], onDelete: Restrict)
   checks             CurrentDcInventoryCheck[]
 
-  @@unique([organizationId, productId, locationCode, businessDate], map: "dc_inventory_tenant_product_location_day_key")
+  @@unique([organizationId, productId, locationCode, businessDate, sourceObservedAt], map: "dc_inventory_tenant_product_location_day_observed_key")
   @@unique([organizationId, id], map: "dc_inventory_tenant_id_key")
   @@index([organizationId, productId, locationCode, sourceObservedAt], map: "dc_inventory_history_idx")
 }

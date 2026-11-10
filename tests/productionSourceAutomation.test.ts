@@ -94,3 +94,20 @@ test('automation reuses isolated OHLQ job, permits focused dispatch and keeps pr
   assert.match(workflow, /productionSourcesOnly:/); assert.match(step, /sync:production-sources.*--apply/);
   assert.equal(OHLQ_BAILMENT_INVOICE_REPORT.reportId, 'bdf38254-b332-4d12-b689-1113a2644a40');
 });
+
+
+test('only an explicit source-workflow manual mode opts operations into same-day warehouse re-observation', async () => {
+  const forwarded: Array<boolean | undefined> = [];
+  const db = { organization: { findMany: async () => [] } } as unknown as PrismaClient;
+  const services = {
+    credentials: async () => null,
+    bailment: async () => { throw Error('No source organization'); },
+    dc: async () => { throw Error('No source organization'); },
+    importCsv: async () => { throw Error('No source organization'); },
+    refresh: async () => { throw Error('No source organization'); },
+    operations: async (options?: { refreshInventory?: boolean }) => { forwarded.push(options?.refreshInventory); return { failed: 0 }; },
+  };
+  await syncProductionSources({ db, services });
+  await syncProductionSources({ db, services, refreshInventory: true });
+  assert.deepEqual(forwarded, [false, true]);
+});

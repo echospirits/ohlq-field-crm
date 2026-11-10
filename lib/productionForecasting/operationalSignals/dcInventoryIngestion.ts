@@ -29,9 +29,10 @@ const pair = (productId: string, locationCode: string) => JSON.stringify([produc
 const day = (date: Date) => date.toISOString().slice(0, 10);
 const number = (value: unknown) => value === null || value === undefined ? null : Number.isFinite(Number(value)) ? Number(value) : null;
 
-/** One valid daily fact per warehouse; failed attempts never replace it. The
- * caller supplies only a native export, never trusted product IDs or totals. */
-export async function ingestDcInventory({ organizationId, businessDate, download, db = prisma, now = new Date() }: { organizationId: string; businessDate: string; download: DcInventoryDownload; db?: PrismaClient; now?: Date }) {
+/** Daily work reuses accepted facts; explicit refreshes append newer retrievals.
+ * Failed attempts never replace them. The caller supplies only a native export,
+ * never trusted product IDs or totals. */
+export async function ingestDcInventory({ organizationId, businessDate, download, refresh = false, db = prisma, now = new Date() }: { organizationId: string; businessDate: string; download: DcInventoryDownload; refresh?: boolean; db?: PrismaClient; now?: Date }) {
   if (!validDay(businessDate) || !Number.isFinite(now.getTime())) throw new Error('A valid inventory business date and check time are required.');
   return db.$transaction(async tx => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`dc-inventory:${organizationId}:${businessDate}`}))`;
@@ -51,10 +52,11 @@ export async function ingestDcInventory({ organizationId, businessDate, download
     const productIds = products.map(product => product.id);
     const where = { organizationId, productId: { in: productIds }, businessDate: new Date(businessDate), locationCode: { in: [...dcWarehouses] } };
     const [existingRows, checks] = productIds.length ? await Promise.all([
-      tx.currentDcInventoryObservation.findMany({ where, select: { id: true, productId: true, locationCode: true } }),
+      tx.currentDcInventoryObservation.findMany({ where, orderBy: [{ sourceObservedAt: 'desc' }, { id: 'desc' }], select: { id: true, productId: true, locationCode: true, sourceObservedAt: true } }),
       tx.currentDcInventoryCheck.findMany({ where, select: { productId: true, locationCode: true, checkedAt: true, status: true, reason: true, observationId: true } }),
     ]) : [[], []];
-    const existing = new Map(existingRows.map(row => [pair(row.productId, row.locationCode), row]));
+    const existing = new Map<string, typeof existingRows[number]>();
+    for (const row of existingRows) if (!existing.has(pair(row.productId, row.locationCode))) existing.set(pair(row.productId, row.locationCode), row);
     const previousChecks = new Map(checks.map(row => [pair(row.productId, row.locationCode), row]));
     const checkedAt = validObservedAt ? observedAt : now;
     const contentHash = download.status === 'ok' ? createHash('sha256').update(download.csv).digest('hex') : null;
@@ -65,6 +67,13 @@ export async function ingestDcInventory({ organizationId, businessDate, download
       const old = existing.get(pair(product.id, locationCode)), previousCheck = previousChecks.get(pair(product.id, locationCode));
       if (previousCheck && previousCheck.checkedAt > checkedAt) {
         results.push({ ...base, status: old ? 'reused' : previousCheck.status === 'FAILED' ? 'failed' : 'unavailable', reason: previousCheck.reason, observationId: old?.id ?? null });
+        continue;
+      }
+      // A retry of the same retrieval instant or a delayed older export cannot
+      // append a duplicate fact or rewrite the latest check. Daily failure and
+      // recovery checks retain their existing behavior.
+      if (validObservedAt && old && (old.sourceObservedAt > observedAt || refresh && old.sourceObservedAt.getTime() === observedAt.getTime())) {
+        results.push({ ...base, status: 'reused', reason: previousCheck?.reason ?? null, observationId: old.id });
         continue;
       }
       const source = parsedProducts.get(product.code), warehouse = source?.warehouses[locationCode];
@@ -80,7 +89,7 @@ export async function ingestDcInventory({ organizationId, businessDate, download
         results.push({ ...base, status: failure ? 'failed' : 'unavailable', reason: reason ?? 'INVALID_RESPONSE', observationId: old?.id ?? null });
         continue;
       }
-      if (old) {
+      if (old && !refresh) {
         await saveCheck('AVAILABLE', old.id);
         results.push({ ...base, status: 'reused', reason: null, observationId: old.id });
         continue;
@@ -125,9 +134,9 @@ export async function getDcInventorySignals(organizationId: string, db: PrismaCl
   type Check = Pick<CurrentDcInventoryCheck, 'productId' | 'locationCode' | 'businessDate' | 'checkedAt' | 'status' | 'reason'>;
   const [observations, checks] = productIds.length ? await Promise.all([
     db.$queryRaw<Observation[]>(Prisma.sql`SELECT DISTINCT ON ("productId", "locationCode") "productId", "locationCode", "businessDate", "sourceBusinessDate", "sourceObservedAt", "sourceUpdatedAt", "quantityCases", "pickedCases", "inventoryCases"
-      FROM "CurrentDcInventoryObservation" WHERE "organizationId"=${organizationId} AND "productId" IN (${Prisma.join(productIds)}) AND "locationCode" IN ('GPT','GRN') ORDER BY "productId", "locationCode", "businessDate" DESC, "sourceObservedAt" DESC`),
+      FROM "CurrentDcInventoryObservation" WHERE "organizationId"=${organizationId} AND "productId" IN (${Prisma.join(productIds)}) AND "locationCode" IN ('GPT','GRN') ORDER BY "productId", "locationCode", "businessDate" DESC, "sourceObservedAt" DESC, "id" DESC`),
     db.$queryRaw<Check[]>(Prisma.sql`SELECT DISTINCT ON ("productId", "locationCode") "productId", "locationCode", "businessDate", "checkedAt", "status", "reason"
-      FROM "CurrentDcInventoryCheck" WHERE "organizationId"=${organizationId} AND "productId" IN (${Prisma.join(productIds)}) AND "locationCode" IN ('GPT','GRN') ORDER BY "productId", "locationCode", "businessDate" DESC, "checkedAt" DESC`),
+      FROM "CurrentDcInventoryCheck" WHERE "organizationId"=${organizationId} AND "productId" IN (${Prisma.join(productIds)}) AND "locationCode" IN ('GPT','GRN') ORDER BY "productId", "locationCode", "businessDate" DESC, "checkedAt" DESC, "id" DESC`),
   ]) : [[], []];
   const observationByPair = new Map(observations.map(row => [pair(row.productId, row.locationCode), row])), checkByPair = new Map(checks.map(row => [pair(row.productId, row.locationCode), row]));
   const rows = products.map(product => {

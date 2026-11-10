@@ -39,9 +39,10 @@ function unavailable(location: OpenDockLocationConfig, at: Date, status: 'AUTH_F
   return { market: location.market, locationCode: location.locationCode, locationName: location.locationName, warehouseId: location.warehouseId, loadTypeId: location.loadTypeId, timezone: location.timezone, source: 'OPENDOCK', observedAt: at.toISOString(), status, earliestAvailableAt: null, calendarDays: null, businessDays: null, businessDayMethod: null, checkedThrough: null, diagnosticCode };
 }
 
-/** Existing morning runner only. Signals and warehouses fail independently. */
-export async function syncOperationalSignals({ db = prisma, services: overrides = {}, logger = console, now: injectedNow }: {
-  db?: PrismaClient; services?: Partial<OperationalSignalServices>; logger?: Pick<Console, 'log' | 'error'>; now?: Date;
+/** Scheduled runs reuse complete daily facts; an authorized manual refresh
+ * re-observes warehouse stock. Signals and warehouses fail independently. */
+export async function syncOperationalSignals({ db = prisma, services: overrides = {}, logger = console, now: injectedNow, refreshInventory = false }: {
+  db?: PrismaClient; services?: Partial<OperationalSignalServices>; logger?: Pick<Console, 'log' | 'error'>; now?: Date; refreshInventory?: boolean;
 } = {}) {
   const services = { ...defaults, ...overrides };
   const now = injectedNow ?? new Date();
@@ -96,12 +97,13 @@ export async function syncOperationalSignals({ db = prisma, services: overrides 
     // exits so an already observed demand estimate cannot suppress this source.
     try {
       const startedAt = inventoryClock();
-      if (await services.inventoryObserved(organization.id, db, startedAt)) {
+      if (!refreshInventory && await services.inventoryObserved(organization.id, db, startedAt)) {
         inventorySkipped++;
       } else {
         const credentials = await opsCredentials();
         if (!credentials) {
           inventorySkipped++;
+          if (refreshInventory) failed++;
           logger.log(JSON.stringify({ organizationId: organization.id, source: DC_INVENTORY_SOURCE, status: 'NOT_CONFIGURED' }));
         } else {
           let download: DcInventoryDownload;
@@ -120,12 +122,17 @@ export async function syncOperationalSignals({ db = prisma, services: overrides 
           // explicit test/operator inputs; the report's own As_of_Date remains
           // independently required by ingestion before any current balance.
           const checkedAt = inventoryClock();
-          const result = await services.ingestInventory({ organizationId: organization.id, businessDate: formatDateInputValue(checkedAt, organization.timezone), download: { ...download, observedAt: checkedAt.toISOString() }, db, now: checkedAt });
+          const result = await services.ingestInventory({ organizationId: organization.id, businessDate: formatDateInputValue(checkedAt, organization.timezone), download: { ...download, observedAt: checkedAt.toISOString() }, db, now: checkedAt, refresh: refreshInventory });
           inventoryObserved += result.available;
           unavailableInventory += result.unavailable;
-          failed += result.failed;
-          const log = result.failed ? logger.error : logger.log;
-          log(JSON.stringify({ organizationId: organization.id, source: DC_INVENTORY_SOURCE, status: result.failed ? 'PARTIAL_FAILURE' : result.unavailable ? 'DATA_UNAVAILABLE' : 'COMPLETE', available: result.available, unavailable: result.unavailable, failed: result.failed, reused: result.reused }));
+          // A deliberate refresh must report incomplete stock as partial. Native
+          // status30 is an expected exclusion; missing/stale/malformed data is not.
+          const sourceIneligible = result.results.filter(row => row.status === 'unavailable' && row.reason === 'SOURCE_INELIGIBLE').length;
+          const unavailableFailures = refreshInventory ? Math.max(0, result.unavailable - sourceIneligible) : 0;
+          const inventoryFailures = result.failed + unavailableFailures;
+          failed += inventoryFailures;
+          const log = inventoryFailures ? logger.error : logger.log;
+          log(JSON.stringify({ organizationId: organization.id, source: DC_INVENTORY_SOURCE, status: inventoryFailures ? 'PARTIAL_FAILURE' : result.unavailable ? 'DATA_UNAVAILABLE' : 'COMPLETE', available: result.available, unavailable: result.unavailable, failed: result.failed, unavailableFailures, reused: result.reused }));
         }
       }
     } catch {

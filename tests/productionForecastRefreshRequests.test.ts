@@ -48,7 +48,7 @@ function fixture() {
   const services: ForecastRefreshServices = {
     configuration: () => configured ? { deploymentEnvironment: 'test', ref: 'tst', repository: 'echospirits/neat-tst', token: 'PRIVATE_CONFIGURATION_TOKEN', workflowId: 'production-forecast-refresh.yml' } : null,
     dispatch: async () => { dispatches++; return { ref: 'tst', repository: 'echospirits/neat-tst', workflowId: 'production-forecast-refresh.yml' }; },
-    sources: async options => { sourceRuns++; await options?.onStage?.('FORECAST'); options?.onResult?.({ configuredOrganizations: 1, importedSources: 2, refreshedForecasts: 1, failedSources: [] }); return { configuredOrganizations: 1, importedSources: 2 }; },
+    sources: async options => { assert.equal(options?.refreshInventory, true, 'only an owned authorized request reaches the manual stock refresh'); sourceRuns++; await options?.onStage?.('FORECAST'); options?.onResult?.({ configuredOrganizations: 1, importedSources: 2, refreshedForecasts: 1, failedSources: [] }); return { configuredOrganizations: 1, importedSources: 2 }; },
     environment: () => 'test',
   };
   const enqueue = (overrides: Partial<ForecastRefreshServices> = {}, at = now, requester = 'admin') => enqueueForecastRefresh({ organizationId, requestedByUserId: requester, db: client, now: at, services: { ...services, ...overrides } });
@@ -133,7 +133,8 @@ test('only complete expected source work and a saved forecast succeed; duplicate
   assert.equal(result.status, 'SUCCEEDED'); assert.equal(result.importedSources, 2); assert.equal(result.replayed, false);
   assert.equal(f.rows[0].activeKey, null); assert.equal(f.rows[0].leaseToken, null);
   const state = await getForecastRefreshState(organizationId, f.client, now, f.services);
-  assert.equal(state.lastSuccessfulAt, now.toISOString()); assert.match(state.job!.message, /daily warehouse and demand snapshots retained/);
+  assert.equal(state.lastSuccessfulAt, now.toISOString()); assert.match(state.job!.message, /daily demand and delivery snapshots retained/);
+  assert.doesNotMatch(state.job!.message, /warehouse.*(retained|reused)|inventory downloaded/, 'neutral result copy does not invent inventory retrieval on historical requests');
   assert.equal((await f.run()).replayed, true); assert.equal(f.sourceRuns(), 1);
 });
 

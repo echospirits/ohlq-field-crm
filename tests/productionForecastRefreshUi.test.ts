@@ -81,7 +81,9 @@ test('partial, failed and timed-out jobs refresh source warnings without claimin
     assert.equal(h.refreshes(), 1); assert.match(text(h.button(tree)), /Retry refresh/);
     assert.ok(elements(tree).some(node => node.props.role === 'status' && node.props.className === 'pf-refresh-warning'));
     assert.doesNotMatch(text(tree), /all data.*fresh|Source reports downloaded and forecasts saved/);
-    assert.match(text(tree), /snapshots may be reused/);
+    assert.match(text(tree), /Each refresh downloads warehouse inventory/);
+    assert.match(text(tree), /demand and delivery snapshots may be reused/);
+    assert.doesNotMatch(text(tree), /warehouse snapshots may be reused/);
   }
 });
 

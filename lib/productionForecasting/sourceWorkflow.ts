@@ -21,7 +21,7 @@ export { ohioSourceConfiguration } from './sourceConfiguration';
 
 /** Uses the existing OHLQ scheduled job and each enrolled tenant's credentials.
  * Sources and tenants fail independently; logs contain operational counts only. */
-export async function syncProductionSources({ db = prisma, services = defaults, logger = console, now = new Date(), onStage, onResult }: { db?: PrismaClient; services?: ProductionSourceServices; logger?: Pick<Console, 'log' | 'error'>; now?: Date; onStage?: (stage: ForecastRefreshStage) => Promise<void>; onResult?: (result: ProductionSourceOutcome) => void } = {}) {
+export async function syncProductionSources({ db = prisma, services = defaults, logger = console, now = new Date(), onStage, onResult, refreshInventory = false }: { db?: PrismaClient; services?: ProductionSourceServices; logger?: Pick<Console, 'log' | 'error'>; now?: Date; refreshInventory?: boolean; onStage?: (stage: ForecastRefreshStage) => Promise<void>; onResult?: (result: ProductionSourceOutcome) => void } = {}) {
   const organizations = await db.organization.findMany({ where: { id: ECHO_ORGANIZATION_ID, active: true, accountStatus: { notIn: ['SUSPENDED', 'CANCELLED'] }, enabledStates: { has: 'OH' }, ohlqCredentials: { isNot: null }, features: { some: { featureKey: 'PRODUCTION_FORECASTING', enabled: true } } }, orderBy: { id: 'asc' }, select: { id: true, settings: true, timezone: true } });
   const failures: string[] = [];
   const failedSources: ProductionSourceOutcome['failedSources'] = [];
@@ -66,7 +66,7 @@ export async function syncProductionSources({ db = prisma, services = defaults, 
   if (services.operations) {
     await onStage?.('OPERATIONS');
     // Run even when a source failed; its clock reflects actual retrieval time.
-    try { const result = await services.operations({ db, logger }); if (result.failed) { failures.push('OPERATIONAL_SIGNALS'); failedSources.push('OPERATIONS'); } }
+    try { const result = await services.operations({ db, logger, refreshInventory }); if (result.failed) { failures.push('OPERATIONAL_SIGNALS'); failedSources.push('OPERATIONS'); } }
     catch { failures.push('OPERATIONAL_SIGNALS'); failedSources.push('OPERATIONS'); logger.error(JSON.stringify({ source: 'OPERATIONAL_SIGNALS', status: 'failed' })); }
   }
   onResult?.({ configuredOrganizations: organizations.filter(organization => organization.id === ECHO_ORGANIZATION_ID).length, importedSources, refreshedForecasts, failedSources });

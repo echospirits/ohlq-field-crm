@@ -1,5 +1,9 @@
 # Repository Agent Instructions
 
+## Scoped inventory refresh correction: 0.9.2
+
+The owner reported stale warehouse inventory after manual refresh. Continue the existing TST/main automatic-refresh authorization with the minimal 0.9.2 correction: fetch current DC Inventory on every authorized manual job, preserve timestamped inventory history, and update latest balances. Rehearse the index-only migration on isolated clones before live application; retain tenant/vendor checks, source provenance, sales/shared-inventory boundaries and all previous release refs. No broader development cycle is opened. See [plan](docs/releases/0.9.2-plan.md), [validation](docs/releases/0.9.2-validation.md) and [checklist](docs/releases/0.9.2-checklist.md). Earlier 0.9.1 statements below are historical.
+
 ## Current release: 0.9.1; development frozen
 
 The owner-approved forecast-runner hotfix is deployed and verified on TST and production as stable **0.9.1** on November 10, 2026. Production application `8213292340562cd27781f21afe5988cb17e10221` and TST `c7bdd30baee4f6dcc6f7826a0a6019c61a2a3bb3` are READY with their correct connected database identities. Exact-candidate Node 22/npm 10 CI, both full suites/typechecks/builds, independent review and real Admin button/provider acceptance pass. The production request waits orderly for the existing shared provider lock, then succeeds; TST verifies fresh successful GPT/GRN delivery observations. New TST mobile 390 × 844 and desktop 1440 × 1000 acceptance preserve `q=3150B&horizon=60` with no page overflow. Published [v0.9.1](https://github.com/echospirits/ohlq-field-crm/releases/tag/v0.9.1) is verified Latest and points to the exact production application; release/tag verification completed at 20:11 UTC. See [notes/technical manifest](docs/releases/0.9.1.md), [validation](docs/releases/0.9.1-validation.md), [checklist](docs/releases/0.9.1-checklist.md) and [UNRELEASED](docs/releases/UNRELEASED.md).

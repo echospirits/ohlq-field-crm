@@ -104,6 +104,56 @@ test('inventory imports independently when current demand is already complete an
   assert.equal(result.reused, 1, 'legacy demand replay counter is unchanged');
 });
 
+test('an explicit manual stock refresh downloads again while complete demand and delivery stay reused', async () => {
+  const f = fixture(settings, ['product-1']);
+  const result = await syncOperationalSignals({ ...f, now, refreshInventory: true, services: { ...f.services,
+    deliveryObserved: async () => true,
+    inventoryObserved: async () => { throw new Error('Manual stock refresh must bypass the daily shortcut'); },
+    downloadInventory: async options => {
+      assert.equal(options.reportDate, '2026-11-03'); assert.equal(options.returnBuffer, true);
+      f.events.push('inventory');
+      return { status: 'ok', csv: 'native-inventory', reportDate: '2026-11-03', observedAt: '2000-01-01T00:00:00Z' };
+    },
+    ingestInventory: async input => {
+      assert.equal(input.refresh, true); assert.equal(input.businessDate, '2026-11-03');
+      assert.equal(input.download.observedAt, now.toISOString(), 'retrieval uses actual completion, never the report or caller clock');
+      assert.equal(input.now, now); f.events.push('ingest-inventory');
+      return { results: [], available: 2, unavailable: 0, failed: 0, reused: 0 };
+    },
+  } });
+  assert.deepEqual(f.events, ['inventory', 'ingest-inventory']); assert.equal(f.recorded.length, 0);
+  assert.equal(result.inventoryObserved, 2); assert.equal(result.inventorySkipped, 0);
+  assert.equal(result.demandObserved, 0); assert.equal(result.deliveryObserved, 0); assert.equal(result.reused, 3);
+  assert.equal(result.failed, 0);
+});
+
+test('manual stock refresh treats actionable unavailable data as incomplete but exempts exact native ineligibility', async () => {
+  for (const refreshInventory of [false, true]) for (const reason of ['SOURCE_INELIGIBLE', 'STALE_SOURCE', 'MISSING_PRODUCT', 'INVALID_QUANTITY', null]) {
+    const f = fixture({}, ['product-1']);
+    const result = await syncOperationalSignals({ ...f, now, refreshInventory, services: { ...f.services,
+      inventoryObserved: async () => false,
+      ingestInventory: async input => {
+        assert.equal(input.refresh, refreshInventory);
+        return { results: [{ productId: product.id, itemCode: product.code, locationCode: 'GPT' as const, status: 'unavailable' as const, reason, observationId: 'retained-stock' }], available: 0, unavailable: 1, failed: 0, reused: 0 };
+      },
+    } });
+    assert.equal(result.unavailableInventory, 1);
+    assert.equal(result.failed, refreshInventory && reason !== 'SOURCE_INELIGIBLE' ? 1 : 0);
+    assert.equal(result.inventoryObserved, 0);
+    assert.doesNotMatch(f.logs.join('\n'), /native-inventory|unit-private|ops-example/);
+  }
+});
+
+test('manual stock refresh cannot silently succeed when its provider credentials are unavailable', async () => {
+  const f = fixture({}, ['product-1']);
+  const result = await syncOperationalSignals({ ...f, now, refreshInventory: true, services: { ...f.services,
+    inventoryObserved: async () => true,
+    opsCredentials: async () => null,
+  } });
+  assert.equal(result.failed, 1); assert.equal(result.inventorySkipped, 1);
+  assert.equal(result.inventoryObserved, 0); assert.deepEqual(f.events, []);
+});
+
 test('an inventory download failure persists a safe failed check and still ingests demand using one credential fetch', async () => {
   const f = fixture({});
   let credentialReads = 0;

@@ -14,7 +14,7 @@ export const FORECAST_REFRESH_QUEUED_TIMEOUT_MS = 5 * 60 * 60_000;
 export const FORECAST_REFRESH_LEASE_MS = 15 * 60_000;
 export const FORECAST_REFRESH_MAX_RUNNING_MS = 90 * 60_000;
 const stages: ForecastRefreshStage[] = ['QUEUED', 'BAILMENT', 'GUIDANCE', 'FORECAST', 'OPERATIONS', 'COMPLETE'];
-const stageLabels: Record<ForecastRefreshStage, string> = { QUEUED: 'Waiting to start', BAILMENT: 'Downloading outbound case history', GUIDANCE: 'Downloading distribution-center guidance', FORECAST: 'Saving the forecast', OPERATIONS: 'Checking daily warehouse and demand snapshots', COMPLETE: 'Finished' };
+const stageLabels: Record<ForecastRefreshStage, string> = { QUEUED: 'Waiting to start', BAILMENT: 'Downloading outbound case history', GUIDANCE: 'Downloading distribution-center guidance', FORECAST: 'Saving the forecast', OPERATIONS: 'Checking warehouse inventory and daily signals', COMPLETE: 'Finished' };
 const sourceLabels = { BAILMENT_PO_INVOICE: 'outbound case history', DISTRIBUTION_CENTER: 'distribution-center guidance', FORECAST: 'the forecast calculation', OPERATIONS: 'warehouse, demand and delivery checks' };
 const runSourceWorker: typeof syncProductionSources = async options => {
   const { syncProductionSources } = await import('./sourceWorkflow');
@@ -29,8 +29,8 @@ const safeOutcome = (value: ProductionSourceOutcome): ProductionSourceOutcome =>
 
 function publicMessage(request: ProductionForecastRefreshRequest) {
   if (request.status === 'QUEUED') return 'Refresh requested. It will begin when the current source checks finish.';
-  if (request.status === 'RUNNING') return 'Source reports are being downloaded and the forecast is being updated. Existing daily snapshots may be reused.';
-  if (request.status === 'SUCCEEDED') return 'Source reports downloaded and forecast saved; existing daily warehouse and demand snapshots retained where current.';
+  if (request.status === 'RUNNING') return 'Source reports are being downloaded and the forecast is being updated. Daily demand and delivery snapshots may be reused.';
+  if (request.status === 'SUCCEEDED') return 'Source reports downloaded and forecast saved; existing daily demand and delivery snapshots retained where current.';
   if (request.status === 'TIMED_OUT') return 'Refresh status timed out. Previously saved data is preserved. You can request another refresh.';
   if (request.failureCode === 'DISPATCH_FAILED') return 'Refresh could not be queued. Check progress, then try again.';
   if (request.failureCode === 'REQUESTER_UNAVAILABLE') return 'Refresh could not start because administrator access changed. An authorized administrator can try again.';
@@ -160,7 +160,7 @@ export async function runProductionForecastRefresh(context: ForecastRefreshRunne
   const timer = heartbeatIntervalMs > 0 ? setInterval(() => { inFlight = inFlight.then(() => renew()).catch(() => { leaseLost = true; }); }, heartbeatIntervalMs) : null;
   timer?.unref();
   try {
-    await services.sources({ db, logger: { log: () => undefined, error: () => undefined }, onStage: renew, onResult: result => { outcome = safeOutcome(result); } });
+    await services.sources({ db, refreshInventory: true, logger: { log: () => undefined, error: () => undefined }, onStage: renew, onResult: result => { outcome = safeOutcome(result); } });
   } catch { failed = true; }
   finally { if (timer) clearInterval(timer); await inFlight; }
   const completedAt = clock();

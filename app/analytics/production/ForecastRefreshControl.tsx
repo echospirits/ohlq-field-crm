@@ -80,7 +80,7 @@ export function ForecastRefreshControl({ organizationId, initialState }: { organ
     <div id={descriptionId} className="pf-refresh-feedback">
       {error ? <p role="alert" className="pf-refresh-error">{error}</p> : null}
       {!state.configured && !uncertain ? <p>{state.unavailableReason ?? 'Automatic refresh is unavailable.'} <Link href={settings}>Review source settings</Link></p> : state.job ? <p role="status" className={incomplete(state.job) ? 'pf-refresh-warning' : undefined}>{state.job.message}</p> : <p>Downloads source reports and saves forecasts; allow a few minutes.</p>}
-      {state.configured ? <p>Today’s demand and warehouse snapshots may be reused.</p> : null}
+      {state.configured ? <p>Each refresh downloads warehouse inventory; today’s demand and delivery snapshots may be reused.</p> : null}
       {state.lastSuccessfulAt ? <p className="pf-refresh-last">Last completed <time dateTime={state.lastSuccessfulAt}>{completedTime(state.lastSuccessfulAt)}</time> · report dates below</p> : null}
     </div>
   </section>;
