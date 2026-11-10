@@ -48,6 +48,7 @@ export type OhlqAgencyInventoryDiagnostics = {
   durationMs: number;
   excludedDistilleryOnlyRows: number;
   distilleryOnlyItemCodes: string[];
+  forecastBailmentProducts: Array<{ itemCode: string; itemName: string; vendorId: string }>;
   excludedItemRows: Record<'3150B' | '3750B' | '4359B', number>;
   malformedIdentifierRows: number;
   malformedNumericRows: number;
@@ -146,6 +147,7 @@ export function parseOhlqAgencyInventoryCsv(
   };
   const distilleryOnlyItemCodes = new Set<string>();
   const wholesaleItemCodes = new Set<string>();
+  const forecastBailmentProducts = new Map<string, { itemCode: string; itemName: string; vendorId: string }>();
 
   for (const row of parsed.data) {
     const agencyNumber = normalizeOhlqId(row.Store);
@@ -164,6 +166,16 @@ export function parseOhlqAgencyInventoryCsv(
     }
 
     const detailCodeDescription = clean(row.Detail_Code_Description);
+    const forecastDetail = detailCodeDescription?.toUpperCase().replace(/A-3A/g, 'A3A').replace(/\s+/g, ' ');
+    const forecastItemName = clean(row.Brand_Name);
+    // Forecast planning uses vendor-associated bailment items independently of
+    // the sales portfolio. Retain only their identity, without widening the
+    // inventory rows or changing any OrganizationProduct decision.
+    if (matchesConfiguredVendor && ['A3A BAIL', 'A3A BAILMENT'].includes(forecastDetail ?? '') && forecastItemName) {
+      const key = JSON.stringify([vendorId, itemCode]);
+      const prior = forecastBailmentProducts.get(key);
+      if (!prior || forecastItemName < prior.itemName) forecastBailmentProducts.set(key, { itemCode, itemName: forecastItemName, vendorId });
+    }
     if (matchesConfiguredVendor && isDistilleryOnlyInventoryDetail(detailCodeDescription)) {
       stats.excludedDistilleryOnlyRows += 1;
       distilleryOnlyItemCodes.add(itemCode);
@@ -234,6 +246,8 @@ export function parseOhlqAgencyInventoryCsv(
       distilleryOnlyItemCodes: Array.from(distilleryOnlyItemCodes)
         .filter((itemCode) => !wholesaleItemCodes.has(itemCode))
         .sort(),
+      forecastBailmentProducts: Array.from(forecastBailmentProducts.values())
+        .sort((a, b) => a.itemCode < b.itemCode ? -1 : a.itemCode > b.itemCode ? 1 : a.vendorId < b.vendorId ? -1 : a.vendorId > b.vendorId ? 1 : 0),
     },
   };
 }

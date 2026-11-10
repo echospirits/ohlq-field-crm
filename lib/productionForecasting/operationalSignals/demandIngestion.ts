@@ -16,7 +16,7 @@ export type CurrentDemandIngestionItem = {
 };
 const json = (value: unknown) => value as Prisma.InputJsonValue;
 
-/** Rechecks the existing pilot/tenant and current portfolio before any fetch. */
+/** Rechecks the existing pilot/tenant and forecasting scope before any fetch. */
 export async function currentDemandProducts(organizationId: string, db: Db = prisma) {
   const organization = await forecastAccess(db, organizationId);
   return organization.enabledStates.includes('OH') ? configuredProducts(db, organizationId, ['OH']) : [];
@@ -47,9 +47,9 @@ export async function ingestCurrentDemand({ organizationId, businessDate, downlo
     try {
       const result = await db.$transaction(async tx => {
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`current-demand:${organizationId}:${product.id}:${businessDate}`}))`;
-        // Portfolio and entitlement changes cannot be bypassed by a stale caller.
-        await forecastAccess(tx, organizationId);
-        const allowed = await tx.organizationProduct.findFirst({ where: { organizationId, id: product.id, market: 'OH', active: true, discontinued: false, status: { in: ['OWNED', 'REPRESENTED'] } }, select: { id: true } });
+        // Vendor, classification and entitlement changes cannot be bypassed by a
+        // stale caller; sales-portfolio exclusions do not govern this tool.
+        const allowed = (await currentDemandProducts(organizationId, tx)).some(current => current.id === product.id && current.code === product.code);
         if (!allowed) return { ...base, status: 'unavailable' as const, reason: 'PRODUCT_INELIGIBLE', observationId: null };
         const key = { organizationId, productId: product.id, businessDate: new Date(businessDate) };
         const existing = await tx.currentDemandObservation.findUnique({ where: { organizationId_productId_businessDate: key }, select: { id: true } });
@@ -151,7 +151,7 @@ function freshness(businessDate: string | null, observedAt: Date | null, sourceU
 }
 
 /** Dashboard reads only precomputed product observations/checks, never source
- * rows or statistical forecast detail. Current portfolio exclusions apply first. */
+ * rows or statistical forecast detail. Current forecasting eligibility applies first. */
 export async function getCurrentDemandSignals(organizationId: string, db: PrismaClient = prisma, now = new Date()) {
   const organization = await forecastAccess(db, organizationId);
   const today = formatDateInputValue(now, organization.timezone);

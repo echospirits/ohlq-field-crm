@@ -104,7 +104,11 @@ export async function importProductionSource(csv: string, options: ImportOptions
     if (options.nativeHistory && !native) throw new Error('Automatic reconciliation requires a recognized native Ohio report.');
     const parsed = parseProductionSource(native?.csv ?? csv, options);
     const allowed = context.included;
-    if (parsed.rows.some(r => !allowed.has(r.itemCode))) throw new Error('Every item must be an active owned or represented Organization product. No unconfigured items were imported.');
+    if (parsed.rows.some(r => !allowed.has(r.itemCode))) throw new Error('Every item must be an eligible Production Forecasting item or an active owned or represented Organization product. No unrelated items were imported.');
+    // Composite source/snapshot FKs reuse product identities. Create missing
+    // vendor-bailment identities without enrolling them in sales or inventory;
+    // skipDuplicates never changes an existing portfolio decision.
+    if (context.forecastProducts?.length) await tx.organizationProduct.createMany({ data: context.forecastProducts.map(p => ({ organizationId: options.organizationId, market: 'OH', externalItemCode: p.itemCode, displayName: p.itemName, status: 'EXCLUDED' as const, active: false })), skipDuplicates: true });
     // A manually normalized classification cannot override known item exclusion.
     for (const row of parsed.rows) if (context.distilleryOnly.has(row.itemCode)) row.classification = 'A3A_DIST';
     for (const scope of parsed.scopes) if (context.distilleryOnly.has(scope.itemCode)) scope.classification = 'A3A_DIST';

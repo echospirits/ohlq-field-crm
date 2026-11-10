@@ -3,7 +3,7 @@ import { Prisma, type PrismaClient } from '@prisma/client';
 import { prisma } from '../prisma';
 import { formatDateInputValue } from '../dateTime';
 import { forecastAccess, type SourceScope } from './import';
-import { ohioForecastExcludedItemCodes } from './ohio';
+import { ohioItemContext } from './ohio';
 import { demandIdentity, mergeCoverage } from './reconciliation';
 import { applyPlanningExclusions, parseDemandExclusions, type DemandExclusion, type DemandExclusionHistoryRow } from './exclusions';
 import { createForecastComputationContext, forecastProduct, forecastProductHorizons, valuesKnownAt, type ForecastComputationContext } from './engine';
@@ -57,12 +57,22 @@ export function evaluateHorizonActuals(forecast: StoredProductForecast, summary:
   return { ...summary, actuals, pendingActuals: pending.length > 0, nextActualDue: pending.map(h => forecast.horizons![h]!.end).sort()[0] ?? null };
 }
 export async function configuredProducts(db: Db, organizationId: string, markets: string[]): Promise<ForecastProduct[]> {
-  const products = await db.organizationProduct.findMany({ where: { organizationId, market: { in: markets }, active: true, discontinued: false, status: { in: ['OWNED', 'REPRESENTED'] } }, orderBy: [{ market: 'asc' }, { externalItemCode: 'asc' }], select: { id: true, market: true, externalItemCode: true, displayName: true } });
-  const ohioCodes = products.filter(p => p.market === 'OH').map(p => p.externalItemCode);
-  const excluded = ohioCodes.length ? await ohioForecastExcludedItemCodes(db, organizationId, ohioCodes) : new Set<string>();
-  // Apply current eligibility before reading saved summaries or computing runs.
-  // Previously saved excluded snapshots remain intact but never become rows.
-  return products.filter(p => p.market !== 'OH' || !excluded.has(p.externalItemCode)).map(p => ({ id: p.id, market: p.market, code: p.externalItemCode, name: p.displayName || p.externalItemCode, demandExcluded: false }));
+  const context = markets.includes('OH') ? await ohioItemContext(db, organizationId) : null;
+  const ohioProducts = context?.forecastProducts ?? [];
+  const ohioCodes = ohioProducts.map(p => p.itemCode);
+  const [products, catalog] = await Promise.all([
+    db.organizationProduct.findMany({ where: { organizationId, discontinued: false, OR: [
+      { market: { in: markets.filter(m => m !== 'OH') }, active: true, status: { in: ['OWNED', 'REPRESENTED'] } },
+      { market: 'OH', externalItemCode: { in: ohioCodes } },
+    ] }, orderBy: [{ market: 'asc' }, { externalItemCode: 'asc' }], select: { id: true, market: true, externalItemCode: true, displayName: true } }),
+    ohioCodes.length ? db.ohlqBrandMasterItem.findMany({ where: { itemCode: { in: ohioCodes } }, select: { itemCode: true, solItemStatusCode: true } }) : [],
+  ]);
+  const excluded = new Set(catalog.filter(p => p.solItemStatusCode?.trim() === '30').map(p => p.itemCode));
+  const names = new Map(ohioProducts.map(p => [p.itemCode, p.itemName]));
+  // Recheck current vendor/classification eligibility before reading old runs.
+  // The identity may remain EXCLUDED/inactive in the unrelated sales portfolio.
+  return products.filter(p => p.market !== 'OH' || (names.has(p.externalItemCode) && !excluded.has(p.externalItemCode)))
+    .map(p => ({ id: p.id, market: p.market, code: p.externalItemCode, name: p.displayName || names.get(p.externalItemCode) || p.externalItemCode, demandExcluded: false }));
 }
 /** Batched reads, bounded demand history, explicit tenant and product scope. */
 export async function loadForecastSources(db: Db, organizationId: string, products: ForecastProduct[], asOf: string, demandExclusions: DemandExclusion[] = []) {

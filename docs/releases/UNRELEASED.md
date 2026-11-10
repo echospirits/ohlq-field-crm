@@ -9,6 +9,12 @@ No unreleased feature work remains after the owner-approved **0.7.2** Wholesale 
 
 ## Changes
 
+### Production Forecasting vendor bailment scope — November 9, 2026
+
+- Owner authorized this scoped 0.7.3 correction for TST and main: use all active organization-vendor A3A BAIL items in Ohio Forecasting, including sales-excluded3150B, without changing sales-product decisions or shared inventory/sales filters.
+- Source imports, immutable forecasts, detail and Current Demand share the scope. Missing identities remain EXCLUDED/inactive; no existing identity is promoted. No schema/migration, dependency, entitlement, provider or hosted-configuration change.
+- [Release notes](0.7.3.md), [validation](0.7.3-validation.md), [checklist](0.7.3-checklist.md). Unrelated TST-only work is excluded from main.
+
 ### OpenDock lookup recovery — November 9, 2026
 
 - Owner-authorized TST and main reliability correction, retaining version 0.7.2. Temporary OpenDock lookup failures produce visible warnings after safe persistence, preserve prior observations and permit independent imports to complete. Authentication, malformed-response and persistence failures remain errors.

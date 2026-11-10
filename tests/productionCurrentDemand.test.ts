@@ -105,21 +105,23 @@ test('Item Coverage publication metadata uses Eastern time with strict calendars
 
 const organizationId = 'org_echo_spirits';
 const now = new Date('2026-11-03T13:00:00Z');
-function fixture() {
-  const products = ['A', 'B'].map(code => ({ id: `product-${code}`, market: 'OH', externalItemCode: code, displayName: code }));
+function fixture({ forecastOnly = false, revokeBeforeWrite = false }: { forecastOnly?: boolean; revokeBeforeWrite?: boolean } = {}) {
+  const products = ['A', 'B', ...(forecastOnly ? ['3150B'] : [])].map(code => ({ id: `product-${code}`, market: 'OH', externalItemCode: code, displayName: code, status: code === '3150B' ? 'EXCLUDED' : 'OWNED', active: true, discontinued: false }));
+  let vendorActive = true;
+  const vendorId = 'Z90399001';
   const observations: Array<Record<string, any>> = [];
   const checks: Array<Record<string, any>> = [];
   const scoped = (args: { where: Record<string, any> }) => assert.equal(args.where.organizationId, organizationId);
   const sameKey = (row: Record<string, any>, key: Record<string, any>) => row.organizationId === key.organizationId && row.productId === key.productId && String(row.businessDate) === String(key.businessDate);
   const tx: Record<string, any> = {
-    $executeRaw: async () => 1,
+    $executeRaw: async () => { if (revokeBeforeWrite) vendorActive = false; return 1; },
     organization: { findFirst: async (args: any) => { assert.equal(args.where.id, organizationId); return { id: organizationId, enabledStates: ['OH'], settings: {}, timezone: 'America/New_York' }; } },
     organizationProduct: {
-      findMany: async (args: any) => { scoped(args); return products; },
-      findFirst: async (args: any) => { scoped(args); return products.find(p => p.id === args.where.id) ?? null; },
+      findMany: async (args: any) => { scoped(args); return products.filter(product => (!args.where.externalItemCode || args.where.externalItemCode.in.includes(product.externalItemCode)) && (!args.where.status || args.where.status.in.includes(product.status))); },
     },
+    organizationVendorIdentifier: { findMany: async (args: any) => { scoped(args); assert.equal(args.where.market, 'OH'); assert.equal(args.where.active, true); return vendorActive ? [{ vendorId }] : []; } },
     ohlqAgencyInventoryCurrent: { findMany: async (args: any) => { scoped(args); return []; } },
-    ohlqTenantInventoryImportStatus: { findFirst: async (args: any) => { scoped(args); return null; } },
+    ohlqTenantInventoryImportStatus: { findFirst: async (args: any) => { scoped(args); assert.equal(args.where.status, 'COMPLETED'); return { diagnostics: { forecastBailmentProducts: products.map(product => ({ itemCode: product.externalItemCode, itemName: product.displayName, vendorId })) } }; } },
     ohlqBrandMasterItem: { findMany: async () => [] },
     currentDemandObservation: {
       findUnique: async ({ where }: any) => observations.find(row => sameKey(row, where.organizationId_productId_businessDate)) ?? null,
@@ -137,7 +139,7 @@ function fixture() {
     },
   };
   const client = { ...tx, $transaction: async (callback: (db: unknown) => Promise<unknown>) => callback(tx) } as unknown as PrismaClient;
-  return { client, observations, checks };
+  return { client, observations, checks, products };
 }
 const download = (b: unknown = payload()): CurrentDemandDownload => ({ products: [
   { itemCode: 'A', status: 'ok', observedAt: now.toISOString(), payload: payload() },
@@ -160,6 +162,29 @@ test('daily ingestion is tenant/product scoped, idempotent, and preserves signed
   assert.equal(replay.reused, 1);
   assert.equal(JSON.stringify(f.observations), before, 'failed replay cannot replace a saved good observation');
   assert.equal(f.checks.find(c => c.productId === 'product-A')?.status, 'AVAILABLE');
+});
+
+test('forecast-only excluded item receives Current Demand without becoming a sales product', async () => {
+  const f = fixture({ forecastOnly: true }), before = JSON.stringify(f.products);
+  const input = download();
+  input.products.push({ itemCode: '3150B', status: 'ok', observedAt: now.toISOString(), payload: payload() });
+  const result = await ingestCurrentDemand({ organizationId, businessDate: '2026-11-03', download: input, db: f.client, now });
+  assert.equal(result.available, 3);
+  assert.equal(f.observations.find(row => row.itemCode === '3150B')?.demandCases, 3);
+  assert.equal((await getCurrentDemandSignals(organizationId, f.client, now)).rows.find(row => row.itemCode === '3150B')?.demandCases, 3);
+  assert.equal((await getCurrentDemandHistory(organizationId, 'product-3150B', f.client)).length, 1);
+  assert.equal(JSON.stringify(f.products), before, 'ingestion must preserve EXCLUDED sales status and product configuration');
+});
+
+test('Current Demand rechecks the active vendor inside the persistence transaction', async () => {
+  const f = fixture({ forecastOnly: true, revokeBeforeWrite: true });
+  const input = download();
+  input.products.push({ itemCode: '3150B', status: 'ok', observedAt: now.toISOString(), payload: payload() });
+  const result = await ingestCurrentDemand({ organizationId, businessDate: '2026-11-03', download: input, db: f.client, now });
+  assert.equal(result.unavailable, 3);
+  assert.ok(result.results.every(row => row.reason === 'PRODUCT_INELIGIBLE'));
+  assert.equal(f.observations.length, 0);
+  assert.equal(f.checks.length, 0);
 });
 
 test('a failed product does not suppress another product and later failures retain yesterday facts', async () => {

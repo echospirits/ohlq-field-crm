@@ -136,6 +136,44 @@ describe('parseOhlqAgencyInventoryCsv', () => {
     );
   });
 
+  it('retains exact vendor bailment identities for forecasting while preserving sales inventory exclusions', () => {
+    const csv = [
+      header,
+      row(),
+      row({ brand: '3150B', brandName: 'Forecast only', detail: ' a-3a   bail ' }),
+      row({ brand: '3750B', brandName: 'Another forecast item', detail: 'A3A BAILMENT' }),
+      row({ brand: '4359B', detail: 'A3A DISTILLERY ONLY' }),
+      row({ brand: '9999Z', vendor: 'OTHER', detail: 'A3A BAIL' }),
+      row({ brand: '9998Z', detail: 'not A3A BAIL' }),
+      row({ brand: '9997Z', detail: 'A3A BAILMENT SPECIAL' }),
+      row({ brand: '9996Z', brandName: '', detail: 'A3A BAIL' }),
+    ].join('\n');
+    const result = parseOhlqAgencyInventoryCsv(csv, '2026-08-18', { minimumQualifyingRows: 1 });
+
+    assert.deepEqual(result.stats.forecastBailmentProducts, [
+      { itemCode: '2796B', itemName: 'ECHO SPIRITS ELUSIVE HERBAL LIQUEUR', vendorId: 'Z90399001' },
+      { itemCode: '3150B', itemName: 'Forecast only', vendorId: 'Z90399001' },
+      { itemCode: '3750B', itemName: 'Another forecast item', vendorId: 'Z90399001' },
+    ]);
+    assert.equal(result.rows.some(item => ['3150B', '3750B', '4359B', '9999Z'].includes(item.itemCode)), false);
+    assert.deepEqual(result.stats.excludedItemRows, { '3150B': 1, '3750B': 1, '4359B': 1 });
+  });
+
+  it('deduplicates forecast identities deterministically across agencies and source order', () => {
+    const rows = [
+      row({ brand: '3750B', brandName: 'Second item' }),
+      row({ brand: '3150B', brandName: 'Zulu item', store: '10510' }),
+      row({ brand: '3150B', brandName: 'Alpha item', store: '10511' }),
+      row({ brand: '3150B', brandName: 'Alpha item', store: '10512' }),
+      row(),
+    ];
+    const forward = parseOhlqAgencyInventoryCsv([header, ...rows].join('\n'), '2026-08-18', { minimumQualifyingRows: 1 });
+    const reverse = parseOhlqAgencyInventoryCsv([header, ...[...rows].reverse()].join('\n'), '2026-08-18', { minimumQualifyingRows: 1 });
+    assert.deepEqual(forward.stats.forecastBailmentProducts, reverse.stats.forecastBailmentProducts);
+    assert.deepEqual(forward.stats.forecastBailmentProducts.map(item => item.itemCode), ['2796B', '3150B', '3750B']);
+    assert.equal(forward.stats.forecastBailmentProducts.find(item => item.itemCode === '3150B')?.itemName, 'Alpha item');
+  });
+
   it('diagnoses duplicate agency/item rows and missing source names', () => {
     const csv = [
       header,
@@ -160,7 +198,7 @@ type InventoryRecord = Record<string, unknown> & {
   snapshotDate: Date;
 };
 
-function createInventoryDb() {
+function createInventoryDb(products: Array<{ externalItemCode: string }> = []) {
   const organizationId = 'org_echo_spirits';
   const current = new Map<string, InventoryRecord>();
   const snapshots = new Map<string, InventoryRecord>();
@@ -200,7 +238,7 @@ function createInventoryDb() {
       findMany: async () => [{ agencyId: '10509', id: 'agency-10509' }],
     },
     organization: {
-      findUnique: async () => ({ appName: 'Neat', digestName: 'Neat', displayName: 'Echo Spirits', id: organizationId, productLabel: 'Echo Spirits', productPluralLabel: 'Echo Spirits products', products: [], vendorIdentifiers: [{ vendorId: 'Z90399001' }] }),
+      findUnique: async () => ({ appName: 'Neat', digestName: 'Neat', displayName: 'Echo Spirits', id: organizationId, productLabel: 'Echo Spirits', productPluralLabel: 'Echo Spirits products', products, vendorIdentifiers: [{ vendorId: 'Z90399001' }] }),
     },
     ohlqAgencyInventoryCurrent: {
       findMany: async () => Array.from(current.values()).map(({ agencyNumber, itemCode }) => ({ agencyNumber, itemCode })),
@@ -211,6 +249,21 @@ function createInventoryDb() {
 }
 
 describe('importOhlqAgencyInventoryCsv', () => {
+  it('returns forecast-only identities in completed-import diagnostics without persisting inventory rows', async () => {
+    const state = createInventoryDb([{ externalItemCode: '2796B' }]);
+    const result = await importOhlqAgencyInventoryCsv({
+      csv: [header, row(), row({ brand: '3150B', brandName: 'Forecast only' })].join('\n'),
+      db: state.db,
+      minimumQualifyingRows: 1,
+      organizationId: state.organizationId,
+      reportDate: '2026-08-18',
+    });
+    assert.equal(result.diagnostics.forecastBailmentProducts.find(item => item.itemCode === '3150B')?.itemName, 'Forecast only');
+    assert.equal(state.current.has('10509:3150B'), false);
+    assert.equal(state.snapshots.has('2026-08-18:10509:3150B'), false);
+    assert.equal(result.importedRows, 1);
+  });
+
   it('is idempotent by day, preserves prior snapshots, and retains unmatched agencies without creating them', async () => {
     const state = createInventoryDb();
     const firstCsv = [header, row(), row({ brand: '2806B', store: '99999' })].join('\n');

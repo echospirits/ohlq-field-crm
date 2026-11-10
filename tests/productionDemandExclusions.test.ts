@@ -143,8 +143,9 @@ function databaseFixture(seedOld = false) {
     $queryRaw: async () => snapshots.filter(snapshot => snapshot.runId === latest()?.id).map(snapshot => ({ productId: snapshot.productId, detail: snapshot.detail })),
     organization: { findFirst: async (args: FixtureRecord) => { assert.equal(args.where.id, organizationId); return { id: organizationId, enabledStates: ['OH'], timezone: 'America/New_York', settings: settings(configuredRules) }; } },
     organizationProduct: { findMany: async (args: FixtureRecord) => { scoped(args); return products.map(p => ({ id: p.id, market: p.market, externalItemCode: p.code, displayName: p.name })); } },
+    organizationVendorIdentifier: { findMany: async (args: FixtureRecord) => { scoped(args); return [{ vendorId: 'VENDOR' }]; } },
     ohlqAgencyInventoryCurrent: { findMany: async () => [] },
-    ohlqTenantInventoryImportStatus: { findFirst: async () => null },
+    ohlqTenantInventoryImportStatus: { findFirst: async () => ({ diagnostics: { forecastBailmentProducts: products.map(p => ({ itemCode: p.code, itemName: p.name, vendorId: 'VENDOR' })) } }) },
     ohlqBrandMasterItem: { findMany: async () => [] },
     productionSourceImport: { findMany: async (args: FixtureRecord) => { scoped(args); queries.push(args); return imports; } },
     productionDemandObservation: { findMany: async (args: FixtureRecord) => {

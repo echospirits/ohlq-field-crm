@@ -2,13 +2,15 @@ import Papa from 'papaparse';
 import type { Prisma, PrismaClient } from '@prisma/client';
 import { getDistilleryOnlyItemCodes } from '../ohlqProductEligibility';
 import { type Classification, validDay } from './model';
-export type OhioItemContext = { included: Set<string>; distilleryOnly: Set<string>; bailment: Set<string> };
+export type ForecastBailmentProduct = { itemCode: string; itemName: string; vendorId: string };
+export type OhioItemContext = { included: Set<string>; distilleryOnly: Set<string>; bailment: Set<string>; forecastProducts?: ForecastBailmentProduct[] };
 export type NativeOhioOptions = { start: string; end: string; directInvoices?: 'invoice-date' | 'shipment-only'; fullPortfolio?: boolean };
 export async function ohioItemContext(db: PrismaClient | Prisma.TransactionClient, organizationId: string): Promise<OhioItemContext> {
-  const [products, listings, status] = await Promise.all([
+  const [products, listings, status, vendors] = await Promise.all([
     db.organizationProduct.findMany({ where: { organizationId, market: 'OH', active: true, discontinued: false, status: { in: ['OWNED', 'REPRESENTED'] } }, select: { externalItemCode: true } }),
-    db.ohlqAgencyInventoryCurrent.findMany({ where: { organizationId }, distinct: ['itemCode', 'detailCodeDescription'], select: { itemCode: true, detailCodeDescription: true } }),
+    db.ohlqAgencyInventoryCurrent.findMany({ where: { organizationId }, distinct: ['itemCode', 'detailCodeDescription', 'vendorId'], select: { itemCode: true, itemName: true, vendorId: true, detailCodeDescription: true } }),
     db.ohlqTenantInventoryImportStatus.findFirst({ where: { organizationId, status: 'COMPLETED' }, orderBy: { reportDate: 'desc' }, select: { diagnostics: true } }),
+    db.organizationVendorIdentifier.findMany({ where: { organizationId, market: 'OH', active: true }, select: { vendorId: true } }),
   ]);
   const distilleryOnly = getDistilleryOnlyItemCodes(status?.diagnostics), bailment = new Set<string>();
   for (const listing of listings) {
@@ -19,7 +21,23 @@ export async function ohioItemContext(db: PrismaClient | Prisma.TransactionClien
   // The inventory importer already distinguishes a bailment listing from a
   // separate distillery-only listing when producing its diagnostic item set.
   for (const code of bailment) if (!getDistilleryOnlyItemCodes(status?.diagnostics).has(code)) distilleryOnly.delete(code);
-  return { included: new Set(products.map(p => p.externalItemCode)), distilleryOnly, bailment };
+  const vendorIds = new Set(vendors.map(v => v.vendorId));
+  const diagnostics = status?.diagnostics as { forecastBailmentProducts?: unknown } | null;
+  // New complete reports retain vendor/classification evidence BEFORE the sales
+  // portfolio filter. An explicit empty list must not revive stale inventory.
+  const candidates: unknown[] = Array.isArray(diagnostics?.forecastBailmentProducts)
+    ? diagnostics.forecastBailmentProducts
+    : listings.filter(row => ['A3A BAIL', 'A3A BAILMENT'].includes((row.detailCodeDescription ?? '').trim().toUpperCase().replace('A-3A', 'A3A').replace(/\s+/g, ' ')));
+  const forecastProducts = new Map<string, ForecastBailmentProduct>();
+  for (const candidate of candidates) {
+    if (!candidate || typeof candidate !== 'object') continue;
+    const row = candidate as Partial<ForecastBailmentProduct>;
+    if (typeof row.itemCode !== 'string' || !row.itemCode.trim() || typeof row.itemName !== 'string' || !row.itemName.trim() || typeof row.vendorId !== 'string' || !vendorIds.has(row.vendorId)) continue;
+    forecastProducts.set(row.itemCode, { itemCode: row.itemCode, itemName: row.itemName, vendorId: row.vendorId });
+    bailment.add(row.itemCode);
+    distilleryOnly.delete(row.itemCode); // Positive bailment evidence wins over a separate distillery listing.
+  }
+  return { included: new Set([...products.map(p => p.externalItemCode), ...forecastProducts.keys()]), distilleryOnly, bailment, forecastProducts: [...forecastProducts.values()].sort((a, b) => a.itemCode.localeCompare(b.itemCode)) };
 }
 export function classificationForItem(code: string, context: OhioItemContext): Classification {
   return context.distilleryOnly.has(code) ? 'A3A_DIST' : context.bailment.has(code) ? 'A3A_BAIL' : 'BAILMENT';
@@ -63,7 +81,7 @@ export function normalizeNativeOhio(csv: string, source: string, context: OhioIt
   for (const [index, row] of parsed.data.entries()) {
     const code = (row[demand ? 'Brand' : 'Code'] ?? '').trim().toUpperCase();
     if (!code) throw new Error(`Native source row ${index + 2} has no item code; completeness cannot be verified.`);
-    // Filter by the tenant's explicit configured portfolio, never a vendor/name.
+    // Forecast-only vendor bailment items do not alter the sales portfolio.
     if (!context.included.has(code)) { outOfScopeRows++; continue; }
     const classification = classificationForItem(code, context);
     if (demand) {
@@ -93,7 +111,7 @@ export function normalizeNativeOhio(csv: string, source: string, context: OhioIt
       }
     }
   }
-  if (!normalized.length) throw new Error('Native source contains no active owned or represented Organization items in the requested period.');
+  if (!normalized.length) throw new Error('Native source contains no eligible Production Forecasting items in the requested period.');
   // Only a verified, unfiltered full-portfolio export may establish zeroes for
   // configured products absent from the report. Manual slices keep their scope.
   if (demand && options?.fullPortfolio) {
