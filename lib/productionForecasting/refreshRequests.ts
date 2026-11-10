@@ -15,7 +15,7 @@ export const FORECAST_REFRESH_LEASE_MS = 15 * 60_000;
 export const FORECAST_REFRESH_MAX_RUNNING_MS = 90 * 60_000;
 const stages: ForecastRefreshStage[] = ['QUEUED', 'BAILMENT', 'GUIDANCE', 'FORECAST', 'OPERATIONS', 'COMPLETE'];
 const stageLabels: Record<ForecastRefreshStage, string> = { QUEUED: 'Waiting to start', BAILMENT: 'Downloading outbound case history', GUIDANCE: 'Downloading distribution-center guidance', FORECAST: 'Saving the forecast', OPERATIONS: 'Checking daily warehouse and demand snapshots', COMPLETE: 'Finished' };
-const sourceLabels = { BAILMENT_PO_INVOICE: 'outbound case history', DISTRIBUTION_CENTER: 'distribution-center guidance', FORECAST: 'the forecast calculation', OPERATIONS: 'warehouse and demand checks' };
+const sourceLabels = { BAILMENT_PO_INVOICE: 'outbound case history', DISTRIBUTION_CENTER: 'distribution-center guidance', FORECAST: 'the forecast calculation', OPERATIONS: 'warehouse, demand and delivery checks' };
 const runSourceWorker: typeof syncProductionSources = async options => {
   const { syncProductionSources } = await import('./sourceWorkflow');
   return syncProductionSources(options);

@@ -157,6 +157,19 @@ test('partial source work retains a warning and safe source names while zero org
   assert.equal((await empty.run({ sources: async options => { options?.onResult?.({ configuredOrganizations: 0, importedSources: 0, refreshedForecasts: 0, failedSources: [] }); return { configuredOrganizations: 0, importedSources: 0 }; } })).status, 'FAILED');
 });
 
+test('a delivery-only operational failure names the full group without claiming the completed reports failed', async () => {
+  const f = fixture(); await f.enqueue();
+  const result = await f.run({ sources: async options => {
+    options?.onResult?.({ configuredOrganizations: 1, importedSources: 2, refreshedForecasts: 1, failedSources: ['OPERATIONS'] });
+    throw new Error('PRIVATE OpenDock authentication response');
+  } });
+  assert.equal(result.status, 'PARTIAL'); assert.equal(result.importedSources, 2);
+  const state = await getForecastRefreshState(organizationId, f.client, now, f.services);
+  assert.match(state.job!.message, /warehouse, demand and delivery checks could not be refreshed/);
+  assert.match(state.job!.message, /Completed imports were retained/);
+  assert.doesNotMatch(state.job!.message, /outbound case history|distribution-center guidance|PRIVATE|OpenDock/);
+});
+
 test('revoked administrator or feature access is rechecked before a worker starts', async () => {
   for (const revoke of ['user', 'feature']) {
     const f = fixture(); await f.enqueue(); if (revoke === 'user') f.revokeUser(); else f.revokeFeature();

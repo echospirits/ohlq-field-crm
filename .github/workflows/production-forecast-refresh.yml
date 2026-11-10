@@ -67,5 +67,10 @@ jobs:
         env:
           PRODUCTION_FORECAST_REFRESH_REQUEST_ID: ${{ inputs.requestId }}
           PRODUCTION_FORECAST_REFRESH_ORGANIZATION_ID: ${{ inputs.organizationId }}
-        run: npx tsx scripts/run-production-forecast-refresh.ts
+        shell: bash
+        run: |
+          if [[ -z "$PRODUCTION_OPERATIONAL_CREDENTIAL_ENCRYPTION_KEY" ]]; then
+            unset PRODUCTION_OPERATIONAL_CREDENTIAL_ENCRYPTION_KEY
+          fi
+          npx tsx scripts/run-production-forecast-refresh.ts
       # Native files remain in private runner storage; no artifacts are uploaded.

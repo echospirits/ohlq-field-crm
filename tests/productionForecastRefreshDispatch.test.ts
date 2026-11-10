@@ -105,6 +105,6 @@ test('dedicated workflow contains no broad sales task and shares the existing pr
   assert.match(workflow, /PRODUCTION_FORECAST_REFRESH_REQUEST_ID: \$\{\{ inputs\.requestId \}\}/);
   assert.match(workflow, /PRODUCTION_FORECAST_REFRESH_ORGANIZATION_ID: \$\{\{ inputs\.organizationId \}\}/);
   for (const line of workflow.split(/\r?\n/).filter(line => /^\s+run:/.test(line))) assert.doesNotMatch(line, /\$\{\{/);
-  assert.match(workflow, /run: npx tsx scripts\/run-production-forecast-refresh\.ts/);
+  assert.match(workflow, /^ {10}npx tsx scripts\/run-production-forecast-refresh\.ts$/m);
   assert.doesNotMatch(workflow, /ohlq-annual-sales\.yml|sync:ohlq|backfill|repairTenant|purchaseStateOnly|actions\/upload-artifact/);
 });
