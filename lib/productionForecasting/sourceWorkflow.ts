@@ -8,7 +8,8 @@ import { getOrganizationOhlqCredentials } from '../ohlqTenantCredentials';
 import { downloadOhlqBailmentInvoices, downloadOhlqPartnerDc } from '../ohlqAnnualSalesReport';
 import { formatDateInputValue } from '../dateTime';
 import { importProductionSource, type ImportOptions, type SourceKind } from './import';
-import { shift, validDay } from './model';
+import { shift } from './model';
+import { ohioSourceConfiguration } from './sourceConfiguration';
 import { refreshProductionForecast } from './service';
 import { syncOperationalSignals } from './operationalSignals/workflow';
 import type { ForecastRefreshStage } from './refreshState';
@@ -16,12 +17,7 @@ import type { ForecastRefreshStage } from './refreshState';
 const defaults = { credentials: getOrganizationOhlqCredentials, bailment: downloadOhlqBailmentInvoices, dc: downloadOhlqPartnerDc, importCsv: importProductionSource, refresh: refreshProductionForecast, operations: syncOperationalSignals };
 type ProductionSourceServices = Omit<typeof defaults, 'operations'> & { operations?: (options: Parameters<typeof syncOperationalSignals>[0]) => Promise<{ failed: number }> };
 export type ProductionSourceOutcome = { configuredOrganizations: number; importedSources: number; refreshedForecasts: number; failedSources: Array<'BAILMENT_PO_INVOICE' | 'DISTRIBUTION_CENTER' | 'FORECAST' | 'OPERATIONS'> };
-export function ohioSourceConfiguration(settings: unknown) {
-  const raw = (settings as { productionForecasting?: { ohio?: { historyStart?: unknown; directInvoices?: unknown } } } | null)?.productionForecasting?.ohio;
-  const historyStart = typeof raw?.historyStart === 'string' && validDay(raw.historyStart) ? raw.historyStart : null;
-  const directInvoices: 'invoice-date' | 'shipment-only' | null = raw?.directInvoices === 'invoice-date' || raw?.directInvoices === 'shipment-only' ? raw.directInvoices : null;
-  return { historyStart, directInvoices };
-}
+export { ohioSourceConfiguration } from './sourceConfiguration';
 
 /** Uses the existing OHLQ scheduled job and each enrolled tenant's credentials.
  * Sources and tenants fail independently; logs contain operational counts only. */

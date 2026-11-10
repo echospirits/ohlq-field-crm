@@ -4,7 +4,8 @@ import { prisma } from '../prisma';
 import { getAppEnvironment } from '../appEnvironment';
 import { ECHO_ORGANIZATION_ID } from '../echoAccess';
 import { forecastAccess } from './import';
-import { ohioSourceConfiguration, syncProductionSources, type ProductionSourceOutcome } from './sourceWorkflow';
+import { ohioSourceConfiguration } from './sourceConfiguration';
+import type { syncProductionSources, ProductionSourceOutcome } from './sourceWorkflow';
 import { dispatchProductionForecastRefresh, getProductionForecastRefreshDispatchConfig, productionForecastRefreshRequestId, productionForecastRefreshTarget } from './refreshDispatch';
 import { unavailableForecastRefreshState, type ForecastRefreshActionResult, type ForecastRefreshStage, type ForecastRefreshState, type ForecastRefreshStatus } from './refreshState';
 
@@ -15,7 +16,11 @@ export const FORECAST_REFRESH_MAX_RUNNING_MS = 90 * 60_000;
 const stages: ForecastRefreshStage[] = ['QUEUED', 'BAILMENT', 'GUIDANCE', 'FORECAST', 'OPERATIONS', 'COMPLETE'];
 const stageLabels: Record<ForecastRefreshStage, string> = { QUEUED: 'Waiting to start', BAILMENT: 'Downloading outbound case history', GUIDANCE: 'Downloading distribution-center guidance', FORECAST: 'Saving the forecast', OPERATIONS: 'Checking daily warehouse and demand snapshots', COMPLETE: 'Finished' };
 const sourceLabels = { BAILMENT_PO_INVOICE: 'outbound case history', DISTRIBUTION_CENTER: 'distribution-center guidance', FORECAST: 'the forecast calculation', OPERATIONS: 'warehouse and demand checks' };
-const defaults = { configuration: getProductionForecastRefreshDispatchConfig, dispatch: dispatchProductionForecastRefresh, sources: syncProductionSources, environment: getAppEnvironment };
+const runSourceWorker: typeof syncProductionSources = async options => {
+  const { syncProductionSources } = await import('./sourceWorkflow');
+  return syncProductionSources(options);
+};
+const defaults = { configuration: getProductionForecastRefreshDispatchConfig, dispatch: dispatchProductionForecastRefresh, sources: runSourceWorker, environment: getAppEnvironment };
 export type ForecastRefreshServices = typeof defaults;
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 const active = { in: ['QUEUED', 'RUNNING'] };
