@@ -1,12 +1,8 @@
 # Unreleased
 
-Scoped **0.9.2** corrects manual forecast refresh inventory freshness under the existing TST/main authorization. Every manual refresh downloads current DC Inventory and saves a new timestamped observation while retaining earlier facts; the scheduled job keeps daily reuse. Quantity + Picked, tenant/vendor scope, source dates and sales/shared-inventory boundaries remain intact. One index-only migration replaces daily uniqueness with retrieval-time uniqueness; no data deletion or provider credential change. [Plan](0.9.2-plan.md), [validation](0.9.2-validation.md), [checklist](0.9.2-checklist.md). Implementation and live acceptance are pending; prior closeout statements below remain historical.
+No pending production application changes. The owner-approved inventory refresh correction is released as stable **0.9.2** to TST and production. Published [v0.9.2](https://github.com/echospirits/ohlq-field-crm/releases/tag/v0.9.2) is verified Latest at exact production application `0f890cc0063bfa94cec16874c2135a9767a8e37e`, after real refresh/native inventory, retained-history, protected-data and affected-UI acceptance. See the archived [notes/technical manifest](0.9.2.md), [completed checklist](0.9.2-checklist.md), [validation](0.9.2-validation.md) and [plan](0.9.2-plan.md).
 
-No pending production application changes. The owner-approved forecast refresh runner correction is released as stable **0.9.1**, production application `8213292340562cd27781f21afe5988cb17e10221`. Published [v0.9.1](https://github.com/echospirits/ohlq-field-crm/releases/tag/v0.9.1) is verified Latest at that exact tested/deployed application after successful provider and affected-UI acceptance. See the archived [user notes/technical manifest](0.9.1.md), [completed checklist](0.9.1-checklist.md), [validation](0.9.1-validation.md) and [completed plan](0.9.1-plan.md).
-
-TST application `c7bdd30baee4f6dcc6f7826a0a6019c61a2a3bb3` is READY with correct test database health, successful corrected worker/provider acceptance and actual new-frontend mobile/desktop success. Earlier 0.9.0 TST credential/provider and subsequent provisioning gaps are resolved; their evidence remains historical. The owner-approved TST integration setting change is documented in the release archive. No database, connection URI, stored credential or unrelated setting was changed by that scoped adjustment.
-
-Development remains frozen; no new cycle is opened. Unrelated TST Tasting Management features, migrations and maintenance remain excluded from production. Preserve historical release records and tags, including v0.9.0.
+Development remains frozen; no new cycle is opened. Unrelated TST Tasting Management features, migrations and maintenance remain excluded from production. Historical [0.9.1 records](0.9.1-validation.md), earlier release evidence and all tags remain preserved.
 
 ## Entry template
 

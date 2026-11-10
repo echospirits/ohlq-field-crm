@@ -1,8 +1,8 @@
 # Repository Agent Instructions
 
-## Scoped inventory refresh correction: 0.9.2
+## Current release: 0.9.2; development frozen
 
-The owner reported stale warehouse inventory after manual refresh. Continue the existing TST/main automatic-refresh authorization with the minimal 0.9.2 correction: fetch current DC Inventory on every authorized manual job, preserve timestamped inventory history, and update latest balances. Rehearse the index-only migration on isolated clones before live application; retain tenant/vendor checks, source provenance, sales/shared-inventory boundaries and all previous release refs. No broader development cycle is opened. See [plan](docs/releases/0.9.2-plan.md), [validation](docs/releases/0.9.2-validation.md) and [checklist](docs/releases/0.9.2-checklist.md). Earlier 0.9.1 statements below are historical.
+The owner-approved inventory refresh correction is released as **0.9.2** to TST and production. Production application `0f890cc0063bfa94cec16874c2135a9767a8e37e` and TST `da125a501114260a04ab45e2d20773ce1ac91997` are READY/healthy; real manual refreshes verify 2802B GPT 37 / GRN 18 while retaining all prior inventory facts. Tests/typecheck/build, exact CI, scoped index migrations and protected readbacks pass. Published [v0.9.2](https://github.com/echospirits/ohlq-field-crm/releases/tag/v0.9.2) is verified Latest at the exact production application. See [notes](docs/releases/0.9.2.md), [validation](docs/releases/0.9.2-validation.md), [checklist](docs/releases/0.9.2-checklist.md) and [UNRELEASED](docs/releases/UNRELEASED.md). Preserve tenant/vendor scope, source clocks, sales/shared-inventory boundaries, timestamped history and historical refs. Development remains frozen; unrelated TST pilot work stays excluded from main. Earlier release statements below are historical.
 
 ## Current release: 0.9.1; development frozen
 
