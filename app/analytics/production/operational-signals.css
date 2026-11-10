@@ -23,6 +23,34 @@
 .pf-current-demand p { line-height: 1.5; font-size: .875rem; }
 .pf-current-demand > details { margin-top: 8px; font-variant-numeric: normal; }
 .pf-significant-demand > strong { color: var(--accent); }
+.pf-warehouse-pair, .pf-warehouse-pair-header { display: inline-grid; grid-template-columns: minmax(3ch, 1fr) 1ch minmax(3ch, 1fr); align-items: baseline; gap: .3em; min-width: 8ch; max-width: 100%; text-align: right; font-variant-numeric: tabular-nums; }
+.pf-warehouse-pair-part { display: contents; }
+.pf-warehouse-separator, .pf-warehouse-pair-header > span:nth-child(2) { color: var(--muted); text-align: center; font-weight: 400; }
+.pf-warehouse-pair-header { font-size: .75rem; color: var(--muted); font-weight: 500; margin-top: 4px; }
+.pf-warehouse-column > .pf-warehouse-pair-header { display: grid; margin-left: auto; width: fit-content; }
+.pf-warehouse-mobile-heading { display: none; }
+.pf-warehouse-summary { min-width: 0; }
+.pf-warehouse-summary > strong { display: block; }
+.pf-warehouse-shortfall { color: var(--theme-danger-ink, var(--danger)); font-weight: 700; }
+.pf-warehouse-detail { max-width: 100%; overflow-x: auto; margin-block: 8px; }
+.pf-warehouse-detail > table { width: 100%; border-collapse: collapse; font-size: .875rem; }
+.pf-warehouse-detail > table > caption { text-align: left; color: var(--muted); font-size: .8125rem; padding-block: 4px 8px; }
+.pf-warehouse-detail > table > :is(thead, tbody) > tr > :is(th, td) { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.pf-warehouse-detail > table > thead > tr > th { background: var(--panel-2); font-size: .75rem; }
+.pf-warehouse-detail th > .pf-warehouse-pair-header { display: grid; width: fit-content; }
+.pf-warehouse-detail p { font-size: .8125rem; }
+@media (max-width: 767px) {
+  .pf-comparison .pf-warehouse-mobile-heading { display: block; margin-bottom: 3px; }
+  .pf-comparison .pf-demand-cell { grid-column: 1; grid-row: 2; }
+  .pf-comparison .pf-inventory-cell { grid-column: 2; grid-row: 2; }
+  .pf-comparison .pf-balance-cell { grid-column: 3; grid-row: 2; }
+  .pf-comparison .pf-warehouse-cell > :is(.pf-current-demand, .pf-warehouse-summary) > small { font-size: .75rem; }
+  .pf-warehouse-detail > table > :is(thead, tbody) > tr > :is(th, td) { padding: 6px; }
+}
+@media (max-width: 360px) {
+  .pf-comparison .pf-warehouse-cell { grid-column: auto; grid-row: auto; }
+  .pf-warehouse-detail > table { min-width: 330px; }
+}
 .pf-operational-history { max-width: 100%; overflow-x: auto; margin: 8px 0; font-variant-numeric: tabular-nums; }
 .pf-operational-history table { width: 100%; border-collapse: collapse; font-size: .8125rem; }
 .pf-operational-history th, .pf-operational-history td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }

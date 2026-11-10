@@ -7,15 +7,16 @@ import type { ForecastSummary } from '../../../lib/productionForecasting/service
 import { cases, trend } from '../../../lib/productionForecasting/presentation';
 import type { ForecastHorizon } from '../../../lib/productionForecasting/model';
 import { ForecastHorizonSelector } from './ForecastHorizonSelector';
-import { CurrentDemandSummary, type DemandRow } from './OperationalSignals';
+import { CurrentDemandSummary, WarehouseBalanceSummary, WarehouseInventorySummary, WarehousePairHeader, type DemandRow, type WarehouseBalanceRow } from './OperationalSignals';
 
 export function ConfidenceBadge({ value }: { value: string }) {
   return <span className={`pill pf-confidence pf-${value.toLowerCase()}`}>{value} confidence</span>;
 }
 
-export function ForecastTable({ rows, currentDemand = {}, initial = {}, organizationId, horizon = 30 }: {
+export function ForecastTable({ rows, currentDemand = {}, warehouseBalances = {}, initial = {}, organizationId, horizon = 30 }: {
   rows: ForecastSummary[];
   currentDemand?: Record<string, DemandRow>;
+  warehouseBalances?: Record<string, WarehouseBalanceRow>;
   initial?: Record<string, string>;
   organizationId?: string;
   horizon?: ForecastHorizon;
@@ -47,11 +48,13 @@ export function ForecastTable({ rows, currentDemand = {}, initial = {}, organiza
     <p className="pf-result-count muted" role="status">{selected.length === rows.length ? `${selected.length} products` : `${selected.length} of ${rows.length} products`} · {known.length ? `${cases(known.reduce((n, r) => n + r.point!, 0))} forecast cases · ${cases(known.reduce((n, r) => n + r.target!, 0))} planning target cases` : 'No forecast available for this horizon yet'}{known.length !== selected.length ? ` · ${selected.length - known.length} unavailable` : ''}</p>
     {selected.length ? <div className="pf-comparison table-scroll" role="region" aria-label="Product production forecasts" tabIndex={0}>
       <table className="comparison-table"><caption className="sr-only">All quantities in cases. Forecast and planning target are separate from immediate agency demand.</caption><thead><tr>
-        <th scope="col">Product</th><th scope="col" className="numeric">{horizon}-day forecast / range</th><th scope="col" className="numeric">Immediate demand estimate</th><th scope="col" className="numeric">Planning target</th><th scope="col" className="numeric">Prior-year period</th><th scope="col" className="numeric">90-day YoY / recent trend</th><th scope="col" className="numeric">DC guidance</th><th scope="col">Confidence / change</th>
+        <th scope="col">Product</th><th scope="col" className="numeric">{horizon}-day forecast / range</th><th scope="col" className="numeric pf-warehouse-column">Immediate demand estimate<WarehousePairHeader /></th><th scope="col" className="numeric pf-warehouse-column">Warehouse inventory<WarehousePairHeader /></th><th scope="col" className="numeric pf-warehouse-column">Warehouse balance<WarehousePairHeader /></th><th scope="col" className="numeric">Planning target</th><th scope="col" className="numeric">Prior-year period</th><th scope="col" className="numeric">90-day YoY / recent trend</th><th scope="col" className="numeric">DC guidance</th><th scope="col">Confidence / change</th>
       </tr></thead><tbody>{selected.map(r => <tr key={r.product.id}>
         <th scope="row" className="pf-product-identity"><Link href={href(r)}>{r.product.name}</Link><small>{r.product.code} · {r.product.market}</small>{r.alerts.map(a => <span className="pf-alert" key={a}>{a}</span>)}</th>
         <td className="numeric" data-label={`${horizon}-day forecast`}><strong>{cases(r.point)}</strong>{r.point !== null ? <small>{cases(r.lower)}–{cases(r.upper)} range</small> : <small>{r.note}</small>}</td>
-        <td className="numeric pf-demand-cell" data-label="Immediate demand estimate"><CurrentDemandSummary row={currentDemand[r.product.id]} forecast30={horizon === 30 ? r.point : null} /></td>
+        <td className="numeric pf-demand-cell pf-warehouse-cell" data-label="Immediate demand estimate"><CurrentDemandSummary row={warehouseBalances[r.product.id]?.demand ?? currentDemand[r.product.id]} forecast30={horizon === 30 ? r.point : null} /></td>
+        <td className="numeric pf-inventory-cell pf-warehouse-cell" data-label="Warehouse inventory"><WarehouseInventorySummary row={warehouseBalances[r.product.id]} /></td>
+        <td className="numeric pf-balance-cell pf-warehouse-cell" data-label="Warehouse balance"><WarehouseBalanceSummary row={warehouseBalances[r.product.id]} /></td>
         <td className="numeric" data-label="Planning target"><strong>{cases(r.target)}</strong>{r.target !== null ? <small>{Math.round(r.safetyFactor * 100)}% margin</small> : null}</td>
         <td className="numeric" data-label="Prior-year period">{cases(r.priorYear)}<small>Comparable {horizon} days</small></td>
         <td className="numeric" data-label="YoY / recent">{trend(r.yoy)}<small>Recent: {trend(r.recentTrend)}</small></td>
@@ -59,6 +62,6 @@ export function ForecastTable({ rows, currentDemand = {}, initial = {}, organiza
         <td data-label="Confidence / change"><ConfidenceBadge value={r.confidence} /><small>{r.change === null ? 'No previous comparison' : `${trend(r.change)} since previous forecast`}</small></td>
       </tr>)}</tbody></table>
     </div> : <EmptyState title={rows.length ? 'No matching products' : 'No eligible products'} description={rows.length ? 'Clear the filters to see every eligible Organization product.' : 'An administrator can review Organization product selection and current distribution status.'} action={rows.length ? <button type="button" className="secondary" onClick={reset}>Clear filters</button> : undefined} />}
-    <p className="muted pf-demand-method">Cases before finished inventory. Immediate demand estimates agency replenishment to MIN from overnight inventory, which can lag same-day activity; it is not added to any forecast or planning target. DC min/max is guidance, not a production limit.</p>
+    <p className="muted pf-demand-method">Warehouse balance = inventory − immediate demand. Negative values indicate a shortfall. Inventory includes Stock Quantity + Picked Quantity; Rstock is excluded. Immediate demand estimates agency replenishment to MIN from overnight inventory, which can lag same-day activity; it is not added to any forecast or planning target. DC min/max is guidance, not a production limit.</p>
   </section>;
 }

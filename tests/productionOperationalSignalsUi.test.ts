@@ -4,7 +4,9 @@ import { createElement, type ComponentProps } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { ForecastTable } from '../app/analytics/production/ForecastTable';
 import { ForecastDetail } from '../app/analytics/production/ForecastDetail';
-import { CurrentDemandSummary, DeliveryAvailability, type DemandRow } from '../app/analytics/production/OperationalSignals';
+import { CurrentDemandSummary, DeliveryAvailability, WarehouseBalanceDetail, WarehouseBalanceSummary, WarehouseInventorySummary, WarehousePair, type DemandRow, type WarehouseBalanceRow } from '../app/analytics/production/OperationalSignals';
+import { emptyDcInventorySignal } from '../lib/productionForecasting/operationalSignals/dcInventoryIngestion';
+import { forecastScheduleReturnTo } from '../lib/productionForecasting/navigation';
 import { forecastProduct, forecastProductHorizons } from '../lib/productionForecasting/engine';
 import { days, type DemandSeries } from '../lib/productionForecasting/model';
 import { summaryFor } from '../lib/productionForecasting/service';
@@ -25,20 +27,34 @@ const demand = (overrides: Partial<DemandRow> = {}): DemandRow => ({
 });
 const renderDemand = (row?: DemandRow, expanded = false) => renderToStaticMarkup(createElement(CurrentDemandSummary, { row, expanded, forecast30: forecast.point }));
 const text = (html: string) => html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+function warehouseBalance(): WarehouseBalanceRow {
+  const inventory = emptyDcInventorySignal(product);
+  for (const [warehouse, inventoryCases] of [['GPT', 25], ['GRN', 4]] as const) {
+    inventory.byWarehouse[warehouse] = inventoryCases;
+    inventory.warehouses[warehouse] = { ...inventory.warehouses[warehouse], inventoryCases, quantityCases: inventoryCases - 1, pickedCases: 1, businessDate: '2026-11-03', sourceBusinessDate: '2026-11-03', sourceObservedAt: observedAt, checkedAt: observedAt, status: 'AVAILABLE', stale: false, retained: false };
+  }
+  Object.assign(inventory, { status: 'AVAILABLE', stale: false, retained: false, reason: null, sourceBusinessDate: '2026-11-03', sourceObservedAt: observedAt });
+  return { productId: 'rum', itemCode: 'RUM', productName: 'Rum', demand: demand(), inventory, warehouses: { GPT: { demandCases: 18, inventoryCases: 25, balanceCases: 7, status: 'AVAILABLE' }, GRN: { demandCases: 12, inventoryCases: 4, balanceCases: -8, status: 'AVAILABLE' } } };
+}
 
-test('forecast table renders 34 forecast cases and 30 current-demand cases independently with an unchanged 40-case target', () => {
-  const html = renderToStaticMarkup(createElement(ForecastTable, { rows: [forecast], currentDemand: { rum: demand() }, organizationId: 'org_echo_spirits' }));
+test('forecast table separates GPT and GRN demand, inventory and balances without changing forecast or target', () => {
+  const html = renderToStaticMarkup(createElement(ForecastTable, { rows: [forecast], currentDemand: { rum: demand() }, warehouseBalances: { rum: warehouseBalance() }, organizationId: 'org_echo_spirits' }));
   const body = html.match(/<tbody>([\s\S]*?)<\/tbody>/)?.[1] ?? '';
   const cells = body.match(/<t[dh]\b[^>]*>[\s\S]*?<\/t[dh]>/g) ?? [];
-  assert.equal(cells.length, 8);
+  assert.equal(cells.length, 10);
   assert.match(cells[1], /<strong>34<\/strong>/);
-  assert.match(cells[2], /<strong>30 cases<\/strong>/);
-  assert.match(cells[3], /<strong>40<\/strong>/);
+  assert.match(text(cells[2]), /GPT: 18 cases \| GRN: 12 cases/);
+  assert.match(text(cells[3]), /GPT: 25 cases \| GRN: 4 cases/);
+  assert.match(text(cells[4]), /GPT: \+7 cases excess \| GRN: -8 cases shortfall/);
+  assert.match(cells[4], /class="pf-warehouse-shortfall"/);
+  assert.match(cells[5], /<strong>40<\/strong>/);
   assert.match(text(html), /34 forecast cases · 40 planning target cases/);
   assert.match(text(html), /88% of the 30-day forecast · separate estimate/);
   assert.match(text(html), /not added to any forecast or planning target/);
   assert.doesNotMatch(html, />64(?: cases)?</, 'current demand must never be added to the statistical forecast');
   assert.match(cells[2], /data-label="Immediate demand estimate"/);
+  assert.match(cells[3], /data-label="Warehouse inventory"/);
+  assert.match(cells[4], /data-label="Warehouse balance"/);
   assert.match(cells[1], /data-label="30-day forecast"/);
   assert.equal((html.match(/class="pf-current-demand/g) ?? []).length, 1, 'one record renders once for both viewport layouts');
 });
@@ -48,7 +64,7 @@ test('table and expanded per-product summary agree on the current demand total a
   const table = text(renderToStaticMarkup(createElement(ForecastTable, { rows: [forecast], currentDemand: { rum: row } })));
   const detail = text(renderDemand(row, true));
   assert.match(table, /Immediate demand estimate/);
-  assert.match(table, /30 cases To agency MIN/);
+  assert.match(table, /GPT: 18 cases \| GRN: 12 cases To agency MIN/);
   assert.match(detail, /^30 cases Agency replenishment to MIN/);
   assert.match(detail, /GPT: 18 · GRN: 12/);
   assert.equal(row.byWarehouse.GPT! + row.byWarehouse.GRN!, row.demandCases);
@@ -58,9 +74,9 @@ test('table and expanded per-product summary agree on the current demand total a
 
 test('known zero, missing source, and a retained stale estimate remain visibly different states', () => {
   const zero = renderDemand(demand({ grossCases: 0, demandCases: 0, byWarehouse: { GPT: 0, GRN: 0, UNASSIGNED: 0 } }));
-  assert.match(zero, /<strong>0 cases<\/strong>/); assert.match(zero, /No agency replenishment gap/);
+  assert.match(text(zero), /GPT: 0 cases \| GRN: 0 cases/); assert.match(zero, /No agency replenishment gap/);
   const missing = renderDemand();
-  assert.match(missing, /<strong>Unavailable<\/strong>/); assert.doesNotMatch(missing, /<strong>0 cases<\/strong>/);
+  assert.match(text(missing), /GPT: Unavailable — \| GRN: Unavailable —/); assert.doesNotMatch(missing, /<strong>0 cases<\/strong>/);
   const unavailable = renderDemand(demand({ status: 'UNAVAILABLE', demandCases: null, grossCases: null, reason: 'MISSING_QUANTITY' }), true);
   assert.match(unavailable, /Warehouse demand is unavailable until a complete source check succeeds/);
   assert.doesNotMatch(unavailable, /<strong>0 cases<\/strong>/);
@@ -74,7 +90,7 @@ test('pending source with no saved amount is unavailable rather than a stale or 
   const pending = demand({ status: 'PENDING', demandCases: null, grossCases: null, businessDate: null, sourceObservedAt: null, sourceUpdatedAt: null, sourceUpdatedAtOrigin: null, sourceUpdatedAtStatus: 'MISSING', sourceFreshness: 'UNKNOWN', sourceAgeMinutes: null, observedAgeMinutes: null, checkedAt: null, checkDate: null, stale: true, retained: false, agencyCount: null, bottlesPerCase: null, byWarehouse: { GPT: null, GRN: null, UNASSIGNED: null } });
   for (const expanded of [false, true]) {
     const html = renderDemand(pending, expanded);
-    assert.match(html, /<strong>Unavailable<\/strong>/);
+    assert.match(html, expanded ? /<strong>Unavailable<\/strong>/ : /Demand unavailable/);
     assert.doesNotMatch(html, /Stale estimate|Last estimate:/);
   }
 });
@@ -82,7 +98,7 @@ test('pending source with no saved amount is unavailable rather than a stale or 
 test('source-ineligible item explains exclusion without presenting a zero replenishment estimate', () => {
   const excluded = demand({ status: 'UNAVAILABLE', reason: 'SOURCE_INELIGIBLE', demandCases: null, grossCases: null, sourceObservedAt: null, sourceUpdatedAt: null, stale: true, retained: false, byWarehouse: { GPT: null, GRN: null, UNASSIGNED: null } });
   const compact = renderDemand(excluded);
-  assert.match(compact, /<strong>Unavailable<\/strong>/);
+  assert.match(compact, /Demand unavailable/);
   assert.match(compact, /Excluded by OPS status/);
   assert.doesNotMatch(compact, /0 cases|No agency replenishment gap|Stale estimate/);
   const expanded = text(renderDemand(excluded, true));
@@ -103,6 +119,80 @@ test('publication time and observation time have separate labels; unknown public
   const evening = demand({ sourceUpdatedAt: '2026-11-04T03:01:00.000Z', sourceObservedAt: '2026-11-04T13:00:00.000Z', stale: true, retained: true, sourceFreshness: 'STALE' });
   assert.match(text(renderDemand(evening, true)), /Coverage source as of: Nov 3, 2026, 10:01 PM EST/);
   assert.doesNotMatch(text(renderDemand(evening, true)), /Inventory through|2:01 AM EST/);
+});
+
+test('warehouse inventory preserves an available warehouse when the other warehouse is missing', () => {
+  const row = warehouseBalance();
+  row.inventory.status = 'UNAVAILABLE'; row.inventory.byWarehouse.GRN = null;
+  row.inventory.warehouses.GRN = { ...row.inventory.warehouses.GRN, status: 'UNAVAILABLE', inventoryCases: null, reason: 'MISSING_WAREHOUSE' };
+  row.warehouses.GRN = { ...row.warehouses.GRN, inventoryCases: null, balanceCases: null, status: 'UNAVAILABLE' };
+  const inventory = text(renderToStaticMarkup(createElement(WarehouseInventorySummary, { row })));
+  const balance = text(renderToStaticMarkup(createElement(WarehouseBalanceSummary, { row })));
+  assert.match(inventory, /GPT: 25 cases \| GRN: Unavailable —/);
+  assert.match(inventory, /GRN unavailable/);
+  assert.match(balance, /GPT: \+7 cases excess \| GRN: Unavailable —/);
+  assert.doesNotMatch(inventory, /GRN: 0 cases/);
+});
+
+test('retained stale stock and a withheld balance cannot appear as a current shortfall', () => {
+  const row = warehouseBalance();
+  row.inventory.stale = true; row.inventory.retained = true;
+  row.inventory.warehouses.GRN = { ...row.inventory.warehouses.GRN, stale: true, retained: true };
+  row.warehouses.GRN = { ...row.warehouses.GRN, status: 'STALE' };
+  const inventory = text(renderToStaticMarkup(createElement(WarehouseInventorySummary, { row, expanded: true })));
+  const balanceHtml = renderToStaticMarkup(createElement(WarehouseBalanceSummary, { row }));
+  assert.match(inventory, /GPT: 25 cases \| GRN: Unavailable —/);
+  assert.match(inventory, /GRN stale/);
+  assert.match(inventory, /Last observed inventory: GPT 25 · GRN 4 cases/);
+  assert.match(text(balanceHtml), /GPT: \+7 cases excess \| GRN: Unavailable —/);
+  assert.match(text(balanceHtml), /GRN stale/);
+  assert.doesNotMatch(balanceHtml, /pf-warehouse-shortfall|-8/);
+});
+
+test('warehouse pairs distinguish a true zero balance from missing inventory and preserve signed meaning', () => {
+  const zero = renderToStaticMarkup(createElement(WarehousePair, { values: { GPT: 0, GRN: 0 }, signed: true }));
+  assert.match(text(zero), /GPT: 0 cases balanced \| GRN: 0 cases balanced/);
+  assert.doesNotMatch(zero, /pf-warehouse-shortfall|\+0/);
+  const missing = renderToStaticMarkup(createElement(WarehouseBalanceSummary));
+  assert.match(text(missing), /GPT: Unavailable — \| GRN: Unavailable —/);
+  assert.match(missing, /Balance unavailable/);
+  assert.doesNotMatch(missing, /0 cases|pf-warehouse-shortfall/);
+  const fractional = renderToStaticMarkup(createElement(WarehousePair, { values: { GPT: -0.0001, GRN: 0.0001 }, signed: true }));
+  assert.match(text(fractional), /GPT: -0\.0001 cases shortfall \| GRN: \+0\.0001 cases excess/);
+});
+
+test('warehouse detail uses the same pairs and separates report observation from an unknown publication clock', () => {
+  const row = warehouseBalance();
+  const html = renderToStaticMarkup(createElement(WarehouseBalanceDetail, { row }));
+  assert.match(text(html), /Cases · balance is inventory minus immediate demand/);
+  assert.match(text(html), /GPT: 18 cases \| GRN: 12 cases/);
+  assert.match(text(html), /GPT: 25 cases \| GRN: 4 cases/);
+  assert.match(text(html), /GPT: \+7 cases excess \| GRN: -8 cases shortfall/);
+  const provenance = text(renderToStaticMarkup(createElement(WarehouseInventorySummary, { row, expanded: true })));
+  assert.match(provenance, /As of 2026-11-03/);
+  assert.match(provenance, /Observed Nov 3, 2026, 8:00 AM EST/);
+  assert.match(provenance, /Report refresh time: Not provided by the source/);
+  assert.match(provenance, /Stock Quantity \+ Picked Quantity; Rstock is excluded/);
+  assert.doesNotMatch(provenance, /Report refresh time: Nov 3/);
+});
+
+test('warehouse stock retains DC quantity precision and keeps independent report business dates', () => {
+  const row = warehouseBalance();
+  row.inventory.byWarehouse.GPT = 1.25;
+  row.inventory.byWarehouse.GRN = 0.0001;
+  row.inventory.warehouses.GRN.sourceBusinessDate = '2026-11-02';
+  const html = text(renderToStaticMarkup(createElement(WarehouseInventorySummary, { row })));
+  assert.match(html, /GPT: 1\.25 cases \| GRN: 0\.0001 cases/);
+  assert.match(html, /As of GPT 2026-11-03 · GRN 2026-11-02/);
+  assert.doesNotMatch(html, /1\.3 cases|GRN: 0 cases/);
+});
+
+test('forecast detail return context accepts only a canonical local My Schedule day or week', () => {
+  for (const view of ['day', 'week']) {
+    const returnTo = `/?view=${view}&date=2026-11-10`;
+    assert.equal(forecastScheduleReturnTo(returnTo), returnTo);
+  }
+  for (const value of [undefined, ['/'], 'https://outside.example/', '//outside.example/', '/\\outside.example/', '/alerts', '/?view=month&date=2026-11-10', '/?view=day&date=2026-11-31', '/?view=day&date=2026-11-10&returnTo=https://outside.example/', '/?view=day&date=2026-11-10#outside', '/?view=day&date=2026-11-10\n']) assert.equal(forecastScheduleReturnTo(value), null);
 });
 
 test('product operational context follows the forecast summary and alerts before detailed forecast explanations', () => {
@@ -140,7 +230,7 @@ test('operational source normalization leaves all three cumulative statistical f
     const html = text(renderToStaticMarkup(createElement(ForecastTable, { rows: [summaryFor(selected)], horizon, currentDemand: { rum: demand() } })));
     assert.match(html, new RegExp(`${horizon}-day forecast`));
     assert.match(html, /Immediate demand estimate/);
-    assert.match(html, /30 cases To agency MIN/);
+    assert.match(html, /GPT: 18 cases \| GRN: 12 cases To agency MIN/);
     if (horizon !== 30) assert.doesNotMatch(html, /% of the 30-day forecast/);
   }
 });

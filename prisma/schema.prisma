@@ -547,6 +547,8 @@ model Organization {
   deliveryChecks         DeliveryAvailabilityCheck[]
   currentDemand          CurrentDemandObservation[]
   currentDemandChecks    CurrentDemandCheck[]
+  currentDcInventory     CurrentDcInventoryObservation[]
+  currentDcInventoryChecks CurrentDcInventoryCheck[]
   features                OrganizationFeature[]
   accountOverlays         OrganizationAccountOverlay[]
   accountTargetingHistory AccountTargetingHistory[]
@@ -708,6 +710,8 @@ model OrganizationProduct {
   productionDemand ProductionDemandObservation[]
   currentDemand CurrentDemandObservation[]
   currentDemandChecks CurrentDemandCheck[]
+  currentDcInventory CurrentDcInventoryObservation[]
+  currentDcInventoryChecks CurrentDcInventoryCheck[]
   productionGuidance ProductionGuidanceObservation[]
   productionForecasts ProductionForecastSnapshot[]
 
@@ -3289,4 +3293,53 @@ model CurrentDemandCheck {
 
   @@unique([organizationId, productId, businessDate], map: "current_demand_check_tenant_product_day_key")
   @@index([organizationId, productId, checkedAt], map: "current_demand_check_history_idx")
+}
+
+// Daily inventory context is independent of forecasting and agency demand.
+model CurrentDcInventoryObservation {
+  id                 String       @id @default(cuid())
+  organizationId     String
+  productId          String
+  market             String       @default("OH")
+  itemCode           String
+  locationCode       String
+  businessDate       DateTime     @db.Date
+  sourceBusinessDate DateTime     @db.Date
+  sourceObservedAt   DateTime     @db.Timestamptz(3)
+  sourceUpdatedAt    DateTime?    @db.Timestamptz(3)
+  source             String       @default("OHLQ_POWER_BI_DC_INVENTORY")
+  reportId           String
+  adapterVersion     String
+  quantityCases      Decimal      @db.Decimal(14, 4)
+  pickedCases        Decimal      @db.Decimal(14, 4)
+  inventoryCases     Decimal      @db.Decimal(14, 4)
+  evidence           Json
+  createdAt          DateTime     @default(now())
+  organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product            OrganizationProduct @relation(fields: [organizationId, productId], references: [organizationId, id], onDelete: Restrict)
+  checks             CurrentDcInventoryCheck[]
+
+  @@unique([organizationId, productId, locationCode, businessDate], map: "dc_inventory_tenant_product_location_day_key")
+  @@unique([organizationId, id], map: "dc_inventory_tenant_id_key")
+  @@index([organizationId, productId, locationCode, sourceObservedAt], map: "dc_inventory_history_idx")
+}
+
+model CurrentDcInventoryCheck {
+  id             String       @id @default(cuid())
+  organizationId String
+  productId      String
+  locationCode   String
+  businessDate   DateTime     @db.Date
+  source         String       @default("OHLQ_POWER_BI_DC_INVENTORY")
+  checkedAt      DateTime     @db.Timestamptz(3)
+  status         String
+  reason         String?
+  evidence       Json?
+  observationId  String?
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product        OrganizationProduct @relation(fields: [organizationId, productId], references: [organizationId, id], onDelete: Restrict)
+  observation    CurrentDcInventoryObservation? @relation(fields: [organizationId, observationId], references: [organizationId, id], onDelete: Restrict)
+
+  @@unique([organizationId, productId, locationCode, businessDate], map: "dc_inventory_check_tenant_product_location_day_key")
+  @@index([organizationId, productId, locationCode, checkedAt], map: "dc_inventory_check_history_idx")
 }

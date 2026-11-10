@@ -5,8 +5,10 @@ import { prisma } from '../../prisma';
 import { ECHO_ORGANIZATION_ID } from '../../echoAccess';
 import { formatDateInputValue } from '../../dateTime';
 import { getOrganizationOhlqCredentials } from '../../ohlqTenantCredentials';
-import { downloadOhlqCurrentDemand } from '../../ohlqAnnualSalesReport';
+import { downloadOhlqCurrentDemand, downloadOhlqDcInventory, type OhlqAnnualSalesDownloadOptions } from '../../ohlqAnnualSalesReport';
 import { currentDemandProducts, ingestCurrentDemand } from './demandIngestion';
+import { dcInventoryAlreadyObservedToday, ingestDcInventory } from './dcInventoryIngestion';
+import { DC_INVENTORY_SOURCE, type DcInventoryDownload } from './dcInventory';
 import { getOrganizationOperationalCredentials, openDockConfiguration } from './credentials';
 import { OpenDockReadClient } from './opendock';
 import { deliveryAlreadyObservedToday, recordDeliveryAvailability } from './persistence';
@@ -22,6 +24,15 @@ const defaults = {
   opsCredentials: getOrganizationOhlqCredentials,
   downloadDemand: downloadOhlqCurrentDemand,
   ingestDemand: ingestCurrentDemand,
+  inventoryObserved: dcInventoryAlreadyObservedToday,
+  downloadInventory: async (options: OhlqAnnualSalesDownloadOptions): Promise<DcInventoryDownload> => {
+    const result = await downloadOhlqDcInventory({ ...options, returnBuffer: true });
+    const observedAt = new Date().toISOString();
+    return result.csvBuffer
+      ? { status: 'ok', csv: result.csvBuffer.toString('utf8'), reportDate: result.reportDate, observedAt }
+      : { status: 'failed', reason: 'invalid-response', observedAt };
+  },
+  ingestInventory: ingestDcInventory,
 };
 export type OperationalSignalServices = typeof defaults;
 function unavailable(location: OpenDockLocationConfig, at: Date, status: 'AUTH_FAILED' | 'UNAVAILABLE' | 'NOT_CONFIGURED', diagnosticCode: string): DeliveryAvailabilityResult {
@@ -29,17 +40,22 @@ function unavailable(location: OpenDockLocationConfig, at: Date, status: 'AUTH_F
 }
 
 /** Existing morning runner only. Signals and warehouses fail independently. */
-export async function syncOperationalSignals({ db = prisma, services: overrides = {}, logger = console, now = new Date() }: {
+export async function syncOperationalSignals({ db = prisma, services: overrides = {}, logger = console, now: injectedNow }: {
   db?: PrismaClient; services?: Partial<OperationalSignalServices>; logger?: Pick<Console, 'log' | 'error'>; now?: Date;
 } = {}) {
   const services = { ...defaults, ...overrides };
+  const now = injectedNow ?? new Date();
+  const inventoryClock = () => injectedNow ?? new Date();
   const organizations = await db.organization.findMany({
     where: { id: ECHO_ORGANIZATION_ID, active: true, accountStatus: { notIn: ['SUSPENDED', 'CANCELLED'] }, enabledStates: { has: 'OH' }, features: { some: { featureKey: 'PRODUCTION_FORECASTING', enabled: true } } },
     select: { id: true, settings: true, timezone: true }, orderBy: { id: 'asc' },
   });
   let deliveryObserved = 0, demandObserved = 0, reused = 0, skipped = 0, failed = 0, unavailableDemand = 0, warnings = 0;
+  let inventoryObserved = 0, unavailableInventory = 0, inventorySkipped = 0;
   for (const organization of organizations) {
     if (organization.id !== ECHO_ORGANIZATION_ID) continue;
+    let opsCredentialsPromise: ReturnType<OperationalSignalServices['opsCredentials']> | undefined;
+    const opsCredentials = () => opsCredentialsPromise ??= services.opsCredentials(organization.id, db).catch(() => null);
     const configuration = openDockConfiguration(organization.settings);
     if (!configuration.configured) {
       skipped++;
@@ -76,6 +92,47 @@ export async function syncOperationalSignals({ db = prisma, services: overrides 
       }
     }
 
+    // Inventory has its own completion/retry state. Run before demand's early
+    // exits so an already observed demand estimate cannot suppress this source.
+    try {
+      const startedAt = inventoryClock();
+      if (await services.inventoryObserved(organization.id, db, startedAt)) {
+        inventorySkipped++;
+      } else {
+        const credentials = await opsCredentials();
+        if (!credentials) {
+          inventorySkipped++;
+          logger.log(JSON.stringify({ organizationId: organization.id, source: DC_INVENTORY_SOURCE, status: 'NOT_CONFIGURED' }));
+        } else {
+          let download: DcInventoryDownload;
+          try {
+            download = await services.downloadInventory({
+              headless: true, partnerCredentials: credentials, reportDate: formatDateInputValue(startedAt, organization.timezone), returnBuffer: true,
+              debugDir: path.join(os.tmpdir(), 'ohlq-private', organization.id, 'dc-inventory', 'playwright'),
+              downloadDir: path.join(os.tmpdir(), 'ohlq-private', organization.id, 'dc-inventory', 'downloads'),
+              logger: { log: () => undefined, error: () => undefined }, useServerlessChromium: process.env.VERCEL === '1',
+            });
+          } catch (error) {
+            const authentication = error instanceof Error && /incorrect username or password|returned to login|sign.in.*(failed|timeout)/i.test(error.message);
+            download = { status: 'failed', observedAt: inventoryClock().toISOString(), reason: authentication ? 'upstream-authentication' : 'upstream-unavailable' };
+          }
+          // Use actual completion time after the provider wait. Fixed clocks are
+          // explicit test/operator inputs; the report's own As_of_Date remains
+          // independently required by ingestion before any current balance.
+          const checkedAt = inventoryClock();
+          const result = await services.ingestInventory({ organizationId: organization.id, businessDate: formatDateInputValue(checkedAt, organization.timezone), download: { ...download, observedAt: checkedAt.toISOString() }, db, now: checkedAt });
+          inventoryObserved += result.available;
+          unavailableInventory += result.unavailable;
+          failed += result.failed;
+          const log = result.failed ? logger.error : logger.log;
+          log(JSON.stringify({ organizationId: organization.id, source: DC_INVENTORY_SOURCE, status: result.failed ? 'PARTIAL_FAILURE' : result.unavailable ? 'DATA_UNAVAILABLE' : 'COMPLETE', available: result.available, unavailable: result.unavailable, failed: result.failed, reused: result.reused }));
+        }
+      }
+    } catch {
+      failed++;
+      logger.error(JSON.stringify({ organizationId: organization.id, source: DC_INVENTORY_SOURCE, status: 'UNAVAILABLE', reason: 'INGESTION_FAILED' }));
+    }
+
     // OPS case demand is independent of delivery setup, source import success and
     // whether a tenant's OPS credential relation was present in another query.
     try {
@@ -86,7 +143,7 @@ export async function syncOperationalSignals({ db = prisma, services: overrides 
       const pending = products.filter(product => !completed.has(product.id));
       reused += products.length - pending.length;
       if (!pending.length) continue;
-      const credentials = await services.opsCredentials(organization.id, db).catch(() => null);
+      const credentials = await opsCredentials();
       if (!credentials) {
         skipped += pending.length;
         logger.log(JSON.stringify({ organizationId: organization.id, source: 'OPS_OHLQ_ITEM_COVERAGE', status: 'NOT_CONFIGURED', products: pending.length }));
@@ -108,5 +165,5 @@ export async function syncOperationalSignals({ db = prisma, services: overrides 
       logger.error(JSON.stringify({ organizationId: organization.id, source: 'OPS_OHLQ_ITEM_COVERAGE', status: 'UNAVAILABLE', reason: 'INGESTION_FAILED' }));
     }
   }
-  return { configuredOrganizations: organizations.length, deliveryObserved, demandObserved, reused, skipped, failed, unavailableDemand, warnings };
+  return { configuredOrganizations: organizations.length, deliveryObserved, demandObserved, inventoryObserved, unavailableInventory, inventorySkipped, reused, skipped, failed, unavailableDemand, warnings };
 }

@@ -15,7 +15,7 @@ const asOf = '2026-10-31';
 const series: DemandSeries = { market: 'OH', itemCode: 'RUM', location: { code: 'GPT', name: 'Groveport' }, coverage: [{ start: '2024-01-01', end: asOf }], observations: days('2024-01-01', asOf).map(date => ({ date, availableOn: date, cases: 2, classification: 'BAILMENT' })) };
 
 test('horizon links retain filters, tenant context and detail destination with one accessible current choice', () => {
-  const html = renderToStaticMarkup(createElement(ForecastHorizonSelector, { horizon: 60, query: 'q=Rum&market=OH&confidence=Low&sort=name&organization=org_echo_spirits', path: '/analytics/production/rum' }));
+  const html = renderToStaticMarkup(createElement(ForecastHorizonSelector, { horizon: 60, query: 'q=Rum&market=OH&confidence=Low&sort=name&organization=org_echo_spirits&returnTo=%2F%3Fview%3Dweek%26date%3D2026-11-10', path: '/analytics/production/rum' }));
   assert.equal((html.match(/aria-current="page"/g) ?? []).length, 1);
   assert.match(html, /aria-current="page"[^>]*>60 days/);
   const links = html.match(/href="[^"]+"/g) ?? [];
@@ -23,6 +23,7 @@ test('horizon links retain filters, tenant context and detail destination with o
   for (const link of links) {
     assert.match(link, /\/analytics\/production\/rum\?/);
     for (const param of ['q=Rum', 'market=OH', 'confidence=Low', 'sort=name', 'organization=org_echo_spirits']) assert.ok(link.includes(param), param);
+    assert.match(link, /returnTo=%2F%3Fview%3Dweek%26date%3D2026-11-10/);
   }
 });
 

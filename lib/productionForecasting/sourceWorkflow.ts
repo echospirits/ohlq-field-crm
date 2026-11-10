@@ -13,7 +13,7 @@ import { refreshProductionForecast } from './service';
 import { syncOperationalSignals } from './operationalSignals/workflow';
 
 const defaults = { credentials: getOrganizationOhlqCredentials, bailment: downloadOhlqBailmentInvoices, dc: downloadOhlqPartnerDc, importCsv: importProductionSource, refresh: refreshProductionForecast, operations: syncOperationalSignals };
-type ProductionSourceServices = Omit<typeof defaults, 'operations'> & { operations?: typeof syncOperationalSignals };
+type ProductionSourceServices = Omit<typeof defaults, 'operations'> & { operations?: (options: Parameters<typeof syncOperationalSignals>[0]) => Promise<{ failed: number }> };
 export function ohioSourceConfiguration(settings: unknown) {
   const raw = (settings as { productionForecasting?: { ohio?: { historyStart?: unknown; directInvoices?: unknown } } } | null)?.productionForecasting?.ohio;
   const historyStart = typeof raw?.historyStart === 'string' && validDay(raw.historyStart) ? raw.historyStart : null;

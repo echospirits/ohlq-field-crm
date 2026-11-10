@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { waitForPartnerDcTable } from '../lib/ohlqPartnerDcReady';
-import { OHLQ_BAILMENT_INVOICE_REPORT, reportDateInput, validateOhlqPartnerDcExport } from '../lib/ohlqAnnualSalesReport';
+import { OHLQ_BAILMENT_INVOICE_REPORT, OHLQ_DC_INVENTORY_REPORT, reportDateInput, selectOhlqReportHistoricalItems, validateOhlqPartnerDcExport } from '../lib/ohlqAnnualSalesReport';
 
 let browser: Browser;
 before(async () => {
@@ -19,6 +19,20 @@ const withPage = async (run: (page: Page) => Promise<void>) => {
   const page = await browser.newPage();
   try { await run(page); } finally { await page.close(); }
 };
+
+test('DC Inventory explicitly clears remembered historical items and requests one dated snapshot', async () => {
+  assert.equal(OHLQ_DC_INVENTORY_REPORT.reportId, '6b07a165-c515-4f63-bef4-471ef64e3e96');
+  assert.equal(OHLQ_DC_INVENTORY_REPORT.dateRange, true);
+  await withPage(async page => {
+    await page.setContent('<input aria-label="From date"><input aria-label="To date"><label><input type="radio" name="historical" checked>True</label><label><input type="radio" name="historical">False</label>');
+    await selectOhlqReportHistoricalItems(page.mainFrame(), OHLQ_DC_INVENTORY_REPORT.historicalItems);
+    assert.equal(await page.getByRole('radio', { name: 'False', exact: true }).isChecked(), true);
+    assert.equal(await page.getByRole('radio', { name: 'True', exact: true }).isChecked(), false);
+    await reportDateInput(page.mainFrame(), 'From date').fill('11/10/2026');
+    await reportDateInput(page.mainFrame(), 'To date').fill('11/10/2026');
+    assert.equal(await page.getByLabel('From date', { exact: true }).inputValue(), await page.getByLabel('To date', { exact: true }).inputValue());
+  });
+});
 
 test('Partner DC waits past the visible zero-row shell for all 33 source rows to load', async () => {
   await withPage(async page => {

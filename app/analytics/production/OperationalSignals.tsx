@@ -1,9 +1,63 @@
 import Link from 'next/link';
 import type { getDeliveryAvailabilitySignals } from '../../../lib/productionForecasting/operationalSignals/persistence';
 import type { getCurrentDemandSignals } from '../../../lib/productionForecasting/operationalSignals/demandIngestion';
-import { cases } from '../../../lib/productionForecasting/presentation';
+import type { WarehouseBalanceSignal } from '../../../lib/productionForecasting/operationalSignals/warehouseBalance';
+import { caseBalance, caseQuantity, cases } from '../../../lib/productionForecasting/presentation';
 
 export type DemandRow = Awaited<ReturnType<typeof getCurrentDemandSignals>>['rows'][number];
+export type WarehouseBalanceRow = WarehouseBalanceSignal;
+
+export function WarehousePairHeader() {
+  return <span className="pf-warehouse-pair-header" aria-label="Groveport, then Green"><span>GPT</span><span aria-hidden="true">|</span><span>GRN</span></span>;
+}
+
+/** The same warehouse order is used in every operational comparison. */
+export function WarehousePair({ values, signed = false }: { values: { GPT: number | null; GRN: number | null }; signed?: boolean }) {
+  return <span className="pf-warehouse-pair">{(['GPT', 'GRN'] as const).map((warehouse, index) => {
+    const raw = values[warehouse], value = raw !== null && Number.isFinite(raw) ? raw : null;
+    const displayed = value === null ? '—' : signed ? caseBalance(value) : caseQuantity(value);
+    return <span className="pf-warehouse-pair-part" key={warehouse}>{index ? <span className="pf-warehouse-separator" aria-hidden="true">|</span> : null}<span className={signed && value !== null && value < 0 ? 'pf-warehouse-shortfall' : undefined}><span className="sr-only">{warehouse}: {value === null ? 'Unavailable' : ''}</span><span aria-hidden={value === null ? true : undefined}>{displayed}</span>{value !== null ? <span className="sr-only"> cases{signed ? value < 0 ? ' shortfall' : value > 0 ? ' excess' : ' balanced' : ''}</span> : null}</span></span>;
+  })}</span>;
+}
+
+const currentDemand = (row?: DemandRow) => row?.demandCases !== null && row?.demandCases !== undefined && !row.stale && row.status === 'AVAILABLE' && !row.retained;
+const missingWarehouses = (values: { GPT: number | null; GRN: number | null }) => (['GPT', 'GRN'] as const).filter(warehouse => values[warehouse] === null);
+
+export function WarehouseInventorySummary({ row, expanded = false }: { row?: WarehouseBalanceRow; expanded?: boolean }) {
+  const inventory = row?.inventory;
+  const currentAt = (warehouse: 'GPT' | 'GRN') => inventory?.warehouses[warehouse].status === 'AVAILABLE' && !inventory.warehouses[warehouse].stale && !inventory.warehouses[warehouse].retained;
+  const values = { GPT: currentAt('GPT') ? inventory!.byWarehouse.GPT : null, GRN: currentAt('GRN') ? inventory!.byWarehouse.GRN : null };
+  const missing = missingWarehouses(values);
+  const issue = missing.map(warehouse => `${warehouse} ${inventory?.warehouses[warehouse].stale && inventory.byWarehouse[warehouse] !== null ? 'stale' : 'unavailable'}`).join(' · ');
+  const dates = (['GPT', 'GRN'] as const).flatMap(warehouse => inventory?.warehouses[warehouse].sourceBusinessDate ? [{ warehouse, date: inventory.warehouses[warehouse].sourceBusinessDate }] : []);
+  const businessDates = dates.length === 2 && dates[0].date === dates[1].date ? dates[0].date : dates.length ? dates.map(({ warehouse, date }) => `${warehouse} ${date}`).join(' · ') : inventory?.sourceBusinessDate;
+  return <div className="pf-warehouse-summary">
+    <span className="pf-warehouse-mobile-heading" aria-hidden="true"><WarehousePairHeader /></span>
+    <strong><WarehousePair values={values} /></strong>
+    {missing.length ? <small>{!inventory ? 'Inventory unavailable' : issue}</small> : null}
+    {businessDates ? <small>As of {businessDates}</small> : null}
+    {inventory?.sourceObservedAt ? <small>Observed {operationalTime(inventory.sourceObservedAt)}</small> : <small>Awaiting DC Inventory report</small>}
+    {expanded ? <><p>Stock Quantity + Picked Quantity; Rstock is excluded.</p><p>Report refresh time: {inventory?.sourceUpdatedAt ? operationalTime(inventory.sourceUpdatedAt) : 'Not provided by the source'}</p>{missing.length && inventory?.retained ? <p>Last observed inventory: GPT {caseQuantity(inventory.byWarehouse.GPT)} · GRN {caseQuantity(inventory.byWarehouse.GRN)} cases. Retained amounts are not used for a current balance.</p> : null}</> : null}
+  </div>;
+}
+
+export function WarehouseBalanceSummary({ row }: { row?: WarehouseBalanceRow }) {
+  const values = {
+    GPT: row?.warehouses.GPT.status === 'AVAILABLE' ? row.warehouses.GPT.balanceCases : null,
+    GRN: row?.warehouses.GRN.status === 'AVAILABLE' ? row.warehouses.GRN.balanceCases : null,
+  };
+  const missing = missingWarehouses(values);
+  const issue = missing.map(warehouse => `${warehouse} ${row?.warehouses[warehouse].status === 'STALE' ? 'stale' : 'unavailable'}`).join(' · ');
+  return <div className="pf-warehouse-summary">
+    <span className="pf-warehouse-mobile-heading" aria-hidden="true"><WarehousePairHeader /></span>
+    <strong><WarehousePair values={values} signed /></strong>
+    {missing.length ? <small>{row ? issue : 'Balance unavailable'}</small> : null}
+  </div>;
+}
+
+export function WarehouseBalanceDetail({ row }: { row?: WarehouseBalanceRow }) {
+  return <div className="pf-warehouse-detail table-scroll" role="region" aria-label="Warehouse demand and inventory comparison" tabIndex={0}><table className="comparison-table"><caption>Cases · balance is inventory minus immediate demand</caption><thead><tr><th scope="col">Immediate demand estimate<WarehousePairHeader /></th><th scope="col">Warehouse inventory<WarehousePairHeader /></th><th scope="col">Warehouse balance<WarehousePairHeader /></th></tr></thead><tbody><tr><td><CurrentDemandSummary row={row?.demand} /></td><td><WarehouseInventorySummary row={row} /></td><td><WarehouseBalanceSummary row={row} /></td></tr></tbody></table></div>;
+}
 type DeliveryData = Awaited<ReturnType<typeof getDeliveryAvailabilitySignals>>;
 const demandIssues: Record<string, string> = {
   SOURCE_INELIGIBLE: 'OPS identifies this item as A-3a Dist or inactive. It is excluded from immediate-demand totals.',
@@ -21,13 +75,16 @@ export function operationalTime(value: string | null, timezone = 'America/New_Yo
 }
 export function CurrentDemandSummary({ row, forecast30, expanded = false }: { row?: DemandRow; forecast30?: number | null; expanded?: boolean }) {
   const available = row?.demandCases !== null && row?.demandCases !== undefined;
-  const current = available && !row?.stale && row?.status === 'AVAILABLE' && !row?.retained;
-  const significant = current && forecast30 !== null && forecast30 !== undefined && forecast30 > 0 && row.demandCases! / forecast30 >= .8;
+  const current = currentDemand(row);
+  const significant = current && forecast30 !== null && forecast30 !== undefined && forecast30 > 0 && row!.demandCases! / forecast30 >= .8;
   return <div className={`pf-current-demand${significant ? ' pf-significant-demand' : ''}`}>
-    <strong>{current ? `${cases(row.demandCases)} cases` : available && row?.stale ? 'Stale estimate' : 'Unavailable'}</strong>
+    {!expanded ? <span className="pf-warehouse-mobile-heading" aria-hidden="true"><WarehousePairHeader /></span> : null}
+    <strong>{expanded ? current ? `${cases(row!.demandCases)} cases` : available && row?.stale ? 'Stale estimate' : 'Unavailable' : <WarehousePair values={current ? row!.byWarehouse : { GPT: null, GRN: null }} />}</strong>
+    {!expanded && !current ? <small>{available && row?.stale ? 'Stale estimate' : 'Demand unavailable'}</small> : null}
     {!current && available ? <small>Last estimate: {cases(row.demandCases)} cases</small> : null}
-    {expanded || available ? <small>{current && row.demandCases === 0 ? 'No agency replenishment gap' : expanded ? 'Agency replenishment to MIN' : 'To agency MIN'}</small> : null}
-    {significant ? <small>{Math.round(row.demandCases! / forecast30! * 100)}% of the 30-day forecast · separate estimate</small> : null}
+    {expanded || available ? <small>{current && row!.demandCases === 0 ? 'No agency replenishment gap' : expanded ? 'Agency replenishment to MIN' : 'To agency MIN'}</small> : null}
+    {significant ? <small>{Math.round(row!.demandCases! / forecast30! * 100)}% of the 30-day forecast · separate estimate</small> : null}
+    {!expanded && (row?.byWarehouse.UNASSIGNED ?? 0) > 0 ? <small>{current ? 'Unassigned' : 'Last unassigned'}: {cases(row!.byWarehouse.UNASSIGNED)} cases</small> : null}
     {expanded ? <>
       {!current && row?.reason ? <p className="muted">{demandIssues[row.reason] ?? 'The latest source check did not provide a complete estimate. The last successful observation is retained where available.'}</p> : null}
       {available ? <p>GPT: {cases(row.byWarehouse.GPT)} · GRN: {cases(row.byWarehouse.GRN)}{(row.byWarehouse.UNASSIGNED ?? 0) > 0 ? ` · Unassigned: ${cases(row.byWarehouse.UNASSIGNED)}` : ''}</p> : row?.reason === 'SOURCE_INELIGIBLE' ? null : <p>Warehouse demand is unavailable until a complete source check succeeds.</p>}

@@ -81,10 +81,11 @@
 }
 @media (max-width: 767px) {
   .pf-comparison { overflow-x: visible; }
-  .pf-comparison table, .pf-comparison tbody { display: block; }
+  .pf-comparison > table, .pf-comparison tbody { display: block; width: 100%; min-width: 0; max-width: 100%; }
+  .pf-comparison > table { overflow: visible; }
   .pf-comparison thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-  .pf-comparison tbody tr { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 16px; padding: 12px 0; border-bottom: 1px solid var(--line); }
-  .pf-comparison tbody th, .pf-comparison tbody td { border: 0; padding: 0; min-width: 0; text-align: left; overflow-wrap: anywhere; }
+  .pf-comparison tbody tr { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 16px; width: 100%; min-width: 0; max-width: 100%; padding: 12px 0; border-bottom: 1px solid var(--line); }
+  .pf-comparison tbody th, .pf-comparison tbody td { display: block; width: auto; max-width: 100%; border: 0; padding: 0; min-width: 0; text-align: left; overflow-wrap: anywhere; }
   .pf-comparison tbody .pf-product-identity { grid-column: 1 / -1; }
   .pf-comparison tbody th a { font-size: 1rem; }
   .pf-comparison tbody td::before { content: attr(data-label); display: block; font-size: .75rem; color: var(--muted); margin-bottom: 3px; }

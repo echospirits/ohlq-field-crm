@@ -80,6 +80,7 @@ const MICROSOFT_FORWARD_ACTION_SELECTORS = [
 
 type OhlqPowerBiReportConfig = {
   dateRange: boolean;
+  historicalItems?: boolean;
   dateLabels?: { from: string; to: string };
   fileSlug: string;
   parameter: {
@@ -119,6 +120,18 @@ export const OHLQ_BAILMENT_INVOICE_REPORT = {
   parameterFallback: 'Brand',
   reportId: 'bdf38254-b332-4d12-b689-1113a2644a40',
   renderedTitle: /Bailment PO and Invoice/i,
+} satisfies OhlqPowerBiReportConfig;
+
+/** Inventory Management → DC Inventory, verified against the native CSV.
+ * Both date controls select one daily stock snapshot; picked cases remain
+ * separate source fields so the approved Quantity + Picked rule is auditable. */
+export const OHLQ_DC_INVENTORY_REPORT = {
+  dateRange: true,
+  historicalItems: false,
+  fileSlug: 'dc-inventory',
+  parameter: { name: 'Brand', values: 'all' },
+  reportId: '6b07a165-c515-4f63-bef4-471ef64e3e96',
+  renderedTitle: 'DC Inventory',
 } satisfies OhlqPowerBiReportConfig;
 
 export function getOhlqAgencyInventoryReportConfig() {
@@ -857,6 +870,12 @@ async function setDate(frame: Frame, label: string, reportDate: ReportDate) {
 
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+export async function selectOhlqReportHistoricalItems(frame: Frame, include: boolean) {
+  const option = frame.getByRole('radio', { name: include ? 'True' : 'False', exact: true });
+  await option.check({ timeout: 30_000 });
+  if (!await option.isChecked()) throw new Error('The report historical-item selection was not retained.');
+}
+
 async function selectReportParameter(frame: Frame, parameter: OhlqPowerBiReportConfig['parameter']) {
   await frame.locator(`span[aria-label="Open ${parameter.name}"]`).click();
   const selectAll = frame.getByRole('menuitemcheckbox', { name: 'Select All' });
@@ -1162,6 +1181,7 @@ async function downloadOhlqPowerBiReportFromPage(
     await setDate(frame, report.dateLabels?.to ?? 'To date', reportDate);
     runtime.onDiagnostic?.({ stage: 'date-range-set', from: runtime.fromDate.iso, to: reportDate.iso });
   }
+  if (report.historicalItems !== undefined) await selectOhlqReportHistoricalItems(frame, report.historicalItems);
 
   const primary = frame.locator(`span[aria-label="Open ${report.parameter.name}"]`);
   const parameter = report.parameterFallback && !await primary.isVisible() ? { ...report.parameter, name: report.parameterFallback } : report.parameter;
@@ -1347,6 +1367,13 @@ export async function downloadOhlqBailmentInvoices(options: OhlqAnnualSalesDownl
   const from = getOhlqAnnualSalesReportDate(options.fromDate), to = getOhlqAnnualSalesReportDate(options.reportDate ?? getOhlqAgencyInventoryObservationDate());
   if (from.iso !== options.fromDate || from.iso > to.iso) throw new Error('Bailment history requires a valid complete date range.');
   return downloadOhlqPowerBiReport(OHLQ_BAILMENT_INVOICE_REPORT, { ...options, reportDate: to.iso });
+}
+
+export async function downloadOhlqDcInventory(options: OhlqAnnualSalesDownloadOptions = {}) {
+  const requested = options.reportDate ?? getOhlqAgencyInventoryObservationDate();
+  const date = getOhlqAnnualSalesReportDate(requested);
+  if (date.iso !== requested) throw new Error('DC Inventory requires one valid YYYY-MM-DD snapshot date.');
+  return downloadOhlqPowerBiReport(OHLQ_DC_INVENTORY_REPORT, { ...options, fromDate: date.iso, reportDate: date.iso });
 }
 
 export function validateOhlqPartnerDcExport(csv: string, tableSummary: string) {

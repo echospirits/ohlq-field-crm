@@ -4,6 +4,7 @@ import type { PrismaClient } from '@prisma/client';
 import { syncOperationalSignals } from '../lib/productionForecasting/operationalSignals/workflow';
 import { syncProductionSources } from '../lib/productionForecasting/sourceWorkflow';
 import type { DeliveryAvailabilityResult, OpenDockLocationConfig } from '../lib/productionForecasting/operationalSignals/types';
+import type { DcInventoryDownload } from '../lib/productionForecasting/operationalSignals/dcInventory';
 
 const locations: OpenDockLocationConfig[] = [
   { market: 'OH', locationCode: 'GPT', locationName: 'Groveport', warehouseId: '11111111-1111-4111-8111-111111111111', loadTypeId: '33333333-3333-4333-8333-333333333333', timezone: 'America/New_York', calendar: { coveredFrom: '2026-11-01', coveredThrough: '2026-12-31', openWeekdays: [1,2,3,4,5], closedDates: ['2026-11-26'] } },
@@ -34,6 +35,9 @@ function fixture(configuration: unknown = settings, completed: string[] = []) {
     opsCredentials: async () => ({ username: 'ops-example', password: 'unit-private-ops-password' }),
     downloadDemand: async (options: { itemCodes: string[] }) => { events.push('demand:' + options.itemCodes.join(',')); return { products: [] }; },
     ingestDemand: async () => { events.push('ingest-demand'); return { results: [], available: 1, unavailable: 0, failed: 0, reused: 0 }; },
+    inventoryObserved: async () => true,
+    downloadInventory: async (): Promise<DcInventoryDownload> => { events.push('inventory'); return { status: 'ok', csv: 'native-inventory', reportDate: '2026-11-03', observedAt: now.toISOString() }; },
+    ingestInventory: async () => { events.push('ingest-inventory'); return { results: [], available: 2, unavailable: 0, failed: 0, reused: 0 }; },
   };
   const logger = { log: (message: string) => logs.push(message), error: (message: string) => logs.push(message) };
   return { db, services, logger, events, logs, recorded };
@@ -73,6 +77,66 @@ test('daily successful observations skip provider calls while failed/missing loc
   assert.deepEqual(f.events, ['delivery:GPT']);
   assert.equal(result.reused, 2);
   assert.equal(result.failed, 1);
+});
+
+test('inventory imports independently when current demand is already complete and retains separate counters', async () => {
+  const f = fixture({}, ['product-1']);
+  let credentialReads = 0;
+  const result = await syncOperationalSignals({ ...f, now, services: { ...f.services,
+    inventoryObserved: async () => false,
+    opsCredentials: async () => { credentialReads++; return { username: 'ops-example', password: 'unit-private-ops-password' }; },
+    downloadInventory: async options => {
+      assert.equal(options.reportDate, '2026-11-03'); assert.equal(options.returnBuffer, true);
+      assert.equal(options.partnerCredentials?.username, 'ops-example');
+      f.events.push('inventory');
+      return { status: 'ok', csv: 'native-inventory', reportDate: '2026-11-03', observedAt: '2000-01-01T00:00:00Z' };
+    },
+    ingestInventory: async input => {
+      assert.equal(input.organizationId, 'org_echo_spirits'); assert.equal(input.businessDate, '2026-11-03');
+      assert.equal(input.download.observedAt, now.toISOString(), 'the retrieval clock is stamped after the download');
+      assert.equal(input.now, now, 'explicit fixed clock remains deterministic');
+      f.events.push('ingest-inventory'); return { results: [], available: 1, unavailable: 1, failed: 0, reused: 0 };
+    },
+  } });
+  assert.deepEqual(f.events, ['inventory', 'ingest-inventory']);
+  assert.equal(credentialReads, 1); assert.equal(result.inventoryObserved, 1); assert.equal(result.unavailableInventory, 1);
+  assert.equal(result.inventorySkipped, 0); assert.equal(result.demandObserved, 0);
+  assert.equal(result.reused, 1, 'legacy demand replay counter is unchanged');
+});
+
+test('an inventory download failure persists a safe failed check and still ingests demand using one credential fetch', async () => {
+  const f = fixture({});
+  let credentialReads = 0;
+  const result = await syncOperationalSignals({ ...f, now, services: { ...f.services,
+    inventoryObserved: async () => false,
+    opsCredentials: async () => { credentialReads++; return { username: 'ops-example', password: 'unit-private-ops-password' }; },
+    downloadInventory: async () => { f.events.push('inventory'); throw new Error('PRIVATE INVENTORY TOKEN / unsafe provider payload'); },
+    ingestInventory: async input => {
+      assert.equal(input.download.status, 'failed');
+      if (input.download.status !== 'failed') throw new Error('Expected a failed inventory attempt.');
+      assert.equal(input.download.reason, 'upstream-unavailable');
+      assert.equal(input.download.observedAt, now.toISOString());
+      assert.doesNotMatch(JSON.stringify(input.download), /PRIVATE|unsafe/);
+      f.events.push('ingest-inventory'); return { results: [], available: 0, unavailable: 0, failed: 2, reused: 0 };
+    },
+  } });
+  assert.deepEqual(f.events, ['inventory', 'ingest-inventory', 'demand:RUM', 'ingest-demand']);
+  assert.equal(credentialReads, 1); assert.equal(result.failed, 2); assert.equal(result.demandObserved, 1);
+  assert.equal(result.inventoryObserved, 0); assert.equal(result.inventorySkipped, 0);
+  assert.doesNotMatch(f.logs.join('\n'), /PRIVATE|unsafe|unit-private|ops-example/);
+});
+
+test('missing inventory credentials skip only that source without inventing observations or changing legacy skip counters', async () => {
+  const f = fixture({}, ['product-1']);
+  let credentialReads = 0;
+  const result = await syncOperationalSignals({ ...f, now, services: { ...f.services,
+    inventoryObserved: async () => false,
+    opsCredentials: async () => { credentialReads++; return null; },
+  } });
+  assert.equal(credentialReads, 1); assert.deepEqual(f.events, []);
+  assert.equal(result.inventorySkipped, 1); assert.equal(result.inventoryObserved, 0); assert.equal(result.failed, 0);
+  assert.equal(result.skipped, 1, 'only pre-existing unconfigured OpenDock contributes to the legacy skip count');
+  assert.equal(result.reused, 1);
 });
 
 test('unexpected one-warehouse failures retain safe failure status and do not stop independent work', async () => {

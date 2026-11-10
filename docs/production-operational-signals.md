@@ -1,6 +1,6 @@
 # Production Forecasting - Operational Signals
 
-This owner-authorized extension retains version0.6.0 and the existing `production-demand-v1.4` statistical model. It was validated in TST and selectively promoted independently of unrelated TST maintenance; see [the production promotion record](releases/production-operational-signals-promotion.md). Forecast, immediate agency replenishment and delivery availability remain independently stored and displayed. Nothing adds the operational estimate to a forecast or planning target.
+The initial Operational Signals extension shipped with version 0.6.0. The owner-authorized warehouse comparison is now in **0.8.0-dev, TST first for review**; production remains 0.7.3. The existing statistical model is unchanged. Forecast, immediate agency replenishment, warehouse stock and delivery availability remain independently stored. Nothing adds the operational estimate to a forecast or planning target.
 
 ## Sources and meaning
 
@@ -11,6 +11,20 @@ The native JSON contains product `bpc` (bottles per case), `statusCode`, `detail
 For each agency, cases to reach MIN are `max(0, ceil((MIN bottles - inventory bottles) / bottles per case))`. Round per agency, then sum by product. Owner-confirmed example: 2806B, agency 30221, MIN14, inventory0, six bottles per case -> three cases. Equality creates no gap. Missing/negative quantities or conflicting duplicates make the product unavailable; identical duplicate rows are deduplicated without doubling demand.
 
 Agency prefixes 2/4 map to GRN; 1/3/5 map to GPT (owner confirmed). Other prefixes remain unassigned. Product summaries include an unassigned amount rather than guessing a warehouse.
+
+### Warehouse inventory and shortfalls
+
+The forecast table/detail display GPT | GRN demand, warehouse inventory and signed balance in cases. Stock comes from A3A Reports → Inventory Management → **DC Inventory**, report `6b07a165-c515-4f63-bef4-471ef64e3e96`, using the existing OPS/Microsoft browser flow. From and To both select the current organization business date, Historical items is explicitly False, and all brands are selected. The importer independently requires the native row's actual `As_of_Date` to match; requested dates and render/retrieval time cannot make an older snapshot current.
+
+Owner-confirmed stock is **GPT Quantity + GPT Picked**, and **GRN Quantity + GRN Picked**. GPTR/GRNR are excluded. Source quantities already represent cases; case pack is evidence rather than a divisor. Up to four source decimal places are preserved. The report supplies a business date but no verified publication clock; `sourceUpdatedAt` stays null.
+
+Balance is **inventory − immediate demand** per warehouse. Positive means excess, negative means shortfall and appears red with an accessible shortfall label. Current balance requires known, complete same-day demand with a current source publication and a valid same-day warehouse snapshot. Missing/stale values remain unavailable, not zero; a valid GPT can remain useful when GRN is unavailable. Unassigned demand is not allocated or used to invent alerts. This does not change statistical forecasts or planning targets.
+
+My Schedule shows all current negative product/warehouse pairs to entitled Echo Admins and Sales (including existing platform-admin semantics), with inventory, demand and signed balance. TASTER/other tenants do not receive the widget. Product links preserve schedule day/week/date through forecast horizon changes. No transfer is made automatically. Missing coverage is disclosed so an empty widget is not mistaken for proof that all warehouses are covered.
+
+The existing morning workflow imports one native DC report independently of demand and delivery completion, retaining immutable daily per-product/warehouse observations and attempt checks. Failed attempts retain prior evidence without making it current. New reads use only compact persisted latest observations; page views never poll providers. Migration `20261110010000_production_warehouse_inventory` is additive. Existing OPS/Microsoft credentials, feature entitlement and sales-product selection are reused unchanged.
+
+For TST-only operator work, `scripts/production-warehouse-inventory.ts` requires explicit env-file, expected-host, expected-target=neon-neat-tst, and reviewed checksum for mutations. Migrate/check/CSV-ingest modes affect only the two new tables; rehearsal constraint forgeries roll back. The scoped TST acceptance workflow refreshes forecasting stock and pending current demand only, shares the existing provider concurrency lock, and discards private exports. See [validation](releases/0.8.0-validation.md) for checksum, target identities and delivery receipts. A code rollback retains the additive tables; do not delete observations.
 
 This is an **overnight agency replenishment estimate**, not an outstanding/allocated purchase order. The owner described same-day shipment and agency scans with an approximately 2 AM inventory load. V1 samples in the morning and clearly discloses same-day timing lag. The retained Bailment report has shipment dates but no receipt/scan status; do not infer unreceived quantities or subtract them a second time. `inboundCases` remains null, not zero.
 
@@ -31,7 +45,7 @@ The owner confirmed **LTL - Pallet Load** for both. Load-type UUIDs are discover
 
 ## Schedule, history and baseline
 
-Extend the existing `sync:production-sources` morning process. Production selects6:47 AM Eastern and TST7:27 AM Eastern using the existing DST-aware GitHub Actions slots. Observations run after preceding imports and display their actual retrieval timestamps. OpenDock locations and OPS products fail independently. A successful daily observation skips redundant polling; failed checks can retry. Vercel's existing forecast cron still refreshes statistical snapshots rather than making dashboard requests to upstream portals.
+Extend the existing `sync:production-sources` morning process. TST selects 7:27 AM Eastern using the existing DST-aware GitHub Actions slots. OpenDock locations and OPS products fail independently. A successful daily observation skips redundant polling; failed checks can retry. Vercel's existing forecast cron still refreshes statistical snapshots rather than making dashboard requests to upstream portals.
 
 Successful daily observations are immutable. Separate check rows record attempts and safe diagnostic codes. A failure never deletes/replaces a successful observation. Preserve the raw appointment timestamp/date and observation time. Changed warehouse/load-type mappings do not reuse incompatible historical comparisons.
 
@@ -41,7 +55,7 @@ Baseline stages require at least 14 distinct prior observation days: prior-year 
 
 ## Configuration and security
 
-1. Apply only `20261104010000_production_operational_signals` after verifying the intended production/test target and isolated rehearsal. Do not blindly apply unrelated migration-ledger gaps. Do not copy TST tenant credentials/settings or operational history into production.
+1. Apply only `20261104010000_production_operational_signals` after verifying the TST target and rehearsal. Do not blindly apply unrelated migration-ledger gaps.
 2. Current TST uses the existing `OHLQ_TENANT_CREDENTIAL_ENCRYPTION_KEY`, verified by live credential save/decryption/API capture. The owner explicitly chose to keep it. Do not rotate that key or substitute a new value; it protects existing OPS credentials. Sensitive values are omitted from local environment exports; their absence there does not establish missing hosted configuration. Optional dedicated `PRODUCTION_OPERATIONAL_CREDENTIAL_ENCRYPTION_KEY` is supported for initial setup (at least32 characters, same value in TST application and GitHub `test` environment). **Do not enable it for this already-saved connection without a coordinated credential migration:** current v1 ciphertext uses the previously selected key and has no key identifier. Compatible key identification and server-side re-encryption must precede a future switch. A malformed dedicated key fails closed. Verify new morning ingestion acceptance separately from successful administrator capture.
 3. Existing encrypted OHLQ credentials, active Ohio enrollment and `PRODUCTION_FORECASTING` entitlement are required. Existing current Organization product mappings determine item codes; no Echo item codes are hard-coded.
 4. An authorized Echo administrator opens `/analytics/production/settings`, enters OpenDock credentials and selects Save and verify. API discovery must succeed before credentials and mappings commit together. Failure preserves the previous pair. Then select **Check delivery availability** to capture the first daily observations without running OPS imports or forecasts. The bounded server action checks warehouses independently, reuses today's successful observations and permits failed checks to retry. Raw passwords are never returned to the browser. Encryption authenticates organization, provider and field to prevent ciphertext swapping.
@@ -49,7 +63,7 @@ Baseline stages require at least 14 distinct prior observation days: prior-year 
 
 The five additive tables are `OrganizationOperationalCredential`, `DeliveryAvailabilityObservation`, `DeliveryAvailabilityCheck`, `CurrentDemandObservation` and `CurrentDemandCheck`. Compound tenant/product references and daily uniqueness protect history. The large per-agency evidence is separate from compact dashboard summaries. All reads, writes, jobs and configuration retain the existing Echo-only pilot boundary.
 
-No ERP integration, another state, logistics optimizer, predictive delivery model or new release tag is included. Generic observation concepts allow future adapters without changing forecast inputs. Production deployment is separately authorized and recorded in the promotion record.
+No ERP integration, another state, logistics optimizer, predictive delivery model, production deployment or release tag is included. Generic observation concepts allow future adapters without changing forecast inputs.
 
 ## Validation and staging readiness
 

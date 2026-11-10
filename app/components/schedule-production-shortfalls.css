@@ -1,0 +1,28 @@
+.schedule-production-shortfalls { min-width: 0; margin: 0 0 20px; padding: 0 0 12px; border-bottom: 1px solid var(--line); }
+.schedule-shortfalls-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 16px; margin-bottom: 0; }
+.schedule-shortfalls-heading h2 { margin: 0; }
+.schedule-shortfalls-heading > a { display: inline-flex; align-items: center; min-height: 44px; font-size: .8125rem; }
+.schedule-shortfalls-table { width: 100%; min-width: 0; table-layout: fixed; margin: 8px 0 0; }
+.schedule-shortfalls-table th:first-child { width: 40%; }
+.schedule-shortfalls-table :is(th, td) { padding: 8px 10px; vertical-align: middle; overflow-wrap: anywhere; }
+.schedule-shortfalls-table .numeric { text-align: right; font-variant-numeric: tabular-nums; }
+.schedule-shortfall-product > a { display: flex; align-items: center; min-height: 44px; width: fit-content; font-weight: 650; }
+.schedule-shortfall-product > small, .schedule-shortfall-balance > small { display: block; font-size: .75rem; font-weight: 400; }
+.schedule-shortfall-product > small { color: var(--muted); }
+.schedule-shortfall-balance { color: var(--theme-danger-ink, var(--danger)); }
+.schedule-shortfalls-empty { margin: 8px 0; }
+.schedule-shortfalls-coverage { margin-top: 8px; }
+
+@media (max-width: 650px) {
+  .schedule-shortfalls-table { display: block; table-layout: auto; }
+  .schedule-shortfalls-table thead { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .schedule-shortfalls-table tbody { display: block; }
+  .schedule-shortfalls-table tbody > tr { display: grid; grid-template-columns: minmax(0, .8fr) repeat(3, minmax(0, 1fr)); gap: 4px 8px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .schedule-shortfalls-table tbody > tr:last-child { border-bottom: 0; }
+  .schedule-shortfalls-table tbody :is(th, td) { display: block; min-width: 0; width: auto; padding: 0; border: 0; }
+  .schedule-shortfall-product { grid-column: 1 / -1; }
+  .schedule-shortfall-product > a { min-height: 44px; }
+  .schedule-shortfall-product > small { margin-top: -4px; }
+  .schedule-shortfalls-table td::before { content: attr(data-label); display: block; font-size: .75rem; font-weight: 400; color: var(--muted); margin-bottom: 3px; }
+  .schedule-shortfall-warehouse { align-self: start; }
+}
