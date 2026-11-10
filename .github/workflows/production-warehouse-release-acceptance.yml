@@ -1,0 +1,76 @@
+name: Scoped production warehouse acceptance
+
+on:
+  push:
+    branches: [codex/forecast-warehouse-acceptance]
+    paths:
+      - .github/workflows/production-warehouse-release-acceptance.yml
+      - scripts/verify-production-warehouse-release.ts
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ohlq-annual-sales-sync-production
+  cancel-in-progress: false
+
+jobs:
+  accept:
+    if: github.repository == 'echospirits/ohlq-field-crm' && github.ref == 'refs/heads/codex/forecast-warehouse-acceptance'
+    environment: production
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: application
+    env:
+      # Replace only after root verifies this exact main SHA is deployed READY.
+      # The script independently checks checked-out HEAD and current main ref.
+      PRODUCTION_ACCEPTANCE_DEPLOYED_MAIN_SHA: 3a21899c523c52c226b8ee3d905abbbe057504d5
+      APP_ENV: production
+      DATABASE_ENVIRONMENT: production
+      DATABASE_TARGET_ID: ${{ vars.DATABASE_TARGET_ID }}
+      EXPECTED_DATABASE_HOST: ${{ vars.EXPECTED_DATABASE_HOST }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      OHLQ_TENANT_CREDENTIAL_ENCRYPTION_KEY: ${{ secrets.OHLQ_TENANT_CREDENTIAL_ENCRYPTION_KEY }}
+      OHLQ_MICROSOFT_USERNAME: ${{ secrets.OHLQ_MICROSOFT_USERNAME }}
+      OHLQ_MICROSOFT_PASSWORD: ${{ secrets.OHLQ_MICROSOFT_PASSWORD }}
+      OHLQ_BROWSER_CHANNEL: ""
+      OHLQ_HEADLESS: "1"
+      OHLQ_USE_PERSISTENT_BROWSER_CONTEXT: "1"
+      OHLQ_USE_SERVERLESS_CHROMIUM: "0"
+      OHLQ_IMPORT_ENABLED: "false"
+      CRON_JOBS_ENABLED: "false"
+      CALENDAR_SYNC_ENABLED: "false"
+      EMAIL_SEND_ENABLED: "false"
+      FILE_UPLOADS_ENABLED: "false"
+      WEBHOOK_REGISTRATION_ENABLED: "false"
+    steps:
+      - name: Check out isolated acceptance source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          path: verification
+          persist-credentials: false
+      - name: Check out exact deployed application
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ env.PRODUCTION_ACCEPTANCE_DEPLOYED_MAIN_SHA }}
+          path: application
+          persist-credentials: false
+      - name: Set up Node 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "22"
+      - name: Install exact application dependencies
+        run: npm ci
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Verify scoped production warehouse sources
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p tmp
+          cp ../verification/scripts/verify-production-warehouse-release.ts tmp/verify-production-warehouse-release.ts
+          npx tsx tmp/verify-production-warehouse-release.ts
+      # No artifacts, broad import runners, OpenDock or credentials/config writes.
