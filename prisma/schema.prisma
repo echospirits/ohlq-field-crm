@@ -484,7 +484,10 @@ model User {
   paidWholesaleOrders         WholesaleOrder[]       @relation("WholesaleOrderPaidBy")
   filedWholesaleOrders        WholesaleOrder[]       @relation("WholesaleOrderFiledBy")
 
+  forecastRefreshRequests     ProductionForecastRefreshRequest[]
+
   @@index([role])
+  @@unique([organizationId, id])
   @@index([organizationId])
   @@index([isActive])
 }
@@ -542,6 +545,7 @@ model Organization {
   productionGuidance      ProductionGuidanceObservation[]
   productionForecastRuns  ProductionForecastRun[]
   productionForecasts     ProductionForecastSnapshot[]
+  productionForecastRefreshRequests ProductionForecastRefreshRequest[]
   operationalCredentials OrganizationOperationalCredential[]
   deliveryAvailability   DeliveryAvailabilityObservation[]
   deliveryChecks         DeliveryAvailabilityCheck[]
@@ -3143,6 +3147,29 @@ model ProductionForecastRun {
   @@unique([organizationId, runKey])
   @@unique([organizationId, id])
   @@index([organizationId, generatedAt])
+}
+
+model ProductionForecastRefreshRequest {
+  id                String       @id @default(cuid())
+  organizationId    String
+  requestedByUserId String
+  status            String       @default("QUEUED")
+  stage             String       @default("QUEUED")
+  activeKey         String?      @unique(map: "forecast_refresh_active_tenant_key")
+  leaseToken        String?
+  requestedAt       DateTime     @default(now()) @db.Timestamptz(3)
+  startedAt         DateTime?    @db.Timestamptz(3)
+  completedAt       DateTime?    @db.Timestamptz(3)
+  expiresAt         DateTime?    @db.Timestamptz(3)
+  heartbeatAt       DateTime?    @db.Timestamptz(3)
+  workflowRunId     String?
+  failureCode       String?
+  result            Json         @default("{}")
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  requestedByUser    User         @relation(fields: [organizationId, requestedByUserId], references: [organizationId, id], onDelete: Restrict)
+
+  @@unique([organizationId, id], map: "forecast_refresh_tenant_id_key")
+  @@index([organizationId, requestedAt], map: "forecast_refresh_history_idx")
 }
 
 model ProductionForecastSnapshot {

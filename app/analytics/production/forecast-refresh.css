@@ -1,0 +1,14 @@
+.pf-refresh-control { display: grid; justify-items: start; gap: 4px; min-width: 0; max-width: 24rem; }
+.pf-refresh-control > button { min-height: 44px; }
+.pf-refresh-feedback { min-width: 0; max-width: 100%; font-size: .75rem; line-height: 1.45; color: var(--muted); overflow-wrap: anywhere; }
+.pf-refresh-feedback p { margin: 0; }
+.pf-refresh-feedback > p + p { margin-top: 3px; }
+.pf-refresh-feedback a { display: inline-flex; align-items: center; min-height: 44px; }
+.pf-refresh-feedback .pf-refresh-error { color: var(--theme-danger-ink, var(--danger)); }
+.pf-refresh-feedback .pf-refresh-warning { color: var(--theme-warning-ink, var(--text)); }
+.pf-refresh-last { font-variant-numeric: tabular-nums; }
+.pf-source-settings { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 16px; font-size: .8125rem; }
+.pf-source-settings > a { display: inline-flex; align-items: center; min-height: 44px; }
+@media (max-width: 767px) {
+  .pf-page > .page-header .page-heading-actions, .pf-refresh-control { width: 100%; max-width: 100%; }
+}

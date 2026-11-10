@@ -67,6 +67,8 @@ test('date corrections reverse the old day; suspected truncation rejects atomica
 test('scheduled Echo sources fail independently, skip outside credentials, refresh, and never log provider payloads', async () => {
   const organizations = ['org_echo_spirits', 'outside'].map(id => ({ id, timezone: 'America/New_York', settings: { productionForecasting: { ohio: { historyStart: '2019-01-01', directInvoices: 'invoice-date' } } } }));
   const called: string[] = [], messages: string[] = [], failures: unknown[] = [];
+  const stages: string[] = [];
+  let outcome: unknown;
   let query: unknown;
   const db = { organization: { findMany: async (args: unknown) => { query = args; return organizations; } }, productionSourceImport: { upsert: async (args: unknown) => { failures.push(args); } } } as unknown as PrismaClient;
   const download = (organization: string) => ({ csvBuffer: Buffer.from(organization), reportDate: '2026-10-28', filename: 'private.csv', outputPath: '/private.csv', runDate: '2026-10-28', sizeBytes: 1 });
@@ -77,9 +79,11 @@ test('scheduled Echo sources fail independently, skip outside credentials, refre
     importCsv: async (_csv: string, o: { source: string; organizationId: string; end: string }) => { called.push(`import:${o.organizationId}:${o.source}`); if (o.source === 'BAILMENT_PO_INVOICE') assert.equal(o.end, '2026-10-27'); return { id: 'batch', replay: false, rowCount: 1, excludedRows: 0 }; },
     refresh: async (id: string) => { called.push(`refresh:${id}`); return { id: 'run', replay: false, products: 1 }; },
   } as unknown as NonNullable<Parameters<typeof syncProductionSources>[0]>['services'];
-  await assert.rejects(() => syncProductionSources({ db, services, now: new Date('2026-10-28T16:00:00Z'), logger: { log: m => messages.push(m), error: m => messages.push(m) } }), /org_echo_spirits:BAILMENT_PO_INVOICE/);
+  await assert.rejects(() => syncProductionSources({ db, services, now: new Date('2026-10-28T16:00:00Z'), logger: { log: m => messages.push(m), error: m => messages.push(m) }, onStage: async stage => { stages.push(stage); }, onResult: result => { outcome = result; } }), /org_echo_spirits:BAILMENT_PO_INVOICE/);
   assert.ok(called.includes('import:org_echo_spirits:DISTRIBUTION_CENTER')); assert.ok(called.includes('refresh:org_echo_spirits')); assert.ok(!called.some(call => call.includes('outside')));
   assert.equal(failures.length, 1); assert.doesNotMatch(JSON.stringify([messages, failures]), /never-log|private-provider-payload/);
+  assert.deepEqual(stages, ['BAILMENT', 'GUIDANCE', 'FORECAST']);
+  assert.deepEqual(outcome, { configuredOrganizations: 1, importedSources: 1, refreshedForecasts: 1, failedSources: ['BAILMENT_PO_INVOICE'] }, 'a failed source still reports persisted independent progress before rejecting');
   assert.match(JSON.stringify(query), /PRODUCTION_FORECASTING/); assert.match(JSON.stringify(query), /SUSPENDED/); assert.match(JSON.stringify(query), /ohlqCredentials/);
 });
 test('automation reuses isolated OHLQ job, permits focused dispatch and keeps private exports out of artifacts', () => {

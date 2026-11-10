@@ -1,0 +1,71 @@
+name: Refresh Production Forecasting
+
+on:
+  workflow_dispatch:
+    inputs:
+      requestId:
+        description: Persisted Production Forecasting refresh request ID
+        required: true
+        type: string
+      organizationId:
+        description: Organization on the persisted refresh request
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+# Match the existing scheduled/provider validation lock in each repository.
+concurrency:
+  group: ohlq-annual-sales-sync-${{ github.repository == 'echospirits/neat-tst' && 'test' || 'production' }}
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    if: >-
+      (github.repository == 'echospirits/neat-tst' && github.ref == 'refs/heads/tst') ||
+      (github.repository == 'echospirits/ohlq-field-crm' && github.ref == 'refs/heads/main')
+    environment: ${{ github.repository == 'echospirits/neat-tst' && 'test' || 'production' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      APP_ENV: ${{ github.repository == 'echospirits/neat-tst' && 'test' || 'production' }}
+      DATABASE_ENVIRONMENT: ${{ github.repository == 'echospirits/neat-tst' && 'test' || 'production' }}
+      DATABASE_TARGET_ID: ${{ vars.DATABASE_TARGET_ID }}
+      EXPECTED_DATABASE_HOST: ${{ vars.EXPECTED_DATABASE_HOST }}
+      PRODUCTION_BASE_URL: ${{ vars.PRODUCTION_BASE_URL }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      OHLQ_TENANT_CREDENTIAL_ENCRYPTION_KEY: ${{ secrets.OHLQ_TENANT_CREDENTIAL_ENCRYPTION_KEY }}
+      PRODUCTION_OPERATIONAL_CREDENTIAL_ENCRYPTION_KEY: ${{ secrets.PRODUCTION_OPERATIONAL_CREDENTIAL_ENCRYPTION_KEY }}
+      OHLQ_MICROSOFT_USERNAME: ${{ secrets.OHLQ_MICROSOFT_USERNAME }}
+      OHLQ_MICROSOFT_PASSWORD: ${{ secrets.OHLQ_MICROSOFT_PASSWORD }}
+      OHLQ_BROWSER_CHANNEL: ""
+      OHLQ_HEADLESS: "1"
+      OHLQ_USE_PERSISTENT_BROWSER_CONTEXT: "1"
+      OHLQ_USE_SERVERLESS_CHROMIUM: "0"
+      OHLQ_IMPORT_ENABLED: "true"
+      CRON_JOBS_ENABLED: "false"
+      CALENDAR_SYNC_ENABLED: "false"
+      EMAIL_SEND_ENABLED: "false"
+      FILE_UPLOADS_ENABLED: "false"
+      WEBHOOK_REGISTRATION_ENABLED: "false"
+    steps:
+      - name: Check out the authorized environment branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Set up Node 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install exact dependencies
+        run: npm ci
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Claim and refresh only Production Forecasting
+        env:
+          PRODUCTION_FORECAST_REFRESH_REQUEST_ID: ${{ inputs.requestId }}
+          PRODUCTION_FORECAST_REFRESH_ORGANIZATION_ID: ${{ inputs.organizationId }}
+        run: npx tsx scripts/run-production-forecast-refresh.ts
+      # Native files remain in private runner storage; no artifacts are uploaded.

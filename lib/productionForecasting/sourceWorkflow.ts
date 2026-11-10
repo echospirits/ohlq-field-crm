@@ -11,9 +11,11 @@ import { importProductionSource, type ImportOptions, type SourceKind } from './i
 import { shift, validDay } from './model';
 import { refreshProductionForecast } from './service';
 import { syncOperationalSignals } from './operationalSignals/workflow';
+import type { ForecastRefreshStage } from './refreshState';
 
 const defaults = { credentials: getOrganizationOhlqCredentials, bailment: downloadOhlqBailmentInvoices, dc: downloadOhlqPartnerDc, importCsv: importProductionSource, refresh: refreshProductionForecast, operations: syncOperationalSignals };
 type ProductionSourceServices = Omit<typeof defaults, 'operations'> & { operations?: (options: Parameters<typeof syncOperationalSignals>[0]) => Promise<{ failed: number }> };
+export type ProductionSourceOutcome = { configuredOrganizations: number; importedSources: number; refreshedForecasts: number; failedSources: Array<'BAILMENT_PO_INVOICE' | 'DISTRIBUTION_CENTER' | 'FORECAST' | 'OPERATIONS'> };
 export function ohioSourceConfiguration(settings: unknown) {
   const raw = (settings as { productionForecasting?: { ohio?: { historyStart?: unknown; directInvoices?: unknown } } } | null)?.productionForecasting?.ohio;
   const historyStart = typeof raw?.historyStart === 'string' && validDay(raw.historyStart) ? raw.historyStart : null;
@@ -23,15 +25,18 @@ export function ohioSourceConfiguration(settings: unknown) {
 
 /** Uses the existing OHLQ scheduled job and each enrolled tenant's credentials.
  * Sources and tenants fail independently; logs contain operational counts only. */
-export async function syncProductionSources({ db = prisma, services = defaults, logger = console, now = new Date() }: { db?: PrismaClient; services?: ProductionSourceServices; logger?: Pick<Console, 'log' | 'error'>; now?: Date } = {}) {
+export async function syncProductionSources({ db = prisma, services = defaults, logger = console, now = new Date(), onStage, onResult }: { db?: PrismaClient; services?: ProductionSourceServices; logger?: Pick<Console, 'log' | 'error'>; now?: Date; onStage?: (stage: ForecastRefreshStage) => Promise<void>; onResult?: (result: ProductionSourceOutcome) => void } = {}) {
   const organizations = await db.organization.findMany({ where: { id: ECHO_ORGANIZATION_ID, active: true, accountStatus: { notIn: ['SUSPENDED', 'CANCELLED'] }, enabledStates: { has: 'OH' }, ohlqCredentials: { isNot: null }, features: { some: { featureKey: 'PRODUCTION_FORECASTING', enabled: true } } }, orderBy: { id: 'asc' }, select: { id: true, settings: true, timezone: true } });
   const failures: string[] = [];
+  const failedSources: ProductionSourceOutcome['failedSources'] = [];
   let importedSources = 0;
+  let refreshedForecasts = 0;
   for (const organization of organizations) {
     if (organization.id !== ECHO_ORGANIZATION_ID) continue;
     const today = formatDateInputValue(now, organization.timezone), end = shift(today, -1), config = ohioSourceConfiguration(organization.settings);
     const credentials = await services.credentials(organization.id, db).catch(() => null);
     for (const source of ['BAILMENT_PO_INVOICE', 'DISTRIBUTION_CENTER'] as SourceKind[]) {
+      await onStage?.(source === 'BAILMENT_PO_INVOICE' ? 'BAILMENT' : 'GUIDANCE');
       let phase: 'credentials' | 'configuration' | 'download' | 'validation' = 'credentials';
       const options: ImportOptions = { organizationId: organization.id, market: 'OH', source, start: source === 'BAILMENT_PO_INVOICE' ? config.historyStart ?? end : today, end: source === 'BAILMENT_PO_INVOICE' ? end : today, observedOn: today, complete: true };
       try {
@@ -49,6 +54,7 @@ export async function syncProductionSources({ db = prisma, services = defaults, 
         logger.log(JSON.stringify({ organizationId: organization.id, source, status: result.replay ? 'replayed' : 'imported', rows: result.rowCount, excludedRows: result.excludedRows, reportDate: today }));
       } catch (error) {
         failures.push(`${organization.id}:${source}`);
+        failedSources.push(source);
         // No provider error text, rows, credentials, or filenames in CI metadata.
         const contentHash = createHash('sha256').update(JSON.stringify({ ...options, attempt: 'scheduled-download-failure' })).digest('hex');
         const detail = error instanceof Error ? error.message : '';
@@ -57,14 +63,17 @@ export async function syncProductionSources({ db = prisma, services = defaults, 
         logger.error(JSON.stringify({ organizationId: organization.id, source, status: 'failed', reason, reportDate: today }));
       }
     }
-    try { await services.refresh(organization.id, db, now); }
-    catch { failures.push(`${organization.id}:REFRESH`); logger.error(JSON.stringify({ organizationId: organization.id, status: 'refresh-failed' })); }
+    await onStage?.('FORECAST');
+    try { await services.refresh(organization.id, db, now); refreshedForecasts++; }
+    catch { failures.push(`${organization.id}:REFRESH`); failedSources.push('FORECAST'); logger.error(JSON.stringify({ organizationId: organization.id, status: 'refresh-failed' })); }
   }
   if (services.operations) {
+    await onStage?.('OPERATIONS');
     // Run even when a source failed; its clock reflects actual retrieval time.
-    try { const result = await services.operations({ db, logger }); if (result.failed) failures.push('OPERATIONAL_SIGNALS'); }
-    catch { failures.push('OPERATIONAL_SIGNALS'); logger.error(JSON.stringify({ source: 'OPERATIONAL_SIGNALS', status: 'failed' })); }
+    try { const result = await services.operations({ db, logger }); if (result.failed) { failures.push('OPERATIONAL_SIGNALS'); failedSources.push('OPERATIONS'); } }
+    catch { failures.push('OPERATIONAL_SIGNALS'); failedSources.push('OPERATIONS'); logger.error(JSON.stringify({ source: 'OPERATIONAL_SIGNALS', status: 'failed' })); }
   }
+  onResult?.({ configuredOrganizations: organizations.filter(organization => organization.id === ECHO_ORGANIZATION_ID).length, importedSources, refreshedForecasts, failedSources });
   if (failures.length) throw new Error(`Production source failures: ${failures.join(', ')}.`);
   return { configuredOrganizations: organizations.length, importedSources };
 }
