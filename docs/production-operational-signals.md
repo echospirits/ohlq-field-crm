@@ -1,6 +1,6 @@
 # Production Forecasting - Operational Signals
 
-The initial Operational Signals extension shipped with version 0.6.0. The owner-authorized warehouse comparison is now in **0.8.0-dev, TST first for review**; production remains 0.7.3. The existing statistical model is unchanged. Forecast, immediate agency replenishment, warehouse stock and delivery availability remain independently stored. Nothing adds the operational estimate to a forecast or planning target.
+The initial Operational Signals extension shipped with version 0.6.0. The owner-approved warehouse comparison is released to TST and production in **0.8.0**, with verified production application `3a21899c523c52c226b8ee3d905abbbe057504d5`. The existing statistical model is unchanged. Forecast, immediate agency replenishment, warehouse stock and delivery availability remain independently stored. Nothing adds the operational estimate to a forecast or planning target. See the [release validation](releases/0.8.0-validation.md) for migration, provider and affected-flow evidence.
 
 ## Sources and meaning
 
