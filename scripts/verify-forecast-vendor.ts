@@ -24,7 +24,7 @@ async function main() {
   const environment = process.env.APP_ENV;
   assert(environment === 'test' || environment === 'production', 'Explicit environment required.');
   const expectedRepository = environment === 'test' ? 'echospirits/neat-tst' : 'echospirits/ohlq-field-crm';
-  const expectedTarget = environment === 'test' ? 'neon-neat-tst' : 'ohlq-field-crm';
+  const expectedTarget = environment === 'test' ? 'neon-neat-tst' : 'neon-ohlq-field-crm-prod';
   assert.equal(process.env.GITHUB_REPOSITORY, expectedRepository, 'Repository/environment mismatch.');
   const expectedSha = process.env.ACCEPTANCE_EXPECTED_APP_SHA ?? '';
   assert.match(expectedSha, /^[0-9a-f]{40}$/);
@@ -118,6 +118,7 @@ async function main() {
   }, { timeout: 30000 });
 
   phase = 'forecast-source-refresh';
+  if (!process.env.PRODUCTION_OPERATIONAL_CREDENTIAL_ENCRYPTION_KEY?.trim()) delete process.env.PRODUCTION_OPERATIONAL_CREDENTIAL_ENCRYPTION_KEY;
   let sourceCounts: Awaited<ReturnType<typeof syncProductionSources>>;
   try {
     // This canonical focused runner imports forecasting sources, refreshes
