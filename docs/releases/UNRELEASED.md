@@ -1,25 +1,15 @@
 # Unreleased
 
-No unreleased feature work remains after the owner-approved **0.7.2** Wholesale Orders production hotfix. Development remains frozen; no new development cycle is opened.
+Version **0.7.3** is released to TST and production. No unreleased feature work remains on main. Development remains frozen; no new development cycle is opened.
 
-- Production application: `12c1d995114203609bb92f833449138ec22bd52c`, version 0.7.2, READY with correct production database health. All six reviewed unfiled orders are now AUTO_MATCH Filed; replay filed zero additional orders.
-- [0.7.2 release notes](0.7.2.md), [checklist](0.7.2-checklist.md) and [validation](0.7.2-validation.md) record exact-candidate CI/tests/build, deployment, guarded live recovery, preservation evidence and the remotely verified production tag. Signed-in production UI acceptance remains explicitly unverified; the TST closeout receipt is tracked there.
-- Historical [0.7.0 release records](0.7.0.md) and earlier tags/records remain preserved. Unrelated TST maintenance was excluded from production.
-- Sent/Paid, original order snapshots/PDFs and four manual filing records are preserved. The owner-confirmed Antiques report permit was added as a non-primary alias; no schema/migration, dependency graph, hosted environment, feature flag or provider configuration changed. Unrelated production/TST differences remain preserved.
+- Production application: `f7188859837c9ae93fcef47547e7eb657cb40456`, version 0.7.3, READY with verified production database health.
+- [0.7.3 release notes](0.7.3.md), [checklist](0.7.3-checklist.md) and [validation](0.7.3-validation.md) record the exact tested scope, CI/builds, deployments and live forecasting/sales-exclusion acceptance.
+- [Archived OpenDock lookup recovery](0.7.2-opendock-reliability.md) and earlier release records/tags remain preserved.
+- Unrelated TST tasting features, migrations and maintenance remain excluded from main.
 
 ## Changes
 
-### Production Forecasting vendor bailment scope — November 9, 2026
-
-- Owner authorized this scoped 0.7.3 correction for TST and main: use all active organization-vendor A3A BAIL items in Ohio Forecasting, including sales-excluded3150B, without changing sales-product decisions or shared inventory/sales filters.
-- Source imports, immutable forecasts, detail and Current Demand share the scope. Missing identities remain EXCLUDED/inactive; no existing identity is promoted. No schema/migration, dependency, entitlement, provider or hosted-configuration change.
-- [Release notes](0.7.3.md), [validation](0.7.3-validation.md), [checklist](0.7.3-checklist.md). Unrelated TST-only work is excluded from main.
-
-### OpenDock lookup recovery — November 9, 2026
-
-- Owner-authorized TST and main reliability correction, retaining version 0.7.2. Temporary OpenDock lookup failures produce visible warnings after safe persistence, preserve prior observations and permit independent imports to complete. Authentication, malformed-response and persistence failures remain errors.
-- Bounded retries honor Retry-After; CI retains safe diagnostic codes for recurring interruptions. No schema, dependency, hosted/provider configuration or UI change. Unrelated TST work remains excluded from production.
-- [Scope, validation and delivery](0.7.2-opendock-reliability.md).
+None.
 
 ## Entry template
 
