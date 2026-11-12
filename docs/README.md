@@ -1,5 +1,7 @@
 # Neat engineering and product documentation
 
+Production Supplies **0.10.0** is the owner-approved selective release candidate from accepted TST `7cff2fdc`, based on production `e2a19c9b`. It adds the simple Dx5-driven status dashboard and Production navigation. Tasting Management and later Social Publishing work remain excluded. See [release validation](releases/0.10.0-validation.md) and [operator guide](production-supplies.md).
+
 Start with [implementation progress](engineering/implementation-progress.md) and [feature inventory](product/feature-inventory.md). Existing canonical release and UI standards remain authoritative.
 
 ## Current release

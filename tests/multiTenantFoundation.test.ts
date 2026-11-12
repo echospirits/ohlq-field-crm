@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { CORE_PACKAGE_FEATURE_KEYS, DEFAULT_FEATURE_KEYS, ECHO_FEATURE_KEYS, FEATURE_KEYS, FEATURE_REGISTRY, getEnvironmentFeatureKeys, getPackageFeatureKeys, hasIntelligencePackage, INTELLIGENCE_PACKAGE_FEATURE_KEYS, validateFeatureSelection } from '../lib/featureRegistry';
+import { CORE_PACKAGE_FEATURE_KEYS, DEFAULT_FEATURE_KEYS, ECHO_FEATURE_KEYS, FEATURE_KEYS, FEATURE_REGISTRY, getEnvironmentFeatureKeys, getPackageFeatureKeys, hasIntelligencePackage, INTELLIGENCE_PACKAGE_FEATURE_KEYS, PILOT_FEATURE_KEYS, validateFeatureSelection } from '../lib/featureRegistry';
 import { getNavigationItems, navigationItems } from '../app/components/navigationConfig';
 import { normalizeOrganizationIdentifierList } from '../lib/organizationConfiguration';
 
@@ -20,7 +20,7 @@ test('feature packages keep Core mandatory and group every intelligence capabili
   assert.deepEqual(DEFAULT_FEATURE_KEYS, CORE_PACKAGE_FEATURE_KEYS);
   assert.deepEqual(INTELLIGENCE_PACKAGE_FEATURE_KEYS, ['AGENCY_INTELLIGENCE', 'WHOLESALE_OPPORTUNITIES', 'ADVANCED_INTELLIGENCE']);
   assert.deepEqual(getPackageFeatureKeys(false), CORE_PACKAGE_FEATURE_KEYS);
-  assert.deepEqual(getPackageFeatureKeys(true), FEATURE_KEYS.filter(key => key !== 'PRODUCTION_FORECASTING'));
+  assert.deepEqual(getPackageFeatureKeys(true), FEATURE_KEYS.filter(key => !PILOT_FEATURE_KEYS.includes(key as typeof PILOT_FEATURE_KEYS[number])));
   assert.equal(hasIntelligencePackage(['AGENCY_INTELLIGENCE']), true);
   assert.equal(hasIntelligencePackage(CORE_PACKAGE_FEATURE_KEYS), false);
 });
@@ -34,8 +34,12 @@ test('invalid entitlement combinations report every missing dependency', () => {
 });
 
 test('test environment enables standard features while respecting explicit pilot enrollment', () => {
-  assert.deepEqual(getEnvironmentFeatureKeys(['CORE_CRM'], { APP_ENV: 'test' }), FEATURE_KEYS.filter(key => key !== 'PRODUCTION_FORECASTING'));
-  assert.deepEqual(getEnvironmentFeatureKeys(['CORE_CRM', 'PRODUCTION_FORECASTING'], { APP_ENV: 'test' }), [...FEATURE_KEYS]);
+  assert.deepEqual(getEnvironmentFeatureKeys(['CORE_CRM'], { APP_ENV: 'test' }), FEATURE_KEYS.filter(key => !PILOT_FEATURE_KEYS.includes(key as typeof PILOT_FEATURE_KEYS[number])));
+  assert.deepEqual(getEnvironmentFeatureKeys(['CORE_CRM', 'PRODUCTION_FORECASTING'], { APP_ENV: 'test' }), FEATURE_KEYS.filter(key => !PILOT_FEATURE_KEYS.includes(key as typeof PILOT_FEATURE_KEYS[number]) || key === 'PRODUCTION_FORECASTING'));
+  assert.deepEqual(getEnvironmentFeatureKeys(['CORE_CRM', ...PILOT_FEATURE_KEYS], { APP_ENV: 'test' }), [...FEATURE_KEYS]);
+  assert.equal(DEFAULT_FEATURE_KEYS.includes('PRODUCTION_SUPPLIES'), false);
+  assert.equal(FEATURE_REGISTRY.PRODUCTION_SUPPLIES.defaultEnabled, false);
+  assert.deepEqual(getEnvironmentFeatureKeys(['CORE_CRM', 'PRODUCTION_SUPPLIES'], { APP_ENV: 'test' }), FEATURE_KEYS.filter(key => !PILOT_FEATURE_KEYS.includes(key as typeof PILOT_FEATURE_KEYS[number]) || key === 'PRODUCTION_SUPPLIES'));
   assert.deepEqual(getEnvironmentFeatureKeys(['CORE_CRM'], { APP_ENV: 'production' }), ['CORE_CRM']);
   assert.deepEqual(getEnvironmentFeatureKeys(['CORE_CRM'], { APP_ENV: 'development' }), ['CORE_CRM']);
 });

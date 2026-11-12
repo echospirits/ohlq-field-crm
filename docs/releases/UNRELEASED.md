@@ -1,13 +1,13 @@
 # Unreleased
 
-No pending production application changes. The owner-approved inventory refresh correction is released as stable **0.9.2** to TST and production. Published [v0.9.2](https://github.com/echospirits/ohlq-field-crm/releases/tag/v0.9.2) is verified Latest at exact production application `0f890cc0063bfa94cec16874c2135a9767a8e37e`, after real refresh/native inventory, retained-history, protected-data and affected-UI acceptance. See the archived [notes/technical manifest](0.9.2.md), [completed checklist](0.9.2-checklist.md), [validation](0.9.2-validation.md) and [plan](0.9.2-plan.md).
+## 0.10.0 release candidate — Production Supplies
 
-Development remains frozen; no new cycle is opened. Unrelated TST Tasting Management features, migrations and maintenance remain excluded from production. Historical [0.9.1 records](0.9.1-validation.md), earlier release evidence and all tags remain preserved.
+Owner-approved November 12, 2026. Selectively promote this chat's accepted TST application 7cff2fdc5606efe868a3aa2341a124187516a280 onto production e2a19c9b45c7bbcbccdbbbf061879a00a43b7718. Preserve main's existing behavior and tests; exclude earlier TST Tasting Management and later concurrent Social Publishing.
 
-## Entry template
+- Simple Supplies status cards only for Dx5-alerted materials; one material/location per replenishment cycle, durable dismissal, automatic completed-delivery hiding, and no tabs/history/manual editors. Dx5 owns inventory planning; Ollie remains a future seam.
+- Production menu groups Supplies and Forecasting on desktop/mobile, retaining original routes, feature gating and role access.
+- Tenant/team permissions, read-only Gmail ingestion, authenticated provider provenance, durable bounded replay and scoped parcel tracking. Production activation and each owner's consent remain separate from code delivery; never copy TST tokens, encryption keys or private test data.
+- Additive migration 20261112010000_production_supplies creates 19 normalized tables. Apply only its reviewed checksum after a production-derived rehearsal, without replaying unrelated migration gaps.
+- Production uses independently gated scheduling and credentials. Tracking stays disabled without approved provider credentials/fees. No new account, paid subscription, supplier message, purchase, receipt or inventory/accounting transaction is authorized by this release.
 
-- Description and user-visible behavior:
-- Relevant TST commit(s):
-- Validation and known limits:
-- Migration, backfill, environment/configuration and feature flags:
-- Release/recovery notes:
+See [release notes](0.10.0.md), [checklist](0.10.0-checklist.md) and [validation](0.10.0-validation.md). Previous stable release [0.9.2](0.9.2.md) and all historical refs remain preserved. No unrelated development cycle is opened.

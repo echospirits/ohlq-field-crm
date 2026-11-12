@@ -4,6 +4,10 @@
   "regions": ["iad1"],
   "crons": [
     {
+      "path": "/api/cron/production-supplies",
+      "schedule": "13 14 * * *"
+    },
+    {
       "path": "/api/cron/production-forecasting",
       "schedule": "30 12 * * *"
     },

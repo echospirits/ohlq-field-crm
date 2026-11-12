@@ -493,6 +493,12 @@ model User {
 }
 
 model Organization {
+  supplyCatalog SupplyCatalogItem[]
+  supplyOrders SupplyOrder[]
+  supplyNeeds SupplyNeed[]
+  supplySources SupplySource[]
+  supplyAudits SupplyAudit[]
+  supplyMailboxSyncs SupplyMailboxSync[]
   contactSuggestionReviews ContactSuggestionReview[]
   eventShifts EventShift[]
   eventbriteConnection EventbriteConnection?
@@ -3369,4 +3375,379 @@ model CurrentDcInventoryCheck {
 
   @@unique([organizationId, productId, locationCode, businessDate], map: "dc_inventory_check_tenant_product_location_day_key")
   @@index([organizationId, productId, locationCode, checkedAt], map: "dc_inventory_check_history_idx")
+}
+
+// Production Supplies operational records. Composite parent keys enforce tenant boundaries.
+model SupplyCatalogItem {
+  id String @id @default(cuid())
+  organizationId String
+  name String
+  normalizedName String
+  category String?
+  unit String?
+  packSize Decimal? @db.Decimal(20, 6)
+  departments String[] @default([])
+  sharedUse Boolean @default(false)
+  productAssociation String?
+  confirmed Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  aliases SupplyCatalogAlias[]
+  rules SupplyClassificationRule[]
+  lines SupplyOrderLine[]
+  needs SupplyNeed[]
+  @@unique([organizationId, id])
+  @@unique([organizationId, normalizedName])
+}
+model SupplyCatalogAlias {
+  id String @id @default(cuid())
+  organizationId String
+  catalogItemId String
+  alias String
+  supplier String @default("")
+  sku String @default("")
+  unit String?
+  packSize Decimal? @db.Decimal(20, 6)
+  catalogItem SupplyCatalogItem @relation(fields: [organizationId, catalogItemId], references: [organizationId, id], onDelete: Cascade)
+  @@unique([organizationId, catalogItemId, supplier, sku, alias])
+}
+model SupplyClassificationRule {
+  id String @id @default(cuid())
+  organizationId String
+  catalogItemId String?
+  supplier String
+  sku String
+  unit String?
+  packSize Decimal? @db.Decimal(20, 6)
+  department String
+  explanation String
+  reviewedByUserId String
+  active Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  catalogItem SupplyCatalogItem? @relation(fields: [organizationId, catalogItemId], references: [organizationId, id], onDelete: Restrict)
+  @@unique([organizationId, supplier, sku])
+  @@index([organizationId, active])
+}
+model SupplyOrder {
+  id String @id @default(cuid())
+  organizationId String
+  dedupeKey String
+  supplier String
+  normalizedSupplier String
+  orderReference String?
+  destination String?
+  ownerUserId String?
+  orderedAt DateTime? @db.Date
+  invoiceDate DateTime? @db.Date
+  paymentDate DateTime? @db.Date
+  estimatedShipDate DateTime? @db.Date
+  status String @default("ORDERED")
+  reviewRequired Boolean @default(false)
+  historicalOutcomeUnknown Boolean @default(false)
+  ignored Boolean @default(false)
+  notes String @default("")
+  manualFields String[] @default([])
+  lastEvidenceAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  lines SupplyOrderLine[]
+  shipments SupplyShipment[]
+  sources SupplyOrderSource[]
+  receipts SupplyReceipt[]
+  audits SupplyAudit[]
+  @@unique([organizationId, id])
+  @@unique([organizationId, dedupeKey])
+  @@index([organizationId, normalizedSupplier, orderReference])
+  @@index([organizationId, status, updatedAt])
+}
+model SupplyOrderLine {
+  manualFields String[] @default([])
+  id String @id @default(cuid())
+  organizationId String
+  orderId String
+  lineKey String
+  description String
+  sku String?
+  quantity Decimal? @db.Decimal(20, 6)
+  unit String?
+  packSize Decimal? @db.Decimal(20, 6)
+  catalogItemId String?
+  department String @default("NEEDS_REVIEW")
+  classificationSource String @default("UNKNOWN")
+  classificationConfidence Float?
+  classificationExplanation String @default("Purchase purpose needs review.")
+  manualClassification Boolean @default(false)
+  productionQuantity Decimal? @db.Decimal(20, 6)
+  barQuantity Decimal? @db.Decimal(20, 6)
+  ignored Boolean @default(false)
+  backorderedQuantity Decimal? @db.Decimal(20, 6)
+  notes String @default("")
+  lastEvidenceAt DateTime?
+  order SupplyOrder @relation(fields: [organizationId, orderId], references: [organizationId, id], onDelete: Cascade)
+  catalogItem SupplyCatalogItem? @relation(fields: [organizationId, catalogItemId], references: [organizationId, id], onDelete: Restrict)
+  shipmentLines SupplyShipmentLine[]
+  allocations SupplyNeedAllocation[]
+  receiptLines SupplyReceiptLine[]
+  @@unique([organizationId, id])
+  @@unique([organizationId, orderId, lineKey])
+  @@index([organizationId, catalogItemId, department])
+}
+model SupplyShipment {
+  id String @id @default(cuid())
+  organizationId String
+  orderId String
+  referenceType String
+  reference String
+  carrier String?
+  provider String?
+  providerTrackingId String?
+  providerMode String?
+  status String @default("UNKNOWN")
+  statusEventAt DateTime?
+  destination String?
+  timezone String @default("America/New_York")
+  lastCheckedAt DateTime?
+  lastSuccessfulCheckAt DateTime?
+  nextCheckAt DateTime? @default(now())
+  checkError String?
+  failureCount Int @default(0)
+  leaseId String?
+  leaseUntil DateTime?
+  deliveredAt DateTime?
+  returnedAt DateTime?
+  notificationFingerprint String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  order SupplyOrder @relation(fields: [organizationId, orderId], references: [organizationId, id], onDelete: Cascade)
+  lines SupplyShipmentLine[]
+  arrivalEstimates SupplyArrivalEstimate[]
+  observations SupplyTrackingObservation[]
+  receipts SupplyReceipt[]
+  notifications SupplyNotification[]
+  @@unique([organizationId, id])
+  @@unique([organizationId, referenceType, reference, carrier])
+  @@index([nextCheckAt, leaseUntil])
+  @@index([provider, providerTrackingId])
+}
+model SupplyShipmentLine {
+  id String @id @default(cuid())
+  organizationId String
+  shipmentId String
+  lineId String
+  quantity Decimal? @db.Decimal(20, 6)
+  shipment SupplyShipment @relation(fields: [organizationId, shipmentId], references: [organizationId, id], onDelete: Cascade)
+  line SupplyOrderLine @relation(fields: [organizationId, lineId], references: [organizationId, id], onDelete: Cascade)
+  @@unique([organizationId, shipmentId, lineId])
+}
+model SupplyArrivalEstimate {
+  id String @id @default(cuid())
+  organizationId String
+  shipmentId String
+  source String
+  precision String
+  startDate String
+  endDate String?
+  timeStart String?
+  timeEnd String?
+  timezone String
+  observedAt DateTime @default(now())
+  sourceEventAt DateTime
+  sourceId String?
+  current Boolean @default(true)
+  shipment SupplyShipment @relation(fields: [organizationId, shipmentId], references: [organizationId, id], onDelete: Cascade)
+  @@index([organizationId, shipmentId, source, current])
+}
+model SupplyTrackingObservation {
+  id String @id @default(cuid())
+  organizationId String
+  shipmentId String
+  provider String
+  eventKey String
+  providerEventAt DateTime
+  observedAt DateTime @default(now())
+  status String
+  summary String?
+  raw Json?
+  shipment SupplyShipment @relation(fields: [organizationId, shipmentId], references: [organizationId, id], onDelete: Cascade)
+  @@unique([organizationId, shipmentId, eventKey])
+  @@index([organizationId, shipmentId, providerEventAt])
+}
+model SupplyNeed {
+  id String @id @default(cuid())
+  organizationId String
+  dedupeKey String
+  activeKey String?
+  catalogItemId String?
+  description String
+  location String
+  quantity Decimal? @db.Decimal(20, 6)
+  unit String?
+  ownerUserId String?
+  priority String @default("NORMAL")
+  blocked Boolean @default(false)
+  reviewRequired Boolean @default(false)
+  resolvedAt DateTime?
+  resolvedByUserId String?
+  latestWarningAt DateTime?
+  source String @default("MANUAL")
+  reportedQuantity Decimal? @db.Decimal(20, 6)
+  reportedThreshold Decimal? @db.Decimal(20, 6)
+  notes String @default("")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  catalogItem SupplyCatalogItem? @relation(fields: [organizationId, catalogItemId], references: [organizationId, id], onDelete: Restrict)
+  warnings SupplyWarningOccurrence[]
+  allocations SupplyNeedAllocation[]
+  audits SupplyAudit[]
+  @@unique([organizationId, id])
+  @@unique([organizationId, dedupeKey])
+  @@unique([organizationId, activeKey])
+  @@index([organizationId, resolvedAt, priority])
+}
+model SupplyWarningOccurrence {
+  id String @id @default(cuid())
+  organizationId String
+  needId String
+  sourceId String
+  warningKey String
+  warningAt DateTime
+  reportedQuantity Decimal? @db.Decimal(20, 6)
+  reportedThreshold Decimal? @db.Decimal(20, 6)
+  need SupplyNeed @relation(fields: [organizationId, needId], references: [organizationId, id], onDelete: Cascade)
+  source SupplySource @relation(fields: [organizationId, sourceId], references: [organizationId, id], onDelete: Restrict)
+  @@unique([organizationId, warningKey])
+}
+model SupplyNeedAllocation {
+  receivedQuantity Decimal @default(0) @db.Decimal(20, 6)
+  id String @id @default(cuid())
+  organizationId String
+  needId String
+  lineId String
+  quantity Decimal? @db.Decimal(20, 6)
+  unit String?
+  confirmed Boolean @default(false)
+  explanation String
+  createdAt DateTime @default(now())
+  need SupplyNeed @relation(fields: [organizationId, needId], references: [organizationId, id], onDelete: Cascade)
+  line SupplyOrderLine @relation(fields: [organizationId, lineId], references: [organizationId, id], onDelete: Cascade)
+  @@unique([organizationId, needId, lineId])
+}
+model SupplyReceipt {
+  id String @id @default(cuid())
+  organizationId String
+  orderId String
+  shipmentId String?
+  idempotencyKey String
+  receivedByUserId String
+  receivedAt DateTime @default(now())
+  notes String @default("")
+  order SupplyOrder @relation(fields: [organizationId, orderId], references: [organizationId, id], onDelete: Restrict)
+  shipment SupplyShipment? @relation(fields: [organizationId, shipmentId], references: [organizationId, id], onDelete: Restrict)
+  lines SupplyReceiptLine[]
+  @@unique([organizationId, id])
+  @@unique([organizationId, idempotencyKey])
+}
+model SupplyReceiptLine {
+  id String @id @default(cuid())
+  organizationId String
+  receiptId String
+  lineId String
+  quantity Decimal @db.Decimal(20, 6)
+  shortageQuantity Decimal? @db.Decimal(20, 6)
+  damagedQuantity Decimal? @db.Decimal(20, 6)
+  unit String
+  notes String @default("")
+  receipt SupplyReceipt @relation(fields: [organizationId, receiptId], references: [organizationId, id], onDelete: Cascade)
+  line SupplyOrderLine @relation(fields: [organizationId, lineId], references: [organizationId, id], onDelete: Restrict)
+  @@unique([organizationId, receiptId, lineId])
+}
+model SupplySource {
+  extractionAttemptCount Int @default(0)
+  nextExtractionAt DateTime?
+  lastExtractionAt DateTime?
+  id String @id @default(cuid())
+  organizationId String
+  mailboxConnectionId String?
+  userId String?
+  provider String
+  messageId String
+  attachmentKey String @default("")
+  messageDate DateTime
+  contentHash String
+  extractionStatus String
+  extractionError String?
+  filename String?
+  mimeType String?
+  subject String?
+  extractedFacts Json?
+  historical Boolean @default(false)
+  createdAt DateTime @default(now())
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  orders SupplyOrderSource[]
+  warnings SupplyWarningOccurrence[]
+  @@unique([organizationId, id])
+  @@unique([organizationId, mailboxConnectionId, messageId, attachmentKey])
+  @@index([organizationId, contentHash])
+}
+model SupplyOrderSource {
+  organizationId String
+  orderId String
+  sourceId String
+  order SupplyOrder @relation(fields: [organizationId, orderId], references: [organizationId, id], onDelete: Cascade)
+  source SupplySource @relation(fields: [organizationId, sourceId], references: [organizationId, id], onDelete: Restrict)
+  @@id([organizationId, orderId, sourceId])
+}
+model SupplyAudit {
+  id String @id @default(cuid())
+  organizationId String
+  orderId String?
+  needId String?
+  actorUserId String?
+  action String
+  detail Json?
+  createdAt DateTime @default(now())
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  order SupplyOrder? @relation(fields: [organizationId, orderId], references: [organizationId, id], onDelete: Restrict)
+  need SupplyNeed? @relation(fields: [organizationId, needId], references: [organizationId, id], onDelete: Restrict)
+  @@index([organizationId, orderId, createdAt])
+  @@index([organizationId, needId, createdAt])
+}
+model SupplyMailboxSync {
+  id String @id @default(cuid())
+  organizationId String
+  userId String
+  connectionId String?
+  status String @default("CONNECTION_REQUIRED")
+  cursor Json?
+  backfillStartedAt DateTime?
+  backfillCompletedAt DateTime?
+  lastSuccessfulSyncAt DateTime?
+  nextSyncAt DateTime @default(now())
+  errorCode String?
+  errorMessage String?
+  failureCount Int @default(0)
+  leaseId String?
+  leaseUntil DateTime?
+  processedCount Int @default(0)
+  updatedAt DateTime @updatedAt
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  @@unique([organizationId, userId])
+  @@index([nextSyncAt, leaseUntil])
+}
+model SupplyNotification {
+  id String @id @default(cuid())
+  organizationId String
+  shipmentId String
+  fingerprint String
+  title String
+  body String
+  createdAt DateTime @default(now())
+  readAt DateTime?
+  shipment SupplyShipment @relation(fields: [organizationId, shipmentId], references: [organizationId, id], onDelete: Cascade)
+  @@unique([organizationId, fingerprint])
+  @@index([organizationId, createdAt])
 }

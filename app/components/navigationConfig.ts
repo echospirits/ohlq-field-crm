@@ -1,4 +1,4 @@
-export type NavigationSection = 'work' | 'accounts' | 'intelligence' | 'admin' | 'utility';
+export type NavigationSection = 'work' | 'accounts' | 'production' | 'intelligence' | 'admin' | 'utility';
 
 export type NavigationItem = {
   adminGroup?: 'Echo' | 'Data & insights' | 'System';
@@ -18,11 +18,12 @@ export type NavigationItem = {
 export const navigationItems: NavigationItem[] = [
   { key: 'home', href: '/', label: 'My Schedule', mobileLabel: 'Schedule', section: 'work', mobileOrder: 1 },
   { key: 'worklist', href: '/alerts', label: 'Worklist', mobileLabel: 'Work', section: 'work', mobileOrder: 2 },
+  { key: 'production-supplies', href: '/production-supplies', label: 'Supplies', section: 'production', moreOrder: 0.6, featureKey: 'PRODUCTION_SUPPLIES' },
   { key: 'opportunities', href: '/opportunities', label: 'Restaurant Opportunities', section: 'intelligence', featureKey: 'WHOLESALE_OPPORTUNITIES' },
   { key: 'agency-intelligence', href: '/agency-focus', label: 'Retail Intelligence', section: 'intelligence', featureKey: 'AGENCY_INTELLIGENCE' },
   { key: 'visits', href: '/visits', label: 'Visit History', mobileLabel: 'Visits', section: 'work', mobileOrder: 4 },
   { key: 'analytics', href: '/analytics', label: 'Analytics', section: 'work', moreOrder: 1, featureKey: 'ANALYTICS' },
-  { key: 'production-forecasting', href: '/analytics/production', label: 'Production Forecasting', section: 'work', moreOrder: 1.1, featureKey: 'PRODUCTION_FORECASTING' },
+  { key: 'production-forecasting', href: '/analytics/production', label: 'Forecasting', section: 'production', moreOrder: 1.1, featureKey: 'PRODUCTION_FORECASTING' },
   {
     key: 'accounts',
     href: '/search',

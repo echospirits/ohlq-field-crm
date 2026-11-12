@@ -9,6 +9,7 @@ const paths: Record<string, string> = {
   down: 'm6 9 6 6 6-6',
   analytics: 'M4 20V10M11 20V4M18 20v-8M2 21h20',
   'production-forecasting': 'm3 17 6-7 5 3 7-10M16 3h5v5',
+  'production-supplies': 'M3 7l9-4 9 4v10l-9 4-9-4ZM3 7l9 4 9-4M12 11v10M7.5 5l9 4',
   pipeline: 'M4 5h4v15H4ZM10 10h4v10h-4ZM16 3h4v17h-4Z',
   'wholesale-orders': 'M5 3h14v18H5ZM8 8h8M8 12h8M8 16h5',
   support: 'M12 3a9 9 0 0 0-9 9v5h4v-6H3m18 0h-4v6h4v-5a9 9 0 0 0-9-9m9 14v2a2 2 0 0 1-2 2h-7',

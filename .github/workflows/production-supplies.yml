@@ -1,0 +1,72 @@
+name: Refresh Production Supplies
+
+on:
+  schedule:
+    - cron: "8,23,38,53 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-supplies-${{ github.repository }}-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    # Code delivery does not activate hosted integrations or production processing.
+    if: >-
+      github.repository == 'echospirits/neat-tst' &&
+      github.ref == 'refs/heads/tst' &&
+      vars.PRODUCTION_SUPPLIES_SCHEDULE_ENABLED == 'true'
+    environment: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Invoke only the TST supply worker
+        env:
+          SUPPLY_JOB_SECRET: ${{ secrets.SUPPLY_JOB_SECRET }}
+          # Optional existing deployment-protection automation credential.
+          SUPPLY_JOB_VERCEL_BYPASS: ${{ secrets.SUPPLY_JOB_VERCEL_BYPASS }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$SUPPLY_JOB_SECRET" ]]; then
+            echo "Configure the approved test-environment SUPPLY_JOB_SECRET before enabling this schedule."
+            exit 1
+          fi
+          args=(--silent --show-error --fail --max-time 285
+            --header "Authorization: Bearer $SUPPLY_JOB_SECRET")
+          if [[ -n "$SUPPLY_JOB_VERCEL_BYPASS" ]]; then
+            args+=(--header "x-vercel-protection-bypass: $SUPPLY_JOB_VERCEL_BYPASS")
+          fi
+          # Fixed destination and no redirects: credentials cannot follow a login/remote URL.
+          curl "${args[@]}" https://neat-tst.vercel.app/api/cron/production-supplies
+
+  refresh-production:
+    # Code promotion leaves this disabled until production setup is approved.
+    if: >-
+      github.repository == 'echospirits/ohlq-field-crm' &&
+      github.ref == 'refs/heads/main' &&
+      vars.PRODUCTION_SUPPLIES_SCHEDULE_ENABLED == 'true'
+    environment: production
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Invoke only the production supply worker
+        env:
+          SUPPLY_JOB_SECRET: ${{ secrets.SUPPLY_JOB_SECRET }}
+          SUPPLY_JOB_VERCEL_BYPASS: ${{ secrets.SUPPLY_JOB_VERCEL_BYPASS }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$SUPPLY_JOB_SECRET" ]]; then
+            echo "Configure the approved production SUPPLY_JOB_SECRET before enabling this schedule."
+            exit 1
+          fi
+          args=(--silent --show-error --fail --max-time 285
+            --header "Authorization: Bearer $SUPPLY_JOB_SECRET")
+          if [[ -n "$SUPPLY_JOB_VERCEL_BYPASS" ]]; then
+            args+=(--header "x-vercel-protection-bypass: $SUPPLY_JOB_VERCEL_BYPASS")
+          fi
+          curl "${args[@]}" https://crm.echospirits.com/api/cron/production-supplies

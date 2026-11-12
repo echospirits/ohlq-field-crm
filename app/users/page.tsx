@@ -12,6 +12,8 @@ import { prisma } from '../../lib/prisma';
 import { createUserInvitationToken, sendUserInvitationEmail } from '../../lib/userInvitations';
 import { requireOrganizationContext } from '../../lib/organizations';
 import { PageHeader, SectionHeading } from '../components/PageChrome';
+import Link from 'next/link';
+import { hasFeature } from '../../lib/organizations';
 
 export const metadata = buildPageMetadata('Users');
 
@@ -396,6 +398,7 @@ export default async function UsersPage({
   const adminSession = await requireAdminSession();
   const { organizationId } = await requireOrganizationContext(adminSession.user);
   const params = (await searchParams) ?? {};
+  const productionSuppliesEnabled = await hasFeature(organizationId, 'PRODUCTION_SUPPLIES');
   const users = await prisma.user.findMany({
     where: { organizationId, role: { not: UserRole.PLATFORM_ADMIN } },
     include: {
@@ -414,6 +417,7 @@ export default async function UsersPage({
   return (
     <>
       <PageHeader
+        actions={productionSuppliesEnabled ? <Link className="btn secondary" href="/production-supplies/settings">Production membership &amp; access</Link> : undefined}
         eyebrow="Administration"
         title="Users"
       />

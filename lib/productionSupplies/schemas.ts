@@ -1,0 +1,27 @@
+import { z } from 'zod';
+
+export const departments = ['PRODUCTION', 'BAR', 'SHARED', 'OTHER', 'NEEDS_REVIEW'] as const;
+export const referenceTypes = ['PARCEL', 'FREIGHT_PRO', 'BILL_OF_LADING', 'SUPPLIER_ORDER'] as const;
+const text = z.string().trim().max(300);
+const id = z.string().trim().min(1).max(120);
+const optionalId = z.preprocess(v => v === '' ? undefined : v, id.optional());
+const optionalText = text.optional().nullable();
+const quantity = z.preprocess(v => v === '' || v === null ? undefined : v, z.coerce.number().finite().nonnegative().max(1e10).optional());
+export const lineInput = z.object({ description: text.min(1), quantity, unit: optionalText, sku: optionalText, department: z.enum(departments).default('NEEDS_REVIEW'), catalogItemId: optionalId, notes: z.string().trim().max(4000).optional() });
+export const manualOrderInput = z.object({ supplier: text.min(1), orderReference: optionalText, destination: optionalText, ownerUserId: optionalId, orderedAt: z.string().date().optional().or(z.literal('')), notes: z.string().trim().max(4000).optional(), lines: z.array(lineInput).min(1).max(100), idempotencyKey: id });
+export const needInput = z.object({ catalogItemId: optionalId, description: text.min(1), location: text.min(1), quantity, unit: optionalText, ownerUserId: optionalId, priority: z.enum(['LOW', 'NORMAL', 'HIGH', 'URGENT']).default('NORMAL'), notes: z.string().trim().max(4000).optional(), idempotencyKey: id });
+export const classificationInput = z.object({ lineId: id, department: z.enum(departments), catalogItemId: optionalId, remember: z.boolean().default(false), productionQuantity: quantity, barQuantity: quantity, notes: z.string().trim().max(4000).optional() });
+export const linkNeedInput = z.object({ needId: id, lineId: id, quantity, unit: optionalText });
+export const receiptInput = z.object({ orderId: id, shipmentId: optionalId, idempotencyKey: id, notes: z.string().trim().max(4000).optional(), lines: z.array(z.object({ lineId: id, quantity: z.coerce.number().finite().nonnegative().max(1e10), shortageQuantity: quantity, damagedQuantity: quantity, unit: text.min(1), notes: z.string().trim().max(1000).optional() }).refine(v => v.quantity > 0 || (v.shortageQuantity ?? 0) > 0, 'Enter a received or shortage quantity.')).min(1).max(100) });
+export const noteInput = z.object({ orderId: optionalId, needId: optionalId, note: z.string().trim().min(1).max(4000) }).refine(v => Boolean(v.orderId) !== Boolean(v.needId), 'Choose an order or a need.');
+export const ownerInput = z.object({ orderId: optionalId, needId: optionalId, ownerUserId: optionalId }).refine(v => Boolean(v.orderId) !== Boolean(v.needId), 'Choose an order or a need.');
+export const resolveNeedInput = z.object({ needId: id, note: z.string().trim().min(1).max(4000) });
+export const trackingInput = z.object({ orderId: id, referenceType: z.enum(referenceTypes), reference: text.min(1), carrier: optionalText, destination: optionalText, timezone: text.default('America/New_York'), lines: z.array(z.object({ lineId: id, quantity })).max(100).default([]) });
+export const catalogInput = z.object({ id: optionalId, name: text.min(1), category: optionalText, unit: optionalText, packSize: quantity, departments: z.array(z.enum(departments)).min(1).max(5), productAssociation: optionalText, aliases: z.array(text.min(1)).max(50).default([]), sharedUse: z.boolean().default(false) });
+export const ignoreInput = z.object({ orderId: optionalId, lineId: optionalId, ignored: z.boolean().default(true) }).refine(v => Boolean(v.orderId) !== Boolean(v.lineId), 'Choose an order or a line.');
+export const expectationInput = z.object({ shipmentId: id, source: z.enum(['SUPPLIER_PROMISE', 'MANUAL', 'APPOINTMENT']), precision: z.enum(['DATE', 'DATE_RANGE', 'TIME_WINDOW', 'APPOINTMENT']), startDate: z.string().date(), endDate: z.string().date().optional(), timeStart: z.string().regex(/^\d{2}:\d{2}$/).optional(), timeEnd: z.string().regex(/^\d{2}:\d{2}$/).optional(), timezone: text.min(1) });
+export const ruleInput = z.object({ id: optionalId, catalogItemId: optionalId, supplier: text.min(1), sku: text.min(1), unit: optionalText, department: z.enum(departments), explanation: text.min(1), active: z.boolean().default(true) });
+export const lineDetailsInput = z.object({ lineId: id, description: text.min(1).optional(), quantity, unit: optionalText, sku: optionalText, backorderedQuantity: quantity });
+export const orderDetailsInput = z.object({ orderId: id, destination: optionalText, orderReference: optionalText, orderedAt: z.string().date().optional(), status: z.enum(['ORDERED', 'CANCELLED']).optional() });
+export const needDetailsInput = z.object({ needId: id, blocked: z.boolean(), reviewRequired: z.boolean(), priority: z.enum(['LOW','NORMAL','HIGH','URGENT']), description: text.min(1).optional(), location: text.min(1).optional(), quantity, unit: optionalText, catalogItemId: optionalId });
+export type SupplyActor = { organizationId: string; userId: string };

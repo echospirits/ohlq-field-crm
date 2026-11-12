@@ -20,6 +20,7 @@ import './daily-work.css';
 import { AppearanceSync } from './components/AppearanceSync';
 import { UsageTracker } from './components/UsageTracker';
 import { getAppEnvironment, getEnvironmentLabel } from '../lib/appEnvironment';
+import { hasSupplyAccess, readSupplySettings } from '../lib/productionSupplies/config';
 
 export const metadata: Metadata = {
   applicationName: APP_NAME,
@@ -45,7 +46,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const user = await getCurrentUser();
   const isTaster = user ? isTasterRole(user.role) : false;
   const organizationContext = user ? await getOrganizationContext(user) : null;
-  const enabledFeatures = organizationContext ? [...await getOrganizationFeatures(organizationContext.organizationId)] : [];
+  const enabledFeatures = organizationContext ? [...await getOrganizationFeatures(organizationContext.organizationId)].filter(key => key !== 'PRODUCTION_SUPPLIES' || Boolean(user && hasSupplyAccess(user, readSupplySettings(organizationContext.organization.crmPreferences)))) : [];
   const isPlatformAdmin = false;
   const isAdmin = Boolean(user && isAdminRole(user.role) && (!isPlatformAdmin || organizationContext));
   const tenantAppName = organizationContext?.organization.appName || APP_NAME;

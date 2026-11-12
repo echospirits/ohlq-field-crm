@@ -37,10 +37,10 @@ test('a foreign organization context cannot be returned even by a faulty resolve
 
 test('forecast discovery appears in desktop and mobile navigation for platform admins while regular tenant gating remains intact', () => {
   for (const platform of [false, true]) {
-    assert.equal(getNavigationItems('work', [], platform).some(i => i.key === 'production-forecasting'), false);
+    assert.equal(getNavigationItems('production', [], platform).some(i => i.key === 'production-forecasting'), false);
     assert.equal(getMoreNavigationItems(false, [], platform).some(i => i.key === 'production-forecasting'), false);
   }
-  assert.equal(getNavigationItems('work', ['PRODUCTION_FORECASTING']).some(i => i.key === 'production-forecasting'), true);
+  assert.deepEqual(getNavigationItems('production', ['PRODUCTION_FORECASTING']).map(item => item.key), ['production-forecasting']);
   assert.equal(getMoreNavigationItems(false, ['PRODUCTION_FORECASTING']).some(i => i.key === 'production-forecasting'), true);
 });
 test('one responsive product link carries selected organization and filters into detail', () => {
