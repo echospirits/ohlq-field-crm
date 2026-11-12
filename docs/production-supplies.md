@@ -2,7 +2,7 @@
 
 Supplies is a simple ordering and delivery status dashboard for materials flagged by **Dx5** low-inventory alerts. Dx5, and later Ollie, own inventory levels, forecasting, lead times and the decision that a material is needed. Neat answers whether an order has been found and what is happening with its delivery.
 
-The owner narrowed the earlier coordination workspace and approved production release **0.10.0** on November 12, 2026. See [production release validation](releases/0.10.0-validation.md) for deployment and activation receipts. Earlier TST evidence remains historical; production connections and consent are separate.
+The owner narrowed the earlier coordination workspace and approved production release **0.10.0**, then separately approved Echo production activation on November 12, 2026. See [release validation](releases/0.10.0-validation.md) and [production activation](releases/production-supplies-production-activation.md) for exact receipts. Earlier TST evidence remains historical; production connections and consent are separate.
 
 ## Daily use
 
@@ -31,11 +31,11 @@ Relevant mailbox discovery continues so new alerts and order updates can be foun
 
 Connection administration remains separate at `/production-supplies/settings`, also linked from Users. Existing organization teams identify Production membership independently of role, view/manage permission and mailbox consent. Each person connects their own verified business Gmail using read-only consent; Support View never grants private mailbox access.
 
-Joe's Production membership and own read-only Gmail connection are active in Echo TST. Karl/Nikhil need actual Neat accounts and their own consent. No duplicate accounts or email addresses are invented. The historical backfill remains bounded and checkpointed; initial live processing is verified, not full 90-day completion.
+Production uses the three verified existing Joe, Karl and Nikhil accounts, with Production membership and view/manage grants independent of their unchanged roles. Joe's own read-only production Gmail consent is connected. Karl and Nikhil must each sign in and choose **Connect my Gmail** in settings; their mailboxes remain excluded until then. No duplicate accounts or email addresses are invented. TST's earlier Joe connection is separate. Historical backfill remains bounded and checkpointed; initial live processing does not establish full 90-day completion.
 
 Gmail OAuth uses dedicated `SUPPLY_GOOGLE_CLIENT_ID` / `SUPPLY_GOOGLE_CLIENT_SECRET`, the stable `SUPPLY_MAIL_TOKEN_ENCRYPTION_KEY`, `SUPPLY_MAIL_INGESTION_ENABLED=true`, and matching `SUPPLY_MAIL_OAUTH_ENVIRONMENT`/`APP_ENV`. TST's supply-only callback is `https://neat-tst.vercel.app/api/production-supplies/mail/google/callback`; production's is `https://crm.echospirits.com/api/production-supplies/mail/google/callback`, set via `SUPPLY_GOOGLE_REDIRECT_URI`. Each environment needs its own client, keys, owner consent and schedule secret. Calendar configuration is independent; never transfer TST tokens into production.
 
-The supply-only worker runs without an open dashboard. GitHub Actions defines independently gated TST and production triggers every 15 minutes, each with its own environment secret and `PRODUCTION_SUPPLIES_SCHEDULE_ENABLED=true`; Vercel Hobby also has a daily fallback. Production is disabled until its activation gate is completed. Scheduled cadence can be delayed; connection/error/import state qualifies the displayed order evidence. The page refreshes while visible.
+The supply-only worker runs without an open dashboard. GitHub Actions defines independently gated TST and production triggers every 15 minutes, each with its own environment secret and repository variable `PRODUCTION_SUPPLIES_SCHEDULE_ENABLED=true`; Vercel Hobby also has a daily fallback. Echo's production worker is enabled with its dedicated secret and consented mailbox. Scheduled cadence can be delayed; connection/error/import state qualifies the displayed order evidence. The page refreshes while visible. See the activation record for actual first-run acceptance; a manual success is not proof of punctual recurring execution.
 
 ## Delivery sources and limits
 
