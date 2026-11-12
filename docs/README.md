@@ -1,6 +1,6 @@
 # Neat engineering and product documentation
 
-Production Supplies **0.10.0** is the owner-approved selective release candidate from accepted TST `7cff2fdc`, based on production `e2a19c9b`. It adds the simple Dx5-driven status dashboard and Production navigation. Tasting Management and later Social Publishing work remain excluded. See [release validation](releases/0.10.0-validation.md) and [operator guide](production-supplies.md).
+Production Supplies **0.10.0** is released to production as application `3503020a33b9f20778d26b4ee51685875304b343`, READY with correct connected production health. It selectively adds the accepted Dx5-driven status dashboard and Production navigation, with tests/typecheck/build/browser/exact Node 22 CI and the additive migration readback passing. TST Tasting Management and concurrent Social Publishing remain excluded. Supplies entitlement/provider activation and each owner's mailbox consent remain separate and disabled pending approval. Development remains frozen. See [release validation](releases/0.10.0-validation.md), [release](https://github.com/echospirits/ohlq-field-crm/releases/tag/v0.10.0) and [operator guide](production-supplies.md).
 
 Start with [implementation progress](engineering/implementation-progress.md) and [feature inventory](product/feature-inventory.md). Existing canonical release and UI standards remain authoritative.
 
