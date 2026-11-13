@@ -64,6 +64,13 @@ test('a confirmed-order watch has its own retained provenance and does not fabri
   assert.equal((await scopeSupplyEvidence(organizationId,facts({productionConfirmation:{purpose:'PRODUCTION_REPLENISHMENT',basis:'EXPLICIT_SUPPLIER_CONFIRMATION'}}),fake as unknown as Prisma.TransactionClient,{confirmedProductionOrder:true})).evidence?.kind,'ORDER');
 });
 
+test('an unknown-location warning joined to a confirmed watch remains physically unlocated',async()=>{
+  const need={id:'confirmed-need',description:'Cane sugar',location:'Known production destination',unit:'bags',catalogItemId:null,createdAt:at(9),latestWarningAt:at(11),warnings:[{warningAt:at(11),reportedQuantity:2,reportedThreshold:5,source:{extractedFacts:{kind:'WARNING',warningSource:'DISTILLX5_EMAIL',warning:{material:'Cane sugar',location:'Location unknown'}}}}],allocations:[],audits:[{detail:{triggerAt:at(10).toISOString(),provenanceVersion:1},createdAt:at(10),orderId:'confirmed-order'}]};
+  const fake={supplyNeed:{findMany:async()=>[need]},supplyCatalogItem:{findMany:async()=>[]}};
+  const materials=await getWatchedSupplyMaterials(organizationId,fake as unknown as Prisma.TransactionClient);
+  assert.equal(materials.length,1);assert.equal(materials[0].needIds[0],need.id);assert.equal(materials[0].location,'Location unknown');assert.equal(need.location,'Known production destination');
+});
+
 test('supplier identifiers preserve raw codes and reject prose synthesized from a subject or product',()=>{
   assert.equal(isSupplierOrderIdentifier('TEST100'),true);assert.equal(isSupplierOrderIdentifier('TEST1000'),true);
   assert.equal(isSupplierOrderIdentifier('More Glass for Fixture'),false);assert.equal(isSupplierOrderIdentifier('Supplier order for 3 pallets of bottles'),false);

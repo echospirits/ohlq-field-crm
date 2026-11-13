@@ -60,8 +60,8 @@ export async function replayWatchedSupplyEvidence(organizationId: string, db: Pr
         } else if (!hasSupplyAccess(user, settings, true)) continue;
         if (!(await scope(organizationId, source.extractedFacts as WatchableSupplyEvidence, db)).evidence) continue;
         result.attempted++;
-        const {threadId,evidenceContext,contentVersion,direction,fromEmail,senderAuthenticated}=readSupplySourceProvenance(source.extractedFacts);
-        const replayed = await ingest({ organizationId, userId: user.id }, { source: { threadId,evidenceContext,contentVersion,direction,fromEmail,senderAuthenticated,mailboxConnectionId: source.mailboxConnectionId, provider: source.provider, messageId: source.messageId, attachmentKey: source.attachmentKey, messageDate: source.messageDate.toISOString(), contentHash: source.contentHash, filename: source.filename, mimeType: source.mimeType, subject: source.subject, historical: source.historical, extractionStatus: 'COMPLETE' }, evidence: source.extractedFacts }, db, { reconcile: false });
+        const {threadId,evidenceContext,contentVersion,direction,fromEmail,senderAuthenticated,attachmentPartId,attachmentMimePath,attachmentProviderId}=readSupplySourceProvenance(source.extractedFacts);
+        const replayed = await ingest({ organizationId, userId: user.id }, { source: { threadId,evidenceContext,contentVersion,direction,fromEmail,senderAuthenticated,attachmentPartId,attachmentMimePath,attachmentProviderId,mailboxConnectionId: source.mailboxConnectionId, provider: source.provider, messageId: source.messageId, attachmentKey: source.attachmentKey, messageDate: source.messageDate.toISOString(), contentHash: source.contentHash, filename: source.filename, mimeType: source.mimeType, subject: source.subject, historical: source.historical, extractionStatus: 'COMPLETE' }, evidence: source.extractedFacts }, db, { reconcile: false });
         if (replayed.orderId) result.linked++;
       } catch { result.errors++; }
     }

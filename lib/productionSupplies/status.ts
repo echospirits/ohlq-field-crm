@@ -11,7 +11,7 @@ export type { SupplyStatusCard, WatchedSupplyMaterial } from './statusDomain';
 type Db = PrismaClient | Prisma.TransactionClient;
 // Future inventory adapters can join this seam without making Ollie a prerequisite.
 export const INVENTORY_WARNING_SOURCES = ['DISTILLX5_EMAIL'] as const;
-type Group = { material:WatchedSupplyMaterial; firstWarningAt:Date; latestWarningAt:Date; warningCount:number; reportedQuantity:unknown; reportedThreshold:unknown };
+type Group = { material:WatchedSupplyMaterial; firstWarningAt:Date; latestWarningAt:Date; warningCount:number; reportedQuantity:unknown; reportedThreshold:unknown;locationWarningAt:Date|null };
 async function watchedGroups(organizationId:string, db:Db):Promise<Group[]> {
   const dx5Source={AND:[{extractedFacts:{path:['kind'],equals:'WARNING'}},{extractedFacts:{path:['warningSource'],equals:'DISTILLX5_EMAIL'}}]} satisfies Prisma.SupplySourceWhereInput;
   const [needs, catalog] = await Promise.all([
@@ -26,6 +26,10 @@ async function watchedGroups(organizationId:string, db:Db):Promise<Group[]> {
     const materialIdentity=item?`catalog:${item.id}`:`name:${normalizeSupplyMaterial(need.description)}`;
     const key=supplyStatusKey(materialIdentity,normalizeSupplyLocation(need.location));
     const warnings=need.warnings;
+    const locationWarning=warnings.at(-1);
+    const warningLocation=(locationWarning?.source.extractedFacts as {warning?:{location?:unknown}}|null)?.warning?.location;
+    // A joined inventory alert does not acquire the purchase's physical destination.
+    const location=typeof warningLocation==='string' && !normalizeSupplyLocation(warningLocation)?warningLocation:need.location;
     const confirmations=(need.audits || []).flatMap(audit=>{const detail=audit.detail as {triggerAt?:unknown;provenanceVersion?:unknown}|null;const at=typeof detail?.triggerAt==='string'?new Date(detail.triggerAt):null;return detail?.provenanceVersion===1 && at && Number.isFinite(at.getTime())?[at]:[];});
     const events=[...warnings.map(w=>w.warningAt),...confirmations].sort((a,b)=>a.getTime()-b.getTime());
     const first=events[0] || need.latestWarningAt || need.createdAt;
@@ -39,8 +43,9 @@ async function watchedGroups(organizationId:string, db:Db):Promise<Group[]> {
       existing.material.needIds.push(need.id); existing.material.aliases=[...new Set([...existing.material.aliases,...aliases])];
       existing.warningCount+=warnings.length; if(first<existing.firstWarningAt)existing.firstWarningAt=first;
       existing.material.vendorRefs=[...existing.material.vendorRefs,...vendorRefs];
+      if(locationWarning && (!existing.locationWarningAt || locationWarning.warningAt>existing.locationWarningAt)){existing.locationWarningAt=locationWarning.warningAt;existing.material.location=location;}
       if(latest>existing.latestWarningAt){existing.latestWarningAt=latest;existing.material.latestWarningAt=latest;existing.material.watchSource=watchSource;existing.material.unit=need.unit;existing.reportedQuantity=warnings.at(-1)?.reportedQuantity ?? need.reportedQuantity;existing.reportedThreshold=warnings.at(-1)?.reportedThreshold ?? need.reportedThreshold;}
-    }else groups.set(key,{material:{key,material:item?.name || need.description,location:need.location,unit:need.unit,catalogItemId:item?.id || null,aliases:[...new Set(aliases)],vendorRefs,needIds:[need.id],latestWarningAt:latest,sharedUse:item?.sharedUse || false,watchSource},firstWarningAt:first,latestWarningAt:latest,warningCount:warnings.length,reportedQuantity:warnings.at(-1)?.reportedQuantity ?? need.reportedQuantity,reportedThreshold:warnings.at(-1)?.reportedThreshold ?? need.reportedThreshold});
+    }else groups.set(key,{material:{key,material:item?.name || need.description,location,unit:need.unit,catalogItemId:item?.id || null,aliases:[...new Set(aliases)],vendorRefs,needIds:[need.id],latestWarningAt:latest,sharedUse:item?.sharedUse || false,watchSource},firstWarningAt:first,latestWarningAt:latest,warningCount:warnings.length,reportedQuantity:warnings.at(-1)?.reportedQuantity ?? need.reportedQuantity,reportedThreshold:warnings.at(-1)?.reportedThreshold ?? need.reportedThreshold,locationWarningAt:locationWarning?.warningAt || null});
   }
   return [...groups.values()];
 }

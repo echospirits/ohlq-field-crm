@@ -1,6 +1,6 @@
-export type GmailPart = { partId?: string; mimeType?: string; filename?: string; headers?: Array<{ name: string; value: string }>; body?: { data?: string; attachmentId?: string; size?: number }; parts?: GmailPart[] };
+export type GmailPart = { partId?: string; mimePath?: string; mimeType?: string; filename?: string; headers?: Array<{ name: string; value: string }>; body?: { data?: string; attachmentId?: string; size?: number }; parts?: GmailPart[] };
 export const SUPPLY_CONTENT_VERSION = 'SUPPLY_CURRENT_V1';
-export const flattenGmailParts = (part: GmailPart): GmailPart[] => [part, ...(part.parts ?? []).flatMap(flattenGmailParts)];
+export const flattenGmailParts = (part: GmailPart, mimePath='0'): GmailPart[] => [{...part,mimePath}, ...(part.parts ?? []).flatMap((child,index)=>flattenGmailParts(child,`${mimePath}.${index}`))];
 const header = (part: GmailPart, name: string) => part.headers?.find(value => value.name.toLowerCase() === name)?.value ?? '';
 const decode = (value?: string) => value ? Buffer.from(value, 'base64url').toString('utf8') : '';
 function withoutComments(value: string) {

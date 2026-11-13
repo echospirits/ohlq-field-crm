@@ -98,7 +98,7 @@ test('unwatched source is retained idempotently without creating any operational
     },
   };
   const client = { ...db, $transaction: async (action: (tx: typeof db) => Promise<unknown>) => action(db) } as unknown as PrismaClient;
-  const input = { source: { provider: 'MANUAL', messageId: 'unwatched-fixture', messageDate: at.toISOString(), contentHash: 'fixture-hash', extractionStatus: 'COMPLETE' }, evidence: evidence('ORDER') };
+  const input = { source: { provider: 'MANUAL', messageId: 'unwatched-fixture', messageDate: at.toISOString(), contentHash: 'fixture-hash', extractionStatus: 'COMPLETE',attachmentKey:'legacy-opaque-handle',attachmentPartId:'1.2',attachmentMimePath:'parts.0.parts.2',attachmentProviderId:'rotated-download-handle' }, evidence: evidence('ORDER') };
   const result = await ingestEvidence({ organizationId: 'tenant-one', userId: 'manager-one' }, input, client);
   await ingestEvidence({ organizationId: 'tenant-one', userId: 'manager-one' }, input, client);
   assert.equal(result.orderId, undefined);
@@ -106,7 +106,14 @@ test('unwatched source is retained idempotently without creating any operational
   assert.equal(retained.length, 1);
   const {_provenance,...originalFacts}=retained[0].extractedFacts as Record<string,unknown>;
   assert.deepEqual(originalFacts, { ...input.evidence, lines: input.evidence.lines.map(line => ({ ...line })), shipments: [] });
-  assert.deepEqual(_provenance,{productionTeamAuthorized:false});
+  assert.deepEqual(_provenance,{productionTeamAuthorized:false,attachmentPartId:'1.2',attachmentMimePath:'parts.0.parts.2',attachmentProviderId:'rotated-download-handle'});
+  assert.equal(retained[0].attachmentKey,'legacy-opaque-handle');
+  assert.equal(Object.hasOwn(retained[0],'attachmentProviderId'),false);
+  await ingestEvidence({organizationId:'tenant-one',userId:'manager-one'},{source:{...input.source,extractionStatus:'ERROR',attachmentProviderId:'later-rotated-handle'}},client);
+  const failedFacts=retained[0].extractedFacts as Record<string,unknown>;
+  assert.equal(Object.hasOwn(failedFacts,'kind'),false);
+  assert.equal((failedFacts._provenance as Record<string,unknown>).attachmentProviderId,'rotated-download-handle');
+  assert.equal(retained[0].attachmentKey,'legacy-opaque-handle');
 });
 
 test('persisted replay cursor advances past more than one window of unrelated sources to an older matching order', async () => {

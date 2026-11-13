@@ -5,6 +5,7 @@
 - Confirmed Production replenishment orders can open status cards without a Dx5 warning; quotes, supplier identity alone and unrelated purchases cannot.
 - Separate reliable material-order matching from strict completed-delivery proof. Unknown warning location can no longer obscure an otherwise identified non-shared material order; known destination conflicts still prevent association.
 - Extract current authored mail once, ignore decorative inline/signature images as independent evidence and preserve meaningful invoice attachments, thread provenance and resumable checkpoints.
+- Identify attachment evidence by immutable message/MIME-part identity rather than rotating download handles. Preserve existing external keys and original raw handles while compatible legacy documents resume without repeated extraction.
 - Preserve payment plans and conditional supplier promises separately from shipment and arrival evidence. Keep the card-and-Dismiss interface and source label honest.
 - Move the primary 15-minute cadence to the existing durable Workflow runtime with tenant singleton/lease fencing, bounded catch-up and recovery triggers. No new dependency, schema migration, account or paid tracking.
 - Rehearse a bounded, audited correction of existing bottle artifacts and confirmed Panela evidence before production; retain source/history records and existing dismissals.

@@ -1,13 +1,14 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { Prisma, type MailboxConnection, type PrismaClient } from '@prisma/client';
 import { prisma } from '../prisma';
-import { productionMemberIds, readSupplySettings } from './config';
+import { hasSupplyAccess, productionMemberIds, readSupplySettings } from './config';
 import { decryptSupplyToken, encryptSupplyToken } from './mailCrypto';
 import { extractSupplyMessage, type ExtractedSupply } from './extraction';
 import { ingestEvidence } from './service';
 import { isVerifiedDx5WarningSender } from './mailProvenance';
 import { canReadSupplyMailbox, GMAIL_READ_SCOPE } from './mailAccess';
 import { prepareSupplyMessageContent, supplyMessageSender, SUPPLY_CONTENT_VERSION, type GmailPart } from './mailContent';
+import { ignoredSupplyAttachmentCorrections, resolveSupplyAttachment, supplyAttachmentMetadata, type SupplyAttachmentMetadata } from './mailIdentity';
 import { buildSupplyIncrementalQuery, buildSupplyPriorityQueries, chooseSupplyMailLane, completeSupplyMailLane, supplyHistoricalComplete, supplyMailCursor, supplyMailDiscovery, SUPPLY_MAIL_LANES, type SupplyMailScan, type SupplyMailLane } from './mailDiscovery';
 export { flattenGmailParts } from './mailContent';
 export { canReadSupplyMailbox, GMAIL_READ_SCOPE } from './mailAccess';
@@ -114,6 +115,10 @@ async function stillMonitored(organizationId: string, userId: string, db: Prisma
   const org = await db.organization.findFirst({ where: { id: organizationId, active: true, accountStatus: { notIn: ['SUSPENDED','CANCELLED'] }, features: { some: { featureKey: 'PRODUCTION_SUPPLIES', enabled: true } } }, select: { crmPreferences: true } });
   return Boolean(org && productionMemberIds(org.crmPreferences).includes(userId) && await db.user.findFirst({ where: { organizationId, id: userId, isActive: true }, select: { id: true } }));
 }
+async function trustedBootstrapOwner(organizationId:string,userId:string,db:PrismaClient){
+  const [org,user]=await Promise.all([db.organization.findFirst({where:{id:organizationId,active:true,accountStatus:{notIn:['SUSPENDED','CANCELLED']},features:{some:{featureKey:'PRODUCTION_SUPPLIES',enabled:true}}},select:{crmPreferences:true}}),db.user.findFirst({where:{organizationId,id:userId,isActive:true},select:{id:true,role:true}})]);
+  return Boolean(org&&user&&hasSupplyAccess(user,readSupplySettings(org.crmPreferences),true));
+}
 type MailServices = { fetchImpl?: typeof fetch; sleep?: (ms: number) => Promise<void>; extract?: typeof extractSupplyMessage; ingest?: typeof ingestEvidence; discovery?: typeof supplyMailDiscovery; now?: () => number; budgetMs?: number };
 type MailDiagnostics = { processedMessages?: number; ignoredInlineImages?: number; backfillIncomplete?: boolean; catchupPhase?: SupplyMailLane | 'IDLE' };
 export type SupplyMailboxSyncResult = MailDiagnostics & (
@@ -161,7 +166,8 @@ export async function syncSupplyMailbox(organizationId: string, userId: string, 
     const retrySources = cursor.messageIds ? [] : await db.supplySource.findMany({ where: { organizationId, mailboxConnectionId: connection.id, extractionStatus: 'ERROR', nextExtractionAt: { lte: now }, extractionAttemptCount: { lt: 3 } }, orderBy: { nextExtractionAt: 'asc' }, take: 2, select: { messageId: true } });
     const messageIds = [...new Set([...retrySources.map(source => source.messageId), ...(page.messages ?? []).map(message => message.id)])];
     let messageIndex = cursor.messageIndex ?? 0;
-    const checkpoint = () => { cursor = { query: cursor.query, scanStarted: cursor.scanStarted, ...(cursor.pageToken ? { pageToken: cursor.pageToken } : {}), messageIds, messageIndex, ...(page.nextPageToken ? { nextPageToken: page.nextPageToken } : {}) }; setCursor(cursor); return state; };
+    let firstPendingMessageIndex:number|undefined;
+    const checkpoint = () => { cursor = { query: cursor.query, scanStarted: cursor.scanStarted, ...(cursor.pageToken ? { pageToken: cursor.pageToken } : {}), messageIds, messageIndex:Math.min(messageIndex,firstPendingMessageIndex??messageIndex), ...(page.nextPageToken ? { nextPageToken: page.nextPageToken } : {}) }; setCursor(cursor); return state; };
     await db.supplyMailboxSync.updateMany({ where: { id: sync.id, leaseId }, data: { cursor: checkpoint() } });
     let deferred = false;
     for (; messageIndex < messageIds.length; messageIndex++) {
@@ -182,38 +188,49 @@ export async function syncSupplyMailbox(organizationId: string, userId: string, 
       const historical = !sync.backfillCompletedAt && messageDate < historicalCutoff;
       const direction = message.labelIds?.includes('SENT') ? 'SENT' as const : 'RECEIVED' as const;
       const sender = supplyMessageSender(message.payload.headers ?? [], direction === 'SENT', connection.email);
-      const previousEmptyBody = text ? null : await db.supplySource.findFirst({where:{organizationId,mailboxConnectionId:connection.id,messageId,attachmentKey:''}});
+      const allowBootstrap=await trustedBootstrapOwner(organizationId,userId,db);
+      const retainedSources=await db.supplySource.findMany({where:{organizationId,messageId,OR:[{mailboxConnectionId:connection.id},...(allowBootstrap?[{mailboxConnectionId:null,provider:'GOOGLE_CONNECTOR',userId,extractionStatus:'COMPLETE'}]:[])]}});
+      const bodySources=retainedSources.filter(source=>source.attachmentKey==='');
+      const bodySource=bodySources.find(source=>source.mailboxConnectionId===connection.id)||(bodySources.length===1?bodySources[0]:undefined);
+      const previousEmptyBody = text ? null : bodySource;
       const previousEmptyFacts = previousEmptyBody?.extractedFacts as {_provenance?:{contentVersion?:unknown}}|null;
-      const correctEmptyBody = previousEmptyBody?.provider==='GOOGLE' && ['COMPLETE','ERROR'].includes(previousEmptyBody.extractionStatus) && previousEmptyFacts?._provenance?.contentVersion!==SUPPLY_CONTENT_VERSION;
-      const sources: Array<{ key: string; filename?: string; mimeType?: string; bytes?: Buffer; part?: GmailPart; unsupported?: boolean; emptyCurrent?:boolean }> = text || correctEmptyBody ? [{ key: '',emptyCurrent:!text }] : [];
+      const correctEmptyBody = previousEmptyBody?.provider==='GOOGLE' && ['COMPLETE','ERROR'].includes(previousEmptyBody.extractionStatus) && (previousEmptyBody.extractionStatus==='ERROR'||previousEmptyFacts?._provenance?.contentVersion!==SUPPLY_CONTENT_VERSION);
+      const sources: Array<{ key: string; filename?: string; mimeType?: string; bytes?: Buffer; part?: GmailPart; identity?:SupplyAttachmentMetadata; existing?:typeof retainedSources[number]; unsupported?: boolean; emptyCurrent?:boolean }> = text || correctEmptyBody ? [{ key: '',emptyCurrent:!text,existing:bodySource }] : [];
       // Correct only sources that an older importer already published. Skipped logos
       // never create new rows, require attachment bytes, or consume an AI extraction.
-      const ignoredParts=new Map(prepared.ignoredImageParts.flatMap(part=>{const key=part.body?.attachmentId || part.filename;return key?[[key,part] as const]:[];}));
-      const retainedImages=ignoredParts.size?await db.supplySource.findMany({where:{organizationId,mailboxConnectionId:connection.id,messageId,provider:'GOOGLE',extractionStatus:{in:['COMPLETE','ERROR']},attachmentKey:{in:[...ignoredParts.keys()]}},select:{attachmentKey:true,extractedFacts:true}}):[];
+      const currentParts=[...prepared.attachments,...prepared.ignoredImageParts];
       const imageCorrections:typeof sources=[];
-      for(const retained of retainedImages){
+      for(const {source:retained,part,identity} of ignoredSupplyAttachmentCorrections(prepared.ignoredImageParts,currentParts,retainedSources)){
         const facts=retained.extractedFacts as {_provenance?:{contentVersion?:unknown}}|null;
-        if(facts?._provenance?.contentVersion===SUPPLY_CONTENT_VERSION)continue;
-        const part=ignoredParts.get(retained.attachmentKey);
-        if(part)imageCorrections.push({key:retained.attachmentKey,filename:part.filename,mimeType:part.mimeType,emptyCurrent:true});
+        if(retained.extractionStatus==='COMPLETE'&&facts?._provenance?.contentVersion===SUPPLY_CONTENT_VERSION)continue;
+        imageCorrections.push({key:retained.attachmentKey,filename:part.filename,mimeType:part.mimeType,emptyCurrent:true,existing:retained,identity});
       }
-      if (prepared.attachments.length > 10) sources.push({ key: '__attachment_limit__', filename: 'Additional document attachments', unsupported: true });
+      if (prepared.attachments.length > 10) sources.push({ key: '__attachment_limit__', filename: 'Additional document attachments', unsupported: true,existing:retainedSources.find(source=>source.attachmentKey==='__attachment_limit__') });
       for (const part of prepared.attachments.slice(0, 10)) {
         const filename = part.filename || (part.mimeType === 'application/pdf' ? 'document.pdf' : 'document-image');
-        const key = part.body?.attachmentId || part.filename;
-        if (!key) continue;
-        if (!['application/pdf','image/png','image/jpeg','image/webp','text/plain','text/csv'].includes(part.mimeType ?? '') || (part.body?.size ?? 0) > 8 * 1024 * 1024) { sources.push({ key, filename, mimeType: part.mimeType, unsupported: true }); continue; }
-        sources.push({ key, filename, mimeType: part.mimeType, part });
+        const {key,existing}=resolveSupplyAttachment(part,currentParts,retainedSources),identity=supplyAttachmentMetadata(part);
+        if (!['application/pdf','image/png','image/jpeg','image/webp','text/plain','text/csv'].includes(part.mimeType ?? '') || (part.body?.size ?? 0) > 8 * 1024 * 1024) { sources.push({ key, filename, mimeType: part.mimeType, identity, existing, unsupported: true }); continue; }
+        sources.push({ key, filename, mimeType: part.mimeType, part,identity,existing });
       }
       sources.push(...imageCorrections);
+      let retryPending=false;
       for (const source of sources) {
-        const existing = await db.supplySource.findFirst({ where: { organizationId, mailboxConnectionId: connection.id, messageId, attachmentKey: source.key } });
-        const provenance = existing?.extractedFacts && typeof existing.extractedFacts === 'object' && !Array.isArray(existing.extractedFacts) ? existing.extractedFacts._provenance as { contentVersion?: string } | undefined : undefined;
+        const existing = source.existing;
+        const provenance = existing?.extractedFacts && typeof existing.extractedFacts === 'object' && !Array.isArray(existing.extractedFacts) ? existing.extractedFacts._provenance as ({ contentVersion?: string }&SupplyAttachmentMetadata) | undefined : undefined;
         const currentComplete = existing?.extractionStatus === 'COMPLETE' && (existing.provider !== 'GOOGLE' || provenance?.contentVersion === SUPPLY_CONTENT_VERSION);
-        if (existing && (currentComplete || ['UNSUPPORTED','REVIEW'].includes(existing.extractionStatus) || existing.nextExtractionAt && existing.nextExtractionAt > new Date())) continue;
+        if(currentComplete&&source.identity&&existing?.extractedFacts&&typeof existing.extractedFacts==='object'&&!Array.isArray(existing.extractedFacts)&&Object.entries(source.identity).some(([key])=>!provenance?.[key as keyof SupplyAttachmentMetadata])){
+          if(!await stillMonitored(organizationId,userId,db))return{processed,skipped:true,reason:'not-monitored'};
+          const liveConnection=await db.mailboxConnection.findFirst({where:{id:connection.id,organizationId,userId,enabled:true}});
+          if(!liveConnection||!canReadSupplyMailbox(liveConnection))return{processed,skipped:true,reason:'connection-revoked'};
+          if(existing.mailboxConnectionId===null&&!await trustedBootstrapOwner(organizationId,userId,db))return{processed,skipped:true,reason:'bootstrap-authority-revoked'};
+          await db.supplySource.updateMany({where:{organizationId,id:existing.id,messageId,attachmentKey:existing.attachmentKey,OR:[{mailboxConnectionId:connection.id},{mailboxConnectionId:null,provider:'GOOGLE_CONNECTOR',userId,extractionStatus:'COMPLETE'}]},data:{extractedFacts:JSON.parse(JSON.stringify({...existing.extractedFacts,_provenance:{...provenance,...source.identity,...(provenance?.attachmentProviderId?{attachmentProviderId:provenance.attachmentProviderId}:{})}}))}});
+        }
+        if (existing && (currentComplete || ['UNSUPPORTED','REVIEW','IGNORED'].includes(existing.extractionStatus))) continue;
+        if(existing?.nextExtractionAt&&existing.nextExtractionAt>new Date()){if(existing.extractionStatus==='ERROR')retryPending=true;continue;}
         if (clock() > deadline - 65_000) { deferred = true; break; }
-        const sourceData = { mailboxConnectionId: connection.id, provider: 'GOOGLE', messageId, threadId: message.threadId, evidenceContext: source.key ? 'ATTACHMENT' as const : 'CURRENT_MESSAGE' as const, contentVersion: SUPPLY_CONTENT_VERSION, direction, ...sender, attachmentKey: source.key, messageDate: messageDate.toISOString(), contentHash: createHash('sha256').update(`${subject}\n${text}`).digest('hex'), filename: source.filename, mimeType: source.mimeType, subject, historical: existing?.historical ?? historical };
+        const sourceData = { mailboxConnectionId: connection.id, provider: 'GOOGLE', messageId, threadId: message.threadId, evidenceContext: source.key ? 'ATTACHMENT' as const : 'CURRENT_MESSAGE' as const, contentVersion: SUPPLY_CONTENT_VERSION, direction, ...sender, ...source.identity, ...(provenance?.attachmentProviderId?{attachmentProviderId:provenance.attachmentProviderId}:{}), attachmentKey: source.key, messageDate: messageDate.toISOString(), contentHash: createHash('sha256').update(`${subject}\n${text}`).digest('hex'), filename: source.filename, mimeType: source.mimeType, subject, historical: existing?.historical ?? historical };
         if (source.unsupported) { await ingest({ organizationId, userId }, { source: { ...sourceData, extractionStatus: 'UNSUPPORTED', extractionError: 'Attachment type, size or count is unsupported. Review the original message.' } }, db); continue; }
+        let extractionStarted=false;
         try {
           const renewed = await db.supplyMailboxSync.updateMany({ where: { id: sync.id, leaseId, leaseUntil: { gt: new Date() } }, data: { leaseUntil: new Date(Date.now() + 240_000) } });
           if (!renewed.count) return { processed, skipped: true, reason: 'lease-lost' };
@@ -224,6 +241,7 @@ export async function syncSupplyMailbox(organizationId: string, userId: string, 
             if (source.bytes.length > 8 * 1024 * 1024) { await ingest({ organizationId, userId }, { source: { ...sourceData, extractionStatus: 'UNSUPPORTED', extractionError: 'Attachment exceeds the 8 MiB extraction limit.' } }, db); continue; }
             sourceData.contentHash = createHash('sha256').update(new Uint8Array(source.bytes)).digest('hex');
           }
+          extractionStarted=true;
           let evidence = source.emptyCurrent ? emptyCurrentMessageEvidence() : await extract({ subject, text: source.bytes ? '' : text, currentMessageOnly: true, messageDate, timezone: org.timezone, ...(source.bytes ? { attachment: { filename: source.filename!, mimeType: source.mimeType!, bytes: source.bytes } } : {}) });
           if (evidence.kind === 'WARNING') evidence = { ...evidence, warningSource: isVerifiedDx5WarningSender(message.payload.headers ?? []) ? 'DISTILLX5_EMAIL' : 'OTHER_EMAIL' };
           if (!await stillMonitored(organizationId, userId, db)) return { processed, skipped: true, reason: 'not-monitored' };
@@ -232,14 +250,19 @@ export async function syncSupplyMailbox(organizationId: string, userId: string, 
           processed++;
         } catch (error) {
           if (!await stillMonitored(organizationId, userId, db)) return { processed, skipped: true, reason: 'not-monitored' };
-          const retry = extractionRetry((existing?.extractionAttemptCount ?? 0) + 1);
+          const providerRetryAt=error instanceof SupplyMailProviderError?error.retryAt:undefined,attemptIncrement=!extractionStarted&&providerRetryAt?0:1;
+          const scheduledRetry=extractionRetry(Math.max(1,(existing?.extractionAttemptCount ?? 0) + attemptIncrement));
+          const retry={...scheduledRetry,nextExtractionAt:scheduledRetry.nextExtractionAt&&providerRetryAt?new Date(Math.max(scheduledRetry.nextExtractionAt.getTime(),providerRetryAt.getTime())):scheduledRetry.nextExtractionAt};
           await ingest({ organizationId, userId }, { source: { ...sourceData, extractionStatus: retry.extractionStatus, extractionError: error instanceof SupplyMailProviderError ? error.message : 'Extraction could not produce validated supply facts. Retry or inspect the original source.' } }, db);
-          await db.supplySource.updateMany({ where: { organizationId, mailboxConnectionId: connection.id, messageId, attachmentKey: source.key }, data: { ...retry, extractionAttemptCount: { increment: 1 }, lastExtractionAt: new Date() } });
+          await db.supplySource.updateMany({ where: { organizationId, mailboxConnectionId: connection.id, messageId, attachmentKey: source.key }, data: { ...retry, extractionAttemptCount: { increment: attemptIncrement }, lastExtractionAt: attemptIncrement?new Date():undefined } });
+          if(retry.extractionStatus==='ERROR')retryPending=true;
+          if(providerRetryAt)throw new SupplyMailProviderError(error instanceof Error?error.message:'Gmail synchronization is deferred.',retry.nextExtractionAt&&retry.nextExtractionAt>providerRetryAt?retry.nextExtractionAt:providerRetryAt);
         }
       }
       if (deferred) break;
-      processedMessages++;
+      if(retryPending)firstPendingMessageIndex??=messageIndex;else processedMessages++;
     }
+    if(firstPendingMessageIndex!==undefined){messageIndex=Math.min(messageIndex,firstPendingMessageIndex);deferred=true;}
     if (deferred) checkpoint();
     else if (page.nextPageToken) setCursor({ query: cursor.query, pageToken: page.nextPageToken, scanStarted: cursor.scanStarted });
     else { setCursor(null); if (lane === 'INCREMENTAL') state.lastIncrementalAt = cursor.scanStarted; else completeSupplyMailLane(state,lane); }

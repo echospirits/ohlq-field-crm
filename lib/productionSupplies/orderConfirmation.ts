@@ -4,13 +4,18 @@ import { normalizeSupplyLocation,normalizeSupplyMaterial,supplyMaterialSearchTer
 import { productionMemberIds } from './config';
 import type { ValidatedSupplyEvidence, ValidatedSupplySource } from './service';
 
-export type SupplySourceProvenance = Pick<ValidatedSupplySource, 'threadId'|'evidenceContext'|'contentVersion'|'direction'|'fromEmail'|'senderAuthenticated'> & { productionTeamAuthorized?: boolean; confirmationValidated?: boolean; correlatedSourceIds?: string[] };
+export type SupplySourceProvenance = Pick<ValidatedSupplySource, 'threadId'|'evidenceContext'|'contentVersion'|'direction'|'fromEmail'|'senderAuthenticated'|'attachmentPartId'|'attachmentMimePath'|'attachmentProviderId'> & { productionTeamAuthorized?: boolean; confirmationValidated?: boolean; correlatedSourceIds?: string[] };
 export function readSupplySourceProvenance(value: unknown): SupplySourceProvenance {
   const raw = (value as { _provenance?: SupplySourceProvenance } | null)?._provenance;
   return raw && typeof raw === 'object' ? raw : {};
 }
 export function isCurrentSupplyEvidence(provenance: SupplySourceProvenance) {
   return provenance.contentVersion === 'SUPPLY_CURRENT_V1' && ['CURRENT_MESSAGE','ATTACHMENT','VERIFIED_BOOTSTRAP'].includes(provenance.evidenceContext || '');
+}
+/** Keep the first observed download handle as provenance, even across evidence-less retries. */
+export function mergeSupplySourceProvenance(previousFacts:unknown,incoming:SupplySourceProvenance):SupplySourceProvenance {
+  const previous=readSupplySourceProvenance(previousFacts);
+  return {threadId:incoming.threadId ?? previous.threadId,evidenceContext:incoming.evidenceContext ?? previous.evidenceContext,contentVersion:incoming.contentVersion ?? previous.contentVersion,direction:incoming.direction ?? previous.direction,fromEmail:incoming.fromEmail ?? previous.fromEmail,senderAuthenticated:incoming.senderAuthenticated ?? previous.senderAuthenticated,attachmentPartId:previous.attachmentPartId ?? incoming.attachmentPartId,attachmentMimePath:previous.attachmentMimePath ?? incoming.attachmentMimePath,attachmentProviderId:previous.attachmentProviderId ?? incoming.attachmentProviderId,productionTeamAuthorized:incoming.productionTeamAuthorized};
 }
 function compatible(a: ValidatedSupplyEvidence, b: ValidatedSupplyEvidence) {
   if (a.orderReference && b.orderReference && a.orderReference.trim()!==b.orderReference.trim()) return false;

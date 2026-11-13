@@ -30,6 +30,8 @@ Relevant mailbox discovery continues so new alerts and order updates can be foun
 
 Only current authored text and independently meaningful attachments establish new facts. Quoted history, logos and signature images cannot repeat an old order. Reprocessing legacy automatic evidence can quarantine unsupported purchases with an audit while retaining original records, independent current/manual evidence and explicit manual ignores.
 
+Attachment evidence uses stable message/MIME identity so changing download handles cannot restart its extraction on every resume. Original external keys remain preserved. Legacy documents are reused only through a unique message-bound identity; ambiguous same-name attachments stay separate for review.
+
 ## Connections and background updates
 
 Connection administration remains separate at `/production-supplies/settings`, also linked from Users. Existing organization teams identify Production membership independently of role, view/manage permission and mailbox consent. Each person connects their own verified business Gmail using read-only consent; Support View never grants private mailbox access.
