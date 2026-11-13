@@ -3,8 +3,9 @@ import { fingerprint, normalize } from './domain';
 import { normalizeSupplyLocation,normalizeSupplyMaterial,supplyMaterialSearchTerms } from './statusDomain';
 import { productionMemberIds } from './config';
 import type { ValidatedSupplyEvidence, ValidatedSupplySource } from './service';
+import type {TrustedDx5WarningIdentity} from './dx5WarningIdentity';
 
-export type SupplySourceProvenance = Pick<ValidatedSupplySource, 'threadId'|'evidenceContext'|'contentVersion'|'direction'|'fromEmail'|'senderAuthenticated'|'attachmentPartId'|'attachmentMimePath'|'attachmentProviderId'> & { productionTeamAuthorized?: boolean; confirmationValidated?: boolean; correlatedSourceIds?: string[] };
+export type SupplySourceProvenance = Pick<ValidatedSupplySource, 'threadId'|'evidenceContext'|'contentVersion'|'direction'|'fromEmail'|'senderAuthenticated'|'attachmentPartId'|'attachmentMimePath'|'attachmentProviderId'> & { productionTeamAuthorized?: boolean; confirmationValidated?: boolean; correlatedSourceIds?: string[];dx5WarningIdentity?:TrustedDx5WarningIdentity };
 export function readSupplySourceProvenance(value: unknown): SupplySourceProvenance {
   const raw = (value as { _provenance?: SupplySourceProvenance } | null)?._provenance;
   return raw && typeof raw === 'object' ? raw : {};
@@ -15,7 +16,7 @@ export function isCurrentSupplyEvidence(provenance: SupplySourceProvenance) {
 /** Keep the first observed download handle as provenance, even across evidence-less retries. */
 export function mergeSupplySourceProvenance(previousFacts:unknown,incoming:SupplySourceProvenance):SupplySourceProvenance {
   const previous=readSupplySourceProvenance(previousFacts);
-  return {threadId:incoming.threadId ?? previous.threadId,evidenceContext:incoming.evidenceContext ?? previous.evidenceContext,contentVersion:incoming.contentVersion ?? previous.contentVersion,direction:incoming.direction ?? previous.direction,fromEmail:incoming.fromEmail ?? previous.fromEmail,senderAuthenticated:incoming.senderAuthenticated ?? previous.senderAuthenticated,attachmentPartId:previous.attachmentPartId ?? incoming.attachmentPartId,attachmentMimePath:previous.attachmentMimePath ?? incoming.attachmentMimePath,attachmentProviderId:previous.attachmentProviderId ?? incoming.attachmentProviderId,productionTeamAuthorized:incoming.productionTeamAuthorized};
+  return {threadId:incoming.threadId ?? previous.threadId,evidenceContext:incoming.evidenceContext ?? previous.evidenceContext,contentVersion:incoming.contentVersion ?? previous.contentVersion,direction:incoming.direction ?? previous.direction,fromEmail:incoming.fromEmail ?? previous.fromEmail,senderAuthenticated:incoming.senderAuthenticated ?? previous.senderAuthenticated,attachmentPartId:previous.attachmentPartId ?? incoming.attachmentPartId,attachmentMimePath:previous.attachmentMimePath ?? incoming.attachmentMimePath,attachmentProviderId:previous.attachmentProviderId ?? incoming.attachmentProviderId,productionTeamAuthorized:incoming.productionTeamAuthorized,...(incoming.dx5WarningIdentity || previous.dx5WarningIdentity?{dx5WarningIdentity:incoming.dx5WarningIdentity || previous.dx5WarningIdentity}:{})};
 }
 function compatible(a: ValidatedSupplyEvidence, b: ValidatedSupplyEvidence) {
   if (a.orderReference && b.orderReference && a.orderReference.trim()!==b.orderReference.trim()) return false;

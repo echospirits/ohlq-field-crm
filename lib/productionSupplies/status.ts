@@ -4,6 +4,7 @@ import { prisma } from '../prisma';
 import { hasSupplyAccess, readSupplySettings } from './config';
 import { normalize } from './domain';
 import type { SupplyActor } from './schemas';
+import {trustedDx5WarningIdentity} from './dx5WarningIdentity';
 import { buildSupplyStatusCard, normalizeSupplyLocation, normalizeSupplyMaterial, supplyMaterialSearchTerms, supplyStatusKey, type StatusOrder, type SupplyOrderHold, type WatchedSupplyMaterial } from './statusDomain';
 export { matchWatchedSupplyLine, normalizeSupplyLocation, normalizeSupplyMaterial } from './statusDomain';
 export type { SupplyStatusCard, WatchedSupplyMaterial } from './statusDomain';
@@ -15,15 +16,25 @@ type Group = { material:WatchedSupplyMaterial; firstWarningAt:Date; latestWarnin
 async function watchedGroups(organizationId:string, db:Db):Promise<Group[]> {
   const dx5Source={AND:[{extractedFacts:{path:['kind'],equals:'WARNING'}},{extractedFacts:{path:['warningSource'],equals:'DISTILLX5_EMAIL'}}]} satisfies Prisma.SupplySourceWhereInput;
   const [needs, catalog] = await Promise.all([
-    db.supplyNeed.findMany({ where:{organizationId,OR:[{warnings:{some:{organizationId,source:dx5Source}}},{audits:{some:{action:'CONFIRMED_PRODUCTION_ORDER_WATCH',order:{ignored:false}}}}]},include:{warnings:{where:{source:dx5Source},include:{source:{select:{extractedFacts:true}}},orderBy:{warningAt:'asc'}},audits:{where:{action:'CONFIRMED_PRODUCTION_ORDER_WATCH',order:{ignored:false}},select:{detail:true,createdAt:true,orderId:true}},allocations:{include:{line:{select:{description:true,sku:true,order:{select:{supplier:true,ignored:true}}}}}}},orderBy:[{createdAt:'asc'},{id:'asc'}] }),
+    db.supplyNeed.findMany({ where:{organizationId,OR:[{warnings:{some:{organizationId,source:dx5Source}}},{audits:{some:{action:'CONFIRMED_PRODUCTION_ORDER_WATCH',order:{ignored:false}}}}]},include:{warnings:{where:{source:dx5Source},include:{source:{select:{extractedFacts:true,provider:true,subject:true,mailboxConnectionId:true}}},orderBy:{warningAt:'asc'}},audits:{where:{action:'CONFIRMED_PRODUCTION_ORDER_WATCH',order:{ignored:false}},select:{detail:true,createdAt:true,orderId:true}},allocations:{include:{line:{select:{description:true,sku:true,order:{select:{supplier:true,ignored:true}}}}}}},orderBy:[{createdAt:'asc'},{id:'asc'}] }),
     db.supplyCatalogItem.findMany({where:{organizationId},include:{aliases:true,rules:{where:{active:true}}}}),
   ]);
+  const catalogForNeed=(need:typeof needs[number])=>{
+    const matches=catalog.filter(item=>item.id===need.catalogItemId || normalizeSupplyMaterial(item.name)===normalizeSupplyMaterial(need.description) || item.aliases.some(alias=>normalizeSupplyMaterial(alias.alias)===normalizeSupplyMaterial(need.description)));
+    return need.catalogItemId?catalog.find(item=>item.id===need.catalogItemId):matches.length===1?matches[0]:undefined;
+  };
+  const catalogProviderIds=new Map<string,Set<string>>();
+  for(const need of needs){const item=catalogForNeed(need);if(!item)continue;const key=supplyStatusKey(item.id,normalizeSupplyLocation(need.location)),ids=catalogProviderIds.get(key)||new Set<string>();for(const warning of need.warnings){const id=trustedDx5WarningIdentity(warning.source)?.explicitMaterialId;if(id)ids.add(id);}catalogProviderIds.set(key,ids);}
   const groups=new Map<string,Group>();
   for(const need of needs){
-    const matches=catalog.filter(item=>item.id===need.catalogItemId || normalizeSupplyMaterial(item.name)===normalizeSupplyMaterial(need.description) || item.aliases.some(alias=>normalizeSupplyMaterial(alias.alias)===normalizeSupplyMaterial(need.description)));
-    const item=need.catalogItemId?catalog.find(item=>item.id===need.catalogItemId):matches.length===1?matches[0]:undefined;
-    const rawIds=need.warnings.flatMap(w=>{const facts=w.source.extractedFacts as {warning?:{materialId?:unknown}}|null;return typeof facts?.warning?.materialId==='string'?[facts.warning.materialId]:[];});
-    const materialIdentity=item?`catalog:${item.id}`:`name:${normalizeSupplyMaterial(need.description)}`;
+    const item=catalogForNeed(need);
+    const trustedIdentities=need.warnings.flatMap(w=>{const identity=trustedDx5WarningIdentity(w.source);return identity?[identity]:[];});
+    const distinctIdentities=new Set(trustedIdentities.map(identity=>identity.key));
+    const warningIdentity=distinctIdentities.size===1?trustedIdentities[0]:null;
+    const rawIds=need.warnings.flatMap(w=>{const facts=w.source.extractedFacts as {warning?:{materialId?:unknown}}|null;return !trustedDx5WarningIdentity(w.source)?.inferredLabelFragment && typeof facts?.warning?.materialId==='string'?[facts.warning.materialId]:[];});
+    const explicitIds=[...new Set(trustedIdentities.flatMap(identity=>identity.explicitMaterialId?[identity.explicitMaterialId]:[]))];
+    const catalogConflicts=item && (catalogProviderIds.get(supplyStatusKey(item.id,normalizeSupplyLocation(need.location)))?.size || 0)>1;
+    const materialIdentity=item?`catalog:${item.id}${catalogConflicts?explicitIds.length===1?`:dx5-id:${explicitIds[0]}`:explicitIds.length>1?`:conflict:${need.id}`:':unknown-dx5-id':''}`:distinctIdentities.size>1?`conflicting-warning-identities:${need.id}`:warningIdentity?.key || `name:${normalizeSupplyMaterial(need.description)}`;
     const key=supplyStatusKey(materialIdentity,normalizeSupplyLocation(need.location));
     const warnings=need.warnings;
     const locationWarning=warnings.at(-1);
@@ -36,7 +47,7 @@ async function watchedGroups(organizationId:string, db:Db):Promise<Group[]> {
     const latest=events.at(-1) || need.latestWarningAt || need.createdAt;
     const watchSource:WatchedSupplyMaterial['watchSource']=confirmations.some(at=>at.getTime()===latest.getTime())?'PRODUCTION_ORDER':'DX5_ALERT';
     const allocations=(need.allocations || []).filter(allocation=>!allocation.line.order.ignored);
-    const aliases=[need.description,...rawIds,...allocations.map(allocation=>allocation.line.description),...(item?[item.name,...item.aliases.map(alias=>alias.alias)]:[])];
+    const aliases=[need.description,...(warningIdentity?[warningIdentity.label]:[]),...rawIds,...allocations.map(allocation=>allocation.line.description),...(item?[item.name,...item.aliases.map(alias=>alias.alias)]:[])];
     const vendorRefs=[...(item?[...item.aliases.filter(alias=>alias.supplier && alias.sku).map(alias=>({supplier:alias.supplier,sku:alias.sku})),...item.rules.map(rule=>({supplier:rule.supplier,sku:rule.sku}))]:[]),...allocations.flatMap(allocation=>allocation.line.sku?[{supplier:allocation.line.order.supplier,sku:allocation.line.sku}]:[])];
     const existing=groups.get(key);
     if(existing){
@@ -45,7 +56,7 @@ async function watchedGroups(organizationId:string, db:Db):Promise<Group[]> {
       existing.material.vendorRefs=[...existing.material.vendorRefs,...vendorRefs];
       if(locationWarning && (!existing.locationWarningAt || locationWarning.warningAt>existing.locationWarningAt)){existing.locationWarningAt=locationWarning.warningAt;existing.material.location=location;}
       if(latest>existing.latestWarningAt){existing.latestWarningAt=latest;existing.material.latestWarningAt=latest;existing.material.watchSource=watchSource;existing.material.unit=need.unit;existing.reportedQuantity=warnings.at(-1)?.reportedQuantity ?? need.reportedQuantity;existing.reportedThreshold=warnings.at(-1)?.reportedThreshold ?? need.reportedThreshold;}
-    }else groups.set(key,{material:{key,material:item?.name || need.description,location,unit:need.unit,catalogItemId:item?.id || null,aliases:[...new Set(aliases)],vendorRefs,needIds:[need.id],latestWarningAt:latest,sharedUse:item?.sharedUse || false,watchSource},firstWarningAt:first,latestWarningAt:latest,warningCount:warnings.length,reportedQuantity:warnings.at(-1)?.reportedQuantity ?? need.reportedQuantity,reportedThreshold:warnings.at(-1)?.reportedThreshold ?? need.reportedThreshold,locationWarningAt:locationWarning?.warningAt || null});
+    }else groups.set(key,{material:{key,material:item?.name || warningIdentity?.label || need.description,location,unit:need.unit,catalogItemId:item?.id || null,aliases:[...new Set(aliases)],vendorRefs,needIds:[need.id],latestWarningAt:latest,sharedUse:item?.sharedUse || false,watchSource},firstWarningAt:first,latestWarningAt:latest,warningCount:warnings.length,reportedQuantity:warnings.at(-1)?.reportedQuantity ?? need.reportedQuantity,reportedThreshold:warnings.at(-1)?.reportedThreshold ?? need.reportedThreshold,locationWarningAt:locationWarning?.warningAt || null});
   }
   return [...groups.values()];
 }

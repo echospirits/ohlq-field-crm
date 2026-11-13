@@ -10,6 +10,7 @@ import { canReadSupplyMailbox } from './mailAccess';
 import { replayWatchedSupplyEvidence, type ReplayOptions } from './replay';
 import { isCurrentSupplyEvidence, mergeSupplySourceProvenance, readSupplySourceProvenance, resolveProductionOrderConfirmation } from './orderConfirmation';
 import { quarantineUnsupportedSupplyOrders } from './evidenceSupport';
+import {compatibleDx5WarningIdentity,trustedDx5WarningIdentity} from './dx5WarningIdentity';
 
 type Tx = Prisma.TransactionClient;
 export class SupplyError extends Error { constructor(message: string) { super(message); this.name = 'SupplyError'; } }
@@ -407,6 +408,8 @@ export async function ingestEvidence(actor: SupplyActor, raw: unknown, db: Prism
     const previousSource = await tx.supplySource.findFirst({ where: { organizationId: actor.organizationId, mailboxConnectionId: input.source.mailboxConnectionId || null, messageId: input.source.messageId, attachmentKey: input.source.attachmentKey } });
     if (previousSource?.extractionStatus === 'IGNORED') return { sourceId: previousSource.id, review: false };
     const provenance=mergeSupplySourceProvenance(previousSource?.extractedFacts,{ threadId, evidenceContext, contentVersion, direction, fromEmail, senderAuthenticated, attachmentPartId,attachmentMimePath,attachmentProviderId, productionTeamAuthorized: productionMemberIds(context.organization.crmPreferences).includes(actor.userId) && Boolean(input.source.mailboxConnectionId || manager && evidenceContext === 'VERIFIED_BOOTSTRAP') });
+    const warningIdentity=trustedDx5WarningIdentity({...sourceColumns,extractedFacts:input.evidence?{...input.evidence,_provenance:provenance}:null});
+    if(warningIdentity)provenance.dx5WarningIdentity=warningIdentity;
     const sourceData = { ...sourceColumns, organizationId: actor.organizationId, userId: actor.userId, messageDate: new Date(input.source.messageDate), extractedFacts: json({ ...(input.evidence || {}), _provenance: provenance }) };
     const source = previousSource ? await tx.supplySource.update({ where: { id: previousSource.id }, data: sourceData }) : await tx.supplySource.create({ data: sourceData });
     const upgradingLegacy=Boolean(previousSource && isCurrentSupplyEvidence(provenance) && !isCurrentSupplyEvidence(readSupplySourceProvenance(previousSource.extractedFacts)));
@@ -430,19 +433,40 @@ export async function ingestEvidence(actor: SupplyActor, raw: unknown, db: Prism
     if (!evidence) return { sourceId: source.id, review: false };
     const observedAt = confirmation.validated ? confirmation.effectiveAt : source.messageDate;
     if (evidence.kind === 'WARNING') {
-      const warning = evidence.warning;
+      const rawWarning=evidence.warning;
+      const warning=rawWarning && warningIdentity?{...rawWarning,material:warningIdentity.label,materialId:warningIdentity.explicitMaterialId}:rawWarning;
       if (!warning) { await tx.supplySource.update({ where: { id: source.id }, data: { extractionStatus: 'REVIEW', extractionError: 'Low-stock warning material or location could not be extracted.' } }); return { sourceId: source.id, review: true }; }
       const items = await tx.supplyCatalogItem.findMany({ where: { organizationId: actor.organizationId }, include: { aliases: true } });
       const matches = items.filter(item => normalize(item.name) === normalize(warning.material) || item.aliases.some(alias => !alias.supplier && !alias.sku && normalize(alias.alias) === normalize(warning.material)));
-      const item = matches.length === 1 ? matches[0] : null;
-      const activeKey = fingerprint(item?.id || normalize(warning.materialId || warning.material), normalizeSupplyLocation(warning.location));
-      const warningKey = fingerprint(input.source.contentHash, warning.material, warning.location, observedAt.toISOString());
-      const occurrence = await tx.supplyWarningOccurrence.findUnique({ where: { organizationId_warningKey: { organizationId: actor.organizationId, warningKey } } });
+      let item = matches.length === 1 ? matches[0] : null;
+      const warningIncludes={warnings:{include:{source:{select:{provider:true,subject:true,mailboxConnectionId:true,extractedFacts:true}}}}} as const;
+      // Retain one existing reviewed mapping even when the provider label is absent from catalog aliases.
+      // Different reviewed identities or physical locations cannot supply an inferred mapping.
+      if(warningIdentity && !matches.length && input.source.subject){
+        const labeled=await tx.supplyNeed.findMany({where:{organizationId:actor.organizationId,resolvedAt:null,catalogItemId:{not:null},warnings:{some:{source:{provider:'GOOGLE',subject:{equals:input.source.subject,mode:Prisma.QueryMode.insensitive}}}}},include:warningIncludes,take:100});
+        const mappedIds=new Set(labeled.filter(candidate=>normalizeSupplyLocation(candidate.location)===normalizeSupplyLocation(warning.location) && candidate.warnings.some(occurrence=>trustedDx5WarningIdentity(occurrence.source)?.label.toLowerCase()===warningIdentity.label.toLowerCase()) && candidate.warnings.every(occurrence=>compatibleDx5WarningIdentity(occurrence.source,warningIdentity,{reviewedCatalog:true}))).map(candidate=>candidate.catalogItemId));
+        if(mappedIds.size===1)item=items.find(candidate=>mappedIds.has(candidate.id)) || null;
+      }
+      const catalogPeers=warningIdentity && item?await tx.supplyNeed.findMany({where:{organizationId:actor.organizationId,catalogItemId:item.id,resolvedAt:null},include:warningIncludes,take:100}):[];
+      const catalogIds=new Set(catalogPeers.filter(peer=>normalizeSupplyLocation(peer.location)===normalizeSupplyLocation(warning.location)).flatMap(peer=>peer.warnings.flatMap(occurrence=>{const id=trustedDx5WarningIdentity(occurrence.source)?.explicitMaterialId;return id?[id]:[]})));
+      if(warningIdentity?.explicitMaterialId)catalogIds.add(warningIdentity.explicitMaterialId);
+      const catalogConflict=Boolean(item && catalogIds.size>1);
+      const activeKey = catalogConflict?fingerprint(item!.id,warningIdentity?.explicitMaterialId || 'unknown-provider-id',normalizeSupplyLocation(warning.location)):fingerprint(item?.id || warningIdentity?.key || normalize(warning.materialId || warning.material), normalizeSupplyLocation(warning.location));
+      const compatibleCandidate=(candidate:{catalogItemId:string|null;warnings?:Array<{source:{provider:string;subject:string|null;mailboxConnectionId:string|null;extractedFacts:unknown}}>})=>{
+        if(!warningIdentity)return true;
+        if(candidate.catalogItemId && candidate.catalogItemId!==item?.id)return false;
+        if(catalogConflict && !warningIdentity.explicitMaterialId && candidate.warnings?.some(occurrence=>trustedDx5WarningIdentity(occurrence.source)?.explicitMaterialId))return false;
+        return (candidate.warnings || []).every(occurrence=>compatibleDx5WarningIdentity(occurrence.source,warningIdentity,{reviewedCatalog:Boolean(item && candidate.catalogItemId===item.id)}));
+      };
+      const warningKey = fingerprint(input.source.contentHash, warningIdentity?.key || warning.material, warningIdentity?normalizeSupplyLocation(warning.location):warning.location, observedAt.toISOString());
+      const occurrence = await tx.supplyWarningOccurrence.findUnique({ where: { organizationId_warningKey: { organizationId: actor.organizationId, warningKey } } }) || await tx.supplyWarningOccurrence.findFirst({where:{organizationId:actor.organizationId,sourceId:source.id,warningAt:observedAt}});
       if (occurrence) {const priorFacts=previousSource?.extractedFacts as {kind?:string;warningSource?:string}|null;return { sourceId: source.id, needId: occurrence.needId, review: false, newWatchedMaterial:priorFacts?.kind!=='WARNING' || priorFacts.warningSource!=='DISTILLX5_EMAIL' };}
       let need = await tx.supplyNeed.findUnique({ where: { organizationId_activeKey: { organizationId: actor.organizationId, activeKey } } });
       const identities:Prisma.SupplyNeedWhereInput[]=[{description:{equals:warning.material,mode:'insensitive'}},...(warning.materialId?[{description:{equals:warning.materialId,mode:Prisma.QueryMode.insensitive}}]:[]),...(item?[{catalogItemId:item.id}]:[])];
+      if(warningIdentity && input.source.subject)identities.push({warnings:{some:{source:{provider:'GOOGLE',subject:{equals:input.source.subject,mode:'insensitive'}}}}});
       if(!need){
-        const candidates=await tx.supplyNeed.findMany({where:{organizationId:actor.organizationId,resolvedAt:null,OR:identities},orderBy:[{createdAt:'asc'},{id:'asc'}],take:100});
+        const found=await tx.supplyNeed.findMany({where:{organizationId:actor.organizationId,resolvedAt:null,OR:identities},include:warningIncludes,orderBy:[{createdAt:'asc'},{id:'asc'}],take:100});
+        const candidates=found.filter(compatibleCandidate);
         need=candidates.find(candidate=>normalizeSupplyLocation(candidate.location)===normalizeSupplyLocation(warning.location)) || null;
         if(!need && !normalizeSupplyLocation(warning.location) && candidates.length===1 && !item?.sharedUse){
           const candidate=candidates[0],candidateItem=items.find(existing=>existing.id===candidate.catalogItemId);
@@ -452,8 +476,9 @@ export async function ingestEvidence(actor: SupplyActor, raw: unknown, db: Prism
       }
       if (!need) {
         // Replayed warnings older than a resolution remain historical evidence.
-        const resolved=await tx.supplyNeed.findMany({ where: { organizationId: actor.organizationId,OR:identities,resolvedAt: { gte: observedAt } }, orderBy: { resolvedAt: 'asc' },take:100 });
-        need=resolved.find(candidate=>normalizeSupplyLocation(candidate.location)===normalizeSupplyLocation(warning.location)) || null;
+        const resolved=await tx.supplyNeed.findMany({ where: { organizationId: actor.organizationId,OR:identities,resolvedAt: { gte: observedAt } },include:{warnings:{include:{source:{select:{provider:true,subject:true,mailboxConnectionId:true,extractedFacts:true}}}}}, orderBy: { resolvedAt: 'asc' },take:100 });
+        const compatible=resolved.filter(compatibleCandidate);
+        need=compatible.find(candidate=>normalizeSupplyLocation(candidate.location)===normalizeSupplyLocation(warning.location)) || null;
       }
       const wasWatched=need ? Boolean(await tx.supplyWarningOccurrence.count({where:{organizationId:actor.organizationId,needId:need.id,sourceId:{not:source.id},source:{AND:[{extractedFacts:{path:['kind'],equals:'WARNING'}},{extractedFacts:{path:['warningSource'],equals:'DISTILLX5_EMAIL'}}]}}})) : false;
       if (!need) need = await tx.supplyNeed.create({ data: { organizationId: actor.organizationId, dedupeKey: `warning:${warningKey}`, activeKey, description: warning.material, catalogItemId: item?.id, location: warning.location, unit: warning.unit, source: evidence.warningSource || 'OTHER_EMAIL', latestWarningAt: observedAt, reportedQuantity: warning.quantity, reportedThreshold: warning.threshold, reviewRequired: !item, ownerUserId: actor.userId } });
