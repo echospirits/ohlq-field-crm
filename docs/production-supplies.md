@@ -2,7 +2,7 @@
 
 Supplies is a simple ordering and delivery status dashboard for materials flagged by **Dx5** low-inventory alerts or confirmed **Production replenishment orders**. Dx5, and later Ollie, own inventory levels, forecasting and lead times. Neat answers whether an order has been found and what is happening with its delivery.
 
-The owner narrowed the earlier coordination workspace and approved production release **0.10.0**, then separately approved Echo production activation on November 12, 2026. See [release validation](releases/0.10.0-validation.md) and [production activation](releases/production-supplies-production-activation.md) for exact receipts. Earlier TST evidence remains historical; production connections and consent are separate.
+The owner narrowed the earlier coordination workspace and approved production release **0.10.0**, then separately approved Echo production activation on November 12, 2026. The selective **0.10.1** reliability hotfix adds confirmed-order cards, corrects material/image/attachment matching and uses the existing durable runtime for the 15-minute cadence. See [current validation](releases/0.10.1-validation.md) and [historical production activation](releases/production-supplies-production-activation.md) for exact receipts. Production connections and each owner's consent remain separate from TST; historical backfill is still progressing.
 
 ## Daily use
 
@@ -12,6 +12,7 @@ Open **Production → Supplies** at `/production-supplies`.
 - Cards show the latest reliably matched order/delivery status, supplier and available sourced arrival. Missing evidence is unknown; “No order found” does not claim nobody placed an order.
 - Prepayment holds, planned payment dates and generic supplier promised dates remain separate from shipment/arrival evidence. A plan to pay is not a payment or dispatch confirmation.
 - Repeated Dx5 alerts caused by further usage update the same cycle. They do not create additional cards.
+- The original verified Dx5 label keeps that identity stable even if extraction varies its name or splits a parenthetical fragment into an assumed ID. Reviewed catalog identities and genuine ID/location conflicts remain authoritative.
 - **Dismiss** hides the current cycle. Later repeated alerts in that cycle do not bring it back.
 - A completed relevant replenishment delivery removes the card. A genuinely later low-stock alert can start a fresh cycle. Old reprocessed messages cannot reopen it.
 - Partial, returned, cancelled, conflicting or unallocated shipments do not falsely prove complete delivery. Their card remains visible with the uncertainty; Dismiss is available when the team does not want to track it.

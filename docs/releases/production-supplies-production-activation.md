@@ -1,5 +1,7 @@
 # Production Supplies: production activation
 
+Historical 0.10.0 activation record. The later selective [0.10.1 reliability release](0.10.1.md) preserves this configuration and records corrected cards, audited data repair and real durable-runtime acceptance in its [validation](0.10.1-validation.md).
+
 November 12, 2026. After the verified 0.10.0 code release, the owner explicitly approved Echo production activation: the three existing Production members, a dedicated production Google client and encryption/job keys, each owner's read-only Gmail consent, and the 15-minute worker. Paid tracking and new user accounts remain excluded. This supersedes the earlier pending activation boundary without changing the released application or historical tag.
 
 ## Target and enrollment
