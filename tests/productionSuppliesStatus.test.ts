@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { buildSupplyStatusCard, matchWatchedSupplyLine, normalizeSupplyLocation, type StatusOrder, type StatusShipment, type WatchedSupplyMaterial } from '../lib/productionSupplies/statusDomain';
+import { readSupplyOrderOperationalState } from '../lib/productionSupplies/status';
 
 const at=(day:number,hour=12)=>new Date(`2026-11-${String(day).padStart(2,'0')}T${String(hour).padStart(2,'0')}:00:00Z`);
 const material:WatchedSupplyMaterial={key:'material-location',material:'750mL Tennessee Bottles',location:'Production',unit:'units',catalogItemId:'bottles',aliases:[],vendorRefs:[{supplier:'Reviewed supplier',sku:'TEST100'}],needIds:['need'],latestWarningAt:at(10),sharedUse:false};
@@ -46,8 +47,36 @@ test('an unrelated delivered shipment cannot hide the watched material still in 
 test('returned/cancelled supplies and unknown location or shared purchase purpose stay visible',()=>{
   for(const status of ['RETURNED','CANCELLED'])assert.equal(card([order({shipments:[shipment({status,deliveredAt:at(11)})]})])!.status,'ATTENTION');
   assert.equal(card([order({status:'CANCELLED',shipments:[]})])!.statusLabel,'Order cancelled');
-  assert.equal(buildSupplyStatusCard({...material,location:'Location unknown'},input([completed()]))!.statusLabel,'Order match uncertain');
+  assert.equal(buildSupplyStatusCard({...material,location:'Location unknown'},input([completed()]))!.statusLabel,'Delivery needs checking');
   assert.equal(buildSupplyStatusCard({...material,sharedUse:true},input([order({lines:[{...order().lines[0],department:'NEEDS_REVIEW'}],shipments:completed().shipments})]))!.statusLabel,'Order match uncertain');
+});
+
+test('unknown warning location permits an exact nonshared order without asserting a physical location or delivery',()=>{
+  const unknown={...material,location:'Location unknown'};
+  const placed=buildSupplyStatusCard(unknown,input([order({destination:null,shipments:[]})]))!;
+  assert.equal(placed.status,'ORDERED');assert.equal(placed.location,'Location unknown');
+  assert.ok(buildSupplyStatusCard(unknown,input([completed()])));
+  assert.equal(card([order({destination:'Conflicting facility',shipments:[]})])!.status,'NO_ORDER_FOUND');
+  assert.equal(card([order({destination:null,shipments:[]})])!.statusLabel,'Order match uncertain');
+});
+
+test('confirmed production purchase cards preserve payment gate and supplier promise without inventing arrival',()=>{
+  const watched={...material,watchSource:'PRODUCTION_ORDER' as const};
+  const held=buildSupplyStatusCard(watched,input([order({shipments:[],orderHold:'PREPAYMENT_REQUIRED',supplierPromisedDate:'2026-11-17',paymentDueDate:'2026-11-16'})]))!;
+  assert.equal(held.watchSource,'PRODUCTION_ORDER');assert.equal(held.statusLabel,'Awaiting payment');assert.equal(held.arrival,null);
+  assert.equal(held.supplierPromisedDate,'2026-11-17');assert.equal(held.paymentDueDate,'2026-11-16');
+  assert.equal(buildSupplyStatusCard(watched,{...input([order({shipments:[],orderHold:'PAYMENT_PENDING'})]),dismissals:[{cycleKey:held.cycleKey,at:at(12)}]}),null);
+});
+
+test('current source chronology keeps later payment hold and ignores quoted or legacy promise fields',()=>{
+  const meta={contentVersion:'SUPPLY_CURRENT_V1',evidenceContext:'CURRENT_MESSAGE'};
+  const sources=[
+    {messageDate:at(9),extractedFacts:{kind:'ORDER',orderHold:'PREPAYMENT_REQUIRED',supplierPromisedDate:'2026-11-17',_provenance:meta}},
+    {messageDate:at(11),extractedFacts:{kind:'SHIPMENT',orderHold:'PAYMENT_PENDING',paymentDueDate:'2026-11-16',_provenance:meta}},
+    {messageDate:at(12),extractedFacts:{kind:'ORDER',orderHold:'RELEASED',supplierPromisedDate:'2026-11-13',_provenance:{...meta,evidenceContext:'QUOTED_HISTORY'}}},
+  ];
+  assert.deepEqual(readSupplyOrderOperationalState(sources),{orderHold:'PAYMENT_PENDING',supplierPromisedDate:'2026-11-17',paymentDueDate:'2026-11-16'});
+  assert.equal(readSupplyOrderOperationalState([...sources,{messageDate:at(13),extractedFacts:{kind:'SHIPMENT',orderHold:'RELEASED',_provenance:meta}}]).orderHold,'RELEASED');
 });
 test('delivery report/update time alone cannot close a newer inventory alert',()=>{
   assert.ok(card([order({shipments:[shipment({status:'DELIVERED',statusEventAt:at(14),deliveredAt:null})]})],at(12)));

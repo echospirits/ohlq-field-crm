@@ -104,7 +104,9 @@ test('unwatched source is retained idempotently without creating any operational
   assert.equal(result.orderId, undefined);
   assert.equal(result.review, false);
   assert.equal(retained.length, 1);
-  assert.deepEqual(retained[0].extractedFacts, { ...input.evidence, lines: input.evidence.lines.map(line => ({ ...line })), shipments: [] });
+  const {_provenance,...originalFacts}=retained[0].extractedFacts as Record<string,unknown>;
+  assert.deepEqual(originalFacts, { ...input.evidence, lines: input.evidence.lines.map(line => ({ ...line })), shipments: [] });
+  assert.deepEqual(_provenance,{productionTeamAuthorized:false});
 });
 
 test('persisted replay cursor advances past more than one window of unrelated sources to an older matching order', async () => {

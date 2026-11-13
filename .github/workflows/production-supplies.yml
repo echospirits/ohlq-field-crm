@@ -1,7 +1,8 @@
-name: Refresh Production Supplies
+name: Ensure Production Supplies scheduler
 
 on:
   schedule:
+    # Recovery only. The durable Workflow sleep loop owns the 15-minute cadence.
     - cron: "8,23,38,53 * * * *"
   workflow_dispatch:
 
@@ -23,7 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 6
     steps:
-      - name: Invoke only the TST supply worker
+      - name: Ensure only the TST durable supply scheduler
         env:
           SUPPLY_JOB_SECRET: ${{ secrets.SUPPLY_JOB_SECRET }}
           # Optional existing deployment-protection automation credential.
@@ -53,7 +54,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 6
     steps:
-      - name: Invoke only the production supply worker
+      - name: Ensure only the production durable supply scheduler
         env:
           SUPPLY_JOB_SECRET: ${{ secrets.SUPPLY_JOB_SECRET }}
           SUPPLY_JOB_VERCEL_BYPASS: ${{ secrets.SUPPLY_JOB_VERCEL_BYPASS }}

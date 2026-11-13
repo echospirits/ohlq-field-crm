@@ -6,7 +6,7 @@ import { getWatchedSupplyOrderScope, isWatchedSupplyOrderRecord } from './watch'
 import { reconcileWatchedSupplyEvidence } from './service';
 import { isSupplyReplayDue, SUPPLY_REPLAY_CHECKPOINT } from './replay';
 
-type JobServices = { reconcile?: typeof reconcileSupplyMailboxes; mailbox?: typeof syncSupplyMailbox; tracking?: typeof refreshSupplyShipmentTracking; watchScope?: typeof getWatchedSupplyOrderScope; replay?: typeof reconcileWatchedSupplyEvidence; clock?: () => number };
+type JobServices = { reconcile?: typeof reconcileSupplyMailboxes; mailbox?: typeof syncSupplyMailbox; tracking?: typeof refreshSupplyShipmentTracking; watchScope?: typeof getWatchedSupplyOrderScope; replay?: typeof reconcileWatchedSupplyEvidence; clock?: () => number; organizationId?: string };
 
 /** Global due queues keep one long import from starving another person or tracking. */
 export async function runSupplyJobs(db: PrismaClient = prisma, services: JobServices = {}) {
@@ -16,8 +16,8 @@ export async function runSupplyJobs(db: PrismaClient = prisma, services: JobServ
   const tracking = services.tracking ?? refreshSupplyShipmentTracking;
   const watchScope = services.watchScope ?? getWatchedSupplyOrderScope;
   const replay = services.replay ?? reconcileWatchedSupplyEvidence;
-  const organizations = await db.organization.findMany({ where: { active: true, accountStatus: { notIn: ['SUSPENDED', 'CANCELLED'] }, features: { some: { featureKey: 'PRODUCTION_SUPPLIES', enabled: true } } }, select: { id: true }, take: 50, orderBy: { id: 'asc' } });
-  const result = { organizations: 0, mailboxChecks: 0, mailboxErrors: 0, tracking: [] as Array<{ shipmentId: string; status: string }>, evidenceReplays: 0, replayErrors: 0, deferred: false };
+  const organizations = await db.organization.findMany({ where: { ...(services.organizationId ? { id: services.organizationId } : {}), active: true, accountStatus: { notIn: ['SUSPENDED', 'CANCELLED'] }, features: { some: { featureKey: 'PRODUCTION_SUPPLIES', enabled: true } } }, select: { id: true }, take: 50, orderBy: { id: 'asc' } });
+  const result = { organizations: 0, mailboxChecks: 0, mailboxErrors: 0, tracking: [] as Array<{ shipmentId: string; status: string }>, evidenceReplays: 0, replayErrors: 0, deferred: false, continuation: false, backfillIncomplete: false };
   // Metadata reconciliation performs no provider calls. Bound it separately from import work.
   for (const organization of organizations) {
     if (clock() - started > 20_000) { result.deferred = true; break; }
@@ -48,7 +48,13 @@ export async function runSupplyJobs(db: PrismaClient = prisma, services: JobServ
   })();
   const mailLanes = dueMailboxes.map(async row => {
     if (clock() - started > 100_000) { result.deferred = true; return; }
-    try { const update = await mailbox(row.organizationId, row.userId, db, { budgetMs: 120_000 }); result.mailboxChecks++; if ('error' in update) result.mailboxErrors++; }
+    try {
+      const update = await mailbox(row.organizationId, row.userId, db, { budgetMs: 120_000 });
+      result.mailboxChecks++;
+      if ('error' in update) result.mailboxErrors++;
+      if ('continuation' in update && update.continuation === true) result.continuation = true;
+      if ('backfillIncomplete' in update && update.backfillIncomplete === true) result.backfillIncomplete = true;
+    }
     catch { result.mailboxErrors++; }
   });
   const replayLanes = replayQueue.slice(0, 2).map(async scope => {

@@ -4,7 +4,7 @@ import { prisma } from '../prisma';
 import { hasSupplyAccess, readSupplySettings } from './config';
 import { normalize } from './domain';
 import type { SupplyActor } from './schemas';
-import { buildSupplyStatusCard, normalizeSupplyLocation, normalizeSupplyMaterial, supplyMaterialSearchTerms, supplyStatusKey, type StatusOrder, type WatchedSupplyMaterial } from './statusDomain';
+import { buildSupplyStatusCard, normalizeSupplyLocation, normalizeSupplyMaterial, supplyMaterialSearchTerms, supplyStatusKey, type StatusOrder, type SupplyOrderHold, type WatchedSupplyMaterial } from './statusDomain';
 export { matchWatchedSupplyLine, normalizeSupplyLocation, normalizeSupplyMaterial } from './statusDomain';
 export type { SupplyStatusCard, WatchedSupplyMaterial } from './statusDomain';
 
@@ -15,7 +15,7 @@ type Group = { material:WatchedSupplyMaterial; firstWarningAt:Date; latestWarnin
 async function watchedGroups(organizationId:string, db:Db):Promise<Group[]> {
   const dx5Source={AND:[{extractedFacts:{path:['kind'],equals:'WARNING'}},{extractedFacts:{path:['warningSource'],equals:'DISTILLX5_EMAIL'}}]} satisfies Prisma.SupplySourceWhereInput;
   const [needs, catalog] = await Promise.all([
-    db.supplyNeed.findMany({ where:{organizationId,warnings:{some:{organizationId,source:dx5Source}}},include:{warnings:{where:{source:dx5Source},include:{source:{select:{extractedFacts:true}}},orderBy:{warningAt:'asc'}}},orderBy:[{createdAt:'asc'},{id:'asc'}] }),
+    db.supplyNeed.findMany({ where:{organizationId,OR:[{warnings:{some:{organizationId,source:dx5Source}}},{audits:{some:{action:'CONFIRMED_PRODUCTION_ORDER_WATCH',order:{ignored:false}}}}]},include:{warnings:{where:{source:dx5Source},include:{source:{select:{extractedFacts:true}}},orderBy:{warningAt:'asc'}},audits:{where:{action:'CONFIRMED_PRODUCTION_ORDER_WATCH',order:{ignored:false}},select:{detail:true,createdAt:true,orderId:true}},allocations:{include:{line:{select:{description:true,sku:true,order:{select:{supplier:true,ignored:true}}}}}}},orderBy:[{createdAt:'asc'},{id:'asc'}] }),
     db.supplyCatalogItem.findMany({where:{organizationId},include:{aliases:true,rules:{where:{active:true}}}}),
   ]);
   const groups=new Map<string,Group>();
@@ -26,25 +26,40 @@ async function watchedGroups(organizationId:string, db:Db):Promise<Group[]> {
     const materialIdentity=item?`catalog:${item.id}`:`name:${normalizeSupplyMaterial(need.description)}`;
     const key=supplyStatusKey(materialIdentity,normalizeSupplyLocation(need.location));
     const warnings=need.warnings;
-    const first=warnings[0]?.warningAt || need.latestWarningAt || need.createdAt;
-    const latest=warnings.at(-1)?.warningAt || need.latestWarningAt || need.createdAt;
-    const aliases=[need.description,...rawIds,...(item?[item.name,...item.aliases.map(alias=>alias.alias)]:[])];
-    const vendorRefs=item?[...item.aliases.filter(alias=>alias.supplier && alias.sku).map(alias=>({supplier:alias.supplier,sku:alias.sku})),...item.rules.map(rule=>({supplier:rule.supplier,sku:rule.sku}))]:[];
+    const confirmations=(need.audits || []).flatMap(audit=>{const detail=audit.detail as {triggerAt?:unknown;provenanceVersion?:unknown}|null;const at=typeof detail?.triggerAt==='string'?new Date(detail.triggerAt):null;return detail?.provenanceVersion===1 && at && Number.isFinite(at.getTime())?[at]:[];});
+    const events=[...warnings.map(w=>w.warningAt),...confirmations].sort((a,b)=>a.getTime()-b.getTime());
+    const first=events[0] || need.latestWarningAt || need.createdAt;
+    const latest=events.at(-1) || need.latestWarningAt || need.createdAt;
+    const watchSource:WatchedSupplyMaterial['watchSource']=confirmations.some(at=>at.getTime()===latest.getTime())?'PRODUCTION_ORDER':'DX5_ALERT';
+    const allocations=(need.allocations || []).filter(allocation=>!allocation.line.order.ignored);
+    const aliases=[need.description,...rawIds,...allocations.map(allocation=>allocation.line.description),...(item?[item.name,...item.aliases.map(alias=>alias.alias)]:[])];
+    const vendorRefs=[...(item?[...item.aliases.filter(alias=>alias.supplier && alias.sku).map(alias=>({supplier:alias.supplier,sku:alias.sku})),...item.rules.map(rule=>({supplier:rule.supplier,sku:rule.sku}))]:[]),...allocations.flatMap(allocation=>allocation.line.sku?[{supplier:allocation.line.order.supplier,sku:allocation.line.sku}]:[])];
     const existing=groups.get(key);
     if(existing){
       existing.material.needIds.push(need.id); existing.material.aliases=[...new Set([...existing.material.aliases,...aliases])];
       existing.warningCount+=warnings.length; if(first<existing.firstWarningAt)existing.firstWarningAt=first;
-      if(latest>existing.latestWarningAt){existing.latestWarningAt=latest;existing.material.latestWarningAt=latest;existing.material.unit=need.unit;existing.reportedQuantity=warnings.at(-1)?.reportedQuantity ?? need.reportedQuantity;existing.reportedThreshold=warnings.at(-1)?.reportedThreshold ?? need.reportedThreshold;}
-    }else groups.set(key,{material:{key,material:item?.name || need.description,location:need.location,unit:need.unit,catalogItemId:item?.id || null,aliases:[...new Set(aliases)],vendorRefs,needIds:[need.id],latestWarningAt:latest,sharedUse:item?.sharedUse || false},firstWarningAt:first,latestWarningAt:latest,warningCount:warnings.length,reportedQuantity:warnings.at(-1)?.reportedQuantity ?? need.reportedQuantity,reportedThreshold:warnings.at(-1)?.reportedThreshold ?? need.reportedThreshold});
+      existing.material.vendorRefs=[...existing.material.vendorRefs,...vendorRefs];
+      if(latest>existing.latestWarningAt){existing.latestWarningAt=latest;existing.material.latestWarningAt=latest;existing.material.watchSource=watchSource;existing.material.unit=need.unit;existing.reportedQuantity=warnings.at(-1)?.reportedQuantity ?? need.reportedQuantity;existing.reportedThreshold=warnings.at(-1)?.reportedThreshold ?? need.reportedThreshold;}
+    }else groups.set(key,{material:{key,material:item?.name || need.description,location:need.location,unit:need.unit,catalogItemId:item?.id || null,aliases:[...new Set(aliases)],vendorRefs,needIds:[need.id],latestWarningAt:latest,sharedUse:item?.sharedUse || false,watchSource},firstWarningAt:first,latestWarningAt:latest,warningCount:warnings.length,reportedQuantity:warnings.at(-1)?.reportedQuantity ?? need.reportedQuantity,reportedThreshold:warnings.at(-1)?.reportedThreshold ?? need.reportedThreshold});
   }
   return [...groups.values()];
 }
-/** Includes dismissed cycles: their future delivery evidence is still needed. */
+/** Includes dismissed warning/order cycles: their future delivery evidence is still needed. */
 export async function getWatchedSupplyMaterials(organizationId:string,db:Db=prisma):Promise<WatchedSupplyMaterial[]>{return(await watchedGroups(organizationId,db)).map(group=>group.material);}
 function dateBoundary(date:string,timezone:string){
   if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return null;
   const wanted=Date.parse(`${date}T00:00:00Z`);if(!Number.isFinite(wanted) || new Date(wanted).toISOString().slice(0,10)!==date)return null;
   try{let at=wanted;for(let i=0;i<2;i++){const p=new Intl.DateTimeFormat('en-US',{timeZone:timezone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).formatToParts(new Date(at));const get=(key:string)=>p.find(part=>part.type===key)!.value;const wall=Date.parse(`${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}:${get('second')}Z`);at+=wanted-wall;}return new Date(at);}catch{return null;}
+}
+/** Payment gates and generic supplier promise dates are never arrival estimates. */
+export function readSupplyOrderOperationalState(sources: Array<{messageDate:Date;extractedFacts:unknown}>): Pick<StatusOrder,'orderHold'|'supplierPromisedDate'|'paymentDueDate'> {
+  const facts=[...sources].sort((a,b)=>b.messageDate.getTime()-a.messageDate.getTime()).flatMap(source=>{
+    const value=source.extractedFacts as {kind?:unknown;orderHold?:unknown;supplierPromisedDate?:unknown;paymentDueDate?:unknown;_provenance?:{contentVersion?:unknown;evidenceContext?:unknown}}|null;
+    return value && ['ORDER','SHIPMENT'].includes(String(value.kind)) && value._provenance?.contentVersion==='SUPPLY_CURRENT_V1' && value._provenance.evidenceContext!=='QUOTED_HISTORY'?[value]:[];
+  });
+  const hold=facts.find(value=>['PREPAYMENT_REQUIRED','PAYMENT_PENDING','OTHER','RELEASED'].includes(String(value.orderHold)))?.orderHold as SupplyOrderHold|undefined;
+  const date=(key:'supplierPromisedDate'|'paymentDueDate')=>{const value=facts.find(fact=>typeof fact[key]==='string' && /^\d{4}-\d{2}-\d{2}$/.test(String(fact[key])))?.[key];return typeof value==='string'?value:null;};
+  return {orderHold:hold || null,supplierPromisedDate:date('supplierPromisedDate'),paymentDueDate:date('paymentDueDate')};
 }
 async function dashboard(organizationId:string,db:Db){
   const organization=await db.organization.findFirst({where:{id:organizationId,active:true,accountStatus:{notIn:['SUSPENDED','CANCELLED']},features:{some:{featureKey:'PRODUCTION_SUPPLIES',enabled:true}}},select:{timezone:true}});
@@ -52,11 +67,11 @@ async function dashboard(organizationId:string,db:Db){
   const groups=await watchedGroups(organizationId,db);if(!groups.length)return{cards:[],monitoredMaterials:0,lastAlertAt:null};
   const needIds=groups.flatMap(group=>group.material.needIds),catalogIds=groups.flatMap(group=>group.material.catalogItemId?[group.material.catalogItemId]:[]),names=[...new Set(groups.flatMap(group=>[group.material.material,...group.material.aliases]).flatMap(supplyMaterialSearchTerms))];
   const [orders,audits,users]=await Promise.all([
-    db.supplyOrder.findMany({where:{organizationId,ignored:false,lines:{some:{organizationId,ignored:false,OR:[{catalogItemId:{in:catalogIds}},{allocations:{some:{organizationId,needId:{in:needIds}}}},...names.map(description=>({description:{contains:description,mode:Prisma.QueryMode.insensitive}})),...groups.flatMap(group=>group.material.vendorRefs).map(ref=>({sku:{equals:ref.sku,mode:Prisma.QueryMode.insensitive},order:{normalizedSupplier:normalize(ref.supplier)}}))]}}},include:{lines:true,shipments:{include:{lines:true,arrivalEstimates:true}},sources:{include:{source:{select:{extractedFacts:true,messageDate:true}}}}},orderBy:{updatedAt:'desc'},take:500}),
+    db.supplyOrder.findMany({where:{organizationId,ignored:false,lines:{some:{organizationId,ignored:false,OR:[{catalogItemId:{in:catalogIds}},{allocations:{some:{organizationId,needId:{in:needIds}}}},...names.map(description=>({description:{contains:description,mode:Prisma.QueryMode.insensitive}})),...groups.flatMap(group=>group.material.vendorRefs).map(ref=>({sku:{equals:ref.sku,mode:Prisma.QueryMode.insensitive},order:{normalizedSupplier:normalize(ref.supplier)}}))]}}},include:{lines:true,shipments:{include:{lines:true,arrivalEstimates:true}},sources:{where:{source:{extractionStatus:{not:'IGNORED'}}},include:{source:{select:{extractedFacts:true,messageDate:true}}}}},orderBy:{updatedAt:'desc'},take:500}),
     db.supplyAudit.findMany({where:{organizationId,action:'SUPPLY_STATUS_DISMISSED',needId:{in:needIds}},select:{needId:true,detail:true,createdAt:true},orderBy:{createdAt:'desc'}}),
     db.user.findMany({where:{organizationId,isActive:true},select:{id:true,name:true,firstName:true,lastName:true}}),
   ]);
-  const normalized:StatusOrder[]=orders.map(order=>({...order,ownerName:users.find(u=>u.id===order.ownerUserId)?.name || null,completeDeliveryEvidence:order.sources.flatMap(link=>{const facts=link.source.extractedFacts as {orderDeliveryComplete?:unknown;orderDeliveredDate?:unknown}|null;if(typeof facts?.orderDeliveryComplete!=='boolean')return[];const zone=order.shipments[0]?.timezone || organization.timezone;const at=typeof facts.orderDeliveredDate==='string'?dateBoundary(facts.orderDeliveredDate,zone):null;const next=typeof facts.orderDeliveredDate==='string' && at?new Date(Date.parse(`${facts.orderDeliveredDate}T12:00:00Z`)+86400000).toISOString().slice(0,10):null;const through=next?dateBoundary(next,zone) || undefined:undefined;return[{at,through,complete:facts.orderDeliveryComplete,observedAt:link.source.messageDate}];})}));
+  const normalized:StatusOrder[]=orders.map(order=>({...order,...readSupplyOrderOperationalState(order.sources.map(link=>link.source)),ownerName:users.find(u=>u.id===order.ownerUserId)?.name || null,completeDeliveryEvidence:order.sources.flatMap(link=>{const facts=link.source.extractedFacts as {orderDeliveryComplete?:unknown;orderDeliveredDate?:unknown}|null;if(typeof facts?.orderDeliveryComplete!=='boolean')return[];const zone=order.shipments[0]?.timezone || organization.timezone;const at=typeof facts.orderDeliveredDate==='string'?dateBoundary(facts.orderDeliveredDate,zone):null;const next=typeof facts.orderDeliveredDate==='string' && at?new Date(Date.parse(`${facts.orderDeliveredDate}T12:00:00Z`)+86400000).toISOString().slice(0,10):null;const through=next?dateBoundary(next,zone) || undefined:undefined;return[{at,through,complete:facts.orderDeliveryComplete,observedAt:link.source.messageDate}];})}));
   const cards=groups.flatMap(group=>{
     const dismissals=audits.flatMap(audit=>{const detail=audit.detail as {cycleKey?:unknown}|null;return audit.needId && group.material.needIds.includes(audit.needId) && typeof detail?.cycleKey==='string'?[{cycleKey:detail.cycleKey,at:audit.createdAt}]:[];});
     const card=buildSupplyStatusCard(group.material,{...group,orders:normalized,dismissals});return card?[card]:[];

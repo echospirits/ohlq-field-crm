@@ -1,0 +1,87 @@
+import assert from 'node:assert/strict';
+import {randomUUID} from 'node:crypto';
+import {mkdirSync,readFileSync,writeFileSync} from 'node:fs';
+import {PrismaClient} from '@prisma/client';
+import {parseEnvironmentFile} from '../lib/environmentFile';
+
+async function main(){
+  const file=process.argv.find(value=>value.startsWith('--env-file='))?.slice(11) || '.env.reconciliation.local';
+  const env=Object.fromEntries(parseEnvironmentFile(readFileSync(file,'utf8')));
+  const expected='ep-plain-lake-am56227f-pooler.c-5.us-east-1.aws.neon.tech';
+  const url=new URL(env.DATABASE_URL);
+  if(env.APP_ENV!=='development' || env.DATABASE_ENVIRONMENT!=='development' || env.DATABASE_TARGET_ID!=='supplies-rehearsal' || env.EXPECTED_DATABASE_HOST!==expected || url.hostname!==expected || url.pathname!=='/neondb')throw Error('Only the exact production-derived repair rehearsal clone is allowed.');
+  for(const[key,value]of Object.entries(env))process.env[key]=value;
+  for(const key of ['SUPPLY_JOBS_ENABLED','SUPPLY_TRACKING_LIVE_ENABLED','CRON_JOBS_ENABLED','EMAIL_SEND_ENABLED','CALENDAR_SYNC_ENABLED'])process.env[key]='false';
+  url.hostname=url.hostname.replace('-pooler.','.');
+  const db=new PrismaClient({datasourceUrl:url.toString()});
+  const service=await import('../lib/productionSupplies/service');
+  const status=await import('../lib/productionSupplies/status');
+  const {prisma:shared}=await import('../lib/prisma');
+  const run=randomUUID().slice(0,8),org=`org_supply_reliability_${run}`,owner=`reliability_owner_${run}`,buyer=`reliability_buyer_${run}`,foreign=`org_supply_reliability_foreign_${run}`,team=randomUUID();
+  const actor={organizationId:org,userId:owner};
+  const base=Date.now()-2*86400000,at=(hour:number)=>new Date(base+hour*3600000),day=at(0).toISOString().slice(0,10);
+  const passed:string[]=[];const pass=(message:string)=>{passed.push(message);console.log('PASS '+message);};
+  try{
+    await db.organization.create({data:{id:org,name:'Synthetic supply reliability rehearsal',displayName:'Synthetic supply reliability rehearsal',slug:`supply-reliability-${run}`,active:true,accountStatus:'ACTIVE',crmPreferences:{accountConfiguration:{version:1,territories:[],categories:[],fields:[],teams:[{id:team,name:'Production',memberIds:[owner,buyer]}]},productionSupplies:{productionTeamId:team,managerUserIds:[owner],viewerUserIds:[buyer]}},features:{create:{featureKey:'PRODUCTION_SUPPLIES',enabled:true}}}});
+    await db.user.createMany({data:[{id:owner,organizationId:org,email:`owner-${run}@fixture.invalid`,name:'Synthetic owner',role:'ADMIN'},{id:buyer,organizationId:org,email:`buyer-${run}@fixture.invalid`,name:'Synthetic buyer',role:'USER'}]});
+    await db.organization.create({data:{id:foreign,name:'Synthetic foreign sentinel',displayName:'Synthetic foreign sentinel',slug:`supply-foreign-${run}`,active:true,accountStatus:'ACTIVE'}});
+    const sentinel=await db.supplyNeed.create({data:{organizationId:foreign,dedupeKey:'foreign-sentinel',description:'Foreign sentinel',location:'Foreign facility'}});
+    const connection=await db.mailboxConnection.create({data:{organizationId:org,userId:owner,provider:'GOOGLE',providerAccountId:`synthetic-${run}`,email:`owner-${run}@fixture.invalid`,scope:'https://www.googleapis.com/auth/gmail.readonly',accessTokenEncrypted:'supply-v1.synthetic-never-decrypted',enabled:true}});
+    const source=(messageId:string,hour:number,meta:Record<string,unknown>={})=>({provider:'GOOGLE',mailboxConnectionId:connection.id,messageId:`${run}-${messageId}`,messageDate:at(hour).toISOString(),contentHash:`${run}-${messageId}`,extractionStatus:'COMPLETE',...meta});
+    const current=(messageId:string,hour:number,thread:string,fromEmail:string,extra:Record<string,unknown>={})=>source(messageId,hour,{threadId:`${run}-${thread}`,contentVersion:'SUPPLY_CURRENT_V1',evidenceContext:'CURRENT_MESSAGE',direction:'RECEIVED',senderAuthenticated:true,fromEmail,...extra});
+    const warning=await service.ingestEvidence(actor,{source:{provider:'SYNTHETIC',messageId:`${run}-warning`,messageDate:at(0).toISOString(),contentHash:`${run}-warning`,extractionStatus:'COMPLETE'},evidence:{kind:'WARNING',warningSource:'DISTILLX5_EMAIL',warning:{material:'Synthetic closure caps',location:'Fixture production',quantity:2,threshold:5,unit:'case'}}},db,{reconcile:false});
+    const legacyFacts={kind:'ORDER',supplier:'Synthetic supplier',orderReference:`TEST-LEGACY-${run}`,orderedAt:day,destination:'Fixture production',lines:[{description:'Synthetic closure caps',quantity:10,unit:'case'}],shipments:[]};
+    const legacy=await service.ingestEvidence(actor,{source:source('legacy-body',1),evidence:legacyFacts},db,{reconcile:false});
+    assert.ok(legacy.orderId);
+    await service.ingestEvidence(actor,{source:current('legacy-body',1,'legacy','supplier@fixture.invalid'),evidence:{kind:'OTHER'}},db,{reconcile:false});
+    assert.equal((await db.supplyOrder.findUniqueOrThrow({where:{id:legacy.orderId}})).ignored,true);
+    assert.equal((await status.getSupplyStatusDashboard(org,db)).cards.find(card=>card.needId===warning.needId)?.status,'NO_ORDER_FOUND');
+    assert.equal(await db.supplyAudit.count({where:{organizationId:org,action:'SOURCE_EVIDENCE_UPGRADED'}}),1);pass('Legacy quoted body upgraded to current OTHER quarantines phantom purchase and retains prior facts in audit.');
+    const restored=await service.ingestEvidence(actor,{source:current('actual-document',2,'legacy','supplier@fixture.invalid',{attachmentKey:'real-document',mimeType:'application/pdf',evidenceContext:'ATTACHMENT'}),evidence:legacyFacts},db,{reconcile:false});
+    assert.equal(restored.orderId,legacy.orderId);assert.equal((await db.supplyOrder.findUniqueOrThrow({where:{id:legacy.orderId}})).ignored,false);
+    assert.equal(await db.supplyOrder.count({where:{organizationId:org,orderReference:legacyFacts.orderReference}}),1);pass('Independent actual PDF restores only automatic quarantine and reuses one exact order.');
+    await service.ignoreSupply(actor,{orderId:legacy.orderId,ignored:true},db);
+    await service.ingestEvidence(actor,{source:current('after-manual-ignore',3,'legacy','supplier@fixture.invalid'),evidence:legacyFacts},db,{reconcile:false});
+    assert.equal((await db.supplyOrder.findUniqueOrThrow({where:{id:legacy.orderId}})).ignored,true);pass('Independent evidence never reverses an explicit manual ignore.');
+
+    const bootstrap=await db.supplySource.create({data:{organizationId:org,userId:owner,provider:'GOOGLE_CONNECTOR',messageId:`${run}-verified-bootstrap`,messageDate:at(1),contentHash:'synthetic-bootstrap',extractionStatus:'COMPLETE',extractedFacts:{...legacyFacts,orderReference:`TEST-BOOT-${run}`}}});
+    const protectedOrder=await db.supplyOrder.create({data:{organizationId:org,dedupeKey:`${run}-protected`,supplier:'Synthetic supplier',normalizedSupplier:'synthetic supplier',orderReference:`TEST-BOOT-${run}`,destination:'Fixture production'}});
+    await db.supplyOrderLine.create({data:{organizationId:org,orderId:protectedOrder.id,lineKey:'protected-line',description:'Synthetic closure caps',quantity:10,unit:'case'}});
+    await db.supplyOrderSource.create({data:{organizationId:org,orderId:protectedOrder.id,sourceId:bootstrap.id}});
+    const automatic=await db.supplySource.create({data:{organizationId:org,userId:owner,mailboxConnectionId:connection.id,provider:'GOOGLE',messageId:`${run}-protected-body`,messageDate:at(1),contentHash:'synthetic-legacy-protected',extractionStatus:'COMPLETE',extractedFacts:{...legacyFacts,orderReference:`TEST-BOOT-${run}`}}});
+    await db.supplyOrderSource.create({data:{organizationId:org,orderId:protectedOrder.id,sourceId:automatic.id}});
+    await service.ingestEvidence(actor,{source:current('protected-body',1,'protected','supplier@fixture.invalid'),evidence:{kind:'OTHER'}},db,{reconcile:false});
+    assert.equal((await db.supplyOrder.findUniqueOrThrow({where:{id:protectedOrder.id}})).ignored,false);assert.ok(automatic.id);pass('Independent owner-verified legacy connector evidence protects the supported purchase.');
+    await db.supplySource.update({where:{id:bootstrap.id},data:{mailboxConnectionId:connection.id}});
+    await db.supplySource.create({data:{organizationId:org,userId:owner,mailboxConnectionId:connection.id,provider:'GOOGLE',messageId:`${run}-protected-connected-body`,messageDate:at(2),contentHash:'synthetic-legacy-connected',extractionStatus:'COMPLETE',extractedFacts:{...legacyFacts,orderReference:`TEST-BOOT-${run}`}}}).then(source=>db.supplyOrderSource.create({data:{organizationId:org,orderId:protectedOrder.id,sourceId:source.id}}));
+    await service.ingestEvidence(actor,{source:current('protected-connected-body',2,'protected-connected','supplier@fixture.invalid'),evidence:{kind:'OTHER'}},db,{reconcile:false});
+    assert.equal((await db.supplyOrder.findUniqueOrThrow({where:{id:protectedOrder.id}})).ignored,false);pass('Verified legacy connector facts attached to the actual authorized mailbox also protect the purchase.');
+
+    const request={kind:'ORDER',supplier:'Synthetic ingredient supplier',orderedAt:day,productionRequest:true,destination:'Fixture production',lines:[{description:'Cane sugar',quantity:3,unit:'pallets'}],shipments:[]};
+    await service.ingestEvidence(actor,{source:current('buyer-request',4,'confirmed',`buyer-${run}@fixture.invalid`),evidence:request},db,{reconcile:false});
+    const ack={kind:'SHIPMENT',supplier:'Synthetic ingredient supplier',orderReference:`TEST-CONF-${run}`,supplierAcknowledgement:true,orderHold:'PREPAYMENT_REQUIRED',supplierPromisedDate:'2026-11-17',lines:[],shipments:[]};
+    const confirmed=await service.ingestEvidence(actor,{source:current('supplier-ack',5,'confirmed','supplier@fixture.invalid'),evidence:ack},db,{reconcile:false});
+    assert.ok(confirmed.orderId);let card=(await status.getSupplyStatusDashboard(org,db)).cards.find(value=>value.material==='Cane sugar');
+    assert.equal(card?.watchSource,'PRODUCTION_ORDER');assert.equal(card?.statusLabel,'Awaiting payment');assert.equal(card?.arrival,null);assert.equal(card?.supplierPromisedDate,'2026-11-17');pass('Authenticated received Production buyer request plus supplier acknowledgement opens held order card without Dx5.');
+    await db.supplyOrderLine.create({data:{organizationId:org,orderId:confirmed.orderId!,lineKey:'old-unrequested',description:'Unrequested legacy towels',quantity:1,unit:'case'}});
+    const barCatalog=await db.supplyCatalogItem.create({data:{organizationId:org,name:'Reviewed bar cups',normalizedName:'reviewed bar cups',unit:'case',departments:['BAR'],confirmed:true}});
+    await db.supplyOrderLine.create({data:{organizationId:org,orderId:confirmed.orderId!,lineKey:'reviewed-bar',description:'Reviewed bar cups',quantity:1,unit:'case',department:'BAR',catalogItemId:barCatalog.id}});
+    const document={kind:'QUOTE',supplier:'Synthetic ingredient supplier',orderReference:`TEST-CONF-${run}`,orderHold:'PREPAYMENT_REQUIRED',supplierPromisedDate:'2026-11-17',lines:[{description:'Refined Cane Sugar Product',sku:'TEST-CANE-X',quantity:2520,unit:'units'},{description:'Reviewed bar cups',sku:'TEST-CUPS',quantity:1,unit:'case'}],shipments:[]};
+    const enriched=await service.ingestEvidence(actor,{source:current('supplier-document',6,'confirmed','supplier@fixture.invalid',{attachmentKey:'document',mimeType:'application/pdf',evidenceContext:'ATTACHMENT'}),evidence:document},db,{reconcile:false});
+    assert.equal(enriched.orderId,confirmed.orderId);assert.equal(await db.supplyOrder.count({where:{organizationId:org,orderReference:ack.orderReference}}),1);
+    const retained=await db.supplyOrderLine.findFirstOrThrow({where:{organizationId:org,orderId:confirmed.orderId,description:'Cane sugar'}});
+    assert.equal(Number(retained.quantity),3);assert.equal(retained.unit,'pallets');
+    assert.equal(await db.supplyNeed.count({where:{organizationId:org,description:{in:['Unrequested legacy towels','Reviewed bar cups']}}}),0);
+    assert.equal((await db.supplyOrderLine.findFirstOrThrow({where:{organizationId:org,orderId:confirmed.orderId,description:'Reviewed bar cups'}})).department,'BAR');
+    const raw=(await db.supplySource.findUniqueOrThrow({where:{id:enriched.sourceId}})).extractedFacts as {lines:Array<{quantity:number;unit:string}>};assert.equal(raw.lines[0].quantity,2520);assert.equal(raw.lines[0].unit,'units');pass('Identifying proforma enriches one purchase, preserves both raw unit representations, and never enrolls mixed/old unrequested lines.');
+    await service.ingestEvidence(actor,{source:current('planned-payment',7,'confirmed',`owner-${run}@fixture.invalid`),evidence:{kind:'SHIPMENT',orderHold:'PAYMENT_PENDING',paymentDueDate:'2026-11-16',lines:[],shipments:[]}},db,{reconcile:false});
+    card=(await status.getSupplyStatusDashboard(org,db)).cards.find(value=>value.material==='Cane sugar');assert.equal(card?.statusLabel,'Awaiting payment');assert.equal(card?.paymentDueDate,'2026-11-16');assert.equal(card?.arrival,null);pass('Current payment update attaches by one trusted purchase thread without inventing a shipment or ETA.');
+    const before=await db.supplyOrder.count({where:{organizationId:org}});
+    await service.ingestEvidence(actor,{source:current('quote-alone',8,'quote-alone','supplier@fixture.invalid',{attachmentKey:'alone',mimeType:'application/pdf',evidenceContext:'ATTACHMENT'}),evidence:{...document,orderReference:'TEST-QUOTE-ALONE'}},db,{reconcile:false});
+    assert.equal(await db.supplyOrder.count({where:{organizationId:org}}),before);pass('A standalone proforma remains retained quotation and creates no card or purchase.');
+    await assert.rejects(service.ingestEvidence({organizationId:foreign,userId:owner},{source:current('cross-tenant',9,'foreign','supplier@fixture.invalid'),evidence:request},db,{reconcile:false}),/unavailable/);
+    assert.deepEqual(await db.supplyNeed.findUniqueOrThrow({where:{id:sentinel.id}}),sentinel);assert.equal(await db.supplyReceipt.count({where:{organizationId:org}}),0);assert.equal(await db.supplyReceiptLine.count({where:{organizationId:org}}),0);pass('Cross-tenant mutation is denied and no internal receipt/inventory records are created.');
+    mkdirSync('output',{recursive:true});writeFileSync('output/production-supplies-reliability-rehearsal-results.json',JSON.stringify({synthetic:true,target:'supplies-rehearsal',organizationId:org,passed,providerCalls:0,jobsStarted:0},null,2));console.log(JSON.stringify({passed:passed.length,synthetic:true,organizationId:org}));
+  }finally{await Promise.allSettled([db.$disconnect(),shared.$disconnect()]);}
+}
+main().catch(error=>{const safe=['AssertionError','PrismaClientValidationError','ZodError','SupplyError'].includes(error?.name);console.error('Synthetic reliability rehearsal failed ('+(typeof error?.code==='string'?error.code:error?.name || 'assertion')+'): '+(safe?error.message:'safe details withheld'));if(!safe && error instanceof Error)console.error(error.stack?.split('\n').filter(line=>/^\s+at /.test(line)).slice(0,5).join('\n'));process.exitCode=1;});

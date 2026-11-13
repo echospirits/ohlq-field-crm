@@ -3,6 +3,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { parseEnvironmentFile } from '../lib/environmentFile';
+import { readAccountConfiguration } from '../lib/crm/accountConfiguration';
 
 async function main(){
   const envFile=process.argv.find(arg=>arg.startsWith('--env-file='))?.slice(11) || '.env.supplies.local';
@@ -27,7 +28,8 @@ async function main(){
     const uiActor={organizationId:echo.id,userId:`status_qa_admin_${run}`},uiViewer=`status_qa_viewer_${run}`;
     await db.user.createMany({data:[{id:uiActor.userId,organizationId:echo.id,email:`${uiActor.userId}@example.invalid`,name:'Supply status QA Admin',role:'ADMIN',isActive:true},{id:uiViewer,organizationId:echo.id,email:`${uiViewer}@example.invalid`,name:'Supply status QA Viewer',role:'USER',isActive:true}]});
     const prefs=echo.crmPreferences as Prisma.JsonObject,settings=(prefs.productionSupplies || {}) as Prisma.JsonObject;
-    await db.organization.update({where:{id:echo.id},data:{crmPreferences:{...prefs,productionSupplies:{...settings,viewerUserIds:[...(Array.isArray(settings.viewerUserIds)?settings.viewerUserIds as string[]:[]),uiViewer]}}}});
+    const confirmedFixtures=process.argv.includes('--with-confirmed-orders'),teamId=randomUUID(),configuration=readAccountConfiguration(prefs);
+    await db.organization.update({where:{id:echo.id},data:{crmPreferences:{...prefs,...(confirmedFixtures?{accountConfiguration:{...configuration,teams:[...configuration.teams,{id:teamId,name:`QA Production ${run}`,memberIds:[uiActor.userId]}]}}:{}),productionSupplies:{...settings,...(confirmedFixtures?{productionTeamId:teamId}:{}),viewerUserIds:[...(Array.isArray(settings.viewerUserIds)?settings.viewerUserIds as string[]:[]),uiViewer]}}}});
     await db.organizationFeature.upsert({where:{organizationId_featureKey:{organizationId:echo.id,featureKey:'PRODUCTION_SUPPLIES'}},create:{organizationId:echo.id,featureKey:'PRODUCTION_SUPPLIES',enabled:true},update:{enabled:true}});
     const uiNames=['No order','Order found','Incoming','Delayed','Completed'].map(label=>`QA ${label} material ${run}`);
     for(let index=0;index<uiNames.length;index++){
@@ -38,10 +40,19 @@ async function main(){
       const shipment=await shipping(uiActor,o,`ui-shipment-${index}`,index===4?'DELIVERED':index===3?'DELAYED':'IN_TRANSIT');
       if(index!==4)await service.saveArrivalExpectation(uiActor,{shipmentId:shipment.id,source:'SUPPLIER_PROMISE',precision:'DATE',startDate:new Date(now+2*86400000).toISOString().slice(0,10),timezone:'America/New_York'},db);
     }
+    if(confirmedFixtures){
+      const heldName=`QA Held ingredient ${run}`,unknownName=`QA Tennessee bottles ${run}`;
+      uiNames.push(heldName,unknownName);
+      await service.ingestEvidence(uiActor,{source:{provider:'SYNTHETIC_STATUS',messageId:`${run}-confirmed-order`,threadId:`${run}-confirmed-thread`,messageDate:at(1).toISOString(),contentHash:`${run}-confirmed-order`,historical:true,extractionStatus:'COMPLETE',contentVersion:'SUPPLY_CURRENT_V1',evidenceContext:'VERIFIED_BOOTSTRAP'},evidence:{kind:'ORDER',supplier:'Synthetic ingredient supplier',orderReference:`TEST-HELD-${run}`,orderedAt:at(1).toISOString().slice(0,10),destination:'Synthetic production',productionConfirmation:{purpose:'PRODUCTION_REPLENISHMENT',basis:'EXPLICIT_SUPPLIER_CONFIRMATION',buyerEmail:`${uiActor.userId}@example.invalid`,purposeEvidence:'Owner-verified production ingredient replenishment purchase'},orderHold:'PREPAYMENT_REQUIRED',supplierPromisedDate:new Date(now+5*86400000).toISOString().slice(0,10),paymentDueDate:new Date(now+4*86400000).toISOString().slice(0,10),lines:[{description:heldName,sku:'TEST-HELD',quantity:45,unit:'bags'}],shipments:[]}},db);
+      const unknownItem=await catalog(uiActor,unknownName);
+      await service.ingestEvidence(uiActor,{source:{provider:'SYNTHETIC_STATUS',messageId:`${run}-unknown-alert`,messageDate:at(0).toISOString(),contentHash:`${run}-unknown-alert`,historical:true,extractionStatus:'COMPLETE'},evidence:{kind:'WARNING',warningSource:'DISTILLX5_EMAIL',warning:{material:unknownName,location:'Location unknown',quantity:4,threshold:10,unit:'case'}}},db);
+      await service.createManualOrder(uiActor,{supplier:'Synthetic bottle supplier',orderReference:`TEST-UNKNOWN-${run}`,orderedAt:at(1).toISOString().slice(0,10),idempotencyKey:`${run}-unknown-order`,lines:[{description:unknownName,catalogItemId:unknownItem.id,quantity:10,unit:'case',department:'PRODUCTION'}]},db);
+    }
     const ui=await status.getSupplyStatusDashboard(echo.id,db);
-    const uiCards=ui.cards.filter(card=>uiNames.includes(card.material));assert.equal(uiCards.length,4);
+    const uiCards=ui.cards.filter(card=>uiNames.includes(card.material));assert.equal(uiCards.length,confirmedFixtures?6:4);
+    if(confirmedFixtures){const held=uiCards.find(card=>card.material===uiNames[5])!;assert.equal(held.watchSource,'PRODUCTION_ORDER');assert.equal(held.statusLabel,'Awaiting payment');assert.equal(held.arrival,null);assert.equal(uiCards.find(card=>card.material===uiNames[6])?.status,'ORDERED');}
     const sessions=await Promise.all([{id:uiActor.userId,role:'ADMIN'},{id:uiViewer,role:'VIEWER'}].map(async user=>{const token=randomBytes(32).toString('base64url');await db.userSession.create({data:{userId:user.id,tokenHash:createHash('sha256').update(token).digest('hex'),expiresAt:new Date(Date.now()+6*3600000)}});return{role:user.role,token};}));
-    mkdirSync('output',{recursive:true});writeFileSync('output/production-supplies-status-qa.json',JSON.stringify({synthetic:true,rehearsal:true,organizationId:echo.id,cards:uiCards.map(card=>({needId:card.needId,cycleKey:card.cycleKey,material:card.material,status:card.status})),cardIds:uiCards.map(card=>card.id),completedMaterial:uiNames[4],sessions},null,2));
+    mkdirSync('output',{recursive:true});writeFileSync('output/production-supplies-status-qa.json',JSON.stringify({synthetic:true,rehearsal:true,confirmedFixtures,organizationId:echo.id,cards:uiCards.map(card=>({needId:card.needId,cycleKey:card.cycleKey,material:card.material,status:card.status})),cardIds:uiCards.map(card=>card.id),completedMaterial:uiNames[4],sessions},null,2));
     console.log('UI_FIXTURES_READY output/production-supplies-status-qa.json');
     if(process.argv.includes('--ui-only'))return;
 

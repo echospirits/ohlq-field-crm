@@ -5,6 +5,8 @@ import { runSupplyJobs } from '../lib/productionSupplies/jobs';
 import { refreshSupplyShipmentTracking } from '../lib/productionSupplies/tracking';
 import { syncSupplyMailbox } from '../lib/productionSupplies/mail';
 
+const mailboxResult = (patch: { processed?: number; continuation?: boolean; backfillIncomplete?: boolean } = {}) => ({ processed: 0, continuation: false, backfillIncomplete: false, processedMessages: 0, ignoredInlineImages: 0, catchupPhase: 'INCREMENTAL' as const, ...patch });
+
 function queueFake() {
   const mailboxes = [{ organizationId: 'org-one', userId: 'joe', next: 1 }, { organizationId: 'org-one', userId: 'karl', next: 2 }, { organizationId: 'org-one', userId: 'nikhil', next: 3 }];
   const order = { ignored: false, supplier: 'Fixture supplier', lines: [{ description: 'Fixture material', ignored: false, allocations: [{ needId: 'need-watched' }] }] };
@@ -25,7 +27,7 @@ test('global due scheduling bounds work and advances fairly between Production p
   const services = {
     watchScope: fake.watchScope,
     reconcile: async () => ['unused-membership-array'],
-    mailbox: (async (_org, user, _db, options) => { assert.equal(options?.budgetMs, 120_000); mailRuns.push(user); fake.mailboxes.find(item => item.userId === user)!.next += 10; return { processed: 1 }; }) as typeof syncSupplyMailbox,
+    mailbox: (async (_org, user, _db, options) => { assert.equal(options?.budgetMs, 120_000); mailRuns.push(user); fake.mailboxes.find(item => item.userId === user)!.next += 10; return mailboxResult({ processed: 1 }); }) as typeof syncSupplyMailbox,
     tracking: (async (_org, shipment, _db, options) => { assert.equal(options?.timeoutMs, 8000); assert.equal(options?.maxAttempts, 2); trackingRuns.push(shipment); fake.shipments.find(item => item.id === shipment)!.next += 10; return { status: 'updated' }; }) as typeof refreshSupplyShipmentTracking,
   };
   const first = await runSupplyJobs(fake.db, services);
@@ -50,7 +52,7 @@ test('tracking and both mailbox lanes start concurrently; one provider failure d
   const running = runSupplyJobs(fake.db, {
     watchScope: fake.watchScope,
     reconcile: async () => [],
-    mailbox: (async (_org, user) => { mark(user); await gate; if (user === 'joe') throw new Error('one mailbox disconnected'); return { processed: 1 }; }) as typeof syncSupplyMailbox,
+    mailbox: (async (_org, user) => { mark(user); await gate; if (user === 'joe') throw new Error('one mailbox disconnected'); return mailboxResult({ processed: 1 }); }) as typeof syncSupplyMailbox,
     tracking: (async (_org, shipment) => { mark(shipment); await gate; return { status: 'updated' }; }) as typeof refreshSupplyShipmentTracking,
   });
   await startedGate;
@@ -70,7 +72,7 @@ test('slow reconciliation defers metadata work and leaves queue selection bounde
     watchScope: fake.watchScope,
     clock: () => elapsed,
     reconcile: async () => { reconciled++; elapsed = 30_000; return []; },
-    mailbox: (async () => ({ processed: 0, continuation: false })) as typeof syncSupplyMailbox,
+    mailbox: (async () => mailboxResult()) as typeof syncSupplyMailbox,
     tracking: (async () => ({ status: 'updated' })) as typeof refreshSupplyShipmentTracking,
   });
   assert.equal(reconciled, 1);
@@ -83,7 +85,7 @@ test('no Dx5 watch leaves mailbox warning discovery active and never dispatches 
   let mailboxChecks = 0;
   const result = await runSupplyJobs(fake.db, {
     reconcile: async () => [], watchScope: async organizationId => ({ materials: [], orderWhere: { organizationId } }),
-    mailbox: (async () => { mailboxChecks++; return { processed: 0, continuation: false }; }) as typeof syncSupplyMailbox,
+    mailbox: (async () => { mailboxChecks++; return mailboxResult(); }) as typeof syncSupplyMailbox,
     tracking: (async () => { assert.fail('an unwatched shipment cannot reach a provider registration'); }) as typeof refreshSupplyShipmentTracking,
   });
   assert.equal(mailboxChecks, 2);
@@ -95,7 +97,7 @@ test('tracking due queue constrains each candidate to tenant-scoped watched orde
   const fake = queueFake();
   await runSupplyJobs(fake.db, {
     reconcile: async () => [], watchScope: fake.watchScope,
-    mailbox: (async () => ({ processed: 0, continuation: false })) as typeof syncSupplyMailbox,
+    mailbox: (async () => mailboxResult()) as typeof syncSupplyMailbox,
     tracking: (async () => ({ status: 'out_of_scope' })) as typeof refreshSupplyShipmentTracking,
   });
   const selection = fake.selections.find(item => item.kind === 'tracking')!;
@@ -111,7 +113,7 @@ test('exact scope filtering skips an older unrelated candidate without consuming
   const attempted: string[] = [];
   await runSupplyJobs(fake.db, {
     reconcile: async () => [], watchScope: fake.watchScope,
-    mailbox: (async () => ({ processed: 0, continuation: false })) as typeof syncSupplyMailbox,
+    mailbox: (async () => mailboxResult()) as typeof syncSupplyMailbox,
     tracking: (async (_org, shipment) => { attempted.push(shipment); return { status: 'updated' }; }) as typeof refreshSupplyShipmentTracking,
   });
   assert.deepEqual(attempted, ['shipment-two', 'shipment-three']);
@@ -123,7 +125,7 @@ test('one tenant watch-query failure does not stop other tenants or warning mail
   let mailboxes = 0;
   const result = await runSupplyJobs(fake.db, {
     reconcile: async () => [], watchScope: async organizationId => { if (organizationId === 'org-one') throw new Error('temporary metadata error'); return fake.watchScope(organizationId); },
-    mailbox: (async () => { mailboxes++; return { processed: 0, continuation: false }; }) as typeof syncSupplyMailbox,
+    mailbox: (async () => { mailboxes++; return mailboxResult(); }) as typeof syncSupplyMailbox,
     tracking: (async (_org, shipment) => { attempted.push(shipment); return { status: 'updated' }; }) as typeof refreshSupplyShipmentTracking,
   });
   assert.deepEqual(attempted, ['shipment-two']);
@@ -135,11 +137,22 @@ test('recurring jobs resume bounded retained-evidence replay for watched tenants
   const fake = queueFake(), replayed: string[] = [];
   const result = await runSupplyJobs(fake.db, {
     reconcile: async () => [], watchScope: fake.watchScope,
-    mailbox: (async () => ({ processed: 0, continuation: false })) as typeof syncSupplyMailbox,
+    mailbox: (async () => mailboxResult()) as typeof syncSupplyMailbox,
     tracking: (async () => ({ status: 'updated' })) as typeof refreshSupplyShipmentTracking,
     replay: async (organizationId, _db, options) => { replayed.push(organizationId); assert.equal(options?.maxSources, 20); assert.equal(options?.budgetMs, 8000); assert.ok(options?.materials?.length); return { attempted: 20, linked: 0, errors: 0, deferred: true }; },
   });
   assert.deepEqual(replayed, ['org-one', 'org-two']);
   assert.equal(result.evidenceReplays, 2);
   assert.equal(result.deferred, true);
+});
+
+test('one incomplete mailbox propagates its continuation even when it is the only due person', async () => {
+  const fake = queueFake(); fake.mailboxes.splice(1);
+  const result = await runSupplyJobs(fake.db, {
+    reconcile: async () => [], watchScope: async organizationId => ({ materials: [], orderWhere: { organizationId } }),
+    mailbox: (async () => mailboxResult({ processed: 1, continuation: true, backfillIncomplete: true })) as typeof syncSupplyMailbox,
+  });
+  assert.equal(result.mailboxChecks, 1);
+  assert.equal(result.continuation, true);
+  assert.equal(result.backfillIncomplete, true);
 });

@@ -3,11 +3,13 @@ import { z } from 'zod';
 import { prisma } from '../prisma';
 import { classifyLine, fingerprint, knownNumber, lineAvailableQuantity, normalize, sameUnit, validateAllocation } from './domain';
 import { hasSupplyAccess, productionMemberIds, readSupplySettings } from './config';
-import { normalizeSupplyLocation } from './statusDomain';
+import { normalizeSupplyLocation, normalizeSupplyMaterial } from './statusDomain';
 import { catalogInput, classificationInput, expectationInput, ignoreInput, lineDetailsInput, orderDetailsInput, linkNeedInput, manualOrderInput, needInput, needDetailsInput, noteInput, ownerInput, receiptInput, resolveNeedInput, ruleInput, trackingInput, type SupplyActor } from './schemas';
 import { scopeSupplyEvidence } from './watch';
 import { canReadSupplyMailbox } from './mailAccess';
 import { replayWatchedSupplyEvidence, type ReplayOptions } from './replay';
+import { isCurrentSupplyEvidence, readSupplySourceProvenance, resolveProductionOrderConfirmation, type SupplySourceProvenance } from './orderConfirmation';
+import { quarantineUnsupportedSupplyOrders } from './evidenceSupport';
 
 type Tx = Prisma.TransactionClient;
 export class SupplyError extends Error { constructor(message: string) { super(message); this.name = 'SupplyError'; } }
@@ -303,13 +305,14 @@ async function reconcileOrderLineEvidence(tx: Tx, actor: SupplyActor, order: { i
     if (!existing && fact.sku) {
       const exact = existingLines.filter(line => !used.has(line.id) && normalize(line.sku) === normalize(fact.sku) && normalize(line.unit) === normalize(fact.unit));
       if (exact.length === 1) existing = exact[0];
+      if(!existing){const enrichment=existingLines.filter(line=>!used.has(line.id) && !line.sku && normalize(line.description)===normalize(fact.description) && normalize(line.unit)===normalize(fact.unit) && (fact.quantity==null || line.quantity==null || Number(line.quantity)===fact.quantity));if(enrichment.length===1)existing=enrichment[0];}
     }
     if (existing) used.add(existing.id);
     if (existing?.lastEvidenceAt && existing.lastEvidenceAt > observedAt) continue;
     const classification = classifyLine({ supplier: order.supplier, sku: fact.sku, unit: fact.unit, packSize: fact.packSize, catalog: item, rules });
-    review ||= !existing?.manualClassification && classification.department === 'NEEDS_REVIEW';
+    review ||= !existing?.manualClassification && existing?.classificationSource!=='CONFIRMED_PRODUCTION_ORDER' && classification.department === 'NEEDS_REVIEW';
     const data = { description: fact.description, sku: fact.sku, quantity: fact.quantity, unit: fact.unit, packSize: fact.packSize, backorderedQuantity: fact.backorderedQuantity, lastEvidenceAt: observedAt,
-      ...(existing?.manualClassification ? {} : { catalogItemId: classification.catalogItemId ?? item?.id, department: classification.department, classificationSource: classification.source, classificationConfidence: classification.confidence, classificationExplanation: classification.explanation }) };
+      ...(existing?.manualClassification || existing?.classificationSource === 'CONFIRMED_PRODUCTION_ORDER' ? {} : { catalogItemId: classification.catalogItemId ?? item?.id, department: classification.department, classificationSource: classification.source, classificationConfidence: classification.confidence, classificationExplanation: classification.explanation }) };
     const update = existing ? Object.fromEntries(Object.entries(data).filter(([key]) => !existing.manualFields.includes(key))) : data;
     const line = existing ? await tx.supplyOrderLine.update({ where: { organizationId_id: { organizationId: actor.organizationId, id: existing.id } }, data: update }) : await tx.supplyOrderLine.create({ data: { ...data, organizationId: actor.organizationId, orderId: order.id, lineKey } });
     if (!existing) { existingLines.push(line); used.add(line.id); }
@@ -355,30 +358,77 @@ const optionalFact = z.string().trim().max(300).nullable().optional();
 const factQuantity = z.number().finite().nonnegative().max(1e10).nullable().optional();
 const arrivalFact = z.object({ source: z.enum(['SUPPLIER_PROMISE', 'CARRIER', 'PREDICTION', 'APPOINTMENT', 'MANUAL']), precision: z.enum(['DATE', 'DATE_RANGE', 'TIME_WINDOW', 'APPOINTMENT']), startDate: z.string().date(), endDate: z.string().date().nullable().optional(), timeStart: optionalFact, timeEnd: optionalFact, timezone: z.string().max(100).default('America/New_York') });
 export const supplyEvidenceInput = z.object({
-  source: z.object({ mailboxConnectionId: optionalFact, provider: z.string().min(1).max(50), messageId: z.string().min(1).max(500), attachmentKey: z.string().max(500).default(''), messageDate: z.string().datetime({ offset: true }), contentHash: z.string().min(1).max(128), filename: optionalFact, mimeType: optionalFact, subject: optionalFact, historical: z.boolean().default(false), extractionStatus: z.enum(['COMPLETE', 'ERROR', 'UNSUPPORTED', 'REVIEW']), extractionError: z.string().max(1000).optional() }),
-  evidence: z.object({ kind: z.enum(['ORDER', 'SHIPMENT', 'WARNING', 'QUOTE', 'OTHER']), orderStatus: z.enum(['ORDERED','CANCELLED']).nullish(), orderDeliveryComplete: z.boolean().nullish(), orderDeliveredDate: z.string().date().nullish(), warningSource: z.enum(['DISTILLX5_EMAIL','OTHER_EMAIL']).nullish(), supplier: optionalFact, orderReference: optionalFact, orderedAt: z.string().date().nullable().optional(), invoiceDate: z.string().date().nullable().optional(), paymentDate: z.string().date().nullable().optional(), estimatedShipDate: z.string().date().nullable().optional(), destination: optionalFact, lines: z.array(z.object({ description: z.string().trim().min(1).max(300), sku: optionalFact, quantity: factQuantity, unit: optionalFact, packSize: factQuantity, department: z.enum(['PRODUCTION', 'BAR', 'SHARED', 'OTHER', 'NEEDS_REVIEW']).optional(), catalogItemId: optionalFact, backorderedQuantity: factQuantity })).max(100).default([]), shipments: z.array(z.object({ referenceType: z.enum(['PARCEL', 'FREIGHT_PRO', 'BILL_OF_LADING', 'SUPPLIER_ORDER']), reference: z.string().min(1).max(300), carrier: optionalFact, status: z.enum(['UNKNOWN', 'LABEL_CREATED', 'IN_TRANSIT', 'OUT_FOR_DELIVERY', 'DELIVERED', 'PICKUP_REQUIRED', 'DELAYED', 'CANCELLED', 'RETURNED']).optional(), eta: arrivalFact.nullable().optional() })).max(30).default([]), warning: z.object({ material: z.string().trim().min(1).max(300), materialId: optionalFact, location: z.string().trim().min(1).max(300), quantity: factQuantity, threshold: factQuantity, unit: optionalFact }).nullable().optional() }).optional(),
+  source: z.object({ mailboxConnectionId: optionalFact, provider: z.string().min(1).max(50), messageId: z.string().min(1).max(500), attachmentKey: z.string().max(500).default(''), messageDate: z.string().datetime({ offset: true }), contentHash: z.string().min(1).max(128), filename: optionalFact, mimeType: optionalFact, subject: optionalFact, historical: z.boolean().default(false), extractionStatus: z.enum(['COMPLETE', 'ERROR', 'UNSUPPORTED', 'REVIEW']), extractionError: z.string().max(1000).optional(), threadId: z.string().min(1).max(500).optional(), evidenceContext: z.enum(['CURRENT_MESSAGE','ATTACHMENT','QUOTED_HISTORY','VERIFIED_BOOTSTRAP']).optional(), contentVersion: z.literal('SUPPLY_CURRENT_V1').optional(), direction: z.enum(['SENT','RECEIVED']).optional(), fromEmail: z.string().email().max(300).optional(), senderAuthenticated: z.boolean().optional() }),
+  evidence: z.object({ kind: z.enum(['ORDER', 'SHIPMENT', 'WARNING', 'QUOTE', 'OTHER']), productionConfirmation: z.object({purpose:z.literal('PRODUCTION_REPLENISHMENT'),basis:z.enum(['BUYER_REQUEST_SUPPLIER_ACK','EXPLICIT_SUPPLIER_CONFIRMATION']),buyerEmail:z.string().email().nullish(),purposeEvidence:optionalFact}).nullish(), productionRequest:z.boolean().nullish(), supplierAcknowledgement:z.boolean().nullish(), orderHold:z.enum(['PREPAYMENT_REQUIRED','PAYMENT_PENDING','OTHER','RELEASED']).nullish(),orderHoldDetail:optionalFact,supplierPromisedDate:z.string().date().nullish(),paymentDueDate:z.string().date().nullish(), orderStatus: z.enum(['ORDERED','CANCELLED']).nullish(), orderDeliveryComplete: z.boolean().nullish(), orderDeliveredDate: z.string().date().nullish(), warningSource: z.enum(['DISTILLX5_EMAIL','OTHER_EMAIL']).nullish(), supplier: optionalFact, orderReference: optionalFact, orderedAt: z.string().date().nullable().optional(), invoiceDate: z.string().date().nullable().optional(), paymentDate: z.string().date().nullable().optional(), estimatedShipDate: z.string().date().nullable().optional(), destination: optionalFact, lines: z.array(z.object({ description: z.string().trim().min(1).max(300), sku: optionalFact, quantity: factQuantity, unit: optionalFact, packSize: factQuantity, department: z.enum(['PRODUCTION', 'BAR', 'SHARED', 'OTHER', 'NEEDS_REVIEW']).optional(), catalogItemId: optionalFact, backorderedQuantity: factQuantity })).max(100).default([]), shipments: z.array(z.object({ referenceType: z.enum(['PARCEL', 'FREIGHT_PRO', 'BILL_OF_LADING', 'SUPPLIER_ORDER']), reference: z.string().min(1).max(300), carrier: optionalFact, status: z.enum(['UNKNOWN', 'LABEL_CREATED', 'IN_TRANSIT', 'OUT_FOR_DELIVERY', 'DELIVERED', 'PICKUP_REQUIRED', 'DELAYED', 'CANCELLED', 'RETURNED']).optional(), eta: arrivalFact.nullable().optional() })).max(30).default([]), warning: z.object({ material: z.string().trim().min(1).max(300), materialId: optionalFact, location: z.string().trim().min(1).max(300), quantity: factQuantity, threshold: factQuantity, unit: optionalFact }).nullable().optional() }).optional(),
 });
 export type SupplyEvidenceInput = z.input<typeof supplyEvidenceInput>;
+export type ValidatedSupplySource = z.output<typeof supplyEvidenceInput>['source'];
+export type ValidatedSupplyEvidence = NonNullable<z.output<typeof supplyEvidenceInput>['evidence']>;
+
+async function seedConfirmedProductionWatches(tx: Tx, actor: SupplyActor, order: {id:string;destination:string|null}, sourceIds: string[], triggerAt: Date, evidence:ValidatedSupplyEvidence) {
+  const lines = await tx.supplyOrderLine.findMany({where:{organizationId:actor.organizationId,orderId:order.id,ignored:false},include:{catalogItem:true}});
+  let added = false;
+  for (const line of lines) {
+    if(!evidence.lines.some(fact=>(fact.sku && line.sku?normalize(fact.sku)===normalize(line.sku):normalize(fact.description)===normalize(line.description)) && normalize(fact.unit)===normalize(line.unit)))continue;
+    if (['BAR','OTHER'].includes(line.department) || line.catalogItem && line.catalogItem.departments.includes('BAR') && !line.catalogItem.departments.includes('PRODUCTION')) continue;
+    if(evidence.productionConfirmation?.basis==='EXPLICIT_SUPPLIER_CONFIRMATION' && evidence.lines.length>1 && line.department!=='PRODUCTION')continue;
+    const location = order.destination || 'Location unknown';
+    const identity = line.catalogItemId || normalizeSupplyMaterial(line.description);
+    const activeKey = fingerprint(identity,normalizeSupplyLocation(location));
+    const candidates = await tx.supplyNeed.findMany({where:{organizationId:actor.organizationId,resolvedAt:null,OR:[...(line.catalogItemId?[{catalogItemId:line.catalogItemId}]:[]),{description:{equals:line.description,mode:Prisma.QueryMode.insensitive}}]},orderBy:[{createdAt:'asc'},{id:'asc'}],take:100});
+    const linked=await tx.supplyNeedAllocation.findFirst({where:{organizationId:actor.organizationId,lineId:line.id,need:{resolvedAt:null}},include:{need:true}});
+    let need = linked?.need || candidates.find(candidate=>normalizeSupplyLocation(candidate.location)===normalizeSupplyLocation(location));
+    // An existing location-less inventory alert remains location-less; do not invent a physical mapping.
+    if (!need && candidates.length === 1 && !normalizeSupplyLocation(candidates[0].location)) need = candidates[0];
+    if (!need) {need = await tx.supplyNeed.create({data:{organizationId:actor.organizationId,dedupeKey:`confirmed-order:${fingerprint(activeKey,order.id)}`,activeKey,description:line.description,catalogItemId:line.catalogItemId,location,unit:line.unit,ownerUserId:actor.userId,source:'CONFIRMED_PRODUCTION_ORDER',reviewRequired:false}});added=true;}
+    if (!line.manualClassification && line.department!=='SHARED' && !line.catalogItem?.sharedUse) await tx.supplyOrderLine.update({where:{organizationId_id:{organizationId:actor.organizationId,id:line.id}},data:{department:'PRODUCTION',classificationSource:'CONFIRMED_PRODUCTION_ORDER',classificationConfidence:1,classificationExplanation:'Current Production-team purchase and supplier acknowledgement are verified for this purchase.'}});
+    await tx.supplyNeedAllocation.upsert({where:{organizationId_needId_lineId:{organizationId:actor.organizationId,needId:need.id,lineId:line.id}},create:{organizationId:actor.organizationId,needId:need.id,lineId:line.id,explanation:'Verified Production purchase. This link does not assert inventory need, received quantity or an internal receipt.'},update:{}});
+    const prior = await tx.supplyAudit.findFirst({where:{organizationId:actor.organizationId,orderId:order.id,needId:need.id,action:'CONFIRMED_PRODUCTION_ORDER_WATCH'},select:{id:true}});
+    if (!prior) {await audit(tx,actor,'CONFIRMED_PRODUCTION_ORDER_WATCH',{sourceIds,triggerAt:triggerAt.toISOString(),lineId:line.id,provenanceVersion:1},order.id,need.id);added=true;}
+  }
+  return added;
+}
+
+export function isSupplierOrderIdentifier(reference: string) { return reference.length <= 100 && /\d/.test(reference) && /^(?:(?:PO|SO|ORDER)[ -]?)?[A-Z0-9][A-Z0-9./_-]*$/i.test(reference.trim()); }
 
 /** Trusted caller supplies an identity; email/attachment text is validated data only. */
-export async function ingestEvidence(actor: SupplyActor, raw: unknown, db: PrismaClient = prisma, options: { reconcile?: boolean } = {}): Promise<{ sourceId: string; orderId?: string; needId?: string; review: boolean; newWatchedMaterial?: boolean }> {
+export async function ingestEvidence(actor: SupplyActor, raw: unknown, db: PrismaClient = prisma, options: { reconcile?: boolean;reviewedOrderId?:string } = {}): Promise<{ sourceId: string; orderId?: string; needId?: string; review: boolean; newWatchedMaterial?: boolean }> {
   const input = supplyEvidenceInput.parse(raw);
   const result = await db.$transaction(async tx => {
     const context = await assertSupplyActor(tx, actor, false);
     const manager = hasSupplyAccess(context.user, readSupplySettings(context.organization.crmPreferences), true);
+    if(options.reviewedOrderId && (!manager || input.source.evidenceContext!=='VERIFIED_BOOTSTRAP'))throw new SupplyError('An operator-reviewed order association requires management and verified source evidence.');
     if (input.source.mailboxConnectionId) {
       const mailbox = await tx.mailboxConnection.findFirst({ where: { id: input.source.mailboxConnectionId, organizationId: actor.organizationId, userId: actor.userId, enabled: true } });
       if (!mailbox || !productionMemberIds(context.organization.crmPreferences).includes(actor.userId) || !canReadSupplyMailbox(mailbox)) throw new SupplyError('An authorized Production mailbox with message-reading permission is required.');
     } else if (!manager) throw new SupplyError('Manual evidence import requires management permission.');
     await lock(tx, actor.organizationId);
-    const sourceData = { ...input.source, organizationId: actor.organizationId, userId: actor.userId, messageDate: new Date(input.source.messageDate), extractedFacts: input.evidence ? json(input.evidence) : Prisma.JsonNull };
+    const { threadId, evidenceContext, contentVersion, direction, fromEmail, senderAuthenticated, ...sourceColumns } = input.source;
+    const provenance: SupplySourceProvenance = { threadId, evidenceContext, contentVersion, direction, fromEmail, senderAuthenticated, productionTeamAuthorized: productionMemberIds(context.organization.crmPreferences).includes(actor.userId) && Boolean(input.source.mailboxConnectionId || manager && evidenceContext === 'VERIFIED_BOOTSTRAP') };
+    const sourceData = { ...sourceColumns, organizationId: actor.organizationId, userId: actor.userId, messageDate: new Date(input.source.messageDate), extractedFacts: input.evidence ? json({ ...input.evidence, _provenance: provenance }) : Prisma.JsonNull };
     const previousSource = await tx.supplySource.findFirst({ where: { organizationId: actor.organizationId, mailboxConnectionId: input.source.mailboxConnectionId || null, messageId: input.source.messageId, attachmentKey: input.source.attachmentKey } });
+    if (previousSource?.extractionStatus === 'IGNORED') return { sourceId: previousSource.id, review: false };
     const source = previousSource ? await tx.supplySource.update({ where: { id: previousSource.id }, data: sourceData }) : await tx.supplySource.create({ data: sourceData });
-    if (!input.evidence || input.source.extractionStatus !== 'COMPLETE') return { sourceId: source.id, review: input.source.extractionStatus !== 'UNSUPPORTED' || Boolean(input.evidence) };
+    const upgradingLegacy=Boolean(previousSource && isCurrentSupplyEvidence(provenance) && !isCurrentSupplyEvidence(readSupplySourceProvenance(previousSource.extractedFacts)));
+    if(upgradingLegacy)await audit(tx,actor,'SOURCE_EVIDENCE_UPGRADED',{sourceId:source.id,priorExtractedFacts:previousSource!.extractedFacts,priorContentHash:previousSource!.contentHash,currentKind:input.evidence?.kind || null,contentVersion:'SUPPLY_CURRENT_V1'});
+    if (!input.evidence || input.source.extractionStatus !== 'COMPLETE') {if(upgradingLegacy)await quarantineUnsupportedSupplyOrders(tx,actor.organizationId,actor.userId,source.id);return { sourceId: source.id, review: input.source.extractionStatus !== 'UNSUPPORTED' || Boolean(input.evidence) };}
+    if (evidenceContext === 'QUOTED_HISTORY' || ['ORDER','SHIPMENT'].includes(input.evidence.kind) && evidenceContext === 'ATTACHMENT' && input.source.mimeType?.startsWith('image/') && !input.evidence.orderReference && !input.evidence.shipments.some(shipment=>shipment.referenceType!=='SUPPLIER_ORDER')) {
+      await tx.supplySource.update({where:{id:source.id},data:{extractionStatus:'REVIEW',extractionError:'Quoted or non-identifying embedded image facts cannot create an operational purchase.',nextExtractionAt:null}});if(upgradingLegacy)await quarantineUnsupportedSupplyOrders(tx,actor.organizationId,actor.userId,source.id);return{sourceId:source.id,review:true};
+    }
+    if(upgradingLegacy)await quarantineUnsupportedSupplyOrders(tx,actor.organizationId,actor.userId,source.id);
+    const confirmation = await resolveProductionOrderConfirmation(tx, actor.organizationId, context.organization.crmPreferences, source, input.evidence, provenance, value => { const parsed = supplyEvidenceInput.shape.evidence.safeParse(value); return parsed.success && parsed.data ? parsed.data : null; });
+    if (confirmation.validated) await tx.supplySource.update({ where: { id: source.id }, data: { extractedFacts: json({ ...input.evidence, _provenance: { ...provenance, confirmationValidated: true, correlatedSourceIds: confirmation.sourceIds } }) } });
+    const currentFacts=confirmation.evidence;
+    const threadCandidates=provenance.threadId && isCurrentSupplyEvidence(provenance) && currentFacts.kind==='SHIPMENT' && (currentFacts.orderHold || currentFacts.supplierPromisedDate || currentFacts.paymentDueDate || currentFacts.orderStatus || currentFacts.orderDeliveryComplete!==undefined || currentFacts.shipments.length) ? await tx.supplyOrder.findMany({where:{organizationId:actor.organizationId,ignored:false,sources:{some:{source:{extractionStatus:{not:'IGNORED'},extractedFacts:{path:['_provenance','threadId'],equals:provenance.threadId}}}}},take:10}) : [];
+    const compatibleThreads=threadCandidates.filter(candidate=>(!currentFacts.supplier || normalize(candidate.supplier)===normalize(currentFacts.supplier)) && (!currentFacts.orderReference || !candidate.orderReference || currentFacts.orderReference===candidate.orderReference) && (!normalizeSupplyLocation(candidate.destination) || !normalizeSupplyLocation(currentFacts.destination) || normalizeSupplyLocation(candidate.destination)===normalizeSupplyLocation(currentFacts.destination)));
+    const threadOrder=compatibleThreads.length===1?compatibleThreads[0]:null;
+    const reviewedOrder=options.reviewedOrderId?await tx.supplyOrder.findFirst({where:{organizationId:actor.organizationId,id:options.reviewedOrderId,ignored:false}}):null;
+    if(options.reviewedOrderId && !reviewedOrder)throw new SupplyError('The reviewed target purchase is unavailable in this organization.');
+    const operationalFacts=threadOrder?{...currentFacts,supplier:currentFacts.supplier || threadOrder.supplier,orderReference:currentFacts.orderReference || threadOrder.orderReference}:currentFacts;
     // Keep the original validated source facts above; only scoped facts become operations.
-    const evidence = (await scopeSupplyEvidence(actor.organizationId, input.evidence, tx)).evidence;
+    const evidence = (await scopeSupplyEvidence(actor.organizationId, operationalFacts, tx, { confirmedProductionOrder: confirmation.validated,linkedOrderId:threadOrder?.id })).evidence;
     if (!evidence) return { sourceId: source.id, review: false };
-    const observedAt = source.messageDate;
+    const observedAt = confirmation.validated ? confirmation.effectiveAt : source.messageDate;
     if (evidence.kind === 'WARNING') {
       const warning = evidence.warning;
       if (!warning) { await tx.supplySource.update({ where: { id: source.id }, data: { extractionStatus: 'REVIEW', extractionError: 'Low-stock warning material or location could not be extracted.' } }); return { sourceId: source.id, review: true }; }
@@ -409,10 +459,21 @@ export async function ingestEvidence(actor: SupplyActor, raw: unknown, db: Prism
       return { sourceId: source.id, needId: need.id, review: need.reviewRequired,newWatchedMaterial:!wasWatched };
     }
     const supplier = evidence.supplier?.trim(), normalizedSupplier = normalize(supplier), reference = evidence.orderReference?.trim();
-    let order = reference ? await tx.supplyOrder.findMany({ where: { organizationId: actor.organizationId, orderReference: reference, ...(supplier ? { normalizedSupplier } : {}) }, take: 5 }).then(candidates => {
+    let order = reviewedOrder || threadOrder || (reference ? await tx.supplyOrder.findMany({ where: { organizationId: actor.organizationId, orderReference: reference, ...(supplier ? { normalizedSupplier } : {}) }, take: 5 }).then(candidates => {
       const matches = candidates.filter(candidate => evidence.orderedAt && candidate.orderedAt ? candidate.orderedAt.toISOString().slice(0, 10) === evidence.orderedAt : Math.abs(observedAt.getTime() - candidate.createdAt.getTime()) < 180 * 86400000);
       return matches.length === 1 ? matches[0] : null;
-    }) : null;
+    }) : null);
+    if (!order && provenance.threadId && isCurrentSupplyEvidence(provenance) && supplier) {
+      const threadOrders = await tx.supplyOrder.findMany({where:{organizationId:actor.organizationId,normalizedSupplier,ignored:false,sources:{some:{source:{extractedFacts:{path:['_provenance','threadId'],equals:provenance.threadId}}}}},include:{lines:true},take:10});
+      const matches = threadOrders.filter(candidate=>{
+        if (reference && candidate.orderReference && candidate.orderReference!==reference) return false;
+        if (evidence.orderedAt && candidate.orderedAt && candidate.orderedAt.toISOString().slice(0,10)!==evidence.orderedAt) return false;
+        if (Math.abs(observedAt.getTime()-(candidate.lastEvidenceAt || candidate.createdAt).getTime())>30*86400000) return false;
+        if (!evidence.lines.length) return evidence.kind==='SHIPMENT' || Boolean(reference && candidate.orderReference===reference);
+        return evidence.lines.every(fact=>candidate.lines.some(line=>(fact.sku && line.sku?normalize(fact.sku)===normalize(line.sku):normalizeSupplyMaterial(fact.description)===normalizeSupplyMaterial(line.description)) && (!fact.unit || !line.unit || normalize(fact.unit)===normalize(line.unit)) && (fact.quantity==null || line.quantity==null || Number(line.quantity)===fact.quantity)));
+      });
+      if(matches.length===1)order=matches[0];
+    }
     // Cross-mailbox duplicates without an order reference need identical source evidence.
     if (!order) { const same = await tx.supplyOrderSource.findFirst({ where: { organizationId: actor.organizationId, source: { contentHash: source.contentHash, messageDate: observedAt } }, include: { order: true } }); order = same?.order ?? null; }
     if (!order && evidence.shipments.length) {
@@ -429,13 +490,17 @@ export async function ingestEvidence(actor: SupplyActor, raw: unknown, db: Prism
     else if (!order.lastEvidenceAt || observedAt >= order.lastEvidenceAt) {
       const data: Prisma.SupplyOrderUpdateInput = { lastEvidenceAt: observedAt };
       if (evidence.orderStatus && !order.manualFields.includes('status')) data.status = evidence.orderStatus;
+      if(reference && !order.orderReference && !order.manualFields.includes('orderReference'))data.orderReference=reference;
       if (!order.manualFields.includes('destination') && evidence.destination) data.destination = evidence.destination;
       for (const key of ['orderedAt', 'invoiceDate', 'paymentDate', 'estimatedShipDate'] as const) if (!order.manualFields.includes(key) && evidence[key]) data[key] = new Date(evidence[key]!);
       order = await tx.supplyOrder.update({ where: { organizationId_id: { organizationId: actor.organizationId, id: order.id } }, data });
     }
     await tx.supplyOrderSource.upsert({ where: { organizationId_orderId_sourceId: { organizationId: actor.organizationId, orderId: order.id, sourceId: source.id } }, create: { organizationId: actor.organizationId, orderId: order.id, sourceId: source.id }, update: {} });
+    if (confirmation.validated) for (const relatedSourceId of confirmation.sourceIds.filter(id=>id!==source.id)) await tx.supplyOrderSource.upsert({where:{organizationId_orderId_sourceId:{organizationId:actor.organizationId,orderId:order.id,sourceId:relatedSourceId}},create:{organizationId:actor.organizationId,orderId:order.id,sourceId:relatedSourceId},update:{}});
     let review = (await reconcileOrderLineEvidence(tx, actor, order, evidence.lines, observedAt)).review;
+    if(confirmation.validated)review=false;
     for (const shipping of evidence.shipments) {
+      if (shipping.referenceType==='SUPPLIER_ORDER' && !isSupplierOrderIdentifier(shipping.reference)) {review=true;continue;}
       let shipment = await tx.supplyShipment.findFirst({ where: { organizationId: actor.organizationId, referenceType: shipping.referenceType, reference: shipping.reference, carrier: shipping.carrier || null } });
       if (shipment && shipment.orderId !== order.id) { review = true; continue; }
       if (!shipment) shipment = await tx.supplyShipment.create({ data: { organizationId: actor.organizationId, orderId: order.id, referenceType: shipping.referenceType, reference: shipping.reference, carrier: shipping.carrier || null, destination: order.destination, status: shipping.status || 'UNKNOWN', statusEventAt: observedAt, nextCheckAt: new Date() } });
@@ -448,10 +513,12 @@ export async function ingestEvidence(actor: SupplyActor, raw: unknown, db: Prism
         }
       }
     }
+    const newWatchedMaterial = confirmation.validated ? await seedConfirmedProductionWatches(tx,actor,order,confirmation.sourceIds,observedAt,evidence) : false;
+    if(isCurrentSupplyEvidence(provenance))await quarantineUnsupportedSupplyOrders(tx,actor.organizationId,actor.userId,source.id,{quarantine:false,restore:true});
     const reviewCount = await tx.supplyOrderLine.count({ where: { organizationId: actor.organizationId, orderId: order.id, department: 'NEEDS_REVIEW', ignored: false } });
     await tx.supplyOrder.update({ where: { organizationId_id: { organizationId: actor.organizationId, id: order.id } }, data: { reviewRequired: Boolean(reviewCount) || review } });
     await audit(tx, actor, 'EVIDENCE_RECONCILED', { sourceId: source.id, historical: source.historical }, order.id);
-    return { sourceId: source.id, orderId: order.id, review: Boolean(reviewCount) || review };
+    return { sourceId: source.id, orderId: order.id, review: Boolean(reviewCount) || review, newWatchedMaterial };
   }, { timeout: 45000 });
   if (options.reconcile !== false) {
     // Reconciliation cannot turn a committed source into a failed mailbox extraction.

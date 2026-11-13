@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { chromium } from 'playwright';
 
-type Fixture = { synthetic: boolean; rehearsal: boolean; sessions: Array<{ role: string; token: string }> };
+type Fixture = { synthetic: boolean; rehearsal: boolean; confirmedFixtures?: boolean; sessions: Array<{ role: string; token: string }> };
 const fixture = JSON.parse(readFileSync('output/production-supplies-status-qa.json', 'utf8')) as Fixture;
 if (!fixture.synthetic || !fixture.rehearsal || !fixture.sessions.some(session => session.role === 'ADMIN')) throw Error('Explicit synthetic status-dashboard rehearsal fixtures are required.');
 const base = 'http://localhost:3117';
@@ -31,6 +31,16 @@ async function main() {
     assert.equal(await page.locator('.supply-tabs, .supply-toolbar, .supply-disclosure').count(), 0);
     assert.equal(await page.locator('.supply-status-page input:not([type="hidden"]), .supply-status-page select, .supply-status-page textarea').count(), 0);
     checks.push('Dashboard contains status cards and only dismiss controls, without tabs or editors');
+    if (fixture.confirmedFixtures) {
+      const held = cards.filter({ has: page.getByRole('heading', { name: /^QA Held ingredient / }) });
+      assert.equal(await held.count(), 1); await held.getByText('Awaiting payment', { exact: true }).waitFor();
+      assert.match(await held.innerText(), /Production order ·/); assert.doesNotMatch(await held.innerText(), /Dx5 alert ·/);
+      assert.match(await held.innerText(), /Payment planned ·/); assert.match(await held.innerText(), /Supplier promise ·/);
+      assert.equal(await held.locator('.supply-status-arrival').count(), 0);
+      const unknown = cards.filter({ has: page.getByRole('heading', { name: /^QA Tennessee bottles / }) });
+      await unknown.getByText('Ordered', { exact: true }).waitFor();
+      checks.push('Confirmed Production order has its own source, payment plan and supplier promise without inventing an ETA; exact bottle identity survives unknown alert location');
+    }
     await noOverflow('Desktop status cards have no page overflow'); if (!resumeConfirmation) await page.screenshot({ path: `${folder}/desktop.png`, fullPage: true });
     await page.setViewportSize({ width: 390, height: 844 }); await noOverflow('Phone status cards have no page overflow');
     const cardBounds = await cards.first().boundingBox(); assert.ok(cardBounds && cardBounds.width <= 390);

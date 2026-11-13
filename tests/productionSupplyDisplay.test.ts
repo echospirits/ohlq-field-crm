@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { arrivalText, currentArrival, quantityText, safeReturnTo, shortDate, warningFactsText, warningSourceLabel, ownedGmailSourceUrl, type Arrival } from '../app/production-supplies/display';
+import { arrivalText, currentArrival, quantityText, safeReturnTo, shortDate, warningFactsText, warningSourceLabel, ownedGmailSourceUrl, supplyOrderMilestones, supplyWatchLabel, type Arrival } from '../app/production-supplies/display';
 
 const estimate = (source: string, date: string, extra: Partial<Arrival> = {}): Arrival => ({ source, precision: 'DATE', startDate: date, timezone: 'America/Los_Angeles', current: true, observedAt: '2026-11-11T10:00:00Z', sourceEventAt: '2026-11-11T09:00:00Z', ...extra });
 test('supply arrival display preserves date-only dates and avoids inventing a time', () => {
@@ -16,6 +16,21 @@ test('carrier updates outrank supplier promises while history and source precisi
   assert.equal(original.startDate, '2026-11-12');
   assert.equal(currentArrival([current, estimate('CARRIER', '2026-11-13', { current: false })])?.startDate, '2026-11-14');
   assert.match(arrivalText(estimate('APPOINTMENT', '2026-11-14', { timeStart: '10:00', timeEnd: '12:00' })), /10:00–12:00 America\/Los_Angeles/);
+});
+
+test('payment plans and conditional supplier promises stay distinct from shipment arrival', () => {
+  const held = { status: 'ATTENTION', statusLabel: 'Awaiting payment', arrival: null, paymentDueDate: '2026-11-16', supplierPromisedDate: '2026-11-17' };
+  assert.deepEqual(supplyOrderMilestones(held), [
+    { label: 'Payment planned', date: '2026-11-16' }, { label: 'Supplier promise', date: '2026-11-17' },
+  ]);
+  assert.equal(arrivalText(undefined), 'No ETA available');
+  assert.deepEqual(supplyOrderMilestones({ ...held, status: 'INCOMING', statusLabel: 'Incoming', arrival: estimate('CARRIER', '2026-11-20') }), []);
+  assert.deepEqual(supplyOrderMilestones({ ...held, statusLabel: 'Order match uncertain', paymentDueDate: null, supplierPromisedDate: null }), []);
+});
+
+test('confirmed Production cards identify their actual signal rather than inventing a Dx5 alert', () => {
+  assert.equal(supplyWatchLabel('PRODUCTION_ORDER'), 'Production order');
+  assert.equal(supplyWatchLabel('DX5_ALERT'), 'Dx5 alert');
 });
 test('unknown quantities stay unknown and supply return context stays within the feature', () => {
   assert.equal(quantityText(null, 'lb'), 'Quantity unknown');

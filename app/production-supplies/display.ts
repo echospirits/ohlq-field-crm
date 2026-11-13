@@ -5,6 +5,14 @@ export const statusLabels: Record<string, string> = {
   PICKUP_REQUIRED: 'Pickup required', DELAYED: 'Delayed', RETURNED: 'Returned to sender', UNKNOWN: 'Status unknown', BACKORDERED: 'Backordered',
 };
 export const displayStatus = (status: string) => statusLabels[status] ?? status.toLowerCase().replaceAll('_', ' ');
+export const supplyWatchLabel = (source: 'DX5_ALERT' | 'PRODUCTION_ORDER') => source === 'PRODUCTION_ORDER' ? 'Production order' : 'Dx5 alert';
+/** These are operational milestones, never a carrier ETA or proof of payment. */
+export function supplyOrderMilestones(card: { status: string; statusLabel: string; arrival: unknown; supplierPromisedDate: string | null; paymentDueDate: string | null }) {
+  const milestones: Array<{ label: string; date: string }> = [];
+  if (card.status === 'ATTENTION' && card.statusLabel === 'Awaiting payment' && card.paymentDueDate) milestones.push({ label: 'Payment planned', date: card.paymentDueDate });
+  if (!card.arrival && ['ORDERED', 'ATTENTION'].includes(card.status) && card.supplierPromisedDate) milestones.push({ label: 'Supplier promise', date: card.supplierPromisedDate });
+  return milestones;
+}
 export type Arrival = { source: string; precision: string; startDate: string; endDate?: string | null; timeStart?: string | null; timeEnd?: string | null; timezone: string; current: boolean; observedAt: string | Date; sourceEventAt: string | Date };
 export function currentArrival(estimates: Arrival[]) {
   const priority: Record<string, number> = { APPOINTMENT: 0, CARRIER: 1, CARRIER_ESTIMATE: 1, SUPPLIER_PROMISE: 2, SUPPLIER: 2, MANUAL: 3, MANUAL_EXPECTATION: 3, PREDICTION: 4, PROVIDER_PREDICTION: 4 };

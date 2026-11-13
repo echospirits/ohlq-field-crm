@@ -9,6 +9,7 @@ type WatchableLine = { description: string; sku?: string | null; catalogItemId?:
 export type WatchableSupplyEvidence = {
   kind: string; supplier?: string | null; orderReference?: string | null; destination?: string | null;
   warningSource?: string | null; lines?: WatchableLine[];
+  productionConfirmation?: {purpose:'PRODUCTION_REPLENISHMENT';basis:'BUYER_REQUEST_SUPPLIER_ACK'|'EXPLICIT_SUPPLIER_CONFIRMATION'}|null;
   shipments?: Array<{ referenceType: string; reference: string; carrier?: string | null }>;
 };
 type WatchedOrder = { supplier: string; destination?: string | null; ignored: boolean; lines: Array<WatchableLine & { ignored: boolean; allocations: Array<{ needId: string }> }> };
@@ -51,11 +52,13 @@ export async function isWatchedSupplyOrder(organizationId: string, orderId: stri
 }
 
 /** Keep only operational facts for Dx5-alerted materials; callers retain source evidence separately. */
-export async function scopeSupplyEvidence<T extends WatchableSupplyEvidence>(organizationId: string, evidence: T, db: WatchDb = prisma): Promise<{ evidence: T | null; materialKeys: string[]; reason: string }> {
+export async function scopeSupplyEvidence<T extends WatchableSupplyEvidence>(organizationId: string, evidence: T, db: WatchDb = prisma, options: { confirmedProductionOrder?: boolean; linkedOrderId?: string } = {}): Promise<{ evidence: T | null; materialKeys: string[]; reason: string }> {
   if (evidence.kind === 'WARNING') return { evidence: evidence.warningSource === 'DISTILLX5_EMAIL' ? evidence : null, materialKeys: [], reason: 'Only Dx5 warnings open a watched material cycle.' };
   if (!['ORDER', 'SHIPMENT'].includes(evidence.kind)) return { evidence: null, materialKeys: [], reason: 'No operational supply update.' };
+  if (options.confirmedProductionOrder && evidence.kind === 'ORDER' && evidence.productionConfirmation?.purpose === 'PRODUCTION_REPLENISHMENT' && evidence.supplier && evidence.lines?.length) return { evidence, materialKeys: [], reason: 'A server-verified Production purchase and supplier confirmation opens a material watch.' };
   const materials = await getWatchedSupplyMaterials(organizationId, db);
   if (!materials.length) return { evidence: null, materialKeys: [], reason: 'No Dx5-alerted materials are watched.' };
+  if (options.linkedOrderId && await isWatchedSupplyOrder(organizationId,options.linkedOrderId,db,materials)) return {evidence,materialKeys:[],reason:'Current message is uniquely related to a retained watched purchase thread.'};
   const materialKeys = new Set<string>();
   const lines = (evidence.lines ?? []).flatMap(line => {
     const matches = materials.filter(material => matchWatchedSupplyLine(material, { ...line, supplier: evidence.supplier, destination: evidence.destination }).matched);

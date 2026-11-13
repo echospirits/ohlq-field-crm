@@ -4,8 +4,9 @@ import type { PrismaClient } from '@prisma/client';
 import { buildSupplyDiscoveryQuery, canReadSupplyMailbox, extractionRetry, flattenGmailParts, gmailJson, supplyOAuthRedirect, SupplyMailProviderError, syncSupplyMailbox } from '../lib/productionSupplies/mail';
 import { encryptSupplyToken } from '../lib/productionSupplies/mailCrypto';
 import { extractSupplyMessage, type ExtractedSupply } from '../lib/productionSupplies/extraction';
-import { ingestEvidence } from '../lib/productionSupplies/service';
+import { ingestEvidence, supplyEvidenceInput } from '../lib/productionSupplies/service';
 import { isVerifiedDx5WarningSender } from '../lib/productionSupplies/mailProvenance';
+import { SUPPLY_CONTENT_VERSION } from '../lib/productionSupplies/mailContent';
 
 const emptyEvidence = (kind: ExtractedSupply['kind'] = 'OTHER'): ExtractedSupply => ({ kind, supplier: null, orderReference: null, orderStatus: null, orderedAt: null, invoiceDate: null, paymentDate: null, estimatedShipDate: null, destination: null, lines: [], shipments: [], warning: null, warningSource: null, explanation: 'No placed order evidence.' });
 
@@ -91,7 +92,10 @@ function mailboxFake() {
   const connection = { id: 'connection-one', organizationId: 'tenant-one', userId: 'user-one', enabled: true, provider: 'GOOGLE', scope: 'https://www.googleapis.com/auth/gmail.readonly', accessTokenEncrypted: encryptSupplyToken('fixture-token'), tokenExpiresAt: new Date(Date.now() + 3_600_000) };
   const db = {
     organization: { findFirst: async () => monitored ? { crmPreferences: preferences } : null, findUniqueOrThrow: async () => ({ crmPreferences: preferences, timezone: 'America/New_York' }) },
-    user: { findFirst: async () => ({ id: 'user-one' }) },
+    user: { findFirst: async () => ({ id: 'user-one' }), findMany: async () => [{ email: 'member@fixture.invalid' }] },
+    supplyCatalogItem: { findMany: async () => [] },
+    supplyNeed: { findMany: async () => [] },
+    supplyOrder: { findMany: async () => [] },
     mailboxConnection: { findFirst: async () => connection },
     supplyMailboxSync: {
       findUniqueOrThrow: async () => ({ ...sync }), findUnique: async () => ({ ...sync }),
@@ -99,12 +103,12 @@ function mailboxFake() {
       update: async ({ data }: { data: Record<string, unknown> }) => { Object.assign(sync, data); return sync; },
     },
     supplySource: {
-      findMany: async () => [],
+      findMany: async ({where}:{where:Record<string,unknown>}) => where.messageId?sources.filter(source=>source.messageId===where.messageId && source.provider===where.provider && (typeof where.extractionStatus==='object'?(where.extractionStatus as {in:string[]}).in.includes(String(source.extractionStatus)):source.extractionStatus===where.extractionStatus) && (where.attachmentKey as {in:string[]}).in.includes(String(source.attachmentKey))):[],
       findFirst: async ({ where }: { where: Record<string, unknown> }) => sources.find(source => source.messageId === where.messageId && source.attachmentKey === where.attachmentKey) ?? null,
       updateMany: async ({ where, data }: { where: Record<string, unknown>; data: Record<string, unknown> }) => { const source = sources.find(source => source.messageId === where.messageId && source.attachmentKey === where.attachmentKey); if (source) { for (const [key, value] of Object.entries(data)) source[key] = value && typeof value === 'object' && 'increment' in value ? Number(source[key] ?? 0) + Number(value.increment) : value; } return { count: source ? 1 : 0 }; },
     },
   };
-  const ingest = (async (_actor, input) => { const data = (input as { source: Record<string, unknown> }).source; const existing = sources.find(source => source.messageId === data.messageId && source.attachmentKey === data.attachmentKey); if (existing) Object.assign(existing, data); else sources.push({ ...data, extractionAttemptCount: 0 }); return { sourceId: 'source-one' }; }) as typeof ingestEvidence;
+  const ingest = (async (_actor, input) => { const value = input as { source: Record<string, unknown>; evidence?: Record<string, unknown> }; const data: Record<string, unknown> = { ...value.source, extractedFacts: value.evidence ? { ...value.evidence, _provenance: { contentVersion: value.source.contentVersion } } : null }; const existing = sources.find(source => source.messageId === data.messageId && source.attachmentKey === data.attachmentKey); if (existing) Object.assign(existing, data); else sources.push({ ...data, extractionAttemptCount: 0 }); return { sourceId: 'source-one' }; }) as typeof ingestEvidence;
   let listRequests = 0;
   const fetchImpl = (async (url: string | URL | Request) => {
     if (String(url).includes('/messages?')) { listRequests++; return new Response(JSON.stringify({ messages: [{ id: 'bad-message' }, { id: 'good-message' }] })); }
@@ -126,17 +130,20 @@ test('malformed email source is queued independently while later messages still 
   assert.equal(fake.sources[0].extractionAttemptCount, 1);
   assert.doesNotMatch(String(fake.sources[0].extractionError), /private text/);
   assert.equal(fake.sources[1].extractionStatus, 'COMPLETE');
-  assert.equal(fake.sync.status, 'CONNECTED');
+  assert.equal(fake.sync.status, 'INITIAL_IMPORT');
+  assert.equal(result.continuation, true);
+  assert.equal(result.catchupPhase, 'DX5');
 });
 
 test('deadline checkpoints the current page and resumes without skipping messages or redoing completed sources', async () => {
   const fake = mailboxFake();
+  fake.sync.cursor = { version: 2, scans: { DX5: null, PRODUCTION_ORDERS: null, MATERIALS: null, BROAD: { query: 'legacy-fixture-query', scanStarted: new Date().toISOString() } }, completed: ['DX5','PRODUCTION_ORDERS','MATERIALS'], turn: 3, lastIncrementalAt: new Date().toISOString(), incremental: null };
   let elapsed = 0, extracted = 0;
   const extract = (async () => { extracted++; elapsed = 70_000; return emptyEvidence(); }) as typeof extractSupplyMessage;
   const first = await syncSupplyMailbox('tenant-one', 'user-one', fake.db, { fetchImpl: fake.fetchImpl, ingest: fake.ingest, extract, now: () => elapsed });
   assert.equal(first.continuation, true);
   assert.equal(fake.sources.length, 1);
-  assert.equal((fake.sync.cursor as { messageIndex: number }).messageIndex, 1);
+  assert.equal((fake.sync.cursor as { scans: { BROAD: { messageIndex: number } } }).scans.BROAD.messageIndex, 1);
   const second = await syncSupplyMailbox('tenant-one', 'user-one', fake.db, { fetchImpl: fake.fetchImpl, ingest: fake.ingest, extract: (async () => { extracted++; return emptyEvidence(); }) as typeof extractSupplyMessage });
   assert.equal(second.continuation, false);
   assert.equal(fake.sources.length, 2);
@@ -161,6 +168,82 @@ test('a forged body/provider claim cannot create Dx5 warning provenance during m
   });
   assert.equal(result.processed, 2);
   assert.deepEqual(provenance, ['OTHER_EMAIL', 'OTHER_EMAIL']);
+});
+
+test('one current reply plus one real PDF produce two independent sources while sixteen quoted logos are ignored', async () => {
+  const fake = mailboxFake(), requests: string[] = [], inputs: Parameters<typeof extractSupplyMessage>[0][] = [];
+  const logos = Array.from({length:16},(_,i)=>({filename:`image${i}.png`,mimeType:'image/png',headers:[{name:'Content-ID',value:`<logo-${i}>`},{name:'Content-Disposition',value:'inline'}],body:{attachmentId:`logo-${i}`,size:1024}}));
+  const html='<p>Payment is planned; hold the current order.</p><div class="gmail_quote"><p>Old product quantity 999, shipped last year.</p>'+logos.map((_,i)=>`<img src="cid:logo-${i}">`).join('')+'</div>';
+  const fetchImpl=(async (url: string | URL | Request)=>{
+    requests.push(String(url));
+    if(String(url).includes('/messages?'))return new Response(JSON.stringify({messages:[{id:'message-one'}]}));
+    if(String(url).includes('/attachments/pdf-original-id'))return new Response(JSON.stringify({data:Buffer.from('Sanitized PDF fixture').toString('base64url')}));
+    if(String(url).includes('/attachments/'))assert.fail('inline logos must never be downloaded');
+    return new Response(JSON.stringify({id:'message-one',threadId:'original-thread-id',internalDate:String(Date.now()-86400_000),payload:{mimeType:'multipart/mixed',headers:[{name:'Subject',value:'Current operational reply'}],parts:[{mimeType:'text/html',body:{data:Buffer.from(html).toString('base64url')}},...logos,{filename:'document.pdf',mimeType:'application/pdf',body:{attachmentId:'pdf-original-id',size:100000}}]}}));
+  }) as typeof fetch;
+  const result=await syncSupplyMailbox('tenant-one','user-one',fake.db,{fetchImpl,ingest:fake.ingest,extract:(async input=>{inputs.push(input);return emptyEvidence(input.attachment?'QUOTE':'SHIPMENT');}) as typeof extractSupplyMessage});
+  assert.equal(result.processed,2);assert.equal(result.processedMessages,1);assert.equal(result.ignoredInlineImages,16);
+  assert.equal(inputs.length,2);assert.equal(inputs[0].currentMessageOnly,true);assert.match(inputs[0].text,/Payment is planned/);assert.doesNotMatch(inputs[0].text,/999|last year/);
+  assert.equal(inputs[1].text,'');assert.equal(inputs[1].attachment?.filename,'document.pdf');assert.equal(inputs[1].threadContext,undefined);
+  assert.deepEqual(fake.sources.map(source=>source.attachmentKey),['','pdf-original-id']);
+  assert.ok(fake.sources.every(source=>source.messageId==='message-one'&&source.threadId==='original-thread-id'&&source.contentVersion===SUPPLY_CONTENT_VERSION));
+  assert.deepEqual(fake.sources.map(source=>source.evidenceContext),['CURRENT_MESSAGE','ATTACHMENT']);
+  assert.equal(requests.filter(url=>url.includes('/attachments/')).length,1);
+});
+
+test('legacy automatic body extraction upgrades once without overwriting trusted connector provenance', async () => {
+  for(const provider of ['GOOGLE','GOOGLE_CONNECTOR']){
+    const fake=mailboxFake();fake.sources.push({messageId:'bad-message',attachmentKey:'',provider,extractionStatus:'COMPLETE',extractionAttemptCount:1,extractedFacts:{kind:'OTHER'}});
+    const visited:string[]=[];
+    await syncSupplyMailbox('tenant-one','user-one',fake.db,{fetchImpl:fake.fetchImpl,ingest:fake.ingest,extract:(async ({subject})=>{visited.push(subject);return emptyEvidence();}) as typeof extractSupplyMessage});
+    assert.equal(visited.includes('bad-message'),provider==='GOOGLE');
+    assert.equal(fake.sources.length,2);assert.equal(fake.sources[0].provider,provider);
+  }
+});
+
+test('quote-only legacy automatic bodies and retries receive one current OTHER correction without AI or lost real attachments', async () => {
+  for(const [provider,extractionStatus] of [['GOOGLE','COMPLETE'],['GOOGLE','ERROR'],['GOOGLE_CONNECTOR','COMPLETE'],['MANUAL','COMPLETE']]){
+    const fake=mailboxFake();let ai=0,corrections=0;
+    fake.sources.push({messageId:'quote-only',attachmentKey:'',provider,extractionStatus,extractionAttemptCount:1,extractedFacts:{kind:'ORDER',supplier:'Old fixture supplier'}});
+    const fetchImpl=(async(url:string|URL|Request)=>{
+      if(String(url).includes('/messages?'))return new Response(JSON.stringify({messages:[{id:'quote-only'}]}));
+      if(String(url).includes('/attachments/actual-pdf'))return new Response(JSON.stringify({data:Buffer.from('Sanitized PDF').toString('base64url')}));
+      return new Response(JSON.stringify({id:'quote-only',threadId:'original-quote-thread',internalDate:String(Date.now()-86400_000),payload:{parts:[{mimeType:'text/html',body:{data:Buffer.from('<div class="gmail_quote">Old order, old ETA</div>').toString('base64url')}},{filename:'proforma.pdf',mimeType:'application/pdf',body:{attachmentId:'actual-pdf',size:100000}}]}}));
+    }) as typeof fetch;
+    const ingest=(async(actor,input,db)=>{const validated=supplyEvidenceInput.parse(input);if(validated.source.attachmentKey===''){corrections++;assert.equal(validated.evidence?.kind,'OTHER');assert.equal(validated.source.contentVersion,SUPPLY_CONTENT_VERSION);}return fake.ingest(actor,input,db);}) as typeof ingestEvidence;
+    const services={fetchImpl,ingest,extract:(async input=>{ai++;assert.ok(input.attachment);return emptyEvidence('QUOTE');}) as typeof extractSupplyMessage};
+    await syncSupplyMailbox('tenant-one','user-one',fake.db,services);
+    await syncSupplyMailbox('tenant-one','user-one',fake.db,services);
+    assert.equal(corrections,provider==='GOOGLE'?1:0);assert.equal(ai,1);
+    assert.equal((fake.sources[0].extractedFacts as {kind:string}).kind,provider==='GOOGLE'?'OTHER':'ORDER');
+    assert.equal(fake.sources[0].provider,provider);assert.equal(fake.sources[1].attachmentKey,'actual-pdf');
+  }
+});
+
+test('retained automatic decorative image evidence is corrected without AI while connector evidence and real scanned invoices remain', async () => {
+  const fake=mailboxFake();let ai=0,downloaded=0,corrected=0;
+  const logos=Array.from({length:19},(_,i)=>({filename:`signature-logo-${i}.png`,mimeType:'image/png',headers:[{name:'Content-ID',value:`<logo-${i}>`}],body:{attachmentId:`original-logo-${i}`,size:1000}}));
+  for(const [index,logo] of logos.entries())fake.sources.push({messageId:'retained-images',attachmentKey:logo.body.attachmentId,provider:'GOOGLE',extractionStatus:index===0?'ERROR':'COMPLETE',extractionAttemptCount:1,extractedFacts:{kind:'ORDER'}});
+  fake.sources.push({messageId:'retained-images',attachmentKey:'connector-logo',provider:'GOOGLE_CONNECTOR',extractionStatus:'COMPLETE',extractedFacts:{kind:'ORDER'}});
+  const fetchImpl=(async(url:string|URL|Request)=>{
+    if(String(url).includes('/messages?'))return new Response(JSON.stringify({messages:[{id:'retained-images'}]}));
+    if(String(url).includes('/attachments/')){downloaded++;assert.match(String(url),/real-invoice$/);return new Response(JSON.stringify({data:Buffer.from('Sanitized scanned invoice').toString('base64url')}));}
+    return new Response(JSON.stringify({id:'retained-images',threadId:'same-original-thread',internalDate:String(Date.now()-86400_000),payload:{parts:[{mimeType:'text/plain',body:{data:Buffer.from('Current payment hold.').toString('base64url')}},...logos,{filename:'connector-logo.png',mimeType:'image/png',headers:[{name:'Content-ID',value:'<connector-logo>'}],body:{attachmentId:'connector-logo',size:1000}},{filename:'invoice-scan.jpg',mimeType:'image/jpeg',headers:[{name:'Content-ID',value:'<invoice-current>'}],body:{attachmentId:'real-invoice',size:150000}}]}}));
+  }) as typeof fetch;
+  const ingest=(async(actor,input,db)=>{const validated=supplyEvidenceInput.parse(input);if(validated.source.attachmentKey.startsWith('original-logo-')){corrected++;assert.equal(validated.evidence?.kind,'OTHER');assert.equal(validated.source.evidenceContext,'ATTACHMENT');assert.equal(validated.source.mimeType,'image/png');}return fake.ingest(actor,input,db);}) as typeof ingestEvidence;
+  const services={fetchImpl,ingest,extract:(async input=>{ai++;if(input.attachment)assert.equal(input.attachment.filename,'invoice-scan.jpg');return emptyEvidence('QUOTE');}) as typeof extractSupplyMessage};
+  await syncSupplyMailbox('tenant-one','user-one',fake.db,services);
+  await syncSupplyMailbox('tenant-one','user-one',fake.db,services);
+  assert.equal(corrected,19);assert.equal(ai,2);assert.equal(downloaded,1);
+  assert.ok(fake.sources.filter(source=>String(source.attachmentKey).startsWith('original-logo-')).every(source=>(source.extractedFacts as {kind:string}).kind==='OTHER'));
+  assert.equal((fake.sources.find(source=>source.attachmentKey==='connector-logo')!.extractedFacts as {kind:string}).kind,'ORDER');
+});
+
+test('unsupported real documents retain their external references without consuming AI extraction', async () => {
+  const fake=mailboxFake();let ai=0;
+  const fetchImpl=(async(url:string|URL|Request)=>String(url).includes('/messages?')?new Response(JSON.stringify({messages:[{id:'document-only'}]})):new Response(JSON.stringify({id:'document-only',threadId:'thread-documents',internalDate:String(Date.now()-86400_000),payload:{parts:[{filename:'packing.zip',mimeType:'application/zip',body:{attachmentId:'unsupported-original-id',size:100}}]}}))) as typeof fetch;
+  await syncSupplyMailbox('tenant-one','user-one',fake.db,{fetchImpl,ingest:fake.ingest,extract:(async()=>{ai++;return emptyEvidence();}) as typeof extractSupplyMessage});
+  assert.equal(ai,0);assert.equal(fake.sources.length,1);assert.equal(fake.sources[0].attachmentKey,'unsupported-original-id');assert.equal(fake.sources[0].extractionStatus,'UNSUPPORTED');
 });
 
 test('AI extraction treats prompt injection as data, disables storage and keeps invoice dates distinct', async () => {
@@ -210,9 +293,9 @@ test('extraction keeps raw Dx5 material IDs separate from supplier descriptions 
       env: { ...process.env, SUPPLY_MAIL_INGESTION_ENABLED: 'true', OPENAI_API_KEY: 'sanitized-key' },
       fetchImpl: (async (_url, init) => {
         const body = JSON.parse(init!.body as string);
-        assert.match(body.instructions, /A Dx5 materialId is not a supplier SKU/);
-        assert.match(body.instructions, /One parcel delivered.*insufficient/);
-        assert.match(body.instructions, /never the message received date/);
+        assert.match(body.instructions, /equate a Dx5 ID with a supplier SKU/);
+        assert.match(body.instructions, /A single parcel scan.*insufficient/);
+        assert.match(body.instructions, /never a received\/order\/invoice\/ship\/estimated date/);
         assert.equal(body.store, false);
         return new Response(JSON.stringify({ status: 'completed', output: [{ content: [{ type: 'output_text', text: JSON.stringify(evidence) }] }] }));
       }) as typeof fetch,

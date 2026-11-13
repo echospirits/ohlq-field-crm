@@ -34,6 +34,6 @@ export default async function SuppliesPage() {
         {dashboard.cards.map(card => <SupplyStatusCard key={`${card.id}:${card.cycleKey}`} card={card} canDismiss={canManage} />)}
       </div>
       {!tracking.configured ? <p className="supply-status-footnote">Live carrier updates are unavailable. Cards show the latest available email or delivery information.</p> : null}
-    </> : <EmptyState title={dashboard.monitoredMaterials ? 'Nothing being tracked' : 'No alert data yet'} description={dashboard.monitoredMaterials ? 'Delivered and dismissed supplies are hidden.' : 'Supplies appear here when Dx5 flags them as needed.'} />}
+    </> : <EmptyState title={dashboard.monitoredMaterials ? 'Nothing being tracked' : 'No supplies yet'} description={dashboard.monitoredMaterials ? 'Delivered and dismissed supplies are hidden.' : 'Supplies appear from Dx5 alerts or confirmed Production orders.'} />}
   </div>;
 }

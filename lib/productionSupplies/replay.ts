@@ -7,6 +7,7 @@ import type { SupplyActor } from './schemas';
 import { getWatchedSupplyMaterials } from './status';
 import { normalizeSupplyLocation, normalizeSupplyMaterial, type WatchedSupplyMaterial } from './statusDomain';
 import { scopeSupplyEvidence, type WatchableSupplyEvidence } from './watch';
+import { readSupplySourceProvenance } from './orderConfirmation';
 
 export const SUPPLY_REPLAY_CHECKPOINT = 'SUPPLY_EVIDENCE_REPLAY_CHECKPOINT';
 type ReplayIngest = (actor: SupplyActor, input: unknown, db: PrismaClient, options: { reconcile: false }) => Promise<{ orderId?: string }>;
@@ -59,7 +60,8 @@ export async function replayWatchedSupplyEvidence(organizationId: string, db: Pr
         } else if (!hasSupplyAccess(user, settings, true)) continue;
         if (!(await scope(organizationId, source.extractedFacts as WatchableSupplyEvidence, db)).evidence) continue;
         result.attempted++;
-        const replayed = await ingest({ organizationId, userId: user.id }, { source: { mailboxConnectionId: source.mailboxConnectionId, provider: source.provider, messageId: source.messageId, attachmentKey: source.attachmentKey, messageDate: source.messageDate.toISOString(), contentHash: source.contentHash, filename: source.filename, mimeType: source.mimeType, subject: source.subject, historical: source.historical, extractionStatus: 'COMPLETE' }, evidence: source.extractedFacts }, db, { reconcile: false });
+        const {threadId,evidenceContext,contentVersion,direction,fromEmail,senderAuthenticated}=readSupplySourceProvenance(source.extractedFacts);
+        const replayed = await ingest({ organizationId, userId: user.id }, { source: { threadId,evidenceContext,contentVersion,direction,fromEmail,senderAuthenticated,mailboxConnectionId: source.mailboxConnectionId, provider: source.provider, messageId: source.messageId, attachmentKey: source.attachmentKey, messageDate: source.messageDate.toISOString(), contentHash: source.contentHash, filename: source.filename, mimeType: source.mimeType, subject: source.subject, historical: source.historical, extractionStatus: 'COMPLETE' }, evidence: source.extractedFacts }, db, { reconcile: false });
         if (replayed.orderId) result.linked++;
       } catch { result.errors++; }
     }

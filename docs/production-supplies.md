@@ -1,6 +1,6 @@
 # Supplies
 
-Supplies is a simple ordering and delivery status dashboard for materials flagged by **Dx5** low-inventory alerts. Dx5, and later Ollie, own inventory levels, forecasting, lead times and the decision that a material is needed. Neat answers whether an order has been found and what is happening with its delivery.
+Supplies is a simple ordering and delivery status dashboard for materials flagged by **Dx5** low-inventory alerts or confirmed **Production replenishment orders**. Dx5, and later Ollie, own inventory levels, forecasting and lead times. Neat answers whether an order has been found and what is happening with its delivery.
 
 The owner narrowed the earlier coordination workspace and approved production release **0.10.0**, then separately approved Echo production activation on November 12, 2026. See [release validation](releases/0.10.0-validation.md) and [production activation](releases/production-supplies-production-activation.md) for exact receipts. Earlier TST evidence remains historical; production connections and consent are separate.
 
@@ -8,8 +8,9 @@ The owner narrowed the earlier coordination workspace and approved production re
 
 Open **Production → Supplies** at `/production-supplies`.
 
-- One card shows each alerted material/location in its current replenishment cycle.
+- One card shows each watched material/location in its current replenishment cycle, identifying its Dx5 alert or confirmed Production-order source.
 - Cards show the latest reliably matched order/delivery status, supplier and available sourced arrival. Missing evidence is unknown; “No order found” does not claim nobody placed an order.
+- Prepayment holds, planned payment dates and generic supplier promised dates remain separate from shipment/arrival evidence. A plan to pay is not a payment or dispatch confirmation.
 - Repeated Dx5 alerts caused by further usage update the same cycle. They do not create additional cards.
 - **Dismiss** hides the current cycle. Later repeated alerts in that cycle do not bring it back.
 - A completed relevant replenishment delivery removes the card. A genuinely later low-stock alert can start a fresh cycle. Old reprocessed messages cannot reopen it.
@@ -21,11 +22,13 @@ Dismissal requires the existing management permission. Viewers retain read-only 
 
 ## Material scope and matching
 
-Only recognized Dx5 alert materials seed the watch list. Other emails or manually retained needs cannot independently create cards. The normalized warning interface leaves room for a future Ollie adapter; Ollie is not connected today.
+Recognized Dx5 alerts and authenticated confirmed Production replenishment purchases seed the watch list. Separate current buyer requests and supplier acknowledgements can establish one purchase; an identifying proforma can enrich it. A quote/proforma alone, supplier identity alone, consumer purchase or unrelated manually retained need cannot independently create a card. Server-side active team membership, authorized mailbox ownership and current source identity enforce this boundary. The normalized warning interface leaves room for a future Ollie adapter; Ollie is not connected today.
 
-Automatic matching uses tenant-scoped catalog identity, explicit reviewed supplier/SKU aliases or a unique conservative full-material match. A supplier name or partial description is insufficient. Destination conflicts, shared-purpose ambiguity and unknown shipment contents remain uncertain. Raw Dx5 material IDs and vendor SKUs are separate fields and must not be guessed or rewritten.
+Automatic matching uses tenant-scoped catalog identity, explicit reviewed supplier/SKU aliases or a unique conservative full-material match. A supplier name or partial description is insufficient. An unknown inventory-warning location does not invalidate an exact non-shared material order. Known destination conflicts and shared-purpose ambiguity still prevent confident association; completed-delivery hiding retains strict physical/quantity/time proof. Raw Dx5 material IDs, vendor SKUs and original units remain separate and must not be guessed, converted or rewritten.
 
 Relevant mailbox discovery continues so new alerts and order updates can be found. Validated unmatched facts can be retained for bounded reconciliation when an older warning is discovered during a newest-first backfill. Unrelated purchases do not create operational orders or carrier registrations. Existing unrelated historical records remain stored and stay off the dashboard.
+
+Only current authored text and independently meaningful attachments establish new facts. Quoted history, logos and signature images cannot repeat an old order. Reprocessing legacy automatic evidence can quarantine unsupported purchases with an audit while retaining original records, independent current/manual evidence and explicit manual ignores.
 
 ## Connections and background updates
 
@@ -35,7 +38,7 @@ Production uses the three verified existing Joe, Karl and Nikhil accounts, with 
 
 Gmail OAuth uses dedicated `SUPPLY_GOOGLE_CLIENT_ID` / `SUPPLY_GOOGLE_CLIENT_SECRET`, the stable `SUPPLY_MAIL_TOKEN_ENCRYPTION_KEY`, `SUPPLY_MAIL_INGESTION_ENABLED=true`, and matching `SUPPLY_MAIL_OAUTH_ENVIRONMENT`/`APP_ENV`. TST's supply-only callback is `https://neat-tst.vercel.app/api/production-supplies/mail/google/callback`; production's is `https://crm.echospirits.com/api/production-supplies/mail/google/callback`, set via `SUPPLY_GOOGLE_REDIRECT_URI`. Each environment needs its own client, keys, owner consent and schedule secret. Calendar configuration is independent; never transfer TST tokens into production.
 
-The supply-only worker runs without an open dashboard. GitHub Actions defines independently gated TST and production triggers every 15 minutes, each with its own environment secret and repository variable `PRODUCTION_SUPPLIES_SCHEDULE_ENABLED=true`; Vercel Hobby also has a daily fallback. Echo's production worker is enabled with its dedicated secret and consented mailbox. Scheduled cadence can be delayed; connection/error/import state qualifies the displayed order evidence. The page refreshes while visible. See the activation record for actual first-run acceptance; a manual success is not proof of punctual recurring execution.
+The supply-only worker runs without an open dashboard. An existing durable Workflow loop owns the 15-minute schedule, with persisted tenant ownership, work leases, deployment fencing and bounded catch-up. GitHub Actions' independently gated TST/production triggers and Vercel's daily cron ensure or recover that loop; they do not run a second provider batch. GitHub uses each environment's existing secret and repository variable `PRODUCTION_SUPPLIES_SCHEDULE_ENABLED=true`. New Dx5 alerts, Production requests and watched material/reference updates have fair discovery lanes while historical and incremental checkpoints continue independently. Retained signature-image sources are corrected without downloading or extracting them again. Connection/error/import state qualifies displayed evidence. The page refreshes while visible. [Hotfix validation](releases/0.10.1-validation.md) distinguishes local scheduling tests from observed hosted sleep/resume; a manual success alone is not proof of recurring execution.
 
 ## Delivery sources and limits
 
