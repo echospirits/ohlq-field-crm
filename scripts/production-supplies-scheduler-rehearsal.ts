@@ -26,7 +26,7 @@ async function main() {
   // Only the scheduler's injected test policy is enabled. Actual process effects
   // remain off; neither the real SDK launcher nor provider functions are invoked.
   const env: NodeJS.ProcessEnv = { ...process.env, NODE_ENV: 'development', APP_ENV: 'development', SUPPLY_JOBS_ENABLED: 'true', VERCEL_DEPLOYMENT_ID: 'synthetic-deployment-one' };
-  const result = (continuation = false) => ({ organizations: 1, mailboxChecks: 0, mailboxErrors: 0, tracking: [], evidenceReplays: 0, replayErrors: 0, deferred: false, continuation, backfillIncomplete: continuation });
+  const result = (continuation = false) => ({ organizations: 1, mailboxChecks: 0, mailboxErrors: 0, tracking: [], evidenceReplays: 0, replayErrors: 0, deferred: false, continuation, backfillIncomplete: continuation, earliestMailboxNextAt: null });
   const services = { env, now: () => clock, control: async () => 'current' as const, runStatus: async () => 'running',
     launch: async (org: string) => { assert.equal(org, organizationId); return `synthetic-run-${++launches}`; },
     jobs: (async (_db, options) => { assert.equal(options?.organizationId, organizationId); providerBatches++; return result(); }) as typeof runSupplyJobs };

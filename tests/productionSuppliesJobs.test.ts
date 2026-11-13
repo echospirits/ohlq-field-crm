@@ -8,14 +8,15 @@ import { syncSupplyMailbox } from '../lib/productionSupplies/mail';
 const mailboxResult = (patch: { processed?: number; continuation?: boolean; backfillIncomplete?: boolean } = {}) => ({ processed: 0, continuation: false, backfillIncomplete: false, processedMessages: 0, ignoredInlineImages: 0, catchupPhase: 'INCREMENTAL' as const, ...patch });
 
 function queueFake() {
-  const mailboxes = [{ organizationId: 'org-one', userId: 'joe', next: 1 }, { organizationId: 'org-one', userId: 'karl', next: 2 }, { organizationId: 'org-one', userId: 'nikhil', next: 3 }];
+  const idle={nextSyncAt:new Date(0),leaseUntil:null,status:'CONNECTED',backfillCompletedAt:new Date(0),cursor:null};
+  const mailboxes = [{ ...idle,organizationId: 'org-one', userId: 'joe', next: 1 }, { ...idle,organizationId: 'org-one', userId: 'karl', next: 2 }, { ...idle,organizationId: 'org-one', userId: 'nikhil', next: 3 }];
   const order = { ignored: false, supplier: 'Fixture supplier', lines: [{ description: 'Fixture material', ignored: false, allocations: [{ needId: 'need-watched' }] }] };
   const shipments = [{ id: 'shipment-one', organizationId: 'org-one', next: 1, order }, { id: 'shipment-two', organizationId: 'org-two', next: 2, order }, { id: 'shipment-three', organizationId: 'org-one', next: 3, order }];
   const selections: Array<{ kind: string; args: Record<string, unknown> }> = [];
   const db = {
     organization: { findMany: async () => [{ id: 'org-one' }, { id: 'org-two' }] },
     supplyAudit: { findMany: async () => [] },
-    supplyMailboxSync: { findMany: async (args: Record<string, unknown>) => { selections.push({ kind: 'mail', args }); return [...mailboxes].sort((a, b) => a.next - b.next).slice(0, Number(args.take)); } },
+    supplyMailboxSync: { findMany: async (args: Record<string, unknown>) => { selections.push({ kind:(args.select as {nextSyncAt?:boolean}).nextSyncAt?'mail-state':'mail', args }); return [...mailboxes].sort((a, b) => a.next - b.next).slice(0, Number(args.take)); } },
     supplyShipment: { findMany: async (args: Record<string, unknown>) => { selections.push({ kind: 'tracking', args }); return [...shipments].sort((a, b) => a.next - b.next).slice(0, Number(args.take)); } },
   };
   const watchScope = async (organizationId: string) => ({ materials: [{ key: 'watched', material: 'Watched raisins', location: 'Location unknown', unit: 'lb', catalogItemId: 'dx5-alerted-material', aliases: [], vendorRefs: [], needIds: ['need-watched'], latestWarningAt: new Date(), sharedUse: false }] as Awaited<ReturnType<typeof import('../lib/productionSupplies/watch').getWatchedSupplyOrderScope>>['materials'], orderWhere: { organizationId, lines: { some: { catalogItemId: 'dx5-alerted-material' } } } });
@@ -77,7 +78,7 @@ test('slow reconciliation defers metadata work and leaves queue selection bounde
   });
   assert.equal(reconciled, 1);
   assert.equal(result.deferred, true);
-  assert.ok(fake.selections.every(selection => selection.args.take === (selection.kind === 'tracking' ? 20 : 2)));
+  assert.ok(fake.selections.every(selection => selection.args.take === (selection.kind === 'tracking' ? 20 : selection.kind==='mail-state'?5001:2)));
 });
 
 test('no Dx5 watch leaves mailbox warning discovery active and never dispatches shipment tracking', async () => {
@@ -155,4 +156,21 @@ test('one incomplete mailbox propagates its continuation even when it is the onl
   assert.equal(result.mailboxChecks, 1);
   assert.equal(result.continuation, true);
   assert.equal(result.backfillIncomplete, true);
+});
+
+test('future enrolled mailbox debt survives a zero-due batch and honors lease and provider due times',async()=>{
+  const now=Date.parse('2026-11-13T04:15:32.672Z');
+  const rows=[{nextSyncAt:new Date('2026-11-13T04:16:11.993Z'),leaseUntil:null,status:'INITIAL_IMPORT',backfillCompletedAt:null,cursor:{version:2,completed:[],incremental:null}}];
+  const queries:Record<string,unknown>[]=[];
+  const db={organization:{findMany:async()=>[{id:'org-one'}]},supplyAudit:{findMany:async()=>[]},supplyMailboxSync:{findMany:async(args:Record<string,unknown>)=>{queries.push(args);return (args.select as {nextSyncAt?:boolean}).nextSyncAt?rows:[];}}} as unknown as PrismaClient;
+  const services={clock:()=>now,organizationId:'org-one',reconcile:async()=>[],watchScope:async()=>({materials:[],orderWhere:{organizationId:'org-one'}}),mailbox:(async()=>{assert.fail('Future mailbox cannot invoke its provider.');}) as typeof syncSupplyMailbox};
+  const result=await runSupplyJobs(db,services);
+  assert.equal(result.mailboxChecks,0);assert.equal(result.continuation,true);assert.equal(result.backfillIncomplete,true);assert.equal(result.earliestMailboxNextAt,'2026-11-13T04:16:11.993Z');
+  const dueWhere=queries[0].where as Record<string,unknown>,metadataWhere=queries[1].where as Record<string,unknown>;
+  for(const key of ['organizationId','connectionId','status'])assert.deepEqual(metadataWhere[key],dueWhere[key]);
+  assert.equal(Object.hasOwn(metadataWhere,'nextSyncAt'),false);assert.equal(Object.hasOwn(metadataWhere,'OR'),false);
+  rows[0].leaseUntil=new Date('2026-11-13T04:18:00.000Z') as never;
+  assert.equal((await runSupplyJobs(db,services)).earliestMailboxNextAt,'2026-11-13T04:18:00.000Z');
+  rows[0].nextSyncAt=new Date('2026-11-13T05:00:00.000Z');
+  assert.equal((await runSupplyJobs(db,services)).earliestMailboxNextAt,'2026-11-13T05:00:00.000Z');
 });

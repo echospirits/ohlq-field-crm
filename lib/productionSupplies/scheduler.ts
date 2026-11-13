@@ -17,7 +17,7 @@ const stateInput = z.object({
   leaseUntil: z.string().datetime(), workUntil: z.string().datetime().nullable(),
   status: z.enum(['STARTING', 'RUNNING', 'SLEEPING', 'CONTROL_UNAVAILABLE', 'STOPPED']),
   completedBatches: z.number().int().nonnegative(), failedBatches: z.number().int().nonnegative(),
-  lastResult: z.object({ mailboxChecks: z.number(), mailboxErrors: z.number(), evidenceReplays: z.number(), replayErrors: z.number(), continuation: z.boolean(), backfillIncomplete: z.boolean() }).nullable(),
+  lastResult: z.object({ mailboxChecks: z.number(), mailboxErrors: z.number(), evidenceReplays: z.number(), replayErrors: z.number(), continuation: z.boolean(), backfillIncomplete: z.boolean(),earliestMailboxNextAt:z.string().datetime().nullable().optional() }).nullable(),
 });
 export type SupplySchedulerState = z.infer<typeof stateInput>;
 type Owner = { organizationId: string; generation: string; runId: string };
@@ -157,12 +157,16 @@ export async function runSupplySchedulerTick(owner: Owner, db: PrismaClient = pr
     let regular = Date.parse(checkpoint.nextRegularAt);
     if (regular <= now) regular += (Math.floor((now - regular) / SUPPLY_POLL_MS) + 1) * SUPPLY_POLL_MS;
     const failed = !result || result.mailboxErrors > 0 || result.replayErrors > 0;
-    const catchup = result && !failed && (result.continuation || result.deferred);
-    const next = Math.min(regular, failed ? now + GRACE_MS : catchup ? now + SUPPLY_CATCHUP_MS : regular);
+    const mailboxAt=result?.earliestMailboxNextAt?Date.parse(result.earliestMailboxNextAt):null;
+    const mailboxWake=mailboxAt!==null && Number.isFinite(mailboxAt)?mailboxAt>now?mailboxAt:now+SUPPLY_CATCHUP_MS:Infinity;
+    // Persisted mailbox due/backoff/lease is authoritative. Only work without a
+    // concrete future due time needs the generic one-minute continuation retry.
+    const catchup=result && !failed && (result.deferred || result.continuation && mailboxAt===null);
+    const next = Math.min(regular,mailboxWake,failed ? now + GRACE_MS : catchup ? now + SUPPLY_CATCHUP_MS : regular);
     checkpoint.nextRegularAt = iso(regular); checkpoint.nextDueAt = iso(next); checkpoint.heartbeatAt = iso(now);
     checkpoint.leaseUntil = iso(next + GRACE_MS); checkpoint.workUntil = null; checkpoint.status = 'SLEEPING';
     checkpoint.completedBatches += result ? 1 : 0; checkpoint.failedBatches += failed ? 1 : 0;
-    checkpoint.lastResult = result ? { mailboxChecks: result.mailboxChecks, mailboxErrors: result.mailboxErrors, evidenceReplays: result.evidenceReplays, replayErrors: result.replayErrors, continuation: result.continuation, backfillIncomplete: result.backfillIncomplete } : null;
+    checkpoint.lastResult = result ? { mailboxChecks: result.mailboxChecks, mailboxErrors: result.mailboxErrors, evidenceReplays: result.evidenceReplays, replayErrors: result.replayErrors, continuation: result.continuation, backfillIncomplete: result.backfillIncomplete,earliestMailboxNextAt:result.earliestMailboxNextAt ?? null } : null;
     await save(tx, owner.organizationId, checkpoint);
     return { continue: true, nextAt: checkpoint.nextDueAt };
   });

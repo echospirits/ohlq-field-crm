@@ -3,10 +3,13 @@ import { test } from 'node:test';
 import type { PrismaClient } from '@prisma/client';
 import { ensureSupplySchedulers, rollSupplyScheduler, runSupplySchedulerTick, supplySchedulerOrigin, SUPPLY_POLL_MS, SUPPLY_WORK_LEASE_MS, type SupplySchedulerState } from '../lib/productionSupplies/scheduler';
 import type { runSupplyJobs } from '../lib/productionSupplies/jobs';
+import {runSupplyJobs as realSupplyJobs} from '../lib/productionSupplies/jobs';
+import {chooseSupplyMailLane,supplyMailCursor} from '../lib/productionSupplies/mailDiscovery';
+import type {syncSupplyMailbox} from '../lib/productionSupplies/mail';
 
 const startAt = Date.parse('2026-11-12T12:00:00Z');
 const env = { NODE_ENV: 'test' as const, APP_ENV: 'development', SUPPLY_JOBS_ENABLED: 'true', VERCEL_DEPLOYMENT_ID: 'deployment-one' };
-const result = (patch: Partial<Awaited<ReturnType<typeof runSupplyJobs>>> = {}) => ({ organizations: 1, mailboxChecks: 1, mailboxErrors: 0, tracking: [], evidenceReplays: 0, replayErrors: 0, deferred: false, continuation: false, backfillIncomplete: false, ...patch });
+const result = (patch: Partial<Awaited<ReturnType<typeof runSupplyJobs>>> = {}) => ({ organizations: 1, mailboxChecks: 1, mailboxErrors: 0, tracking: [], evidenceReplays: 0, replayErrors: 0, deferred: false, continuation: false, backfillIncomplete: false,earliestMailboxNextAt:null, ...patch });
 
 function fixture() {
   let time = startAt, sequence = 0;
@@ -116,6 +119,30 @@ test('an incomplete mailbox resumes after a durable minute and finishing catch-u
   f.advance(60_000);
   const finished = await runSupplySchedulerTick(f.owner(), f.db, f.services);
   assert.equal(Date.parse(finished.nextAt!), startAt + SUPPLY_POLL_MS);
+});
+
+test('an early regular tick retains the future mailbox wake and resumes overdue incremental work before catch-up',async()=>{
+  const f=fixture();await ensureSupplySchedulers(f.db,f.services);await runSupplySchedulerTick(f.owner(),f.db,f.services);
+  const cursor=supplyMailCursor(null,{now:new Date(startAt),backfillComplete:false,lastSuccessfulSyncAt:new Date(startAt+5000),broadQuery:'synthetic broad query',priorityQueries:{DX5:'synthetic Dx5',PRODUCTION_ORDERS:'synthetic production',MATERIALS:null}});
+  const untouchedScans=structuredClone(cursor.scans);
+  const mailbox={organizationId:'org-one',userId:'person',status:'INITIAL_IMPORT',backfillCompletedAt:null,cursor,leaseUntil:null as Date|null,nextSyncAt:new Date(startAt+SUPPLY_POLL_MS+40_000)};
+  let checks=0;const lanes:string[]=[];
+  Object.assign(f.db,{supplyAudit:{findMany:async()=>[]},supplyMailboxSync:{findMany:async(args:{where:{nextSyncAt?:{lte:Date}};select:{nextSyncAt?:boolean}})=>args.select.nextSyncAt?[mailbox]:args.where.nextSyncAt && mailbox.nextSyncAt<=args.where.nextSyncAt.lte?[mailbox]:[]}});
+  const services={...f.services,jobs:(async(db,options)=>realSupplyJobs(db,{organizationId:options?.organizationId,clock:f.services.now,reconcile:async()=>[],watchScope:async organizationId=>({materials:[],orderWhere:{organizationId}}),mailbox:(async()=>{checks++;lanes.push(chooseSupplyMailLane(cursor,new Date(f.services.now()),15)!);cursor.lastIncrementalAt=new Date(f.services.now()).toISOString();mailbox.nextSyncAt=new Date(f.services.now()+60_000);return{processed:0,processedMessages:0,ignoredInlineImages:0,continuation:true,backfillIncomplete:true,catchupPhase:'INCREMENTAL'};}) as typeof syncSupplyMailbox})) as typeof runSupplyJobs};
+  f.advance(SUPPLY_POLL_MS+1000);
+  const early=await runSupplySchedulerTick(f.owner(),f.db,services);
+  assert.equal(checks,0);assert.equal(early.nextAt,mailbox.nextSyncAt.toISOString());assert.equal(Date.parse(f.state().nextRegularAt),startAt+2*SUPPLY_POLL_MS);
+  assert.equal(f.state().lastResult?.backfillIncomplete,true);assert.equal(f.state().lastResult?.continuation,true);assert.equal(cursor.lastIncrementalAt,new Date(startAt+5000).toISOString());assert.deepEqual(cursor.scans,untouchedScans);
+  f.advance(39_000);await runSupplySchedulerTick(f.owner(),f.db,services);
+  assert.equal(checks,1);assert.deepEqual(lanes,['INCREMENTAL']);assert.deepEqual(cursor.scans,untouchedScans);assert.equal(Date.parse(f.state().nextRegularAt),startAt+2*SUPPLY_POLL_MS);
+});
+
+test('future mailbox leases and Retry-After do not become generic minute polls, while past-due debt is bounded',async()=>{
+  for(const [offset,expected] of [[330_000,330_000],[3_600_000,SUPPLY_POLL_MS],[-1,60_000]]){
+    const f=fixture();await ensureSupplySchedulers(f.db,f.services);
+    const next=await runSupplySchedulerTick(f.owner(),f.db,{...f.services,jobs:(async()=>result({mailboxChecks:0,continuation:true,backfillIncomplete:true,earliestMailboxNextAt:new Date(startAt+offset).toISOString()})) as typeof runSupplyJobs});
+    assert.equal(Date.parse(next.nextAt!),startAt+expected);assert.ok(Date.parse(next.nextAt!)>startAt);
+  }
 });
 
 test('failed batches persist only safe status and use bounded retry; canonical unavailability never runs providers', async () => {
