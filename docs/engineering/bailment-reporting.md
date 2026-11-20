@@ -2,7 +2,7 @@
 
 The native Bailment PO and Invoice download can publish typed invoice-line data for a direct Looker Studio PostgreSQL connection. The reporting data is separate from Production Forecasting's normalized demand inputs. The existing production source job supplies both consumers from the same native download; this feature adds no scheduler, download button, application route or provider account.
 
-The scoped production candidate is **0.11.0**. Deployment, production seeding, reporting-login acceptance and publication of the existing dashboard remain governed by the [release checklist](../releases/0.11.0-checklist.md) and [validation record](../releases/0.11.0-validation.md).
+The published production release is [**0.11.0**](https://github.com/echospirits/ohlq-field-crm/releases/tag/v0.11.0), with the exact migration, restricted reporting login and first native acquisition verified. The original dashboard's production source, financial values, periods, explicit filters, saved-viewer reload and desktop layouts pass acceptance. Mobile viewport acceptance was unavailable in the connected desktop browser and is not claimed. See the [release checklist](../releases/0.11.0-checklist.md) and [validation record](../releases/0.11.0-validation.md).
 
 ## Source and publication
 
@@ -33,12 +33,16 @@ Provision the dedicated reporting login separately from the application. It need
 
 Use Looker Studio's PostgreSQL connector with SSL and the independently verified production endpoint, database and restricted login. Preserve date, text-identifier and amount types. The existing dashboard keeps its report identity and other spreadsheet-backed sources. Bailment financial charts retain `SUM(Total)` and `Invoice_Date`; the existing business exclusions for `3150B`, `3750B` and the original blank-brand clause must be applied to the Neon source because the native reporting view retains the full source. Do not rebind an unrelated shared spreadsheet filter to the Neon source.
 
-The Sales Stats additions are **week-to-date Bailment total**, from Monday through the current day, and **last week's Bailment total**, for the prior complete Monday–Sunday. Preserve existing quarter/month/year calculations and relative periods. Core Revenue and Sales Stats each show the actual Bailment source acquisition time in Eastern time. A dashboard cache refresh alone does not retrieve a new source report.
+In the accepted production report, attach the shared Neon Bailment exclusion filter explicitly to **every Bailment chart**, including both source-time cards. Its saved clauses are **Exclude 3150B AND Exclude 3750B AND Exclude blank**. Inherited-filter state did not persist reliably in the editor, so the redundant Sales Stats page filter was removed and the per-chart bindings were verified. Keep the original monthly-source filters unchanged.
+
+The Sales Stats additions use native **week to date, Monday, include today** and **last week, Monday** presets. The prior complete week is Monday–Sunday. Existing rolling comparisons retain Monday-start week offsets **6 through 1**, **12 through 7** and **58 through 53**; preserve the existing quarter/month/year calculations as well. Core Revenue and Sales Stats each show the actual Bailment source acquisition time in Eastern time. A dashboard cache refresh alone does not retrieve a new source report.
 
 ## Daily outcome and operational acceptance
 
 Production retains its existing daily source scheduling and shared provider concurrency policy. The daily persisted-data verification must require a current complete reporting snapshot for the enrolled reporting scope, as well as the existing forecast/DC requirements. A forecasting import alone cannot prove the financial snapshot is current. The scoped 0.11.0 integration includes a reporting-readiness check; its exact behavioral evidence is recorded separately from earlier TST publisher acceptance.
 
 Production acceptance requires a successful native production acquisition followed by independent database readback and the restricted reporting login, then reconciliation of the existing dashboard's financial charts, week boundaries, filters and source-time cards. Verify the original report URL and unrelated source bindings after publication. If any live step is pending, record it as pending rather than inferring success from a migration, build, retained source or successful forecast import.
+
+The first production native acquisition and targeted reporting-readiness check pass. This was a focused source run; the full normal daily persisted-data verifier was skipped by that mode. Its broader execution is not inferred from the focused receipt. Existing production daily scheduling and disabled TST daily scheduling remain unchanged.
 
 Rollback may restore the prior application while retaining these additive reporting objects and the last good snapshot. Reverting a dashboard connection is a separate operation. Do not delete production source history or change another tenant's data to roll back this feature.
