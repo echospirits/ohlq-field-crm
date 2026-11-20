@@ -24,9 +24,9 @@ Future reporting must preserve signed quantities, original sales months, dashboa
 
 ## Release and operation
 
-Owner-authorized **0.12.0** selectively promotes the retention changes accepted in TST `7b80a0768ca209da913fb7f6908e20aaa8749423` onto production base `28615305603f61c7d0cb5ba0abb7c7dc4b9d839b` / 0.11.0. Production-specific workflow behavior remains intact; unrelated TST Tasting/Social pilots are excluded. TST remains 0.10.0-dev with its schedules disabled. Production schedules and configuration remain unchanged.
+Owner-authorized **0.12.0** is active in production at application `d197ecfc8c65984a56ddff10264ffcaaedc19132`, READY and healthy with published stable [v0.12.0](https://github.com/echospirits/ohlq-field-crm/releases/tag/v0.12.0). It selectively promotes the retention changes accepted in TST `7b80a0768ca209da913fb7f6908e20aaa8749423` onto production base `28615305603f61c7d0cb5ba0abb7c7dc4b9d839b` / 0.11.0. Production-specific workflow behavior remains intact; unrelated TST Tasting/Social pilots are excluded. TST remains 0.10.0-dev with its schedules disabled. Production schedules and configuration remain unchanged.
 
-See the [release manifest](../releases/0.12.0.md), [checklist](../releases/0.12.0-checklist.md) and [validation](../releases/0.12.0-validation.md) for exact candidate and deployment status. No real-data cleanup or historical load is needed to deploy this code-only policy. A rollback must preserve the Echo exemption or prevent old age-pruning code from running; the previous rule would expire accumulated Echo history.
+See the [release manifest](../releases/0.12.0.md), [checklist](../releases/0.12.0-checklist.md) and [validation](../releases/0.12.0-validation.md) for exact receipts. No new-policy real-data cleanup/import or historical load was performed for acceptance. An older daily workflow was still running at the last observation; confirm that no older cleanup remains before adding historical rows. A rollback must preserve the Echo exemption or prevent old age-pruning code from running; the previous rule would expire accumulated Echo history.
 
 ## Validation scope
 

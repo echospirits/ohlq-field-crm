@@ -1,8 +1,8 @@
 # Unreleased
 
-## Permanent Echo bottle-sales retention — 0.12.0 production release preparation
+## Permanent Echo bottle-sales retention — released 0.12.0, November 20, 2026
 
-The owner authorized selective promotion of accepted TST `7b80a076` onto production `28615305` / 0.11.0. Exact Echo vendor `Z90399001` survives age cleanup in both canonical daily sales tables; other vendors retain the default 30-day window. Transactional cleanup, full-date correction, recent windows, statewide completeness and tenant/product boundaries remain intact. No migration, dependency/configuration/schedule change, historical backfill, dashboard cutover or unrelated TST pilot is included; TST stays 0.10.0-dev. Production candidate validation and deployment are pending. See [0.12.0 notes/manifest](0.12.0.md), [validation](0.12.0-validation.md), [checklist](0.12.0-checklist.md) and [guide](../engineering/echo-sales-retention.md). Historical entries below are preserved.
+Owner-authorized application `d197ecfc` / **0.12.0** is deployed READY and healthy; published stable [v0.12.0](https://github.com/echospirits/ohlq-field-crm/releases/tag/v0.12.0) is verified Latest at that application. Exact Echo vendor `Z90399001` survives age cleanup in both canonical daily sales tables; other vendors retain the existing 30-day window. Exact-candidate Node 22/npm 10 CI, 1,470 local production tests, strict typecheck and build pass; five unchanged browser fixtures are locally blocked with prior matching hosted evidence. All 287 UI/static paths, production schedules/configuration and tenant/completeness guards are unchanged. No new-policy live cleanup/import, historical backfill or dashboard cutover was performed; an older in-flight daily run was not observed completed. Reviewed release records are archived in [notes/manifest](0.12.0.md), [validation](0.12.0-validation.md), [checklist](0.12.0-checklist.md) and the [guide](../engineering/echo-sales-retention.md). TST stays 0.10.0-dev with unrelated pilots preserved; development remains frozen. Historical entries below are preserved.
 
 ## Direct Bailment reporting — released 0.11.0, November 20, 2026
 
