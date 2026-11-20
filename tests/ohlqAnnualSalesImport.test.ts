@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { PrismaClient } from '@prisma/client';
 import {
+  importOhlqAnnualSalesCsv,
   importOhlqAnnualSalesByWholesaleCsv,
   parseOhlqAnnualSalesByWholesaleCsv,
   parseOhlqAnnualSalesCsv,
@@ -93,6 +94,91 @@ const echoWholesaleCsv = [
   'District,Agency_Id,Agency_Name,DimVendor_VendorNumber_,Brand,Name,Category,Permit_Number,Wholesaler,Doing_Business_As,Wholesale_Bottles_Sold,Wholesale_Amount,Wholesale_Tax',
   'GPT,10113,CENTERVILLE LIQUOR & WINE,Z90399001,2804B,ECHO SPIRITS DISTILLING CO BOURBON WHISKEY,Bourbon,00072045-1,ADRIENNES WHITE RABBIT INC,ADRIENNES WHITE RABBIT LOUNGE,2,67.68,0.00',
 ].join('\n');
+
+describe('retained daily sales report replacement', () => {
+  for (const kind of ['annual', 'wholesale'] as const) {
+    it(`${kind} replays and signed corrections replace one date, while a failed transaction preserves history`, async () => {
+      type Row = {
+        reportDate: Date; agencyId: string; vendor: string; brand: string;
+        retailBottlesSold?: number; wholesaleBottlesSold: number; permitNumber?: string;
+      };
+      type Delegate = {
+        deleteMany: (input: { where: { reportDate: Date } }) => Promise<{ count: number }>;
+        createMany: (input: { data: Row[] }) => Promise<{ count: number }>;
+      };
+      type Transaction = {
+        $executeRaw: () => Promise<number>;
+        ohlqAnnualSalesRow: Delegate;
+        ohlqAnnualSalesByWholesaleRow: Delegate;
+      };
+      const original = [
+        { reportDate: new Date('2025-01-01'), agencyId: '10113', vendor: 'Z90399001', brand: '2804B', wholesaleBottlesSold: 7 },
+        { reportDate: new Date('2026-11-19'), agencyId: '10113', vendor: 'Z90399001', brand: 'OLD', wholesaleBottlesSold: 9 },
+      ].map(row => ({ ...row, ...(kind === 'annual' ? { retailBottlesSold: 0 } : { permitNumber: '00072045-1' }) }));
+      let stored: Row[] = structuredClone(original);
+      let failInsert = false, reconciliations = 0;
+      const db = {
+        $transaction: async (callback: (tx: Transaction) => Promise<unknown>) => {
+          let draft = structuredClone(stored);
+          const delegate: Delegate = {
+            deleteMany: async ({ where }) => {
+              const previous = draft.length;
+              draft = draft.filter(row => row.reportDate.getTime() !== where.reportDate.getTime());
+              return { count: previous - draft.length };
+            },
+            createMany: async ({ data }) => {
+              if (failInsert) throw new Error('simulated insert failure');
+              draft.push(...structuredClone(data));
+              return { count: data.length };
+            },
+          };
+          const result = await callback({ $executeRaw: async () => 1, ohlqAnnualSalesRow: delegate, ohlqAnnualSalesByWholesaleRow: delegate });
+          stored = draft;
+          return result;
+        },
+        account: { findMany: async () => [] },
+        ohlqBrandMasterItem: { findMany: async () => [] },
+        wholesaleAccount: { findMany: async () => [] },
+      } as unknown as PrismaClient;
+      const reportCsv = (quantity: number) => kind === 'annual'
+        ? [
+          'Agency_Id,Vendor,Brand,Retail_Bottles_Sold,Wholesale_Bottles_Sold',
+          `10113,Z90399001,2804B,${quantity},${quantity}`,
+          '10113,000000090,0281L,5,2',
+        ].join('\n')
+        : [
+          'Agency_Id,DimVendor_VendorNumber_,Brand,Permit_Number,Wholesale_Bottles_Sold',
+          `10113,Z90399001,2804B,00072045-1,${quantity}`,
+          '10113,000000090,0281L,00072045-1,2',
+        ].join('\n');
+      const load = (quantity: number) => kind === 'annual'
+        ? importOhlqAnnualSalesCsv({ csv: reportCsv(quantity), db, reportDate: '2026-11-19' })
+        : importOhlqAnnualSalesByWholesaleCsv({
+          csv: reportCsv(quantity), db, reportDate: '2026-11-19',
+          reconcileWholesaleOrders: async () => { reconciliations++; return emptyReconciliation(); },
+        });
+
+      assert.equal((await load(4)).importedRows, 2);
+      const first = structuredClone(stored);
+      assert.equal((await load(4)).deletedRows, 2);
+      assert.deepEqual(stored, first, 'replay must replace the day rather than accumulate bottles');
+
+      await load(-2);
+      assert.equal(stored.length, 3);
+      assert.deepEqual(stored[0], original[0], 'older permanently retained history must be untouched');
+      assert.equal(stored.some(row => row.brand === 'OLD'), false, 'a removed source row must not survive replacement');
+      const corrected = stored.find(row => row.reportDate.toISOString().startsWith('2026-11-19') && row.vendor === 'Z90399001')!;
+      assert.equal(corrected.wholesaleBottlesSold, -2);
+      if (kind === 'annual') assert.equal(corrected.retailBottlesSold, -2);
+
+      const beforeFailure = structuredClone(stored), reconciledBeforeFailure = reconciliations;
+      failInsert = true;
+      await assert.rejects(load(99), /simulated insert failure/);
+      assert.deepEqual(stored, beforeFailure, 'a failed insert must not commit its preceding delete');
+      assert.equal(reconciliations, reconciledBeforeFailure, 'failed raw replacement must not start reconciliation');
+    });
+  }
+});
 
 describe('syncOhlqAnnualSalesByWholesalePurchaseStateCsv', () => {
   it('updates Echo purchase state without importing raw wholesale rows', async () => {

@@ -5,7 +5,7 @@ import {
   importOhlqAnnualSalesByWholesaleCsv,
   importOhlqAnnualSalesCsv,
 } from './ohlqAnnualSalesImport';
-import { pruneOhlqAnnualSalesRows } from './ohlqAnnualSalesRetention';
+import { OHLQ_PERMANENT_SALES_VENDOR_ID, pruneOhlqAnnualSalesRows } from './ohlqAnnualSalesRetention';
 import { runAgencyMarketIntelligenceAfterImport } from './agencyMarketIntelligenceService';
 import { runOpportunityIntelligenceAfterImport } from './opportunityEngine';
 import { runOhlqTenantInventoryWorkflow } from './ohlqTenantInventoryWorkflow';
@@ -177,7 +177,8 @@ export async function runOhlqAnnualSalesWorkflow(options: OhlqAnnualSalesWorkflo
     if (inventoryFailure) throw inventoryFailure;
     const retention = options.deferIntelligence ? null : await pruneOhlqAnnualSalesRows({ reportDate });
     if (retention) logger.log(
-      `OHLQ annual sales retention kept ${retention.retentionDays} day(s) from ${retention.cutoffDate}; ` +
+      `OHLQ sales retention preserves Echo vendor ${OHLQ_PERMANENT_SALES_VENDOR_ID} without an age limit; ` +
+        `all other vendors keep ${retention.retentionDays} day(s) from ${retention.cutoffDate}; ` +
         `deleted ${retention.deletedRows.annualSalesSummary} annual row(s) and ` +
         `${retention.deletedRows.annualSalesSummaryByWholesale} wholesale row(s).`,
     );

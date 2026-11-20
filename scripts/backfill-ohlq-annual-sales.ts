@@ -4,7 +4,7 @@ import { runOhlqAnnualSalesWorkflow } from '../lib/ohlqAnnualSalesWorkflow';
 import { prisma } from '../lib/prisma';
 import { runOpportunityIntelligenceAfterImport } from '../lib/opportunityEngine';
 import { runAgencyMarketIntelligenceAfterImport } from '../lib/agencyMarketIntelligenceService';
-import { pruneOhlqAnnualSalesRows } from '../lib/ohlqAnnualSalesRetention';
+import { OHLQ_PERMANENT_SALES_VENDOR_ID, pruneOhlqAnnualSalesRows } from '../lib/ohlqAnnualSalesRetention';
 import { toOhlqDateOnlyUtc } from '../lib/ohlqDataStatus';
 import { getOhlqReportStorageDirectories } from '../lib/ohlqReportStorage';
 import { resolveOhlqBackfillDates } from '../lib/ohlqLoadDates';
@@ -42,7 +42,9 @@ async function main() {
     console.log(`Full wholesale refresh persisted ${assessmentRefresh.intelligence.persisted} current assessments; no research was requested.`);
     console.log(`Starting post-import Agency market intelligence for ${reportDate}.`);
     console.log(JSON.stringify(await runAgencyMarketIntelligenceAfterImport({ asOfDate: toOhlqDateOnlyUtc(reportDate) })));
-    console.log(JSON.stringify(await pruneOhlqAnnualSalesRows({ reportDate })));
+    const retention = await pruneOhlqAnnualSalesRows({ reportDate });
+    console.log(`OHLQ sales retention preserves Echo vendor ${OHLQ_PERMANENT_SALES_VENDOR_ID} without an age limit; all other vendors use the ${retention.retentionDays}-day window.`);
+    console.log(JSON.stringify(retention));
     return;
   }
 

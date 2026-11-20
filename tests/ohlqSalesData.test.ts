@@ -181,6 +181,47 @@ describe('getWholesaleRecentPurchases', () => {
 });
 
 describe('getAgencyRecentItemSales', () => {
+  it('keeps permanently retained Echo history outside the inclusive 7 and 30 day totals', async () => {
+    const endDate = new Date('2026-11-20T00:00:00.000Z');
+    const rows = [
+      ['2025-01-01', 1_000, 0],
+      ['2026-10-21', 100, 0],
+      ['2026-10-22', 3, 0],
+      ['2026-11-13', 5, 0],
+      ['2026-11-14', 2, 2],
+      ['2026-11-20', 4, 1],
+    ].map(([date, retail, wholesale]) => ({
+      reportDate: new Date(`${date}T00:00:00.000Z`),
+      retailBottlesSold: Number(retail), wholesaleBottlesSold: Number(wholesale),
+    }));
+    const db = {
+      ohlqAnnualSalesRow: {
+        findFirst: async () => ({ reportDate: endDate }),
+        groupBy: async ({ where }: { where: { reportDate: { gte: Date; lte: Date } } }) => {
+          const included = rows.filter(row => row.reportDate >= where.reportDate.gte && row.reportDate <= where.reportDate.lte);
+          return [{
+            brand: '2804B', _max: { reportDate: endDate },
+            _sum: {
+              retailBottlesSold: included.reduce((sum, row) => sum + row.retailBottlesSold, 0),
+              wholesaleBottlesSold: included.reduce((sum, row) => sum + row.wholesaleBottlesSold, 0),
+            },
+          }];
+        },
+      },
+      ohlqBrandMasterItem: { findMany: async () => [{ itemCode: '2804B', name: 'Echo Bourbon' }] },
+    } as unknown as PrismaClient;
+
+    const windows = await getAgencyRecentItemSales({ agencyId: '10101', config: getTenantConfig(), db });
+
+    assert.deepEqual(windows.map(window => ({
+      days: window.days, start: window.startDate, end: window.endDate,
+      retail: window.items[0].retailBottlesSold, wholesale: window.items[0].wholesaleBottlesSold,
+    })), [
+      { days: 7, start: '2026-11-14', end: '2026-11-20', retail: 6, wholesale: 3 },
+      { days: 30, start: '2026-10-22', end: '2026-11-20', retail: 14, wholesale: 3 },
+    ]);
+  });
+
   it('uses the selected organization products for both sales windows', async () => {
     const whereClauses: unknown[] = [];
     const db = {

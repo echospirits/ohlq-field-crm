@@ -40,6 +40,40 @@ test('uncommitted and pruned/mismatched report rows never certify zero or discar
   assert.equal(certified,0);assert.equal(deletes,0);
 });
 
+test('an old Echo-only raw subset cannot replace a complete statewide ledger or certify a revised receipt', async () => {
+  const f = assessmentDb(1);
+  const day = new Date(); day.setUTCDate(day.getUTCDate() - 40); day.setUTCHours(0, 0, 0, 0);
+  const previousRevision = new Date(day.getTime() + 1_000);
+  const report = { id: 'old-report', reportDate: day, updatedAt: new Date(day.getTime() + 2_000), rowCount: 2, skippedRows: 0, status: 'COMPLETED' };
+  const checkpoint = { organizationId: 'org_echo_spirits', reportDate: day, sourceRows: 2, sourceRevision: `${previousRevision.toISOString()}:2` };
+  const events = [
+    { wholesaleAccountId: 'a0000', reportDate: day, itemCode: 'R', itemName: 'Echo Rum', category: 'RUM', vendor: 'Z90399001', bottles: 4 },
+    { wholesaleAccountId: 'a0000', reportDate: day, itemCode: 'OTHER', itemName: 'Other Rum', category: 'RUM', vendor: 'OTHER', bottles: 6 },
+  ];
+  const original = structuredClone({ checkpoint, events });
+  let rawReads = 0;
+  f.raw.ohlqReportImportStatus = { findFirst: async () => report, findMany: async () => [report], findUnique: async () => report };
+  f.raw.wholesaleSalesLedgerDay = {
+    findMany: async () => [checkpoint],
+    upsert: async () => assert.fail('a vendor-only remainder must not certify a statewide receipt'),
+  };
+  f.raw.ohlqAnnualSalesByWholesaleRow.findMany = async () => {
+    rawReads++;
+    return [{ reportDate: day, permitNumber: '10000', agencyId: 'A', vendor: 'Z90399001', brand: 'R', wholesaleBottlesSold: 4 }];
+  };
+  f.raw.accountSalesEvent = {
+    findMany: async () => events,
+    deleteMany: async () => assert.fail('retention must not discard the complete captured ledger'),
+    createMany: async () => assert.fail('a partial retained report must not replace captured events'),
+  };
+
+  await evaluateWholesaleAssessments({ db: f.db, organizationId: 'org_echo_spirits', asOfDate: day, reconcileLedger: true });
+
+  assert.equal(rawReads, 1, 'the revised receipt must be checked against its retained rows');
+  assert.deepEqual({ checkpoint, events }, original);
+  assert.equal((f.runs[0].sourceCoverage as { completeDays: number }).completeDays, 0);
+});
+
 test('historical backfill captures requested history without moving the current window backward',async()=>{
   const f=assessmentDb(1);let where:any;
   f.raw.ohlqReportImportStatus.findMany=async(args:any)=>{where=args.where;return[];};

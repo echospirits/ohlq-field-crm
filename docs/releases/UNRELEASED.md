@@ -1,5 +1,9 @@
 # Unreleased
 
+## Permanent Echo bottle-sales retention — 0.12.0 production release preparation
+
+The owner authorized selective promotion of accepted TST `7b80a076` onto production `28615305` / 0.11.0. Exact Echo vendor `Z90399001` survives age cleanup in both canonical daily sales tables; other vendors retain the default 30-day window. Transactional cleanup, full-date correction, recent windows, statewide completeness and tenant/product boundaries remain intact. No migration, dependency/configuration/schedule change, historical backfill, dashboard cutover or unrelated TST pilot is included; TST stays 0.10.0-dev. Production candidate validation and deployment are pending. See [0.12.0 notes/manifest](0.12.0.md), [validation](0.12.0-validation.md), [checklist](0.12.0-checklist.md) and [guide](../engineering/echo-sales-retention.md). Historical entries below are preserved.
+
 ## Direct Bailment reporting — released 0.11.0, November 20, 2026
 
 Owner-authorized application `2f360744` / **0.11.0** is deployed READY and healthy, selectively advanced from `f71a71c7` / 0.10.2. The native source download publishes complete typed financial snapshots independently of forecasting. Exact-candidate Node 22/npm 10 CI, combined local/browser tests, typecheck/build, PostgreSQL 17 rehearsal and production migration, restricted-login privileges and the first focused native acquisition pass. Targeted reporting readiness passes; the full normal daily verifier was skipped in focused mode and is not claimed as executed.
