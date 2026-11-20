@@ -2,6 +2,9 @@ import { createHash } from 'node:crypto';
 import type { Prisma, OhlqReportImportStatus } from '@prisma/client';
 import { prisma } from './prisma';
 import { ECHO_ORGANIZATION_ID } from './echoAccess';
+import { formatDateInputValue } from './dateTime';
+import { BAILMENT_REPORTING_REPORT_ID } from './ohlqBailmentReporting';
+import { BAILMENT_REPORTING_SCHEMA_VERSION } from './ohlqBailmentReportingParser';
 import { normalizeOhlqId } from './ohlqSalesData';
 import { isLegacyOhlqStaleWarning } from './ohlqSourceFreshness';
 import { AGENCY_INTELLIGENCE_RULES_VERSION, AGENCY_INTELLIGENCE_SCORING_VERSION } from './agencyIntelligenceConfig';
@@ -107,7 +110,7 @@ export async function checkOhlqLoadReadiness(input: OhlqLoadReadinessInput, db: 
     ] }, select: { id: true, features: { where: { enabled: true, featureKey: 'AGENCY_INTELLIGENCE' }, select: { id: true } }, accountOverlays: { where: { accountType: 'AGENCY', isTargeting: true }, select: { externalAccountId: true } } } }),
     db.organization.findMany({ where: { ...activeEcho, features: { some: { enabled: true, featureKey: 'AGENCY_INTELLIGENCE' } } }, select: { id: true } }),
     db.organization.findMany({ where: { ...activeEcho, features: { some: { enabled: true, featureKey: 'WHOLESALE_OPPORTUNITIES' } } }, select: { id: true } }),
-    db.organization.findMany({ where: { ...activeEcho, enabledStates: { has: 'OH' }, ohlqCredentials: { isNot: null }, features: { some: { enabled: true, featureKey: 'PRODUCTION_FORECASTING' } } }, select: { id: true, settings: true, enabledStates: true } }),
+    db.organization.findMany({ where: { ...activeEcho, enabledStates: { has: 'OH' }, ohlqCredentials: { isNot: null }, features: { some: { enabled: true, featureKey: 'PRODUCTION_FORECASTING' } } }, select: { id: true, settings: true, enabledStates: true, timezone: true } }),
     db.organization.findMany({ where: { ...activeEcho, enabledStates: { has: 'OH' }, features: { some: { enabled: true, featureKey: 'PRODUCTION_FORECASTING' } } }, select: { id: true, settings: true, ohlqCredentials: { select: { organizationId: true } } } }),
   ]);
   const agencies = inventoryTenants.length || marketTenants.length ? (await db.agency.findMany({ select: { id: true, agencyId: true } })).filter(row => !!normalizeOhlqId(row.agencyId)) : [];
@@ -212,6 +215,20 @@ export async function checkOhlqLoadReadiness(input: OhlqLoadReadinessInput, db: 
   for (const tenant of productionTenants) {
     const organizationId = tenant.id;
     const config = ohioSourceConfiguration(tenant.settings);
+    // Check the same current snapshot exposed by the reporting view. Never
+    // select an older valid receipt to hide an incomplete current publication.
+    // Native reporting is independent of forecasting's invoice-policy gate.
+    const reporting = await db.ohlqBailmentReportingSnapshot.findFirst({ where: { organizationId }, orderBy: [{ requestedAt: 'desc' }, { requestId: 'desc' }] });
+    const reportingRows = reporting ? await db.ohlqBailmentReportingLine.count({ where: { organizationId, snapshotId: reporting.id } }) : 0;
+    const reportingScope = object(reporting?.parameterScope);
+    const reportingCurrent = !!reporting && !!config.historyStart
+      && day(reporting.requestedFrom) === config.historyStart && day(reporting.requestedTo) === observationDate
+      && reporting.timezone === tenant.timezone && formatDateInputValue(reporting.requestedAt, tenant.timezone) === observationDate
+      && reporting.acquiredAt >= reporting.requestedAt
+      && reporting.reportIdentity === BAILMENT_REPORTING_REPORT_ID && reporting.schemaVersion === BAILMENT_REPORTING_SCHEMA_VERSION
+      && (reportingScope.parameter === 'Vendor' || reportingScope.parameter === 'Brand') && reportingScope.values === 'all'
+      && Number.isInteger(reporting.rowCount) && reporting.rowCount > 0 && reportingRows === reporting.rowCount;
+    add('BAILMENT_REPORTING', observationDate, reportingCurrent, 'BAILMENT_REPORTING_INCOMPLETE', organizationId, { expected: reporting?.rowCount ?? 0, actual: reportingRows });
     const asOf = shift(observationDate, -1);
     let sourcesReady = true;
     for (const source of ['BAILMENT_PO_INVOICE', 'DISTRIBUTION_CENTER'] as const) {

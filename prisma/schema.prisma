@@ -547,6 +547,8 @@ model Organization {
   a3aStoreIdentifiers     OrganizationA3aStoreIdentifier[]
   products                OrganizationProduct[]
   productionSourceImports ProductionSourceImport[]
+  bailmentReportingSnapshots OhlqBailmentReportingSnapshot[]
+  bailmentReportingLines OhlqBailmentReportingLine[]
   productionDemand        ProductionDemandObservation[]
   productionGuidance      ProductionGuidanceObservation[]
   productionForecastRuns  ProductionForecastRun[]
@@ -3063,6 +3065,65 @@ model ContactSuggestionReview {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   @@unique([organizationId, userId, identityKey])
+}
+
+// Native financial reporting remains separate from forecasting source normalization.
+model OhlqBailmentReportingSnapshot {
+  id String @id @default(cuid())
+  organizationId String
+  requestId String
+  requestFingerprint String
+  requestedAt DateTime @db.Timestamptz(3)
+  acquiredAt DateTime @db.Timestamptz(3)
+  requestedFrom DateTime @db.Date
+  requestedTo DateTime @db.Date
+  timezone String
+  reportIdentity String
+  parameterScope Json
+  contentHash String
+  schemaVersion String
+  rowCount Int
+  invoiceMonthCounts Json
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade, map: "bailment_reporting_snapshot_org_fkey")
+  lines OhlqBailmentReportingLine[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, requestId], map: "bailment_reporting_org_request_key")
+  @@unique([organizationId, contentHash, schemaVersion], map: "bailment_reporting_org_content_schema_key")
+  @@index([organizationId, requestedAt, requestId], map: "bailment_reporting_org_request_idx")
+}
+
+model OhlqBailmentReportingLine {
+  organizationId String
+  snapshotId String
+  sourceLineNumber Int
+  vendorName String?
+  brokerName String?
+  invoiceDate DateTime? @db.Date
+  invoiceNumber String?
+  poCreateDate DateTime? @db.Date
+  poNumber String?
+  transferOrderNumber String?
+  agency String?
+  transferOrderShipDate DateTime? @db.Date
+  upcCode String?
+  brand String?
+  name String?
+  category String?
+  dcName String?
+  cases Decimal? @db.Decimal(24, 6)
+  oddBottles Decimal? @db.Decimal(24, 6)
+  casesBottles String?
+  quotedCasePrice Decimal? @db.Decimal(24, 6)
+  discount Decimal? @db.Decimal(24, 6)
+  total Decimal? @db.Decimal(24, 6)
+  datePaid DateTime? @db.Date
+  sourceValues String[]
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade, map: "bailment_reporting_line_org_fkey")
+  snapshot OhlqBailmentReportingSnapshot @relation(fields: [organizationId, snapshotId], references: [organizationId, id], onDelete: Cascade, map: "bailment_reporting_line_snapshot_fkey")
+
+  @@id([organizationId, snapshotId, sourceLineNumber])
 }
 
 // Append-only complete source slices. Separate availability and receipt dates

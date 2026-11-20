@@ -15,7 +15,7 @@ export const FORECAST_REFRESH_LEASE_MS = 15 * 60_000;
 export const FORECAST_REFRESH_MAX_RUNNING_MS = 90 * 60_000;
 const stages: ForecastRefreshStage[] = ['QUEUED', 'BAILMENT', 'GUIDANCE', 'FORECAST', 'OPERATIONS', 'COMPLETE'];
 const stageLabels: Record<ForecastRefreshStage, string> = { QUEUED: 'Waiting to start', BAILMENT: 'Downloading outbound case history', GUIDANCE: 'Downloading distribution-center guidance', FORECAST: 'Saving the forecast', OPERATIONS: 'Checking warehouse inventory and daily signals', COMPLETE: 'Finished' };
-const sourceLabels = { BAILMENT_PO_INVOICE: 'outbound case history', DISTRIBUTION_CENTER: 'distribution-center guidance', FORECAST: 'the forecast calculation', OPERATIONS: 'warehouse, demand and delivery checks' };
+const sourceLabels = { BAILMENT_PO_INVOICE: 'outbound case history', BAILMENT_REPORTING: 'Bailment dashboard data', DISTRIBUTION_CENTER: 'distribution-center guidance', FORECAST: 'the forecast calculation', OPERATIONS: 'warehouse, demand and delivery checks' };
 const runSourceWorker: typeof syncProductionSources = async options => {
   const { syncProductionSources } = await import('./sourceWorkflow');
   return syncProductionSources(options);
@@ -25,7 +25,7 @@ export type ForecastRefreshServices = typeof defaults;
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 const active = { in: ['QUEUED', 'RUNNING'] };
 const terminal = (status: string) => !['QUEUED', 'RUNNING'].includes(status);
-const safeOutcome = (value: ProductionSourceOutcome): ProductionSourceOutcome => ({ configuredOrganizations: value.configuredOrganizations, importedSources: value.importedSources, refreshedForecasts: value.refreshedForecasts, failedSources: value.failedSources.filter(source => Object.hasOwn(sourceLabels, source)) });
+const safeOutcome = (value: ProductionSourceOutcome): ProductionSourceOutcome => ({ configuredOrganizations: value.configuredOrganizations, importedSources: value.importedSources, refreshedForecasts: value.refreshedForecasts, ...(Number.isSafeInteger(value.publishedReportingSnapshots) && value.publishedReportingSnapshots! >= 0 ? { publishedReportingSnapshots: value.publishedReportingSnapshots } : {}), failedSources: value.failedSources.filter(source => Object.hasOwn(sourceLabels, source)) });
 
 function publicMessage(request: ProductionForecastRefreshRequest) {
   if (request.status === 'QUEUED') return 'Refresh requested. It will begin when the current source checks finish.';
@@ -160,13 +160,13 @@ export async function runProductionForecastRefresh(context: ForecastRefreshRunne
   const timer = heartbeatIntervalMs > 0 ? setInterval(() => { inFlight = inFlight.then(() => renew()).catch(() => { leaseLost = true; }); }, heartbeatIntervalMs) : null;
   timer?.unref();
   try {
-    await services.sources({ db, refreshInventory: true, logger: { log: () => undefined, error: () => undefined }, onStage: renew, onResult: result => { outcome = safeOutcome(result); } });
+    await services.sources({ db, requestId: request.id, refreshInventory: true, logger: { log: () => undefined, error: () => undefined }, onStage: renew, onResult: result => { outcome = safeOutcome(result); } });
   } catch { failed = true; }
   finally { if (timer) clearInterval(timer); await inFlight; }
   const completedAt = clock();
   const completed = outcome as ProductionSourceOutcome | null;
   const success = !failed && completed?.configuredOrganizations === 1 && completed.importedSources === 2 && completed.refreshedForecasts === 1 && completed.failedSources.length === 0;
-  const status: ForecastRefreshStatus = success ? 'SUCCEEDED' : completed && (completed.importedSources > 0 || completed.refreshedForecasts > 0) ? 'PARTIAL' : 'FAILED';
+  const status: ForecastRefreshStatus = success ? 'SUCCEEDED' : completed && (completed.importedSources > 0 || completed.refreshedForecasts > 0 || (completed.publishedReportingSnapshots ?? 0) > 0) ? 'PARTIAL' : 'FAILED';
   const saved = await db.productionForecastRefreshRequest.updateMany({ where: { id: request.id, organizationId: context.organizationId, activeKey: context.organizationId, status: 'RUNNING', leaseToken: request.leaseToken, expiresAt: { gt: completedAt } }, data: { status, stage: 'COMPLETE', activeKey: null, leaseToken: null, expiresAt: null, completedAt, failureCode: success ? null : completed?.configuredOrganizations === 0 ? 'NO_CONFIGURED_SOURCES' : 'SOURCE_REFRESH_INCOMPLETE', result: json(completed ?? { configuredOrganizations: 0, importedSources: 0, refreshedForecasts: 0, failedSources: [] }) } });
   if (!saved.count) {
     await db.productionForecastRefreshRequest.updateMany({ where: { id: request.id, organizationId: context.organizationId, activeKey: context.organizationId, status: 'RUNNING', leaseToken: request.leaseToken }, data: { status: 'TIMED_OUT', activeKey: null, leaseToken: null, expiresAt: null, completedAt, failureCode: 'REQUEST_TIMEOUT' } });

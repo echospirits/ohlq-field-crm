@@ -134,28 +134,34 @@ test('tenant inventory retries source reads without replaying imports or failed 
   }
 });
 
-test('production sources retry each read while import and forecast writes run at most once', async () => {
-  for (const failImport of [false, true]) {
-    const reads = { bailment: 0, dc: 0 }; let imports = 0, forecasts = 0;
+test('production sources retry each read while reporting, import and forecast writes run at most once', async () => {
+  for (const failedWrite of ['none', 'import', 'reporting']) {
+    const reads = { bailment: 0, dc: 0 }; let reporting = 0, imports = 0, forecasts = 0;
     const loaded = moduleFixture<{ syncProductionSources: (input: unknown) => Promise<unknown> }>('lib/productionForecasting/sourceWorkflow.ts', {
       '../prisma': {}, '../echoAccess': { ECHO_ORGANIZATION_ID: 'org_echo_spirits' }, '../ohlqTenantCredentials': {}, '../ohlqAnnualSalesReport': {},
+      '../ohlqBailmentReporting': { BailmentReportingError: class extends Error {} },
       '../dateTime': { formatDateInputValue: () => '2026-11-19' }, './import': {}, './model': { shift: () => '2026-11-18' },
       './sourceConfiguration': { ohioSourceConfiguration: () => ({ historyStart: '2019-01-01', directInvoices: 'invoice-date' }) },
       './service': {}, './operationalSignals/workflow': {}, '../ohlqSourceReadRetry': { retryOhlqSourceRead: immediateRetry },
     });
-    const read = async (source: keyof typeof reads) => { if (++reads[source] === 1) throw transient(); return { csvBuffer: Buffer.from('csv'), reportDate: '2026-11-19' }; };
+    const read = async (source: keyof typeof reads) => {
+      if (++reads[source] === 1) throw transient();
+      return { csvBuffer: Buffer.from('csv'), reportDate: '2026-11-19', sizeBytes: 3,
+        nativeExport: { reportIdentity: 'bdf38254-b332-4d12-b689-1113a2644a40', requestedFrom: '2019-01-01', requestedTo: '2026-11-19', acquiredAt: '2026-11-19T16:01:00Z', parameterScope: { parameter: 'Vendor', values: 'all' }, exportCompleted: true } };
+    };
     const run = loaded.syncProductionSources({
       logger,
       db: { organization: { findMany: async () => [{ id: 'org_echo_spirits', timezone: 'America/New_York' }] }, productionSourceImport: { upsert: async () => ({}) } },
       services: {
         credentials: async () => ({ username: 'fixture', password: 'fixture' }), bailment: () => read('bailment'), dc: () => read('dc'),
-        importCsv: async () => { imports++; if (failImport) throw transient(); return { replay: false, rowCount: 1, excludedRows: 0 }; },
+        reporting: async () => { reporting++; if (failedWrite === 'reporting') throw transient(); return { published: true, replay: false, superseded: false, rowCount: 1 }; },
+        importCsv: async () => { imports++; if (failedWrite === 'import') throw transient(); return { replay: false, rowCount: 1, excludedRows: 0 }; },
         refresh: async () => { forecasts++; },
       },
     });
-    if (failImport) await assert.rejects(run); else await run;
+    if (failedWrite !== 'none') await assert.rejects(run); else await run;
     assert.deepEqual(reads, { bailment: 2, dc: 2 });
-    assert.equal(imports, 2); assert.equal(forecasts, 1);
+    assert.equal(reporting, 1); assert.equal(imports, 2); assert.equal(forecasts, 1);
   }
 });
 

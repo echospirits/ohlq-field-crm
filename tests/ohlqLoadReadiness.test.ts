@@ -3,6 +3,8 @@ import { createHash } from 'node:crypto';
 import test from 'node:test';
 import { checkOhlqLoadReadiness, type OhlqLoadReadinessDb } from '../lib/ohlqLoadReadiness';
 import { ECHO_ORGANIZATION_ID } from '../lib/echoAccess';
+import { BAILMENT_REPORTING_REPORT_ID } from '../lib/ohlqBailmentReporting';
+import { BAILMENT_REPORTING_SCHEMA_VERSION } from '../lib/ohlqBailmentReportingParser';
 import { AGENCY_INTELLIGENCE_RULES_VERSION, AGENCY_INTELLIGENCE_SCORING_VERSION } from '../lib/agencyIntelligenceConfig';
 import { AGENCY_MARKET_SCORING_VERSION } from '../lib/agencyMarketIntelligence';
 import { ASSESSMENT_VERSION, CALIBRATION_VERSION } from '../lib/wholesaleAssessment';
@@ -50,7 +52,7 @@ function fixture() {
   tables.ohlqAnnualSalesRow = input.reportDates.map(reportDate => ({ reportDate: d(reportDate) }));
   tables.ohlqAnnualSalesByWholesaleRow = input.reportDates.map(reportDate => ({ reportDate: d(reportDate) }));
   const settings = { productionForecasting: { ohio: { historyStart: '2026-01-01', directInvoices: 'invoice-date' } } };
-  const organization = { id: org, active: true, accountStatus: 'ACTIVE', enabledStates: ['OH'], settings, ohlqCredentials: { organizationId: org }, accountOverlays: [], features: ['AGENCY_INTELLIGENCE', 'WHOLESALE_OPPORTUNITIES', 'PRODUCTION_FORECASTING'].map(featureKey => ({ id: featureKey, enabled: true, featureKey })) };
+  const organization = { id: org, active: true, accountStatus: 'ACTIVE', enabledStates: ['OH'], settings, timezone: 'America/New_York', ohlqCredentials: { organizationId: org }, accountOverlays: [], features: ['AGENCY_INTELLIGENCE', 'WHOLESALE_OPPORTUNITIES', 'PRODUCTION_FORECASTING'].map(featureKey => ({ id: featureKey, enabled: true, featureKey })) };
   tables.organization = [organization];
   tables.agency = [{ id: 'agency-a', agencyId: '001' }, { id: 'ignored-agency', agencyId: null }];
   tables.wholesaleAccount = [{ id: 'account-a', isActive: true, mergedIntoId: null }];
@@ -76,6 +78,8 @@ function fixture() {
     { id: 'bailment', organizationId: org, market: 'OH', source: 'BAILMENT_PO_INVOICE', status: 'COMPLETE', observedOn: d(input.observationDate), coverageStart: d('2026-01-01'), coverageEnd: d('2026-11-18'), importedAt: scored, summary: { completenessConfirmed: true, directInvoicePolicy: 'invoice-date', scopes: [] }, rowCount: 0, excludedRows: 0 },
     { id: 'dc', organizationId: org, market: 'OH', source: 'DISTRIBUTION_CENTER', status: 'COMPLETE', observedOn: d(input.observationDate), coverageStart: d(input.observationDate), coverageEnd: d(input.observationDate), importedAt: scored, summary: { completenessConfirmed: true }, rowCount: 0 },
   ];
+  tables.ohlqBailmentReportingSnapshot = [{ id: 'native-report', organizationId: org, requestId: 'request-a', requestedAt: at, acquiredAt: scored, requestedFrom: d('2026-01-01'), requestedTo: d(input.observationDate), timezone: organization.timezone, reportIdentity: BAILMENT_REPORTING_REPORT_ID, parameterScope: { parameter: 'Vendor', values: 'all' }, schemaVersion: BAILMENT_REPORTING_SCHEMA_VERSION, rowCount: 2, createdAt: d('2026-11-17') }];
+  tables.ohlqBailmentReportingLine = [1, 2].map(sourceLineNumber => ({ organizationId: org, snapshotId: 'native-report', sourceLineNumber }));
   tables.productionDemandObservation = [];
   tables.productionGuidanceObservation = [];
   const forecastProducts = [{ id: 'product-a', market: 'OH', code: '1000B', name: 'Example', demandExcluded: false }];
@@ -114,6 +118,7 @@ test('earlier healthy same-day facts certify readiness without any provider or w
   const result = await checkOhlqLoadReadiness(input, f.db);
   assert.deepEqual(result.issues, []);
   assert.equal(result.ready, true);
+  assert.ok(result.checks.some(row => row.source === 'BAILMENT_REPORTING' && row.status === 'PASS' && row.expected === 2 && row.actual === 2));
   assert.ok(result.checks.some(row => row.source === 'PRODUCTION_FORECAST' && row.actual === 1));
   assert.ok(f.tables.productionForecastRun[0].generatedAt! < f.tables.productionSourceImport[0].importedAt!);
   assert.equal(f.run.sourceCoverage.missingDates.length, 1); // pre-foundation gaps are valid
@@ -268,6 +273,114 @@ test('production imports require complete coverage even when zero source rows ar
   f.tables.productionSourceImport[0].coverageEnd = d('2026-11-18');
   (f.tables.productionSourceImport[0].summary as Row).directInvoicePolicy = 'shipment-only';
   assert.ok((await checkOhlqLoadReadiness(input, f.db)).issues.some(row => row.source === 'BAILMENT_PO_INVOICE'));
+});
+
+test('fresh forecasts cannot certify missing or stale native dashboard snapshots', async () => {
+  for (const state of ['missing', 'stale']) {
+    const f = fixture();
+    if (state === 'missing') f.tables.ohlqBailmentReportingSnapshot = [];
+    else Object.assign(f.tables.ohlqBailmentReportingSnapshot[0], { requestedAt: d('2026-11-18T12:00:00Z'), acquiredAt: d('2026-11-18T12:30:00Z'), requestedTo: d('2026-11-18') });
+    const result = await checkOhlqLoadReadiness(input, f.db);
+    assert.equal(result.ready, false, state);
+    assert.deepEqual(result.issues.map(row => row.source), ['BAILMENT_REPORTING'], state);
+    assert.ok(result.checks.some(row => row.source === 'PRODUCTION_FORECAST' && row.status === 'PASS'), state);
+  }
+});
+
+test('native reporting requires the configured full history and native all-selection provenance', async () => {
+  const invalid: [string, Row][] = [
+    ['truncated history', { requestedFrom: d('2026-02-01') }],
+    ['different history configuration', { requestedFrom: d('2025-01-01') }],
+    ['wrong report', { reportIdentity: 'other-report' }],
+    ['selected vendors only', { parameterScope: { parameter: 'Vendor', values: ['vendor-a'] } }],
+    ['different parameter', { parameterScope: { parameter: 'Agency', values: 'all' } }],
+    ['unsupported schema', { schemaVersion: 'other-schema' }],
+    ['different source timezone', { timezone: 'UTC' }],
+    ['acquired before request', { acquiredAt: d('2026-11-19T11:59:59Z') }],
+  ];
+  for (const [label, change] of invalid) {
+    const f = fixture();
+    Object.assign(f.tables.ohlqBailmentReportingSnapshot[0], change);
+    const result = await checkOhlqLoadReadiness(input, f.db);
+    assert.deepEqual(result.issues.map(row => row.source), ['BAILMENT_REPORTING'], label);
+  }
+  const f = fixture();
+  f.tables.ohlqBailmentReportingSnapshot[0].parameterScope = { parameter: 'Brand', values: 'all' };
+  assert.equal((await checkOhlqLoadReadiness(input, f.db)).ready, true);
+});
+
+test('native snapshot freshness uses the frozen request date and accepts acquisition across midnight', async () => {
+  const f = fixture();
+  const snapshot = f.tables.ohlqBailmentReportingSnapshot[0];
+  // 11:59 p.m. Eastern on the frozen day; a repeated unchanged export may
+  // update the request metadata of a snapshot created on an earlier day.
+  Object.assign(snapshot, { requestedAt: d('2026-11-20T04:59:00Z'), acquiredAt: d('2026-11-20T05:01:00Z') });
+  assert.equal((await checkOhlqLoadReadiness(input, f.db)).ready, true);
+  snapshot.requestedAt = d('2026-11-20T05:00:00Z');
+  assert.ok((await checkOhlqLoadReadiness(input, f.db)).issues.some(row => row.source === 'BAILMENT_REPORTING'));
+  snapshot.requestedTo = d('2026-11-20');
+  assert.ok((await checkOhlqLoadReadiness(input, f.db)).issues.some(row => row.source === 'BAILMENT_REPORTING'));
+});
+
+test('native reporting counts only rows belonging to the current organization and snapshot', async () => {
+  const f = fixture();
+  f.tables.ohlqBailmentReportingLine.push(
+    { organizationId: 'other-tenant', snapshotId: 'native-report', sourceLineNumber: 1 },
+    { organizationId: org, snapshotId: 'older-report', sourceLineNumber: 1 },
+  );
+  assert.equal((await checkOhlqLoadReadiness(input, f.db)).ready, true);
+  f.tables.ohlqBailmentReportingLine.shift();
+  const result = await checkOhlqLoadReadiness(input, f.db);
+  assert.deepEqual(result.issues.find(row => row.source === 'BAILMENT_REPORTING'), {
+    source: 'BAILMENT_REPORTING', organizationId: org, date: input.observationDate,
+    status: 'FAIL', code: 'BAILMENT_REPORTING_INCOMPLETE', expected: 2, actual: 1,
+  });
+});
+
+test('the current native snapshot cannot fall back to an older complete publication', async () => {
+  const f = fixture();
+  f.tables.ohlqBailmentReportingSnapshot.push({ ...f.tables.ohlqBailmentReportingSnapshot[0], id: 'current-incomplete', requestId: 'request-z' });
+  let result = await checkOhlqLoadReadiness(input, f.db);
+  assert.equal(result.issues.find(row => row.source === 'BAILMENT_REPORTING')?.actual, 0);
+  f.tables.ohlqBailmentReportingLine.push(...[1, 2].map(sourceLineNumber => ({ organizationId: org, snapshotId: 'current-incomplete', sourceLineNumber })));
+  result = await checkOhlqLoadReadiness(input, f.db);
+  assert.equal(result.ready, true);
+  Object.assign(f.tables.ohlqBailmentReportingSnapshot[0], { requestedAt: d('2026-11-19T13:00:00Z'), acquiredAt: d('2026-11-19T13:30:00Z'), rowCount: 3 });
+  result = await checkOhlqLoadReadiness(input, f.db);
+  assert.equal(result.issues.find(row => row.source === 'BAILMENT_REPORTING')?.expected, 3);
+});
+
+test('native reporting is checked independently when forecasting inputs or policy are unavailable', async () => {
+  const f = fixture();
+  f.organization.settings.productionForecasting.ohio.directInvoices = '';
+  let result = await checkOhlqLoadReadiness(input, f.db);
+  assert.ok(result.checks.some(row => row.source === 'BAILMENT_REPORTING' && row.status === 'PASS'));
+  assert.ok(result.issues.some(row => row.code === 'FORECAST_INPUTS_UNAVAILABLE'));
+  f.tables.productionSourceImport = [];
+  f.tables.ohlqBailmentReportingSnapshot = [];
+  result = await checkOhlqLoadReadiness(input, f.db);
+  assert.ok(result.issues.some(row => row.source === 'BAILMENT_REPORTING'));
+  assert.ok(result.issues.some(row => row.code === 'FORECAST_INPUTS_UNAVAILABLE'));
+});
+
+test('native reporting remains outside readiness for organizations excluded by source-worker enrollment', async () => {
+  const exclusions: [string, Row][] = [
+    ['another tenant', { id: 'other-tenant' }],
+    ['inactive', { active: false }],
+    ['suspended', { accountStatus: 'SUSPENDED' }],
+    ['cancelled', { accountStatus: 'CANCELLED' }],
+    ['Ohio disabled', { enabledStates: ['KY'] }],
+    ['no credentials', { ohlqCredentials: null }],
+    ['feature disabled', { features: [{ id: 'forecasting', featureKey: 'PRODUCTION_FORECASTING', enabled: false }] }],
+  ];
+  for (const [label, change] of exclusions) {
+    const f = fixture();
+    Object.assign(f.organization, change);
+    f.tables.ohlqBailmentReportingSnapshot = [];
+    const result = await checkOhlqLoadReadiness(input, f.db);
+    assert.equal(result.checks.some(row => row.source === 'BAILMENT_REPORTING'), false, label);
+    assert.equal(f.calls.some(call => call.table.startsWith('ohlqBailmentReporting')), false, label);
+  }
 });
 
 test('temporary OpenDock lookup is a warning; authentication, malformed data and missing checks are failures', async () => {

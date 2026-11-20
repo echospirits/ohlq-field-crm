@@ -103,6 +103,7 @@ test('only an explicit source-workflow manual mode opts operations into same-day
     credentials: async () => null,
     bailment: async () => { throw Error('No source organization'); },
     dc: async () => { throw Error('No source organization'); },
+    reporting: async () => { throw Error('No source organization'); },
     importCsv: async () => { throw Error('No source organization'); },
     refresh: async () => { throw Error('No source organization'); },
     operations: async (options?: { refreshInventory?: boolean }) => { forwarded.push(options?.refreshInventory); return { failed: 0 }; },

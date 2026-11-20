@@ -171,6 +171,27 @@ test('a delivery-only operational failure names the full group without claiming 
   assert.doesNotMatch(state.job!.message, /outbound case history|distribution-center guidance|PRIVATE|OpenDock/);
 });
 
+test('financial reporting failures remain visible and a reporting-only completion counts as partial progress', async () => {
+  const reportingFailure = fixture(); await reportingFailure.enqueue();
+  const failed = await reportingFailure.run({ sources: async options => {
+    assert.equal(options?.requestId, reportingFailure.rows[0].id);
+    options?.onResult?.({ configuredOrganizations: 1, importedSources: 2, refreshedForecasts: 1, failedSources: ['BAILMENT_REPORTING'] });
+    throw new Error('private reporting detail');
+  } });
+  assert.equal(failed.status, 'PARTIAL');
+  const state = await getForecastRefreshState(organizationId, reportingFailure.client, now, reportingFailure.services);
+  assert.match(state.job!.message, /Bailment dashboard data could not be refreshed/);
+  assert.doesNotMatch(state.job!.message, /private reporting detail/);
+
+  const reportingOnly = fixture(); await reportingOnly.enqueue();
+  const result = await reportingOnly.run({ sources: async options => {
+    options?.onResult?.({ configuredOrganizations: 1, importedSources: 0, refreshedForecasts: 0, publishedReportingSnapshots: 1, failedSources: ['BAILMENT_PO_INVOICE', 'DISTRIBUTION_CENTER', 'FORECAST'] });
+    throw new Error('forecast unavailable');
+  } });
+  assert.equal(result.status, 'PARTIAL');
+  assert.equal((reportingOnly.rows[0].result as { publishedReportingSnapshots: number }).publishedReportingSnapshots, 1);
+});
+
 test('revoked administrator or feature access is rechecked before a worker starts', async () => {
   for (const revoke of ['user', 'feature']) {
     const f = fixture(); await f.enqueue(); if (revoke === 'user') f.revokeUser(); else f.revokeFeature();

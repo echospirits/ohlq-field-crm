@@ -155,9 +155,19 @@ export type ReportDate = {
   year: number;
 };
 
+export type OhlqBailmentNativeExport = {
+  reportIdentity: string;
+  parameterScope: { parameter: 'Vendor' | 'Brand'; values: 'all' };
+  requestedFrom: string;
+  requestedTo: string;
+  acquiredAt: string;
+  exportCompleted: true;
+};
+
 export type OhlqAnnualSalesDownloadResult = {
   csvBuffer?: Buffer;
   filename: string;
+  nativeExport?: OhlqBailmentNativeExport;
   outputPath: string;
   reportDate: string;
   runDate: string;
@@ -1020,7 +1030,7 @@ async function closeBrowserPage(context: BrowserContext, browser: Browser | null
   await browser?.close().catch(() => undefined);
 }
 
-async function saveDownloadWithTimeout(download: Download, outputPath: string, displayName: string) {
+async function saveDownloadWithTimeout(download: Pick<Download, 'saveAs'>, outputPath: string, displayName: string) {
   let timeout: NodeJS.Timeout | undefined;
   try {
     await Promise.race([
@@ -1035,6 +1045,54 @@ async function saveDownloadWithTimeout(download: Download, outputPath: string, d
   } finally {
     if (timeout) clearTimeout(timeout);
   }
+}
+
+/** Finalize a native CSV after its report controls and resolved parameter have been applied. */
+export async function saveOhlqPowerBiReportDownload(
+  download: Pick<Download, 'saveAs'>,
+  report: OhlqPowerBiReportConfig,
+  runtime: Pick<OhlqDownloadRuntime, 'downloadDir' | 'logger' | 'reportDate' | 'fromDate' | 'returnBuffer' | 'runDateIso'>,
+  parameter: OhlqPowerBiReportConfig['parameter'],
+): Promise<OhlqAnnualSalesDownloadResult> {
+  const { downloadDir, logger, reportDate, fromDate, returnBuffer, runDateIso } = runtime;
+  const filename = getOhlqReportFilename(report, runDateIso);
+  const outputPath = path.join(downloadDir, filename);
+  await saveDownloadWithTimeout(download, outputPath, report.fileSlug);
+
+  const savedFile = fs.statSync(outputPath);
+  const sizeBytes = savedFile.size;
+  const isBailment = report.reportId === OHLQ_BAILMENT_INVOICE_REPORT.reportId;
+  // A reporting receipt requires readable bytes even when the caller only needs the file path.
+  const savedBuffer = returnBuffer || isBailment ? fs.readFileSync(outputPath) : undefined;
+  let nativeExport: OhlqBailmentNativeExport | undefined;
+  if (isBailment) {
+    if (!savedFile.isFile() || sizeBytes === 0 || savedBuffer?.length !== sizeBytes) {
+      throw new Error('Bailment CSV download is empty or incomplete.');
+    }
+    if (!report.dateRange || parameter.values !== 'all') {
+      throw new Error('Bailment CSV download requires a date range and all parameter values.');
+    }
+    nativeExport = {
+      reportIdentity: report.reportId,
+      parameterScope: { parameter: parameter.name, values: parameter.values },
+      requestedFrom: fromDate.iso,
+      requestedTo: reportDate.iso,
+      acquiredAt: new Date().toISOString(),
+      exportCompleted: true,
+    };
+  }
+
+  logger.log(`Downloaded CSV: ${outputPath}`);
+
+  return {
+    csvBuffer: returnBuffer ? savedBuffer : undefined,
+    filename,
+    ...(nativeExport ? { nativeExport } : {}),
+    outputPath,
+    reportDate: report.dateRange ? reportDate.iso : runDateIso,
+    runDate: runDateIso,
+    sizeBytes,
+  };
 }
 
 async function signInToOhlqPartner(
@@ -1158,8 +1216,7 @@ async function downloadOhlqPowerBiReportFromPage(
   report: OhlqPowerBiReportConfig,
   runtime: OhlqDownloadRuntime,
 ) {
-  const { debugDir, downloadDir, logger, reportDate, returnBuffer, runDateIso } = runtime;
-  const filename = getOhlqReportFilename(report, runDateIso);
+  const { debugDir, logger, reportDate } = runtime;
   const powerBiReportUrl = buildPowerBiReportUrl(report.reportId);
   const ohlqReportRedirectUrl = `https://ops.ohlq.com/link/external/${encodeURIComponent(powerBiReportUrl)}`;
 
@@ -1203,22 +1260,7 @@ async function downloadOhlqPowerBiReportFromPage(
   await frame.getByRole('menuitem', { name: /Comma Separated Values \(\.csv\)/ }).click();
   const download = await downloadPromise;
 
-  const outputPath = path.join(downloadDir, filename);
-  await saveDownloadWithTimeout(download, outputPath, report.fileSlug);
-
-  const sizeBytes = fs.statSync(outputPath).size;
-  const csvBuffer = returnBuffer ? fs.readFileSync(outputPath) : undefined;
-
-  logger.log(`Downloaded CSV: ${outputPath}`);
-
-  return {
-    csvBuffer,
-    filename,
-    outputPath,
-    reportDate: report.dateRange ? reportDate.iso : runDateIso,
-    runDate: runDateIso,
-    sizeBytes,
-  } satisfies OhlqAnnualSalesDownloadResult;
+  return saveOhlqPowerBiReportDownload(download, report, runtime, parameter);
 }
 
 async function downloadOhlqPowerBiReports(
