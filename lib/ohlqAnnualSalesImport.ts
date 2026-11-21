@@ -276,18 +276,23 @@ export async function importOhlqAnnualSalesCsv({
   db = prisma,
   reportDate,
   evidence,
+  echoOnly = false,
 }: {
   csv: string | Buffer;
   db?: PrismaClient;
   reportDate: string;
   evidence?: EchoSalesEvidence;
+  echoOnly?: boolean;
 }) {
   const source = evidence && validateEchoSalesEvidence(csv, reportDate, evidence);
+  if (echoOnly && !source) throw new Error('Echo-only imports require native source evidence.');
   const parsed = parseOhlqAnnualSalesCsv(csv, reportDate, Boolean(source));
   const vendorFiltered = source?.scope === 'VENDOR_FILTERED';
   if (source && (parsed.skippedRows || (vendorFiltered && parsed.rows.some(row => row.vendor !== ECHO_SALES_VENDOR)))) {
     throw new Error('Incomplete or incorrectly scoped Annual Sales Summary.');
   }
+  const scopedToEcho = vendorFiltered || echoOnly;
+  const rowsToWrite = scopedToEcho ? parsed.rows.filter(row => row.vendor === ECHO_SALES_VENDOR) : parsed.rows;
   const reportDateValue = toDateOnlyUtc(reportDate);
   const chunkSize = 1_000;
 
@@ -295,12 +300,12 @@ export async function importOhlqAnnualSalesCsv({
     async (tx) => {
       if (source) await lockEchoSalesDate(tx, reportDate);
       const deleted = await tx.ohlqAnnualSalesRow.deleteMany({
-        where: { reportDate: reportDateValue, ...(vendorFiltered ? { vendor: ECHO_SALES_VENDOR } : {}) },
+        where: { reportDate: reportDateValue, ...(scopedToEcho ? { vendor: ECHO_SALES_VENDOR } : {}) },
       });
 
       let importedRows = 0;
-      for (let index = 0; index < parsed.rows.length; index += chunkSize) {
-        const chunk = parsed.rows.slice(index, index + chunkSize);
+      for (let index = 0; index < rowsToWrite.length; index += chunkSize) {
+        const chunk = rowsToWrite.slice(index, index + chunkSize);
         const created = await tx.ohlqAnnualSalesRow.createMany({
           data: chunk,
           skipDuplicates: true,
@@ -309,7 +314,7 @@ export async function importOhlqAnnualSalesCsv({
       }
 
       if (source) {
-        if (importedRows !== parsed.rows.length) throw new Error('Incomplete sales summary insert.');
+        if (importedRows !== rowsToWrite.length) throw new Error('Incomplete sales summary insert.');
         await publishEchoSalesCoverage(tx, reportDate, parsed.rows, source);
       }
       return {

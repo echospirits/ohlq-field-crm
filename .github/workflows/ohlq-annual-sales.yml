@@ -45,7 +45,7 @@ jobs:
       - name: Install the daily loader's Chromium
         run: node scripts/retry-ohlq-command.cjs -- npx --no-install playwright install --with-deps chromium
 
-      - name: Reconcile September against native Echo reports
+      - name: Validate and reconcile each September date
         env:
           APP_ENV: production
           DATABASE_ENVIRONMENT: production

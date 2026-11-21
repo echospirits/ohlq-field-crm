@@ -1270,6 +1270,13 @@ async function downloadOhlqPowerBiReportFromPage(
     const datePattern = '0?' + Number(reportDate.iso.slice(5, 7)) + '/0?' + reportDate.day + '/' + reportDate.year;
     const bounds = new RegExp('From:\\s*' + datePattern + '\\s*-\\s*To:\\s*' + datePattern + '\\b', 'i');
     await frame.getByText(bounds).first().waitFor({ state: 'visible', timeout: 120_000 });
+    if (echoFiltered && await frame.getByText(
+      'No data meets the criteria that the user has selected', { exact: true },
+    ).first().isVisible()) {
+      // A no-data rendering may export only a message. Obtain true native
+      // statewide CSV evidence for the same date and scope the write to Echo.
+      return downloadOhlqPowerBiReportFromPage(page, OHLQ_ANNUAL_SALES_SUMMARY_REPORT, runtime);
+    }
   }
   const exportMenu = await waitForReportExport(frame, report);
   runtime.onDiagnostic?.({ stage: 'export-ready' });
