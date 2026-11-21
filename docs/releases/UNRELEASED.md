@@ -1,8 +1,8 @@
 # Unreleased
 
-## Supplies email freshness — 0.15.1 hotfix
+## Supplies email freshness — released 0.15.1, November 21, 2026
 
-Prioritize recent replies on watched orders within the existing four daily batch slots. Match authenticated replies across connected Production mailboxes, clear payment holds on verified payment receipt, and surface stale email coverage. See the [release scope](0.15.1.md).
+Recent replies on watched orders take priority within the existing four daily batch slots. Authenticated replies can match across connected Production mailboxes, verified receipts clear payment holds, and stale email coverage appears on Supplies. Both deployments are READY. The Tennessee Bottles production card shows **Awaiting shipment**, with zero shipments and no ETA after validating the supplier's payment email. See the [release notes and verification](0.15.1.md).
 
 ## Direct Echo bottle-sales reporting — released 0.15.0, November 21, 2026
 
