@@ -32,7 +32,7 @@
   ],
   "git": {
     "deploymentEnabled": {
-      "codex/echo-0152-synthetic-db": false
+      "codex/echo-0152-synthetic-db-verified": false
     }
   }
 }

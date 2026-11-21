@@ -21,7 +21,7 @@ async function main() {
  for (const path of [
  'prisma/migrations/20261120020000_echo_item_sales_reporting/migration.sql',
  'prisma/migrations/20261121023000_echo_bottle_sales_month_readiness/migration.sql',
- ]) for (const sql of fs.readFileSync(path,'utf8').split(';').filter(s=>s.trim())) await prisma.$executeRawUnsafe(sql);
+ ]) for (const sql of fs.readFileSync(path,'utf8').replace(/^\s*--.*$/gm, '').split(';').filter(s=>s.trim())) await prisma.$executeRawUnsafe(sql);
  const date='2026-09-01';
  const old='2026-10-01T12:00:00Z', newer='2026-10-02T12:00:00Z';
  const echoOld=head+'\n001,Z90399001,V01,-3,0';
