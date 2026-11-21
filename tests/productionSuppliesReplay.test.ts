@@ -83,6 +83,21 @@ test('one malformed retained source does not block the next source and replay ob
   assert.equal(bounded.deferred, true);
 });
 
+test('re-read retained replies retry only the lifecycle correction path if the matching anchor arrives later', async () => {
+  const fake = replayFake();
+  const shipment = fake.sources.find(source => source.extractedFacts.kind === 'SHIPMENT')!;
+  Object.assign(shipment.extractedFacts, {
+    _provenance: { replyLifecycleChecked: true, internetReferences: ['b'.repeat(64)] },
+  });
+  const scope = (async () => ({ evidence: null, materialKeys: [], reason: 'No independent order identifier' })) as typeof scopeSupplyEvidence;
+  const result = await replayWatchedSupplyEvidence('tenant-one', fake.db, async (_actor, raw, _db, options) => {
+    assert.deepEqual(options, { reconcile: false, refreshLifecycle: true });
+    assert.deepEqual((raw as { source: { internetReferences: string[] } }).source.internetReferences, ['b'.repeat(64)]);
+    return { orderId: 'verified-order' };
+  }, { scope, materials: fake.materials });
+  assert.equal(result.linked, 1);
+});
+
 test('unwatched source is retained idempotently without creating any operational order or shipment', async () => {
   const retained: Array<Record<string, unknown>> = [];
   const db = {

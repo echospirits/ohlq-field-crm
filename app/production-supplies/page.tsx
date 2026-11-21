@@ -1,6 +1,8 @@
 import Link from 'next/link';
 import { prisma } from '../../lib/prisma';
 import { requireSupplyActor } from '../../lib/productionSupplies/access';
+import { productionMemberIds, readSupplySettings } from '../../lib/productionSupplies/config';
+import { supplyEmailCoverage } from '../../lib/productionSupplies/mailFreshness';
 import { getSupplyStatusDashboard } from '../../lib/productionSupplies/status';
 import { getTrackingConfiguration } from '../../lib/productionSupplies/tracking';
 import { EmptyState, PageHeader } from '../components/PageChrome';
@@ -12,21 +14,30 @@ export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Supplies' };
 
 export default async function SuppliesPage() {
-  const { actor, canManage } = await requireSupplyActor();
+  const { actor, context, canManage } = await requireSupplyActor();
+  const { crmPreferences, timezone } = context.organization;
   const [dashboard, mailboxes] = await Promise.all([
     getSupplyStatusDashboard(actor.organizationId),
-    prisma.supplyMailboxSync.findMany({ where: { organizationId: actor.organizationId, status: { not: 'PAUSED' } }, select: { status: true } }),
+    prisma.supplyMailboxSync.findMany({
+      where: { organizationId: actor.organizationId, userId: { in: productionMemberIds(crmPreferences) }, status: { not: 'PAUSED' } },
+      select: { status: true, connectionId: true, cursor: true, lastSuccessfulSyncAt: true },
+    }),
   ]);
-  const connectionRequired = !mailboxes.length || mailboxes.some(mailbox => ['CONNECTION_REQUIRED', 'PERMISSION_REQUIRED', 'ERROR'].includes(mailbox.status));
-  const importing = mailboxes.some(mailbox => ['INITIAL_IMPORT', 'QUEUED'].includes(mailbox.status));
+  const coverage = supplyEmailCoverage(mailboxes, readSupplySettings(crmPreferences).pollMinutes, new Date());
+  const oldestCheckAt = coverage.oldestCheckAt;
+  const emailCheckDate = coverage.stale && oldestCheckAt ? new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
+  }).format(oldestCheckAt) : null;
   const tracking = getTrackingConfiguration();
 
   return <div className="supplies-page supply-status-page">
     <PageHeader title="Supplies" />
     <SupplyRefresh />
-    {connectionRequired || importing ? <p className="supply-status-coverage" role="status">
-      {connectionRequired ? <>Email coverage is incomplete. <Link href="/production-supplies/settings">Check connections</Link>.</> : 'Initial email import is running.'}
-      {' '}Order status may be incomplete.
+    {coverage.stale || coverage.connectionRequired || coverage.awaitingCheck || coverage.importing ? <p className="supply-status-coverage" role="status">
+      {coverage.stale && oldestCheckAt && emailCheckDate ? <><strong>Email updates are stale.</strong> The oldest completed mailbox check was <time dateTime={oldestCheckAt.toISOString()}>{emailCheckDate}</time>.</> :
+        coverage.connectionRequired ? 'Email coverage is incomplete.' :
+          coverage.awaitingCheck ? 'Waiting for the first recent email check.' : 'Initial email import is running.'}
+      {' '}<Link href="/production-supplies/settings">Mailbox status</Link>
     </p> : null}
     {tracking.configured && tracking.mode === 'test' ? <p className="supply-status-coverage" role="status">Carrier tracking is in test mode. Carrier updates may be simulated.</p> : null}
     {dashboard.cards.length ? <>

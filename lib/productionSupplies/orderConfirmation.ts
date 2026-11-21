@@ -5,7 +5,7 @@ import { productionMemberIds } from './config';
 import type { ValidatedSupplyEvidence, ValidatedSupplySource } from './service';
 import type {TrustedDx5WarningIdentity} from './dx5WarningIdentity';
 
-export type SupplySourceProvenance = Pick<ValidatedSupplySource, 'threadId'|'evidenceContext'|'contentVersion'|'direction'|'fromEmail'|'senderAuthenticated'|'attachmentPartId'|'attachmentMimePath'|'attachmentProviderId'> & { productionTeamAuthorized?: boolean; confirmationValidated?: boolean; correlatedSourceIds?: string[];dx5WarningIdentity?:TrustedDx5WarningIdentity };
+export type SupplySourceProvenance = Pick<ValidatedSupplySource, 'threadId'|'evidenceContext'|'contentVersion'|'direction'|'fromEmail'|'senderAuthenticated'|'attachmentPartId'|'attachmentMimePath'|'attachmentProviderId'|'internetMessageId'|'internetReferences'> & { productionTeamAuthorized?: boolean; confirmationValidated?: boolean; correlatedSourceIds?: string[];dx5WarningIdentity?:TrustedDx5WarningIdentity; replyLifecycleChecked?: true; lifecycleOnly?: true };
 export function readSupplySourceProvenance(value: unknown): SupplySourceProvenance {
   const raw = (value as { _provenance?: SupplySourceProvenance } | null)?._provenance;
   return raw && typeof raw === 'object' ? raw : {};
@@ -16,7 +16,68 @@ export function isCurrentSupplyEvidence(provenance: SupplySourceProvenance) {
 /** Keep the first observed download handle as provenance, even across evidence-less retries. */
 export function mergeSupplySourceProvenance(previousFacts:unknown,incoming:SupplySourceProvenance):SupplySourceProvenance {
   const previous=readSupplySourceProvenance(previousFacts);
-  return {threadId:incoming.threadId ?? previous.threadId,evidenceContext:incoming.evidenceContext ?? previous.evidenceContext,contentVersion:incoming.contentVersion ?? previous.contentVersion,direction:incoming.direction ?? previous.direction,fromEmail:incoming.fromEmail ?? previous.fromEmail,senderAuthenticated:incoming.senderAuthenticated ?? previous.senderAuthenticated,attachmentPartId:previous.attachmentPartId ?? incoming.attachmentPartId,attachmentMimePath:previous.attachmentMimePath ?? incoming.attachmentMimePath,attachmentProviderId:previous.attachmentProviderId ?? incoming.attachmentProviderId,productionTeamAuthorized:incoming.productionTeamAuthorized,...(incoming.dx5WarningIdentity || previous.dx5WarningIdentity?{dx5WarningIdentity:incoming.dx5WarningIdentity || previous.dx5WarningIdentity}:{})};
+  return {threadId:incoming.threadId ?? previous.threadId,evidenceContext:incoming.evidenceContext ?? previous.evidenceContext,contentVersion:incoming.contentVersion ?? previous.contentVersion,direction:incoming.direction ?? previous.direction,fromEmail:incoming.fromEmail ?? previous.fromEmail,senderAuthenticated:incoming.senderAuthenticated ?? previous.senderAuthenticated,attachmentPartId:previous.attachmentPartId ?? incoming.attachmentPartId,attachmentMimePath:previous.attachmentMimePath ?? incoming.attachmentMimePath,attachmentProviderId:previous.attachmentProviderId ?? incoming.attachmentProviderId,productionTeamAuthorized:incoming.productionTeamAuthorized,
+    internetMessageId:previous.internetMessageId ?? incoming.internetMessageId,
+    internetReferences:previous.internetReferences ?? incoming.internetReferences,
+    ...(previous.replyLifecycleChecked ? { replyLifecycleChecked: true } : {}),
+    ...(previous.lifecycleOnly ? { lifecycleOnly: true } : {}),
+    ...(incoming.dx5WarningIdentity || previous.dx5WarningIdentity ? { dx5WarningIdentity: incoming.dx5WarningIdentity || previous.dx5WarningIdentity } : {})};
+}
+
+type ReplySource = { mailboxConnectionId: string | null; userId: string | null; messageDate: Date };
+
+/** Gmail thread IDs identify a thread only within the mailbox that supplied them. */
+export async function findSupplyReplyOrder(
+  db: Prisma.TransactionClient, organizationId: string, source: ReplySource,
+  facts: ValidatedSupplyEvidence, provenance: SupplySourceProvenance,
+) {
+  if (facts.kind !== 'SHIPMENT' || !isCurrentSupplyEvidence(provenance)) return null;
+  const branches: Prisma.SupplySourceWhereInput[] = [];
+  if (provenance.threadId) {
+    branches.push({
+      mailboxConnectionId: source.mailboxConnectionId,
+      ...(source.mailboxConnectionId ? {} : { userId: source.userId }),
+      extractedFacts: { path: ['_provenance', 'threadId'], equals: provenance.threadId },
+    });
+  }
+  if (source.mailboxConnectionId && provenance.productionTeamAuthorized && provenance.direction === 'RECEIVED' && provenance.fromEmail && provenance.senderAuthenticated === true) {
+    const relatedIds = [...new Set([provenance.internetMessageId, ...(provenance.internetReferences ?? [])].filter((id): id is string => Boolean(id)))];
+    if (relatedIds.length) branches.push({
+      mailboxConnectionId: { not: null },
+      // The sender must match an authenticated, linked message. A shared buyer
+      // reference, seller name or subject is insufficient evidence on its own.
+      AND: [
+        { extractedFacts: { path: ['_provenance', 'fromEmail'], equals: provenance.fromEmail } },
+        { extractedFacts: { path: ['_provenance', 'direction'], equals: 'RECEIVED' } },
+        { extractedFacts: { path: ['_provenance', 'senderAuthenticated'], equals: true } },
+        { extractedFacts: { path: ['_provenance', 'productionTeamAuthorized'], equals: true } },
+        { extractedFacts: { path: ['_provenance', 'contentVersion'], equals: 'SUPPLY_CURRENT_V1' } },
+      ],
+      OR: relatedIds.map(id => ({ extractedFacts: { path: ['_provenance', 'internetMessageId'], equals: id } })),
+      messageDate: { lte: new Date(source.messageDate.getTime() + 5 * 60_000) },
+    });
+  }
+  if (!branches.length) return null;
+  const candidates = await db.supplyOrder.findMany({
+    where: { organizationId, ignored: false, sources: { some: { organizationId, source: {
+      organizationId, extractionStatus: { in: ['COMPLETE', 'REVIEW'] }, OR: branches,
+    } } } },
+    include: { lines: { where: { organizationId, ignored: false } } },
+    take: 11,
+  });
+  if (candidates.length === 11) return null;
+  const destination = normalizeSupplyLocation(facts.destination);
+  const compatibleOrders = candidates.filter(candidate =>
+    (!facts.supplier || normalize(candidate.supplier) === normalize(facts.supplier)) &&
+    (!facts.orderReference || !candidate.orderReference || facts.orderReference === candidate.orderReference) &&
+    (!destination || !normalizeSupplyLocation(candidate.destination) || destination === normalizeSupplyLocation(candidate.destination)) &&
+    (!facts.orderedAt || !candidate.orderedAt || facts.orderedAt === candidate.orderedAt.toISOString().slice(0, 10)) &&
+    facts.lines.every(line => candidate.lines.some(existing =>
+      (line.sku && existing.sku
+        ? normalize(line.sku) === normalize(existing.sku)
+        : normalizeSupplyMaterial(line.description) === normalizeSupplyMaterial(existing.description)) &&
+      (!line.unit || !existing.unit || normalize(line.unit) === normalize(existing.unit)))));
+  return compatibleOrders.length === 1 ? compatibleOrders[0] : null;
 }
 function compatible(a: ValidatedSupplyEvidence, b: ValidatedSupplyEvidence) {
   if (a.orderReference && b.orderReference && a.orderReference.trim()!==b.orderReference.trim()) return false;
@@ -34,7 +95,7 @@ function compatible(a: ValidatedSupplyEvidence, b: ValidatedSupplyEvidence) {
   })))return false;
   return true;
 }
-type EvidenceSource = {id:string;userId:string|null;messageId?:string;messageDate:Date;mimeType?:string|null;extractedFacts:unknown};
+type EvidenceSource = {id:string;userId:string|null;messageId?:string;messageDate:Date;mailboxConnectionId?:string|null;mimeType?:string|null;extractedFacts:unknown};
 
 /** Current authenticated participants establish the purchase; a proforma cannot create one alone. */
 export async function resolveProductionOrderConfirmation(tx: Prisma.TransactionClient, organizationId: string, preferences: unknown, current: EvidenceSource, evidence: ValidatedSupplyEvidence, provenance: SupplySourceProvenance, parse: (value: unknown) => ValidatedSupplyEvidence | null) {
@@ -51,7 +112,7 @@ export async function resolveProductionOrderConfirmation(tx: Prisma.TransactionC
   const knownBuyer=!confirmation?.buyerEmail || memberEmails.has(normalize(confirmation.buyerEmail));
   if(memberSource(current) && confirmation?.purpose==='PRODUCTION_REPLENISHMENT' && confirmation.basis==='EXPLICIT_SUPPLIER_CONFIRMATION' && evidence.kind==='ORDER' && evidence.supplier && evidence.lines.length && (provenance.evidenceContext==='VERIFIED_BOOTSTRAP' || explicitPurpose && knownBuyer && authenticatedSupplier(provenance)))return{evidence,validated:true,sourceIds:[current.id],effectiveAt:current.messageDate};
   if(!provenance.threadId || !memberSource(current))return unchanged;
-  const siblings=await tx.supplySource.findMany({where:{organizationId,id:{not:current.id},extractionStatus:{in:['COMPLETE','REVIEW']},extractedFacts:{path:['_provenance','threadId'],equals:provenance.threadId},messageDate:{gte:new Date(current.messageDate.getTime()-30*86400000),lte:new Date(current.messageDate.getTime()+30*86400000)}},orderBy:[{messageDate:'desc'},{id:'asc'}],take:30});
+  const siblings=await tx.supplySource.findMany({where:{organizationId,id:{not:current.id},...(current.mailboxConnectionId ? { mailboxConnectionId: current.mailboxConnectionId } : { mailboxConnectionId: null, userId: current.userId }),extractionStatus:{in:['COMPLETE','REVIEW']},extractedFacts:{path:['_provenance','threadId'],equals:provenance.threadId},messageDate:{gte:new Date(current.messageDate.getTime()-30*86400000),lte:new Date(current.messageDate.getTime()+30*86400000)}},orderBy:[{messageDate:'desc'},{id:'asc'}],take:30});
   const records=[{source:current,facts:evidence,meta:provenance},...siblings.flatMap(source=>{const facts=parse(source.extractedFacts),meta=readSupplySourceProvenance(source.extractedFacts);return facts && memberSource(source) && meta.productionTeamAuthorized && isCurrentSupplyEvidence(meta) && facts.orderStatus!=='CANCELLED'?[{source,facts,meta}]:[];})];
   const buyers=records.filter(record=>buyer(record.facts,record.meta) && record.facts.lines.length);
   const acknowledgements=records.filter(record=>acknowledgement(record.facts,record.meta) && record.facts.supplier);

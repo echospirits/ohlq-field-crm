@@ -5,6 +5,7 @@ import { hasSupplyAccess, readSupplySettings } from './config';
 import { normalize } from './domain';
 import type { SupplyActor } from './schemas';
 import {trustedDx5WarningIdentity} from './dx5WarningIdentity';
+import { readSupplySourceProvenance } from './orderConfirmation';
 import { buildSupplyStatusCard, normalizeSupplyLocation, normalizeSupplyMaterial, supplyMaterialSearchTerms, supplyStatusKey, type StatusOrder, type SupplyOrderHold, type WatchedSupplyMaterial } from './statusDomain';
 export { matchWatchedSupplyLine, normalizeSupplyLocation, normalizeSupplyMaterial } from './statusDomain';
 export type { SupplyStatusCard, WatchedSupplyMaterial } from './statusDomain';
@@ -67,15 +68,45 @@ function dateBoundary(date:string,timezone:string){
   const wanted=Date.parse(`${date}T00:00:00Z`);if(!Number.isFinite(wanted) || new Date(wanted).toISOString().slice(0,10)!==date)return null;
   try{let at=wanted;for(let i=0;i<2;i++){const p=new Intl.DateTimeFormat('en-US',{timeZone:timezone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).formatToParts(new Date(at));const get=(key:string)=>p.find(part=>part.type===key)!.value;const wall=Date.parse(`${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}:${get('second')}Z`);at+=wanted-wall;}return new Date(at);}catch{return null;}
 }
-/** Payment gates and generic supplier promise dates are never arrival estimates. */
-export function readSupplyOrderOperationalState(sources: Array<{messageDate:Date;extractedFacts:unknown}>): Pick<StatusOrder,'orderHold'|'supplierPromisedDate'|'paymentDueDate'> {
-  const facts=[...sources].sort((a,b)=>b.messageDate.getTime()-a.messageDate.getTime()).flatMap(source=>{
-    const value=source.extractedFacts as {kind?:unknown;orderHold?:unknown;supplierPromisedDate?:unknown;paymentDueDate?:unknown;_provenance?:{contentVersion?:unknown;evidenceContext?:unknown}}|null;
-    return value && ['ORDER','SHIPMENT'].includes(String(value.kind)) && value._provenance?.contentVersion==='SUPPLY_CURRENT_V1' && value._provenance.evidenceContext!=='QUOTED_HISTORY'?[value]:[];
+/** Keep payment, independent holds and a promised document separate from transit. */
+export function readSupplyOrderOperationalState(sources: Array<{messageDate:Date;extractedFacts:unknown}>): Pick<StatusOrder,'orderHold'|'supplierPromisedDate'|'paymentDueDate'|'paymentReceived'|'billOfLadingPromised'> {
+  const facts = [...sources].sort((a, b) => b.messageDate.getTime() - a.messageDate.getTime()).flatMap(source => {
+    const value = source.extractedFacts as {kind?:unknown;orderHold?:unknown;supplierPromisedDate?:unknown;paymentDueDate?:unknown;paymentReceived?:unknown;billOfLadingPromised?:unknown}|null;
+    const provenance = readSupplySourceProvenance(value);
+    if (!value || !['ORDER', 'SHIPMENT'].includes(String(value.kind)) || provenance.contentVersion !== 'SUPPLY_CURRENT_V1' || provenance.evidenceContext === 'QUOTED_HISTORY') return [];
+    const authenticated = provenance.productionTeamAuthorized === true && provenance.direction === 'RECEIVED' &&
+      provenance.senderAuthenticated === true && !!provenance.fromEmail &&
+      ['CURRENT_MESSAGE', 'ATTACHMENT', 'VERIFIED_BOOTSTRAP'].includes(provenance.evidenceContext ?? '');
+    return [{
+      ...value,
+      ...(provenance.lifecycleOnly ? { orderHold: null, supplierPromisedDate: null, paymentDueDate: null } : {}),
+      messageDate: source.messageDate,
+      authenticated,
+    }];
   });
-  const hold=facts.find(value=>['PREPAYMENT_REQUIRED','PAYMENT_PENDING','OTHER','RELEASED'].includes(String(value.orderHold)))?.orderHold as SupplyOrderHold|undefined;
-  const date=(key:'supplierPromisedDate'|'paymentDueDate')=>{const value=facts.find(fact=>typeof fact[key]==='string' && /^\d{4}-\d{2}-\d{2}$/.test(String(fact[key])))?.[key];return typeof value==='string'?value:null;};
-  return {orderHold:hold || null,supplierPromisedDate:date('supplierPromisedDate'),paymentDueDate:date('paymentDueDate')};
+  const isPaymentHold = (hold: unknown) => hold === 'PREPAYMENT_REQUIRED' || hold === 'PAYMENT_PENDING';
+  // A receipt can clear a payment requirement. It cannot release a separate hold.
+  const explicitRelease = (value: typeof facts[number]) => value.orderHold === 'RELEASED' && value.paymentReceived !== true;
+  const holds = facts.filter(value => isPaymentHold(value.orderHold) || value.orderHold === 'OTHER' || explicitRelease(value));
+  const latestHold = holds[0];
+  const payment = facts.find(value => value.authenticated && value.paymentReceived === true);
+  const paymentHold = holds.find(value => isPaymentHold(value.orderHold));
+  const paymentCleared = payment && (!paymentHold || payment.messageDate > paymentHold.messageDate);
+  const independentHold = holds.find(value => value.orderHold === 'OTHER' || explicitRelease(value));
+  const hold = paymentCleared && isPaymentHold(latestHold?.orderHold)
+    ? independentHold?.orderHold ?? 'RELEASED'
+    : latestHold?.orderHold;
+  const date = (key: 'supplierPromisedDate' | 'paymentDueDate') => {
+    const value = facts.find(fact => typeof fact[key] === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(fact[key]))?.[key];
+    return typeof value === 'string' ? value : null;
+  };
+  return {
+    orderHold: (hold as SupplyOrderHold | undefined) ?? null,
+    supplierPromisedDate: date('supplierPromisedDate'),
+    paymentDueDate: paymentCleared ? null : date('paymentDueDate'),
+    ...(payment ? { paymentReceived: true } : {}),
+    ...(facts.some(value => value.authenticated && value.billOfLadingPromised === true) ? { billOfLadingPromised: true } : {}),
+  };
 }
 async function dashboard(organizationId:string,db:Db){
   const organization=await db.organization.findFirst({where:{id:organizationId,active:true,accountStatus:{notIn:['SUSPENDED','CANCELLED']},features:{some:{featureKey:'PRODUCTION_SUPPLIES',enabled:true}}},select:{timezone:true}});
@@ -87,7 +118,7 @@ async function dashboard(organizationId:string,db:Db){
     db.supplyAudit.findMany({where:{organizationId,action:'SUPPLY_STATUS_DISMISSED',needId:{in:needIds}},select:{needId:true,detail:true,createdAt:true},orderBy:{createdAt:'desc'}}),
     db.user.findMany({where:{organizationId,isActive:true},select:{id:true,name:true,firstName:true,lastName:true}}),
   ]);
-  const normalized:StatusOrder[]=orders.map(order=>({...order,...readSupplyOrderOperationalState(order.sources.map(link=>link.source)),ownerName:users.find(u=>u.id===order.ownerUserId)?.name || null,completeDeliveryEvidence:order.sources.flatMap(link=>{const facts=link.source.extractedFacts as {orderDeliveryComplete?:unknown;orderDeliveredDate?:unknown}|null;if(typeof facts?.orderDeliveryComplete!=='boolean')return[];const zone=order.shipments[0]?.timezone || organization.timezone;const at=typeof facts.orderDeliveredDate==='string'?dateBoundary(facts.orderDeliveredDate,zone):null;const next=typeof facts.orderDeliveredDate==='string' && at?new Date(Date.parse(`${facts.orderDeliveredDate}T12:00:00Z`)+86400000).toISOString().slice(0,10):null;const through=next?dateBoundary(next,zone) || undefined:undefined;return[{at,through,complete:facts.orderDeliveryComplete,observedAt:link.source.messageDate}];})}));
+  const normalized:StatusOrder[]=orders.map(order=>({...order,...readSupplyOrderOperationalState(order.sources.map(link=>link.source)),ownerName:users.find(u=>u.id===order.ownerUserId)?.name || null,completeDeliveryEvidence:order.sources.flatMap(link=>{if (readSupplySourceProvenance(link.source.extractedFacts).lifecycleOnly) return [];const facts=link.source.extractedFacts as {orderDeliveryComplete?:unknown;orderDeliveredDate?:unknown}|null;if(typeof facts?.orderDeliveryComplete!=='boolean')return[];const zone=order.shipments[0]?.timezone || organization.timezone;const at=typeof facts.orderDeliveredDate==='string'?dateBoundary(facts.orderDeliveredDate,zone):null;const next=typeof facts.orderDeliveredDate==='string' && at?new Date(Date.parse(`${facts.orderDeliveredDate}T12:00:00Z`)+86400000).toISOString().slice(0,10):null;const through=next?dateBoundary(next,zone) || undefined:undefined;return[{at,through,complete:facts.orderDeliveryComplete,observedAt:link.source.messageDate}];})}));
   const cards=groups.flatMap(group=>{
     const dismissals=audits.flatMap(audit=>{const detail=audit.detail as {cycleKey?:unknown}|null;return audit.needId && group.material.needIds.includes(audit.needId) && typeof detail?.cycleKey==='string'?[{cycleKey:detail.cycleKey,at:audit.createdAt}]:[];});
     const card=buildSupplyStatusCard(group.material,{...group,orders:normalized,dismissals});return card?[card]:[];

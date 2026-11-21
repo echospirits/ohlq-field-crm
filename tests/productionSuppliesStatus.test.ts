@@ -78,6 +78,33 @@ test('current source chronology keeps later payment hold and ignores quoted or l
   assert.deepEqual(readSupplyOrderOperationalState(sources),{orderHold:'PAYMENT_PENDING',supplierPromisedDate:'2026-11-17',paymentDueDate:'2026-11-16'});
   assert.equal(readSupplyOrderOperationalState([...sources,{messageDate:at(13),extractedFacts:{kind:'SHIPMENT',orderHold:'RELEASED',_provenance:meta}}]).orderHold,'RELEASED');
 });
+
+test('an authenticated payment receipt clears only payment and the promised bill does not establish transit', () => {
+  const supplier = { contentVersion: 'SUPPLY_CURRENT_V1', evidenceContext: 'CURRENT_MESSAGE', direction: 'RECEIVED', productionTeamAuthorized: true, senderAuthenticated: true, fromEmail: 'vendor@fixture.invalid' };
+  const evidence = (day: number, facts: Record<string, unknown>, provenance: typeof supplier & { lifecycleOnly?: boolean } = supplier) => ({
+    messageDate: at(day), extractedFacts: { kind: 'SHIPMENT', ...facts, _provenance: provenance },
+  });
+  const held = evidence(12, { orderHold: 'PREPAYMENT_REQUIRED', paymentDueDate: '2026-11-16' });
+  const paid = evidence(17, { paymentReceived: true, orderHold: 'RELEASED' });
+  const promised = evidence(20, { billOfLadingPromised: true, orderHold: 'PAYMENT_PENDING', paymentDueDate: '2026-11-21' }, { ...supplier, lifecycleOnly: true });
+  const state = readSupplyOrderOperationalState([held, paid, promised]);
+  assert.deepEqual(state, { orderHold: 'RELEASED', paymentDueDate: null, supplierPromisedDate: null, paymentReceived: true, billOfLadingPromised: true });
+  const pending = card([order({ ...state, shipments: [] })])!;
+  assert.equal(pending.statusLabel, 'Awaiting shipment');
+  assert.match(pending.detail, /bill of lading/);
+  assert.equal(pending.arrival, null);
+  assert.equal(card([order({ ...state, status: 'CANCELLED', shipments: [] })])?.statusLabel, 'Order cancelled');
+  assert.equal(card([order({ ...state })])?.status, 'INCOMING');
+
+  assert.equal(readSupplyOrderOperationalState([held, evidence(17, { paymentDate: '2026-11-17' })]).orderHold, 'PREPAYMENT_REQUIRED');
+  for (const patch of [{ senderAuthenticated: false }, { evidenceContext: 'QUOTED_HISTORY' }, { direction: 'SENT' }]) {
+    assert.equal(readSupplyOrderOperationalState([held, evidence(17, { paymentReceived: true, orderHold: 'RELEASED' }, { ...supplier, ...patch })]).orderHold, 'PREPAYMENT_REQUIRED');
+  }
+  assert.equal(readSupplyOrderOperationalState([held, paid, evidence(18, { orderHold: 'PAYMENT_PENDING' })]).orderHold, 'PAYMENT_PENDING');
+  assert.equal(readSupplyOrderOperationalState([held, paid, evidence(18, { orderHold: 'OTHER' })]).orderHold, 'OTHER');
+  assert.equal(readSupplyOrderOperationalState([evidence(11, { orderHold: 'OTHER' }), held, paid]).orderHold, 'OTHER');
+});
+
 test('delivery report/update time alone cannot close a newer inventory alert',()=>{
   assert.ok(card([order({shipments:[shipment({status:'DELIVERED',statusEventAt:at(14),deliveredAt:null})]})],at(12)));
   const late=order({shipments:[shipment({status:'DELIVERED',lines:[],statusEventAt:at(14)})],completeDeliveryEvidence:[{complete:true,at:at(11,0),observedAt:at(14)}]});

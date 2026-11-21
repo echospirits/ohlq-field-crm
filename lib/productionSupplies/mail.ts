@@ -5,11 +5,11 @@ import { hasSupplyAccess, productionMemberIds, readSupplySettings } from './conf
 import { decryptSupplyToken, encryptSupplyToken } from './mailCrypto';
 import { extractSupplyMessage, type ExtractedSupply } from './extraction';
 import { ingestEvidence } from './service';
-import { isVerifiedDx5WarningSender } from './mailProvenance';
+import { isVerifiedDx5WarningSender, supplyMessageRelationship } from './mailProvenance';
 import { canReadSupplyMailbox, GMAIL_READ_SCOPE } from './mailAccess';
 import { prepareSupplyMessageContent, supplyMessageSender, SUPPLY_CONTENT_VERSION, type GmailPart } from './mailContent';
 import { ignoredSupplyAttachmentCorrections, resolveSupplyAttachment, supplyAttachmentMetadata, type SupplyAttachmentMetadata } from './mailIdentity';
-import { buildSupplyIncrementalQuery, buildSupplyPriorityQueries, chooseSupplyMailLane, completeSupplyMailLane, supplyHistoricalComplete, supplyMailCursor, supplyMailDiscovery, SUPPLY_MAIL_LANES, type SupplyMailScan, type SupplyMailLane } from './mailDiscovery';
+import { buildSupplyIncrementalQuery, buildSupplyPriorityQueries, buildSupplyRecentReplyQuery, chooseSupplyMailLane, completeSupplyMailLane, supplyHistoricalComplete, supplyMailCursor, supplyMailDiscovery, supplyReplySubject, SUPPLY_MAIL_LANES, type SupplyMailScan, type SupplyMailLane } from './mailDiscovery';
 export { flattenGmailParts } from './mailContent';
 export { canReadSupplyMailbox, GMAIL_READ_SCOPE } from './mailAccess';
 
@@ -145,132 +145,229 @@ export async function syncSupplyMailbox(organizationId: string, userId: string, 
     const sync = await db.supplyMailboxSync.findUniqueOrThrow({ where: { organizationId_userId: { organizationId, userId } } });
     const org = await db.organization.findUniqueOrThrow({ where: { id: organizationId }, select: { crmPreferences: true, timezone: true } });
     const settings = readSupplySettings(org.crmPreferences);
-    const connection = await db.mailboxConnection.findFirst({ where: { id: sync.connectionId!, organizationId, userId, enabled: true } });
-    if (!connection || !canReadSupplyMailbox(connection)) throw new Error('Gmail read permission required.');
-    const discovery = await (services.discovery ?? supplyMailDiscovery)(organizationId, org.crmPreferences, db);
+    const connectedMailbox = await db.mailboxConnection.findFirst({ where: { id: sync.connectionId!, organizationId, userId, enabled: true } });
+    if (!connectedMailbox || !canReadSupplyMailbox(connectedMailbox)) throw new Error('Gmail read permission required.');
+    const connection = connectedMailbox;
+    const discovery = await (services.discovery ?? supplyMailDiscovery)(organizationId, org.crmPreferences, db, connection.id);
     const since = new Date(now.getTime() - settings.historyDays * 86400_000);
     const state = supplyMailCursor(sync.cursor, { now, backfillComplete: Boolean(sync.backfillCompletedAt), lastSuccessfulSyncAt: sync.lastSuccessfulSyncAt, broadQuery: buildSupplyDiscoveryQuery(since, settings.includeSent), priorityQueries: buildSupplyPriorityQueries(since, settings.includeSent, discovery) });
+    const recentSubjects = new Set(discovery.recentReplySubjects ?? []);
+    const recentAnchorIds = new Set(discovery.recentReplyAnchorIds ?? []);
+    if (recentSubjects.size) state.lastRecentCheckAt ??= null;
+    else {
+      delete state.lastRecentCheckAt;
+      delete state.pendingRecentReplies;
+    }
     const lane = chooseSupplyMailLane(state, now, settings.pollMinutes);
-    if (!lane) {
-      await db.supplyMailboxSync.updateMany({ where: { id: sync.id, leaseId }, data: { status: 'CONNECTED', cursor: state, nextSyncAt: new Date(new Date(state.lastIncrementalAt).getTime() + settings.pollMinutes * 60_000), leaseId: null, leaseUntil: null } });
-      return { processed, processedMessages, ignoredInlineImages, continuation: false, backfillIncomplete: false, catchupPhase: 'IDLE' as const };
+    const recentDue = recentSubjects.size > 0 && (!state.lastRecentCheckAt || now.getTime() - Date.parse(state.lastRecentCheckAt) >= settings.pollMinutes * 60_000);
+    if (!lane && !recentDue) {
+      await db.supplyMailboxSync.updateMany({ where: { id: sync.id, leaseId }, data: { status: 'CONNECTED', cursor: state, nextSyncAt: new Date(Date.parse(state.lastIncrementalAt) + settings.pollMinutes * 60_000), leaseId: null, leaseUntil: null } });
+      return { processed, processedMessages, ignoredInlineImages, continuation: false, backfillIncomplete: false, catchupPhase: 'IDLE' };
     }
+    // Persist the new freshness field before provider work, including if the check fails.
+    if (recentDue) await db.supplyMailboxSync.updateMany({ where: { id: sync.id, leaseId }, data: { cursor: state } });
     const token = await tokenFor(connection, db);
-    const incrementalSince = new Date(new Date(state.lastIncrementalAt).getTime() - 48 * 3600_000);
-    let cursor: SupplyMailScan = lane === 'INCREMENTAL' ? state.incremental ?? { query: buildSupplyIncrementalQuery(buildSupplyDiscoveryQuery(incrementalSince, settings.includeSent),buildSupplyPriorityQueries(incrementalSince,settings.includeSent,discovery)), scanStarted: now.toISOString() } : state.scans[lane]!;
-    const setCursor = (value: SupplyMailScan | null) => { if (lane === 'INCREMENTAL') state.incremental = value; else state.scans[lane] = value; };
-    setCursor(cursor);
     if (!sync.backfillStartedAt) await db.supplyMailboxSync.updateMany({ where: { id: sync.id, leaseId }, data: { backfillStartedAt: now, status: 'INITIAL_IMPORT' } });
-    const page = cursor.messageIds ? { messages: cursor.messageIds.map(id => ({ id })), nextPageToken: cursor.nextPageToken }
-      : await gmailJson<{ messages?: Array<{ id: string }>; nextPageToken?: string }>(token, `/messages?${new URLSearchParams({ q: cursor.query, maxResults: '5', ...(cursor.pageToken ? { pageToken: cursor.pageToken } : {}) })}`, services);
-    const retrySources = cursor.messageIds ? [] : await db.supplySource.findMany({ where: { organizationId, mailboxConnectionId: connection.id, extractionStatus: 'ERROR', nextExtractionAt: { lte: now }, extractionAttemptCount: { lt: 3 } }, orderBy: { nextExtractionAt: 'asc' }, take: 2, select: { messageId: true } });
-    const messageIds = [...new Set([...retrySources.map(source => source.messageId), ...(page.messages ?? []).map(message => message.id)])];
-    let messageIndex = cursor.messageIndex ?? 0;
-    let firstPendingMessageIndex:number|undefined;
-    const checkpoint = () => { cursor = { query: cursor.query, scanStarted: cursor.scanStarted, ...(cursor.pageToken ? { pageToken: cursor.pageToken } : {}), messageIds, messageIndex:Math.min(messageIndex,firstPendingMessageIndex??messageIndex), ...(page.nextPageToken ? { nextPageToken: page.nextPageToken } : {}) }; setCursor(cursor); return state; };
-    await db.supplyMailboxSync.updateMany({ where: { id: sync.id, leaseId }, data: { cursor: checkpoint() } });
-    let deferred = false;
-    for (; messageIndex < messageIds.length; messageIndex++) {
-      if (clock() > deadline - 65_000) { deferred = true; break; }
-      if (!await stillMonitored(organizationId, userId, db)) return { processed, skipped: true, reason: 'not-monitored' };
-      const renewal = await db.supplyMailboxSync.updateMany({ where: { id: sync.id, leaseId, leaseUntil: { gt: new Date() } }, data: { leaseUntil: new Date(Date.now() + 240_000), cursor: checkpoint() } });
-      if (!renewal.count) return { processed, skipped: true, reason: 'lease-lost' };
-      const messageId = messageIds[messageIndex];
-      const message = await gmailJson<{ id: string; threadId?: string; labelIds?: string[]; internalDate: string; payload: GmailPart }>(token, `/messages/${encodeURIComponent(messageId)}?format=full`, services);
-      if (message.id !== messageId) throw new SupplyMailProviderError('Gmail returned a mismatched message identity.');
-      if (!settings.includeSent && message.labelIds?.includes('SENT')) { processedMessages++; continue; }
-      const subject = message.payload.headers?.find(h => h.name.toLowerCase() === 'subject')?.value?.slice(0, 300) ?? '';
-      const prepared = prepareSupplyMessageContent(message.payload, subject), text = prepared.text;
-      ignoredInlineImages += prepared.ignoredInlineImages;
-      const messageDate = new Date(Number(message.internalDate));
-      if (!Number.isFinite(messageDate.getTime())) throw new Error('Gmail supplied an invalid source timestamp.');
-      const historicalCutoff = state.scans.BROAD?.scanStarted ? new Date(state.scans.BROAD.scanStarted) : sync.backfillStartedAt ?? new Date(cursor.scanStarted);
-      const historical = !sync.backfillCompletedAt && messageDate < historicalCutoff;
-      const direction = message.labelIds?.includes('SENT') ? 'SENT' as const : 'RECEIVED' as const;
-      const sender = supplyMessageSender(message.payload.headers ?? [], direction === 'SENT', connection.email);
-      const allowBootstrap=await trustedBootstrapOwner(organizationId,userId,db);
-      const retainedSources=await db.supplySource.findMany({where:{organizationId,messageId,OR:[{mailboxConnectionId:connection.id},...(allowBootstrap?[{mailboxConnectionId:null,provider:'GOOGLE_CONNECTOR',userId,extractionStatus:'COMPLETE'}]:[])]}});
-      const bodySources=retainedSources.filter(source=>source.attachmentKey==='');
-      const bodySource=bodySources.find(source=>source.mailboxConnectionId===connection.id)||(bodySources.length===1?bodySources[0]:undefined);
-      const previousEmptyBody = text ? null : bodySource;
-      const previousEmptyFacts = previousEmptyBody?.extractedFacts as {_provenance?:{contentVersion?:unknown}}|null;
-      const correctEmptyBody = previousEmptyBody?.provider==='GOOGLE' && ['COMPLETE','ERROR'].includes(previousEmptyBody.extractionStatus) && (previousEmptyBody.extractionStatus==='ERROR'||previousEmptyFacts?._provenance?.contentVersion!==SUPPLY_CONTENT_VERSION);
-      const sources: Array<{ key: string; filename?: string; mimeType?: string; bytes?: Buffer; part?: GmailPart; identity?:SupplyAttachmentMetadata; existing?:typeof retainedSources[number]; unsupported?: boolean; emptyCurrent?:boolean }> = text || correctEmptyBody ? [{ key: '',emptyCurrent:!text,existing:bodySource }] : [];
-      // Correct only sources that an older importer already published. Skipped logos
-      // never create new rows, require attachment bytes, or consume an AI extraction.
-      const currentParts=[...prepared.attachments,...prepared.ignoredImageParts];
-      const imageCorrections:typeof sources=[];
-      for(const {source:retained,part,identity} of ignoredSupplyAttachmentCorrections(prepared.ignoredImageParts,currentParts,retainedSources)){
-        const facts=retained.extractedFacts as {_provenance?:{contentVersion?:unknown}}|null;
-        if(retained.extractionStatus==='COMPLETE'&&facts?._provenance?.contentVersion===SUPPLY_CONTENT_VERSION)continue;
-        imageCorrections.push({key:retained.attachmentKey,filename:part.filename,mimeType:part.mimeType,emptyCurrent:true,existing:retained,identity});
+
+    type PageResult = Extract<SupplyMailboxSyncResult, { skipped: true }> | { deferred: boolean; nextPageToken?: string };
+    async function processPage(options: {
+      scan: SupplyMailScan;
+      savePosition: (value: SupplyMailScan | null) => void;
+      stopStartingAt: number;
+      watchedReplies?: Set<string>;
+    }): Promise<PageResult> {
+      let cursor = options.scan;
+      const { stopStartingAt, savePosition, watchedReplies } = options;
+      const maxResults = watchedReplies ? 10 : 5;
+      const page = cursor.messageIds ? { messages: cursor.messageIds.map(id => ({ id })), nextPageToken: cursor.nextPageToken }
+        : await gmailJson<{ messages?: Array<{ id: string }>; nextPageToken?: string }>(token, `/messages?${new URLSearchParams({ q: cursor.query, maxResults: String(maxResults), ...(cursor.pageToken ? { pageToken: cursor.pageToken } : {}) })}`, services);
+      const retrySources = watchedReplies || cursor.messageIds ? [] : await db.supplySource.findMany({ where: { organizationId, mailboxConnectionId: connection.id, extractionStatus: 'ERROR', nextExtractionAt: { lte: now }, extractionAttemptCount: { lt: 3 } }, orderBy: { nextExtractionAt: 'asc' }, take: 2, select: { messageId: true } });
+      const messageIds = [...new Set([...retrySources.map(source => source.messageId), ...(page.messages ?? []).map(message => message.id)])];
+      if (watchedReplies && !cursor.messageIds && recentAnchorIds.size) {
+        // Enrich already-linked messages first so later replies can use their
+        // verified headers to match even when Gmail thread IDs differ.
+        messageIds.sort((a, b) => Number(recentAnchorIds.has(b)) - Number(recentAnchorIds.has(a)));
       }
-      if (prepared.attachments.length > 10) sources.push({ key: '__attachment_limit__', filename: 'Additional document attachments', unsupported: true,existing:retainedSources.find(source=>source.attachmentKey==='__attachment_limit__') });
-      for (const part of prepared.attachments.slice(0, 10)) {
-        const filename = part.filename || (part.mimeType === 'application/pdf' ? 'document.pdf' : 'document-image');
-        const {key,existing}=resolveSupplyAttachment(part,currentParts,retainedSources),identity=supplyAttachmentMetadata(part);
-        if (!['application/pdf','image/png','image/jpeg','image/webp','text/plain','text/csv'].includes(part.mimeType ?? '') || (part.body?.size ?? 0) > 8 * 1024 * 1024) { sources.push({ key, filename, mimeType: part.mimeType, identity, existing, unsupported: true }); continue; }
-        sources.push({ key, filename, mimeType: part.mimeType, part,identity,existing });
-      }
-      sources.push(...imageCorrections);
-      let retryPending=false;
-      for (const source of sources) {
-        const existing = source.existing;
-        const provenance = existing?.extractedFacts && typeof existing.extractedFacts === 'object' && !Array.isArray(existing.extractedFacts) ? existing.extractedFacts._provenance as ({ contentVersion?: string }&SupplyAttachmentMetadata) | undefined : undefined;
-        const currentComplete = existing?.extractionStatus === 'COMPLETE' && (existing.provider !== 'GOOGLE' || provenance?.contentVersion === SUPPLY_CONTENT_VERSION);
-        if(currentComplete&&source.identity&&existing?.extractedFacts&&typeof existing.extractedFacts==='object'&&!Array.isArray(existing.extractedFacts)&&Object.entries(source.identity).some(([key])=>!provenance?.[key as keyof SupplyAttachmentMetadata])){
-          if(!await stillMonitored(organizationId,userId,db))return{processed,skipped:true,reason:'not-monitored'};
-          const liveConnection=await db.mailboxConnection.findFirst({where:{id:connection.id,organizationId,userId,enabled:true}});
-          if(!liveConnection||!canReadSupplyMailbox(liveConnection))return{processed,skipped:true,reason:'connection-revoked'};
-          if(existing.mailboxConnectionId===null&&!await trustedBootstrapOwner(organizationId,userId,db))return{processed,skipped:true,reason:'bootstrap-authority-revoked'};
-          await db.supplySource.updateMany({where:{organizationId,id:existing.id,messageId,attachmentKey:existing.attachmentKey,OR:[{mailboxConnectionId:connection.id},{mailboxConnectionId:null,provider:'GOOGLE_CONNECTOR',userId,extractionStatus:'COMPLETE'}]},data:{extractedFacts:JSON.parse(JSON.stringify({...existing.extractedFacts,_provenance:{...provenance,...source.identity,...(provenance?.attachmentProviderId?{attachmentProviderId:provenance.attachmentProviderId}:{})}}))}});
+      let messageIndex = cursor.messageIndex ?? 0;
+      let firstPendingMessageIndex:number|undefined;
+      const checkpoint = () => { cursor = { query: cursor.query, scanStarted: cursor.scanStarted, ...(cursor.pageToken ? { pageToken: cursor.pageToken } : {}), messageIds, messageIndex:Math.min(messageIndex,firstPendingMessageIndex??messageIndex), ...(page.nextPageToken ? { nextPageToken: page.nextPageToken } : {}) }; savePosition(cursor); return state; };
+      await db.supplyMailboxSync.updateMany({ where: { id: sync.id, leaseId }, data: { cursor: checkpoint() } });
+      let deferred = false;
+      for (; messageIndex < messageIds.length; messageIndex++) {
+        if (clock() > stopStartingAt) { deferred = true; break; }
+        if (!await stillMonitored(organizationId, userId, db)) return { processed, skipped: true, reason: 'not-monitored' };
+        const renewal = await db.supplyMailboxSync.updateMany({ where: { id: sync.id, leaseId, leaseUntil: { gt: new Date() } }, data: { leaseUntil: new Date(Date.now() + 240_000), cursor: checkpoint() } });
+        if (!renewal.count) return { processed, skipped: true, reason: 'lease-lost' };
+        const messageId = messageIds[messageIndex];
+        const message = await gmailJson<{ id: string; threadId?: string; labelIds?: string[]; internalDate: string; payload: GmailPart }>(token, `/messages/${encodeURIComponent(messageId)}?format=full`, services);
+        if (message.id !== messageId) throw new SupplyMailProviderError('Gmail returned a mismatched message identity.');
+        if (!settings.includeSent && message.labelIds?.includes('SENT')) { processedMessages++; continue; }
+        const subject = message.payload.headers?.find(h => h.name.toLowerCase() === 'subject')?.value?.slice(0, 300) ?? '';
+        if (watchedReplies && !watchedReplies.has(supplyReplySubject(subject))) continue;
+        if (message.labelIds?.some(label => label === 'TRASH' || label === 'SPAM')) continue;
+        const prepared = prepareSupplyMessageContent(message.payload, subject), text = prepared.text;
+        ignoredInlineImages += prepared.ignoredInlineImages;
+        const messageDate = new Date(Number(message.internalDate));
+        if (!Number.isFinite(messageDate.getTime())) throw new Error('Gmail supplied an invalid source timestamp.');
+        const historicalCutoff = state.scans.BROAD?.scanStarted ? new Date(state.scans.BROAD.scanStarted) : sync.backfillStartedAt ?? new Date(cursor.scanStarted);
+        const historical = !sync.backfillCompletedAt && messageDate < historicalCutoff;
+        const direction = message.labelIds?.includes('SENT') ? 'SENT' as const : 'RECEIVED' as const;
+        const headers = message.payload.headers ?? [];
+        const sender = supplyMessageSender(headers, direction === 'SENT', connection.email);
+        const relationship = supplyMessageRelationship(headers);
+        const allowBootstrap=await trustedBootstrapOwner(organizationId,userId,db);
+        const retainedSources=await db.supplySource.findMany({where:{organizationId,messageId,OR:[{mailboxConnectionId:connection.id},...(allowBootstrap?[{mailboxConnectionId:null,provider:'GOOGLE_CONNECTOR',userId,extractionStatus:'COMPLETE'}]:[])]}});
+        const bodySources=retainedSources.filter(source=>source.attachmentKey==='');
+        const bodySource=bodySources.find(source=>source.mailboxConnectionId===connection.id)||(bodySources.length===1?bodySources[0]:undefined);
+        const previousEmptyBody = text ? null : bodySource;
+        const previousEmptyFacts = previousEmptyBody?.extractedFacts as {_provenance?:{contentVersion?:unknown}}|null;
+        const correctEmptyBody = previousEmptyBody?.provider==='GOOGLE' && ['COMPLETE','ERROR'].includes(previousEmptyBody.extractionStatus) && (previousEmptyBody.extractionStatus==='ERROR'||previousEmptyFacts?._provenance?.contentVersion!==SUPPLY_CONTENT_VERSION);
+        const sources: Array<{ key: string; filename?: string; mimeType?: string; bytes?: Buffer; part?: GmailPart; identity?:SupplyAttachmentMetadata; existing?:typeof retainedSources[number]; unsupported?: boolean; emptyCurrent?:boolean }> = text || correctEmptyBody ? [{ key: '',emptyCurrent:!text,existing:bodySource }] : [];
+        // Correct only sources that an older importer already published. Skipped logos
+        // never create new rows, require attachment bytes, or consume an AI extraction.
+        const currentParts=[...prepared.attachments,...prepared.ignoredImageParts];
+        const imageCorrections:typeof sources=[];
+        for(const {source:retained,part,identity} of ignoredSupplyAttachmentCorrections(prepared.ignoredImageParts,currentParts,retainedSources)){
+          const facts=retained.extractedFacts as {_provenance?:{contentVersion?:unknown}}|null;
+          if(retained.extractionStatus==='COMPLETE'&&facts?._provenance?.contentVersion===SUPPLY_CONTENT_VERSION)continue;
+          imageCorrections.push({key:retained.attachmentKey,filename:part.filename,mimeType:part.mimeType,emptyCurrent:true,existing:retained,identity});
         }
-        if (existing && (currentComplete || ['UNSUPPORTED','REVIEW','IGNORED'].includes(existing.extractionStatus))) continue;
-        if(existing?.nextExtractionAt&&existing.nextExtractionAt>new Date()){if(existing.extractionStatus==='ERROR')retryPending=true;continue;}
-        if (clock() > deadline - 65_000) { deferred = true; break; }
-        const sourceData = { mailboxConnectionId: connection.id, provider: 'GOOGLE', messageId, threadId: message.threadId, evidenceContext: source.key ? 'ATTACHMENT' as const : 'CURRENT_MESSAGE' as const, contentVersion: SUPPLY_CONTENT_VERSION, direction, ...sender, ...source.identity, ...(provenance?.attachmentProviderId?{attachmentProviderId:provenance.attachmentProviderId}:{}), attachmentKey: source.key, messageDate: messageDate.toISOString(), contentHash: createHash('sha256').update(`${subject}\n${text}`).digest('hex'), filename: source.filename, mimeType: source.mimeType, subject, historical: existing?.historical ?? historical };
-        if (source.unsupported) { await ingest({ organizationId, userId }, { source: { ...sourceData, extractionStatus: 'UNSUPPORTED', extractionError: 'Attachment type, size or count is unsupported. Review the original message.' } }, db); continue; }
-        let extractionStarted=false;
-        try {
-          const renewed = await db.supplyMailboxSync.updateMany({ where: { id: sync.id, leaseId, leaseUntil: { gt: new Date() } }, data: { leaseUntil: new Date(Date.now() + 240_000) } });
-          if (!renewed.count) return { processed, skipped: true, reason: 'lease-lost' };
-          if (source.part) {
-            const data = source.part.body?.data || (source.part.body?.attachmentId ? (await gmailJson<{ data?: string }>(token, `/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(source.part.body.attachmentId)}`, services)).data : undefined);
-            if (!data) throw new SupplyMailProviderError('The attachment is not available from Gmail.');
-            source.bytes = Buffer.from(data, 'base64url');
-            if (source.bytes.length > 8 * 1024 * 1024) { await ingest({ organizationId, userId }, { source: { ...sourceData, extractionStatus: 'UNSUPPORTED', extractionError: 'Attachment exceeds the 8 MiB extraction limit.' } }, db); continue; }
-            sourceData.contentHash = createHash('sha256').update(new Uint8Array(source.bytes)).digest('hex');
+        if (prepared.attachments.length > 10) sources.push({ key: '__attachment_limit__', filename: 'Additional document attachments', unsupported: true,existing:retainedSources.find(source=>source.attachmentKey==='__attachment_limit__') });
+        for (const part of prepared.attachments.slice(0, 10)) {
+          const filename = part.filename || (part.mimeType === 'application/pdf' ? 'document.pdf' : 'document-image');
+          const {key,existing}=resolveSupplyAttachment(part,currentParts,retainedSources),identity=supplyAttachmentMetadata(part);
+          if (!['application/pdf','image/png','image/jpeg','image/webp','text/plain','text/csv'].includes(part.mimeType ?? '') || (part.body?.size ?? 0) > 8 * 1024 * 1024) { sources.push({ key, filename, mimeType: part.mimeType, identity, existing, unsupported: true }); continue; }
+          sources.push({ key, filename, mimeType: part.mimeType, part,identity,existing });
+        }
+        sources.push(...imageCorrections);
+        let retryPending=false;
+        for (const source of sources) {
+          const existing = source.existing;
+          const provenance = existing?.extractedFacts && typeof existing.extractedFacts === 'object' && !Array.isArray(existing.extractedFacts) ? existing.extractedFacts._provenance as ({ contentVersion?: string; evidenceContext?: string; replyLifecycleChecked?: boolean } & SupplyAttachmentMetadata & ReturnType<typeof supplyMessageSender> & ReturnType<typeof supplyMessageRelationship>) | undefined : undefined;
+          const currentComplete = existing?.extractionStatus === 'COMPLETE' && (existing.provider !== 'GOOGLE' || provenance?.contentVersion === SUPPLY_CONTENT_VERSION);
+          const attachmentIdentity = source.identity && { ...source.identity, ...(provenance?.attachmentProviderId ? { attachmentProviderId: provenance.attachmentProviderId } : {}) };
+          const currentIdentity = { ...attachmentIdentity, ...sender, ...relationship };
+          const missingIdentity = Object.fromEntries(Object.entries(currentIdentity).filter(([key]) => !provenance?.[key as keyof typeof currentIdentity]));
+          if (currentComplete && existing?.extractedFacts && typeof existing.extractedFacts === 'object' && !Array.isArray(existing.extractedFacts) && Object.keys(missingIdentity).length) {
+            if(!await stillMonitored(organizationId,userId,db))return{processed,skipped:true,reason:'not-monitored'};
+            const liveConnection=await db.mailboxConnection.findFirst({where:{id:connection.id,organizationId,userId,enabled:true}});
+            if(!liveConnection||!canReadSupplyMailbox(liveConnection))return{processed,skipped:true,reason:'connection-revoked'};
+            if(existing.mailboxConnectionId===null&&!await trustedBootstrapOwner(organizationId,userId,db))return{processed,skipped:true,reason:'bootstrap-authority-revoked'};
+            await db.supplySource.updateMany({where:{organizationId,id:existing.id,messageId,attachmentKey:existing.attachmentKey,OR:[{mailboxConnectionId:connection.id},{mailboxConnectionId:null,provider:'GOOGLE_CONNECTOR',userId,extractionStatus:'COMPLETE'}]},data:{extractedFacts:JSON.parse(JSON.stringify({...existing.extractedFacts,_provenance:{ ...provenance, ...missingIdentity }}))}});
           }
-          extractionStarted=true;
-          let evidence = source.emptyCurrent ? emptyCurrentMessageEvidence() : await extract({ subject, text: source.bytes ? '' : text, currentMessageOnly: true, messageDate, timezone: org.timezone, ...(source.bytes ? { attachment: { filename: source.filename!, mimeType: source.mimeType!, bytes: source.bytes } } : {}) });
-          if (evidence.kind === 'WARNING') evidence = { ...evidence, warningSource: isVerifiedDx5WarningSender(message.payload.headers ?? []) ? 'DISTILLX5_EMAIL' : 'OTHER_EMAIL' };
-          if (!await stillMonitored(organizationId, userId, db)) return { processed, skipped: true, reason: 'not-monitored' };
-          await ingest({ organizationId, userId }, { source: { ...sourceData, subject: evidence.kind === 'OTHER' ? undefined : subject, extractionStatus: 'COMPLETE' }, evidence }, db);
-          await db.supplySource.updateMany({ where: { organizationId, mailboxConnectionId: connection.id, messageId, attachmentKey: source.key }, data: { extractionAttemptCount: { increment: 1 }, lastExtractionAt: new Date(), nextExtractionAt: null } });
-          processed++;
-        } catch (error) {
-          if (!await stillMonitored(organizationId, userId, db)) return { processed, skipped: true, reason: 'not-monitored' };
-          const providerRetryAt=error instanceof SupplyMailProviderError?error.retryAt:undefined,attemptIncrement=!extractionStarted&&providerRetryAt?0:1;
-          const scheduledRetry=extractionRetry(Math.max(1,(existing?.extractionAttemptCount ?? 0) + attemptIncrement));
-          const retry={...scheduledRetry,nextExtractionAt:scheduledRetry.nextExtractionAt&&providerRetryAt?new Date(Math.max(scheduledRetry.nextExtractionAt.getTime(),providerRetryAt.getTime())):scheduledRetry.nextExtractionAt};
-          await ingest({ organizationId, userId }, { source: { ...sourceData, extractionStatus: retry.extractionStatus, extractionError: error instanceof SupplyMailProviderError ? error.message : 'Extraction could not produce validated supply facts. Retry or inspect the original source.' } }, db);
-          await db.supplySource.updateMany({ where: { organizationId, mailboxConnectionId: connection.id, messageId, attachmentKey: source.key }, data: { ...retry, extractionAttemptCount: { increment: attemptIncrement }, lastExtractionAt: attemptIncrement?new Date():undefined } });
-          if(retry.extractionStatus==='ERROR')retryPending=true;
-          if(providerRetryAt)throw new SupplyMailProviderError(error instanceof Error?error.message:'Gmail synchronization is deferred.',retry.nextExtractionAt&&retry.nextExtractionAt>providerRetryAt?retry.nextExtractionAt:providerRetryAt);
+          if (clock() > stopStartingAt) { deferred = true; break; }
+          const sourceData = { mailboxConnectionId: connection.id, provider: 'GOOGLE', messageId, threadId: message.threadId, evidenceContext: source.key ? 'ATTACHMENT' as const : 'CURRENT_MESSAGE' as const, contentVersion: SUPPLY_CONTENT_VERSION, direction, ...sender, ...relationship, ...source.identity, ...(provenance?.attachmentProviderId?{attachmentProviderId:provenance.attachmentProviderId}:{}), attachmentKey: source.key, messageDate: messageDate.toISOString(), contentHash: createHash('sha256').update(`${subject}\n${text}`).digest('hex'), filename: source.filename, mimeType: source.mimeType, subject, historical: existing?.historical ?? historical };
+          const retainedKind = (existing?.extractedFacts as { kind?: unknown } | null)?.kind;
+          const lifecycleRefresh = watchedReplies && currentComplete && existing?.provider === 'GOOGLE' && source.key === '' && direction === 'RECEIVED'
+            && provenance?.evidenceContext === 'CURRENT_MESSAGE'
+            && sender.senderAuthenticated && (retainedKind === 'SHIPMENT' || retainedKind === 'ORDER')
+            && existing.contentHash === sourceData.contentHash && /\b(?:payment|paid|prepayment|wire|BOL|bill of lading)\b/i.test(text);
+          if (lifecycleRefresh) {
+            try {
+              const checked = provenance?.replyLifecycleChecked === true;
+              const linked = checked && await db.supplyOrderSource.findFirst({ where: { organizationId, sourceId: existing.id }, select: { orderId: true } });
+              if (!linked) {
+                // An earlier mailbox may have reached this reply before the order's
+                // anchor was enriched. Recheck association using the retained facts.
+                const evidence = checked ? existing.extractedFacts : await extract({ subject, text, currentMessageOnly: true, messageDate, timezone: org.timezone });
+                await ingest({ organizationId, userId }, { source: { ...sourceData, extractionStatus: 'COMPLETE' }, evidence }, db, { refreshLifecycle: true, reconcile: false });
+              }
+            } catch {
+              // Keep the last validated source intact and retry on the next scheduled check.
+              retryPending = true;
+            }
+          }
+          if (existing && (currentComplete || ['UNSUPPORTED','REVIEW','IGNORED'].includes(existing.extractionStatus))) continue;
+          if(existing?.nextExtractionAt&&existing.nextExtractionAt>new Date()){if(existing.extractionStatus==='ERROR')retryPending=true;continue;}
+          if (source.unsupported) { await ingest({ organizationId, userId }, { source: { ...sourceData, extractionStatus: 'UNSUPPORTED', extractionError: 'Attachment type, size or count is unsupported. Review the original message.' } }, db); continue; }
+          let extractionStarted=false;
+          try {
+            const renewed = await db.supplyMailboxSync.updateMany({ where: { id: sync.id, leaseId, leaseUntil: { gt: new Date() } }, data: { leaseUntil: new Date(Date.now() + 240_000) } });
+            if (!renewed.count) return { processed, skipped: true, reason: 'lease-lost' };
+            if (source.part) {
+              const data = source.part.body?.data || (source.part.body?.attachmentId ? (await gmailJson<{ data?: string }>(token, `/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(source.part.body.attachmentId)}`, services)).data : undefined);
+              if (!data) throw new SupplyMailProviderError('The attachment is not available from Gmail.');
+              source.bytes = Buffer.from(data, 'base64url');
+              if (source.bytes.length > 8 * 1024 * 1024) { await ingest({ organizationId, userId }, { source: { ...sourceData, extractionStatus: 'UNSUPPORTED', extractionError: 'Attachment exceeds the 8 MiB extraction limit.' } }, db); continue; }
+              sourceData.contentHash = createHash('sha256').update(new Uint8Array(source.bytes)).digest('hex');
+            }
+            extractionStarted=true;
+            let evidence = source.emptyCurrent ? emptyCurrentMessageEvidence() : await extract({ subject, text: source.bytes ? '' : text, currentMessageOnly: true, messageDate, timezone: org.timezone, ...(source.bytes ? { attachment: { filename: source.filename!, mimeType: source.mimeType!, bytes: source.bytes } } : {}) });
+            if (evidence.kind === 'WARNING') evidence = { ...evidence, warningSource: isVerifiedDx5WarningSender(message.payload.headers ?? []) ? 'DISTILLX5_EMAIL' : 'OTHER_EMAIL' };
+            if (!await stillMonitored(organizationId, userId, db)) return { processed, skipped: true, reason: 'not-monitored' };
+            await ingest({ organizationId, userId }, { source: { ...sourceData, subject: evidence.kind === 'OTHER' ? undefined : subject, extractionStatus: 'COMPLETE' }, evidence }, db);
+            await db.supplySource.updateMany({ where: { organizationId, mailboxConnectionId: connection.id, messageId, attachmentKey: source.key }, data: { extractionAttemptCount: { increment: 1 }, lastExtractionAt: new Date(), nextExtractionAt: null } });
+            processed++;
+          } catch (error) {
+            if (!await stillMonitored(organizationId, userId, db)) return { processed, skipped: true, reason: 'not-monitored' };
+            const providerRetryAt=error instanceof SupplyMailProviderError?error.retryAt:undefined,attemptIncrement=!extractionStarted&&providerRetryAt?0:1;
+            const scheduledRetry=extractionRetry(Math.max(1,(existing?.extractionAttemptCount ?? 0) + attemptIncrement));
+            const retry={...scheduledRetry,nextExtractionAt:scheduledRetry.nextExtractionAt&&providerRetryAt?new Date(Math.max(scheduledRetry.nextExtractionAt.getTime(),providerRetryAt.getTime())):scheduledRetry.nextExtractionAt};
+            await ingest({ organizationId, userId }, { source: { ...sourceData, extractionStatus: retry.extractionStatus, extractionError: error instanceof SupplyMailProviderError ? error.message : 'Extraction could not produce validated supply facts. Retry or inspect the original source.' } }, db);
+            await db.supplySource.updateMany({ where: { organizationId, mailboxConnectionId: connection.id, messageId, attachmentKey: source.key }, data: { ...retry, extractionAttemptCount: { increment: attemptIncrement }, lastExtractionAt: attemptIncrement?new Date():undefined } });
+            if(retry.extractionStatus==='ERROR')retryPending=true;
+            if(providerRetryAt)throw new SupplyMailProviderError(error instanceof Error?error.message:'Gmail synchronization is deferred.',retry.nextExtractionAt&&retry.nextExtractionAt>providerRetryAt?retry.nextExtractionAt:providerRetryAt);
+          }
         }
+        if (deferred) break;
+        if(retryPending)firstPendingMessageIndex??=messageIndex;else processedMessages++;
       }
-      if (deferred) break;
-      if(retryPending)firstPendingMessageIndex??=messageIndex;else processedMessages++;
+      if(firstPendingMessageIndex!==undefined){messageIndex=Math.min(messageIndex,firstPendingMessageIndex);deferred=true;}
+      if (deferred) checkpoint();
+      else savePosition(page.nextPageToken ? { query: cursor.query, pageToken: page.nextPageToken, scanStarted: cursor.scanStarted } : null);
+      return { deferred, nextPageToken: page.nextPageToken };
     }
-    if(firstPendingMessageIndex!==undefined){messageIndex=Math.min(messageIndex,firstPendingMessageIndex);deferred=true;}
-    if (deferred) checkpoint();
-    else if (page.nextPageToken) setCursor({ query: cursor.query, pageToken: page.nextPageToken, scanStarted: cursor.scanStarted });
-    else { setCursor(null); if (lane === 'INCREMENTAL') state.lastIncrementalAt = cursor.scanStarted; else completeSupplyMailLane(state,lane); }
-    if (lane !== 'INCREMENTAL') state.turn = (SUPPLY_MAIL_LANES.indexOf(lane) + 1) % SUPPLY_MAIL_LANES.length;
-    const backfillIncomplete = !supplyHistoricalComplete(state), continuation = backfillIncomplete || Boolean(state.incremental);
-    const incrementalComplete = lane === 'INCREMENTAL' && !state.incremental;
+
+    let recentIncomplete = false;
+    if (recentDue) {
+      // Recent watched replies get a search of their own while the wider inbox catches up.
+      // Use a short overlap for delayed Gmail indexing and a bounded seven-day initial lookback.
+      const pending = state.pendingRecentReplies;
+      const covered = pending?.scanStarted ?? state.lastRecentCheckAt;
+      const previous = covered ? Date.parse(covered) - 6 * 3600_000 : 0;
+      const replySince = new Date(Math.max(now.getTime() - 7 * 86400_000, previous));
+      const replyQuery = buildSupplyRecentReplyQuery(replySince, settings.includeSent, [...recentSubjects]);
+      const replyScan = { query: replyQuery, scanStarted: now.toISOString() };
+      const stopStartingAt = Math.min(deadline - 65_000, clock() + 30_000);
+      let headPosition: SupplyMailScan | null = null;
+      const recentPage = await processPage({ scan: replyScan, stopStartingAt, watchedReplies: recentSubjects, savePosition: position => {
+        headPosition = position;
+        if (!pending) state.pendingRecentReplies = position;
+      } });
+      if ('skipped' in recentPage) return recentPage;
+      // A full or interrupted page is retained. Its older results resume alongside
+      // a fresh search on the next check, so they cannot block newer messages.
+      if (pending && clock() <= stopStartingAt) {
+        const olderRecentPage = await processPage({ scan: pending, stopStartingAt, watchedReplies: recentSubjects, savePosition: position => { state.pendingRecentReplies = position; } });
+        if ('skipped' in olderRecentPage) return olderRecentPage;
+        state.pendingRecentReplies ??= headPosition;
+      }
+      recentIncomplete = Boolean(state.pendingRecentReplies) || recentPage.deferred || Boolean(recentPage.nextPageToken);
+      if (!recentIncomplete) state.lastRecentCheckAt = replyScan.scanStarted;
+      await db.supplyMailboxSync.updateMany({ where: { id: sync.id, leaseId }, data: { cursor: state } });
+    }
+
+    let incrementalComplete = false;
+    if (lane && (!recentDue || clock() <= deadline - 65_000)) {
+      const incrementalSince = new Date(Date.parse(state.lastIncrementalAt) - 48 * 3600_000);
+      const cursor = lane === 'INCREMENTAL' ? state.incremental ?? { query: buildSupplyIncrementalQuery(buildSupplyDiscoveryQuery(incrementalSince, settings.includeSent), buildSupplyPriorityQueries(incrementalSince, settings.includeSent, discovery)), scanStarted: now.toISOString() } : state.scans[lane]!;
+      const setCursor = (value: SupplyMailScan | null) => { if (lane === 'INCREMENTAL') state.incremental = value; else state.scans[lane] = value; };
+      setCursor(cursor);
+      const page = await processPage({ scan: cursor, savePosition: setCursor, stopStartingAt: deadline - 65_000 });
+      if ('skipped' in page) return page;
+      const complete = !page.deferred && !page.nextPageToken;
+      state.historicalTurnDue = lane === 'INCREMENTAL';
+      if (lane === 'INCREMENTAL') {
+        incrementalComplete = complete;
+        if (complete) state.lastIncrementalAt = cursor.scanStarted;
+      } else {
+        if (complete) completeSupplyMailLane(state, lane);
+        state.turn = (SUPPLY_MAIL_LANES.indexOf(lane) + 1) % SUPPLY_MAIL_LANES.length;
+      }
+    }
+    const backfillIncomplete = !supplyHistoricalComplete(state), continuation = recentIncomplete || backfillIncomplete || Boolean(state.incremental);
     await db.supplyMailboxSync.updateMany({ where: { id: sync.id, leaseId }, data: { status: backfillIncomplete ? 'INITIAL_IMPORT' : continuation ? 'PROCESSING' : 'CONNECTED', cursor: state, backfillCompletedAt: !backfillIncomplete && !sync.backfillCompletedAt ? now : undefined, lastSuccessfulSyncAt: incrementalComplete ? new Date(state.lastIncrementalAt) : !backfillIncomplete && !sync.backfillCompletedAt ? now : undefined, nextSyncAt: new Date(continuation ? Date.now() + 60_000 : Math.max(Date.now(),new Date(state.lastIncrementalAt).getTime() + settings.pollMinutes * 60_000)), processedCount: { increment: processed }, failureCount: 0, errorCode: null, errorMessage: null, leaseId: null, leaseUntil: null } });
-    return { processed, processedMessages, ignoredInlineImages, continuation, backfillIncomplete, catchupPhase: lane };
+    return { processed, processedMessages, ignoredInlineImages, continuation, backfillIncomplete, catchupPhase: lane ?? 'IDLE' };
   } catch (error) {
     const sync = await db.supplyMailboxSync.findUnique({ where: { organizationId_userId: { organizationId, userId } } });
     const next = new Date(Date.now() + Math.min(6 * 3600_000, 60_000 * 2 ** Math.min(8, sync?.failureCount ?? 0)));

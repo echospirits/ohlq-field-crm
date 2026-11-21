@@ -1,4 +1,23 @@
+import { createHash } from 'node:crypto';
+
 type MessageHeader = { name: string; value: string };
+export const SUPPLY_MESSAGE_REFERENCE_LIMIT = 16;
+
+/** Compare stable message identities across mailboxes without storing raw SMTP headers. */
+export function supplyMessageRelationship(headers: MessageHeader[]) {
+  const read = (name: string) => headers.filter(header => header.name.toLowerCase() === name);
+  const identities = (value: string) => [...withoutComments(value.slice(0, 8192)).matchAll(/<([^<>\s@]{1,170})@([a-z\d][a-z\d.-]{0,150})>/gi)]
+    .map(([, local, domain]) => createHash('sha256').update(`${local}@${domain.toLowerCase()}`).digest('hex'));
+  const messageIds = read('message-id');
+  const messageId = messageIds.length === 1 ? identities(messageIds[0].value) : [];
+  const internetMessageId = messageId.length === 1 ? messageId[0] : undefined;
+  const replyParents = read('in-reply-to').slice(0, 1).flatMap(header => identities(header.value));
+  const ancestors = read('references').slice(0, 1).flatMap(header => identities(header.value));
+  const internetReferences = [...new Set([...replyParents.slice(0, 3), ...ancestors.slice(0, 4), ...ancestors.slice(-12).reverse()])]
+    .filter(reference => reference !== internetMessageId)
+    .slice(0, SUPPLY_MESSAGE_REFERENCE_LIMIT);
+  return { ...(internetMessageId ? { internetMessageId } : {}), ...(internetReferences.length ? { internetReferences } : {}) };
+}
 const providerDomain = (domain: string) => domain === 'fx5.com' || domain === 'fx5solutions.com';
 const envelopeDomain = (domain: string) => providerDomain(domain) || domain.endsWith('.fx5.com') || domain.endsWith('.fx5solutions.com');
 function withoutComments(value: string) {

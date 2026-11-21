@@ -10,7 +10,7 @@ import { scopeSupplyEvidence, type WatchableSupplyEvidence } from './watch';
 import { readSupplySourceProvenance } from './orderConfirmation';
 
 export const SUPPLY_REPLAY_CHECKPOINT = 'SUPPLY_EVIDENCE_REPLAY_CHECKPOINT';
-type ReplayIngest = (actor: SupplyActor, input: unknown, db: PrismaClient, options: { reconcile: false }) => Promise<{ orderId?: string }>;
+type ReplayIngest = (actor: SupplyActor, input: unknown, db: PrismaClient, options: { reconcile: false; refreshLifecycle?: true }) => Promise<{ orderId?: string }>;
 export type ReplayOptions = { maxSources?: number; budgetMs?: number; now?: () => number; scope?: typeof scopeSupplyEvidence; materials?: WatchedSupplyMaterial[]; force?: boolean };
 const checkpointInput = z.object({ version: z.literal(1), signature: z.string(), phase: z.enum(['ORDER', 'SHIPMENT']), after: z.object({ messageDate: z.string().datetime(), id: z.string() }).nullable(), complete: z.boolean(), nextReplayAt: z.string().datetime().nullable() });
 
@@ -58,10 +58,13 @@ export async function replayWatchedSupplyEvidence(organizationId: string, db: Pr
           const connection = await db.mailboxConnection.findFirst({ where: { organizationId, id: source.mailboxConnectionId, userId: user.id, enabled: true } });
           if (!connection || !canReadSupplyMailbox(connection)) continue;
         } else if (!hasSupplyAccess(user, settings, true)) continue;
-        if (!(await scope(organizationId, source.extractedFacts as WatchableSupplyEvidence, db)).evidence) continue;
+        const {threadId,internetMessageId,internetReferences,evidenceContext,contentVersion,direction,fromEmail,senderAuthenticated,attachmentPartId,attachmentMimePath,attachmentProviderId,replyLifecycleChecked}=readSupplySourceProvenance(source.extractedFacts);
+        // Previously re-read current replies may be matched after their anchor
+        // was enriched. Never promote prior inferred shipment fields in this path.
+        const refreshLifecycle = state.phase === 'SHIPMENT' && replyLifecycleChecked === true;
+        if (!refreshLifecycle && !(await scope(organizationId, source.extractedFacts as WatchableSupplyEvidence, db)).evidence) continue;
         result.attempted++;
-        const {threadId,evidenceContext,contentVersion,direction,fromEmail,senderAuthenticated,attachmentPartId,attachmentMimePath,attachmentProviderId}=readSupplySourceProvenance(source.extractedFacts);
-        const replayed = await ingest({ organizationId, userId: user.id }, { source: { threadId,evidenceContext,contentVersion,direction,fromEmail,senderAuthenticated,attachmentPartId,attachmentMimePath,attachmentProviderId,mailboxConnectionId: source.mailboxConnectionId, provider: source.provider, messageId: source.messageId, attachmentKey: source.attachmentKey, messageDate: source.messageDate.toISOString(), contentHash: source.contentHash, filename: source.filename, mimeType: source.mimeType, subject: source.subject, historical: source.historical, extractionStatus: 'COMPLETE' }, evidence: source.extractedFacts }, db, { reconcile: false });
+        const replayed = await ingest({ organizationId, userId: user.id }, { source: { threadId,internetMessageId,internetReferences,evidenceContext,contentVersion,direction,fromEmail,senderAuthenticated,attachmentPartId,attachmentMimePath,attachmentProviderId,mailboxConnectionId: source.mailboxConnectionId, provider: source.provider, messageId: source.messageId, attachmentKey: source.attachmentKey, messageDate: source.messageDate.toISOString(), contentHash: source.contentHash, filename: source.filename, mimeType: source.mimeType, subject: source.subject, historical: source.historical, extractionStatus: 'COMPLETE' }, evidence: source.extractedFacts }, db, { reconcile: false, ...(refreshLifecycle ? { refreshLifecycle: true } : {}) });
         if (replayed.orderId) result.linked++;
       } catch { result.errors++; }
     }
