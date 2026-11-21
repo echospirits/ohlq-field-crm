@@ -42,7 +42,7 @@ export function matchWatchedSupplyLine(material: WatchedSupplyMaterial, line: Wa
 export type StatusArrival = { source:string; precision:string; startDate:string; endDate:string|null; timeStart:string|null; timeEnd:string|null; timezone:string; observedAt:Date; sourceEventAt:Date; current:boolean };
 export type StatusShipment = { id:string; status:string; statusEventAt:Date|null; deliveredAt:Date|null; returnedAt:Date|null; checkError:string|null; lastSuccessfulCheckAt:Date|null; providerMode?:string|null;provider?:string|null; lines:Array<{lineId:string;quantity:unknown}>; arrivalEstimates:StatusArrival[] };
 export type SupplyOrderHold = 'PREPAYMENT_REQUIRED' | 'PAYMENT_PENDING' | 'OTHER' | 'RELEASED';
-export type StatusOrder = { id:string; supplier:string; orderReference:string|null; destination:string|null; status:string; ignored:boolean; historicalOutcomeUnknown:boolean; ownerName:string|null; orderedAt:Date|null; createdAt:Date; lastEvidenceAt:Date|null; lines:Array<WatchableStatusLine & {id:string;quantity:unknown;ignored:boolean;backorderedQuantity:unknown}>; shipments:StatusShipment[]; completeDeliveryEvidence:Array<{at:Date|null;complete:boolean;observedAt?:Date;through?:Date}>; orderHold?:SupplyOrderHold|null; supplierPromisedDate?:string|null; paymentDueDate?:string|null };
+export type StatusOrder = { id:string; supplier:string; orderReference:string|null; destination:string|null; status:string; ignored:boolean; historicalOutcomeUnknown:boolean; ownerName:string|null; orderedAt:Date|null; createdAt:Date; lastEvidenceAt:Date|null; lines:Array<WatchableStatusLine & {id:string;quantity:unknown;ignored:boolean;backorderedQuantity:unknown}>; shipments:StatusShipment[]; completeDeliveryEvidence:Array<{at:Date|null;complete:boolean;observedAt?:Date;through?:Date}>; orderHold?:SupplyOrderHold|null; supplierPromisedDate?:string|null; paymentDueDate?:string|null; paymentReceived?:boolean; billOfLadingPromised?:boolean };
 export type StatusDismissal = { cycleKey:string; at:Date };
 export type SupplyStatusCard = {
   id:string; needId:string; cycleKey:string; material:string; location:string; lastAlertAt:string;
@@ -124,6 +124,12 @@ export function buildSupplyStatusCard(material:WatchedSupplyMaterial, input:{fir
     else if(shipments.some(s=>s.checkError)){status='ATTENTION';statusLabel='Tracking needs attention';detail='Tracking could not refresh. The last valid arrival estimate is retained when available.';arrival=arrivalFor(shipments);}
     else if(shipments.some(s=>s.status==='DELIVERED')){status='ATTENTION';statusLabel='Delivery needs checking';detail='Delivery was reported, but complete delivery of this material is not established.';arrival=arrivalFor(shipments);}
     else if(shipments.some(s=>['IN_TRANSIT','OUT_FOR_DELIVERY'].includes(s.status))){status='INCOMING';statusLabel='Incoming';detail='A matching material shipment is on its way.';arrival=arrivalFor(shipments);}
+      else if (shipmentStatus !== 'LABEL_CREATED' && (order.paymentReceived || order.billOfLadingPromised)) {
+        status = 'ORDERED';
+        statusLabel = 'Awaiting shipment';
+        detail = order.billOfLadingPromised ? 'The supplier said they would send the bill of lading.' : 'Payment received. Shipment confirmation is pending.';
+        arrival = arrivalFor(shipments);
+      }
     else {status='ORDERED';statusLabel='Order found';detail=shipmentStatus==='LABEL_CREATED'?'A shipping label exists; carrier receipt and arrival remain unconfirmed.':'A matching order was found; current arrival information is unavailable.';arrival=arrivalFor(shipments);}
     let localToday='';try{const parts=new Intl.DateTimeFormat('en-US',{timeZone:arrival?.timezone || 'UTC',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(now);localToday=['year','month','day'].map(key=>parts.find(part=>part.type===key)!.value).join('-');}catch{/* An invalid legacy timezone does not invent a delay. */}
     if(arrival && !['RETURNED','CANCELLED','DELIVERED'].includes(shipmentStatus || '') && localToday>(arrival.endDate || arrival.startDate)){status='ATTENTION';statusLabel='Delivery needs attention';detail='The last reported arrival date has passed; a later completed delivery is not established.';}

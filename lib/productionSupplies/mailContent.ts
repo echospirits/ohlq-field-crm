@@ -3,17 +3,77 @@ export const SUPPLY_CONTENT_VERSION = 'SUPPLY_CURRENT_V1';
 export const flattenGmailParts = (part: GmailPart, mimePath='0'): GmailPart[] => [{...part,mimePath}, ...(part.parts ?? []).flatMap((child,index)=>flattenGmailParts(child,`${mimePath}.${index}`))];
 const header = (part: GmailPart, name: string) => part.headers?.find(value => value.name.toLowerCase() === name)?.value ?? '';
 const decode = (value?: string) => value ? Buffer.from(value, 'base64url').toString('utf8') : '';
-function withoutComments(value: string) {
-  let result='',depth=0,quoted=false,escaped=false;
-  for(const character of value){
-    if(escaped){if(!depth)result+=character;escaped=false;continue;}
-    if(character==='\\'){escaped=true;if(!depth)result+=character;continue;}
-    if(!depth&&character==='"')quoted=!quoted;
-    if(!quoted&&character==='('){depth++;continue;}
-    if(!quoted&&character===')'){if(!depth)return '';depth--;continue;}
-    if(!depth)result+=character;
+type MailHeader = { name: string; value: string };
+type AuthenticationClause = { text: string; raw: string };
+
+/** Separate top-level results so arbitrary text inside a comment is never a method result. */
+function authenticationClauses(value: string): AuthenticationClause[] {
+  const clauses: AuthenticationClause[] = [];
+  let text = '', start = 0, depth = 0, quoted = false, escaped = false;
+  for (const [index, character] of value.split('').entries()) {
+    if (escaped) { if (!depth) text += character; escaped = false; continue; }
+    if (character === '\\') { escaped = true; if (!depth) text += character; continue; }
+    if (!depth && character === '"') quoted = !quoted;
+    if (!quoted && character === '(') { depth++; continue; }
+    if (!quoted && character === ')') { if (!depth) return []; depth--; continue; }
+    if (depth) continue;
+    if (character === ';' && !quoted) {
+      clauses.push({ text: text.trim(), raw: value.slice(start, index).trim() });
+      start = index + 1;
+      text = '';
+    } else {
+      text += character;
+    }
   }
-  return depth||quoted||escaped?'':result;
+  if (depth || quoted || escaped) return [];
+  return [...clauses, { text: text.trim(), raw: value.slice(start).trim() }];
+}
+
+function authenticationTags(values: string[]) {
+  const tags = new Map<string, string>();
+  for (const value of values.filter(Boolean)) {
+    const match = /^([a-z][a-z0-9]*)\s*=\s*(\S(?:.*\S)?)$/is.exec(value);
+    if (!match || tags.has(match[1].toLowerCase())) return new Map<string, string>();
+    tags.set(match[1].toLowerCase(), match[2].toLowerCase());
+  }
+  return tags;
+}
+
+function hasAlignedDkim(clauses: AuthenticationClause[], aligned: (domain: string) => boolean) {
+  return clauses.some(({ text }) => /^dkim=pass(?:\s|$)/i.test(text) &&
+    aligned(text.match(/(?:^|\s)header\.d=([^\s;]+)/i)?.[1] || text.match(/(?:^|\s)header\.i=[^\s@;]*@([^\s;]+)/i)?.[1] || ''));
+}
+
+function hasAlignedDmarc(clauses: AuthenticationClause[], aligned: (domain: string) => boolean) {
+  return clauses.some(({ text }) => /^dmarc=pass(?:\s|$)/i.test(text) && aligned(text.match(/(?:^|\s)header\.from=([^\s;]+)/i)?.[1] || ''));
+}
+
+function hasValidatedMicrosoftArc(headers: MailHeader[], googleResults: AuthenticationClause[], domain: string) {
+  const arc = googleResults.filter(({ text }) => /^arc\s*=/i.test(text));
+  if (arc.length !== 1) return false;
+  // Interpret only the specific original-sender summary attached to Google's
+  // top-level ARC verdict. Comments on other methods cannot authenticate mail.
+  const summary = /^arc=pass\s+\(([^()]+)\)$/i.exec(arc[0].raw)?.[1];
+  if (!summary) return false;
+  const tags = authenticationTags(summary.trim().split(/\s+/));
+  if (tags.get('i') !== '1' || tags.get('dkim') !== 'pass' || tags.get('dkdomain') !== domain ||
+      tags.get('dmarc') !== 'pass' || tags.get('fromdomain') !== domain) return false;
+
+  // Gmail validates the chain cryptographically. Accept only the observed
+  // two-hop chain with Google's receiving seal and Microsoft's signed results.
+  const seals = headers.filter(({ name }) => name.toLowerCase() === 'arc-seal')
+    .map(({ value }) => authenticationTags(authenticationClauses(value).map(({ text }) => text)));
+  const hasSeal = (instance: string, signer: string, status: string) => seals.some(seal =>
+    seal.get('i') === instance && seal.get('d') === signer && seal.get('cv') === status && Boolean(seal.get('b')));
+  if (seals.length !== 2 || !hasSeal('1', 'microsoft.com', 'none') || !hasSeal('2', 'google.com', 'pass')) return false;
+  const originals = headers.filter(({ name }) => name.toLowerCase() === 'arc-authentication-results')
+    .map(({ value }) => authenticationClauses(value));
+  const byInstance = (instance: string, server: RegExp) => originals.find(results =>
+    /^i\s*=\s*([12])$/i.exec(results[0]?.text ?? '')?.[1] === instance && server.test(results[1]?.text ?? ''));
+  const microsoft = byInstance('1', /^mx\.microsoft\.com(?:\s+1)?$/i);
+  return originals.length === 2 && Boolean(microsoft && byInstance('2', /^mx\.google\.com(?:\s+1)?$/i) &&
+    hasAlignedDkim(microsoft.slice(2), signed => signed.toLowerCase() === domain) &&
+    hasAlignedDmarc(microsoft.slice(2), signed => signed.toLowerCase() === domain));
 }
 const entities = (value: string) => value.replace(/&(?:nbsp|amp|lt|gt|quot|apos);|&#(?:x[0-9a-f]+|\d+);/gi, entity => {
   const named: Record<string,string> = { '&nbsp;':' ', '&amp;':'&', '&lt;':'<', '&gt;':'>', '&quot;':'"', '&apos;':"'" };
@@ -75,15 +135,15 @@ export function prepareSupplyMessageContent(payload: GmailPart, subject = '') {
 }
 
 /** From is an attestation only with provider SENT ownership or Google's aligned sender result. */
-export function supplyMessageSender(headers: Array<{name:string;value:string}>, sent: boolean, ownerEmail?: string | null) {
+export function supplyMessageSender(headers: MailHeader[], sent: boolean, ownerEmail?: string | null) {
   const from=headers.filter(h=>h.name.toLowerCase()==='from');if(from.length!==1 || from[0].value.includes(','))return {};
   const value=from[0].value.trim(), address=(value.match(/^[^<>]*<([^<>\s]+@[^<>\s]+)>\s*$/)?.[1] || (/^[^<>\s]+@[^<>\s]+$/.test(value)?value:'')).toLowerCase();
   if(!address)return {};
   if(sent)return ownerEmail?.toLowerCase()===address?{fromEmail:address,senderAuthenticated:true as const}:{};
-  // Ignore comments before reading provider properties, so body/sender prose cannot forge a pass.
-  const auth=withoutComments(headers.find(h=>h.name.toLowerCase()==='authentication-results')?.value || '');
-  if(!/^\s*mx\.google\.com\s*;/i.test(auth))return {};
-  const domain=address.split('@')[1], aligned=(signed:string)=>signed.toLowerCase()===domain || signed.toLowerCase().endsWith('.'+domain);
-  const verified=auth.split(';').some(clause=>/^\s*dkim=pass\b/i.test(clause) && aligned(clause.match(/header\.d=([^\s;]+)/i)?.[1] || clause.match(/header\.i=[^\s@;]*@([^\s;]+)/i)?.[1] || '')) || auth.split(';').some(clause=>/^\s*dmarc=pass\b/i.test(clause) && aligned(clause.match(/header\.from=([^\s;]+)/i)?.[1] || ''));
+  const [receiver, ...auth] = authenticationClauses(headers.find(h => h.name.toLowerCase() === 'authentication-results')?.value || '');
+  if (receiver?.text.toLowerCase() !== 'mx.google.com') return {};
+  const domain = address.split('@')[1];
+  const aligned = (signed: string) => signed.toLowerCase() === domain || signed.toLowerCase().endsWith('.' + domain);
+  const verified = hasAlignedDkim(auth, aligned) || hasAlignedDmarc(auth, aligned) || hasValidatedMicrosoftArc(headers, auth, domain);
   return verified?{fromEmail:address,senderAuthenticated:true as const}:{};
 }

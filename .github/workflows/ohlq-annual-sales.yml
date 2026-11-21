@@ -26,7 +26,7 @@ jobs:
        (github.event_name == 'push' && !github.event.created))
     environment: production
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 150
     steps:
       - name: Check out the pilot commit
         uses: actions/checkout@v4
@@ -45,7 +45,7 @@ jobs:
       - name: Install the daily loader's Chromium
         run: node scripts/retry-ohlq-command.cjs -- npx --no-install playwright install --with-deps chromium
 
-      - name: Import and verify each September report date
+      - name: Reconcile September against native Echo reports
         env:
           APP_ENV: production
           DATABASE_ENVIRONMENT: production
@@ -60,4 +60,5 @@ jobs:
           OHLQ_HEADLESS: '1'
           OHLQ_USE_PERSISTENT_BROWSER_CONTEXT: '1'
           OHLQ_USE_SERVERLESS_CHROMIUM: '0'
-        run: node --import tsx scripts/echo-september-pilot/run.ts --apply 2026-09-01 2026-09-30
+        run: node --import tsx scripts/certify-echo-bottle-sales.ts 2026-09-01 2026-09-30
+

@@ -2,8 +2,15 @@ import { z } from 'zod';
 import type { PrismaClient } from '@prisma/client';
 import { productionMemberIds } from './config';
 import { getWatchedSupplyMaterials } from './status';
+import { isWatchedSupplyOrderRecord, watchedSupplyOrderWhere } from './watch';
 
-export type SupplyMailDiscovery = { memberEmails: string[]; materials: string[]; orderReferences: string[] };
+export type SupplyMailDiscovery = {
+  memberEmails: string[];
+  materials: string[];
+  orderReferences: string[];
+  recentReplySubjects?: string[];
+  recentReplyAnchorIds?: string[];
+};
 const quoted = (value: string) => '"'+value.replace(/["\\\r\n]/g,' ').trim().slice(0,100)+'"';
 const suffix = (since: Date, includeSent: boolean) => ` after:${Math.floor(since.getTime()/1000)} -in:trash -in:spam${includeSent?'':' -in:sent'}`;
 export function buildSupplyPriorityQueries(since: Date, includeSent: boolean, context: SupplyMailDiscovery) {
@@ -19,21 +26,58 @@ export function buildSupplyPriorityQueries(since: Date, includeSent: boolean, co
 export function buildSupplyIncrementalQuery(broadQuery: string, priorities: ReturnType<typeof buildSupplyPriorityQueries>) {
   return [broadQuery,...Object.values(priorities).filter((value):value is string=>Boolean(value))].map(query=>'('+query+')').join(' OR ');
 }
-export async function supplyMailDiscovery(organizationId: string, preferences: unknown, db: PrismaClient): Promise<SupplyMailDiscovery> {
+
+export function supplyReplySubject(subject: string) {
+  return subject.replace(/^(?:\s*re\s*:\s*)+/i, '').normalize('NFKC')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+export function buildSupplyRecentReplyQuery(since: Date, includeSent: boolean, subjects: string[]) {
+  return '{' + subjects.map(subject => 'subject:' + quoted(subject)).join(' ') + '}' + suffix(since, includeSent);
+}
+
+async function watchedReplyDiscovery(organizationId: string, db: PrismaClient, watched: Awaited<ReturnType<typeof getWatchedSupplyMaterials>>, connectionId?: string) {
+  if (!watched.length) return { recentReplySubjects: [], recentReplyAnchorIds: [] };
+  const orders = await db.supplyOrder.findMany({
+    where: { ...watchedSupplyOrderWhere(organizationId, watched), status: { notIn: ['CANCELLED', 'RECEIVED'] }, historicalOutcomeUnknown: false },
+    include: {
+      lines: { where: { organizationId, ignored: false }, include: { allocations: { where: { organizationId }, select: { needId: true } } } },
+      sources: {
+        where: { source: { organizationId, provider: { in: ['GOOGLE', 'GOOGLE_CONNECTOR'] }, extractionStatus: 'COMPLETE', attachmentKey: '', subject: { not: null } } },
+        orderBy: { source: { messageDate: 'desc' } },
+        select: { source: { select: { subject: true, mailboxConnectionId: true, provider: true, messageId: true } } },
+        take: 3,
+      },
+    },
+    orderBy: [{ lastEvidenceAt: { sort: 'desc', nulls: 'last' } }, { updatedAt: 'desc' }, { id: 'asc' }],
+    take: 30,
+  });
+  const sources = orders.filter(order => isWatchedSupplyOrderRecord(order, watched))
+    .flatMap(order => order.sources.map(link => link.source));
+  const subjects = sources.map(source => supplyReplySubject(source.subject ?? ''));
+  const anchorIds = sources.filter(source => source.provider === 'GOOGLE' && source.mailboxConnectionId === connectionId).map(source => source.messageId);
+  return {
+    recentReplySubjects: [...new Set(subjects.filter(subject => subject.length >= 6 && subject.length <= 100))].slice(0, 20),
+    recentReplyAnchorIds: [...new Set(anchorIds)],
+  };
+}
+
+export async function supplyMailDiscovery(organizationId: string, preferences: unknown, db: PrismaClient, connectionId?: string): Promise<SupplyMailDiscovery> {
   const [members,items,orders,watched]=await Promise.all([
     db.user.findMany({where:{organizationId,id:{in:productionMemberIds(preferences)},isActive:true},select:{email:true},take:30}),
     db.supplyCatalogItem.findMany({where:{organizationId,confirmed:true,departments:{hasSome:['PRODUCTION','SHARED']}},select:{name:true,aliases:{select:{alias:true}}},take:30,orderBy:{updatedAt:'desc'}}),
     db.supplyOrder.findMany({where:{organizationId,ignored:false,OR:[{lines:{some:{department:'PRODUCTION',ignored:false}}},{sources:{some:{source:{extractedFacts:{path:['productionConfirmation','purpose'],equals:'PRODUCTION_REPLENISHMENT'}}}}}]},select:{orderReference:true},take:30,orderBy:{updatedAt:'desc'}}),
     getWatchedSupplyMaterials(organizationId,db),
   ]);
-  return {memberEmails:members.map(member=>member.email),materials:[...watched.flatMap(material=>[material.material,...material.aliases]),...items.flatMap(item=>[item.name,...item.aliases.map(alias=>alias.alias)])],orderReferences:orders.flatMap(order=>order.orderReference?[order.orderReference]:[])};
+  const replies = await watchedReplyDiscovery(organizationId, db, watched, connectionId);
+  return {memberEmails:members.map(member=>member.email),materials:[...watched.flatMap(material=>[material.material,...material.aliases]),...items.flatMap(item=>[item.name,...item.aliases.map(alias=>alias.alias)])],orderReferences:orders.flatMap(order=>order.orderReference?[order.orderReference]:[]),...replies};
 }
 
 const scanInput=z.object({query:z.string(),pageToken:z.string().optional(),scanStarted:z.string().datetime(),messageIds:z.array(z.string()).max(20).optional(),messageIndex:z.number().int().nonnegative().optional(),nextPageToken:z.string().optional()});
 export type SupplyMailScan=z.infer<typeof scanInput>;
 export const SUPPLY_MAIL_LANES=['DX5','PRODUCTION_ORDERS','MATERIALS','BROAD'] as const;
 export type SupplyMailLane=(typeof SUPPLY_MAIL_LANES)[number]|'INCREMENTAL';
-const cursorInput=z.object({version:z.literal(2),scans:z.object({DX5:scanInput.nullable(),PRODUCTION_ORDERS:scanInput.nullable(),MATERIALS:scanInput.nullable(),BROAD:scanInput.nullable()}),completed:z.array(z.enum(SUPPLY_MAIL_LANES)),turn:z.number().int().nonnegative(),lastIncrementalAt:z.string().datetime(),incremental:scanInput.nullable(),materialsSignature:z.string().optional(),pendingMaterials:z.object({signature:z.string(),scan:scanInput.nullable()}).nullable().optional()});
+const cursorInput=z.object({version:z.literal(2),scans:z.object({DX5:scanInput.nullable(),PRODUCTION_ORDERS:scanInput.nullable(),MATERIALS:scanInput.nullable(),BROAD:scanInput.nullable()}),completed:z.array(z.enum(SUPPLY_MAIL_LANES)),turn:z.number().int().nonnegative(),lastIncrementalAt:z.string().datetime(),incremental:scanInput.nullable(),lastRecentCheckAt:z.string().datetime().nullable().optional(),pendingRecentReplies:scanInput.nullable().optional(),historicalTurnDue:z.boolean().optional(),materialsSignature:z.string().optional(),pendingMaterials:z.object({signature:z.string(),scan:scanInput.nullable()}).nullable().optional()});
 export type SupplyMailCursor=z.infer<typeof cursorInput>;
 const materialSignature=(query:string|null)=>query?.replace(/\safter:\d+\b/g,'').trim() ?? '';
 export function supplyMailCursor(raw: unknown, options:{now:Date;backfillComplete:boolean;lastSuccessfulSyncAt:Date|null;broadQuery:string;priorityQueries:ReturnType<typeof buildSupplyPriorityQueries>}):SupplyMailCursor {
@@ -62,8 +106,9 @@ export function completeSupplyMailLane(state:SupplyMailCursor,lane:(typeof SUPPL
   if(!state.completed.includes(lane))state.completed.push(lane);
 }
 export function chooseSupplyMailLane(cursor:SupplyMailCursor,now:Date,pollMinutes:number):SupplyMailLane|null {
-  if(cursor.incremental || now.getTime()-new Date(cursor.lastIncrementalAt).getTime()>=pollMinutes*60_000)return 'INCREMENTAL';
+  const incrementalDue = Boolean(cursor.incremental) || now.getTime() - Date.parse(cursor.lastIncrementalAt) >= pollMinutes * 60_000;
+  if(incrementalDue && !cursor.historicalTurnDue)return 'INCREMENTAL';
   for(let offset=0;offset<SUPPLY_MAIL_LANES.length;offset++){const lane=SUPPLY_MAIL_LANES[(cursor.turn+offset)%SUPPLY_MAIL_LANES.length];if(!cursor.completed.includes(lane)&&cursor.scans[lane])return lane;}
-  return null;
+  return incrementalDue ? 'INCREMENTAL' : null;
 }
 export const supplyHistoricalComplete=(cursor:SupplyMailCursor)=>SUPPLY_MAIL_LANES.every(lane=>cursor.completed.includes(lane));

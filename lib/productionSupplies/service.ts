@@ -5,11 +5,12 @@ import { classifyLine, fingerprint, knownNumber, lineAvailableQuantity, normaliz
 import { hasSupplyAccess, productionMemberIds, readSupplySettings } from './config';
 import { normalizeSupplyLocation, normalizeSupplyMaterial } from './statusDomain';
 import { catalogInput, classificationInput, expectationInput, ignoreInput, lineDetailsInput, orderDetailsInput, linkNeedInput, manualOrderInput, needInput, needDetailsInput, noteInput, ownerInput, receiptInput, resolveNeedInput, ruleInput, trackingInput, type SupplyActor } from './schemas';
-import { scopeSupplyEvidence } from './watch';
+import { isWatchedSupplyOrder, scopeSupplyEvidence } from './watch';
 import { canReadSupplyMailbox } from './mailAccess';
 import { replayWatchedSupplyEvidence, type ReplayOptions } from './replay';
-import { isCurrentSupplyEvidence, mergeSupplySourceProvenance, readSupplySourceProvenance, resolveProductionOrderConfirmation } from './orderConfirmation';
+import { findSupplyReplyOrder, isCurrentSupplyEvidence, mergeSupplySourceProvenance, readSupplySourceProvenance, resolveProductionOrderConfirmation } from './orderConfirmation';
 import { quarantineUnsupportedSupplyOrders } from './evidenceSupport';
+import { SUPPLY_MESSAGE_REFERENCE_LIMIT } from './mailProvenance';
 import {compatibleDx5WarningIdentity,trustedDx5WarningIdentity} from './dx5WarningIdentity';
 
 type Tx = Prisma.TransactionClient;
@@ -356,11 +357,12 @@ export async function reviewSupplySource(actor: SupplyActor, raw: unknown, db: P
 }
 
 const optionalFact = z.string().trim().max(300).nullable().optional();
+const messageFingerprint = z.string().regex(/^[a-f0-9]{64}$/);
 const factQuantity = z.number().finite().nonnegative().max(1e10).nullable().optional();
 const arrivalFact = z.object({ source: z.enum(['SUPPLIER_PROMISE', 'CARRIER', 'PREDICTION', 'APPOINTMENT', 'MANUAL']), precision: z.enum(['DATE', 'DATE_RANGE', 'TIME_WINDOW', 'APPOINTMENT']), startDate: z.string().date(), endDate: z.string().date().nullable().optional(), timeStart: optionalFact, timeEnd: optionalFact, timezone: z.string().max(100).default('America/New_York') });
 export const supplyEvidenceInput = z.object({
-  source: z.object({ mailboxConnectionId: optionalFact, provider: z.string().min(1).max(50), messageId: z.string().min(1).max(500), attachmentKey: z.string().max(500).default(''), messageDate: z.string().datetime({ offset: true }), contentHash: z.string().min(1).max(128), filename: optionalFact, mimeType: optionalFact, subject: optionalFact, historical: z.boolean().default(false), extractionStatus: z.enum(['COMPLETE', 'ERROR', 'UNSUPPORTED', 'REVIEW']), extractionError: z.string().max(1000).optional(), threadId: z.string().min(1).max(500).optional(), evidenceContext: z.enum(['CURRENT_MESSAGE','ATTACHMENT','QUOTED_HISTORY','VERIFIED_BOOTSTRAP']).optional(), contentVersion: z.literal('SUPPLY_CURRENT_V1').optional(), direction: z.enum(['SENT','RECEIVED']).optional(), fromEmail: z.string().email().max(300).optional(), senderAuthenticated: z.boolean().optional(), attachmentPartId:z.string().min(1).max(500).optional(),attachmentMimePath:z.string().min(1).max(500).optional(),attachmentProviderId:z.string().min(1).max(8192).optional() }),
-  evidence: z.object({ kind: z.enum(['ORDER', 'SHIPMENT', 'WARNING', 'QUOTE', 'OTHER']), productionConfirmation: z.object({purpose:z.literal('PRODUCTION_REPLENISHMENT'),basis:z.enum(['BUYER_REQUEST_SUPPLIER_ACK','EXPLICIT_SUPPLIER_CONFIRMATION']),buyerEmail:z.string().email().nullish(),purposeEvidence:optionalFact}).nullish(), productionRequest:z.boolean().nullish(), supplierAcknowledgement:z.boolean().nullish(), orderHold:z.enum(['PREPAYMENT_REQUIRED','PAYMENT_PENDING','OTHER','RELEASED']).nullish(),orderHoldDetail:optionalFact,supplierPromisedDate:z.string().date().nullish(),paymentDueDate:z.string().date().nullish(), orderStatus: z.enum(['ORDERED','CANCELLED']).nullish(), orderDeliveryComplete: z.boolean().nullish(), orderDeliveredDate: z.string().date().nullish(), warningSource: z.enum(['DISTILLX5_EMAIL','OTHER_EMAIL']).nullish(), supplier: optionalFact, orderReference: optionalFact, orderedAt: z.string().date().nullable().optional(), invoiceDate: z.string().date().nullable().optional(), paymentDate: z.string().date().nullable().optional(), estimatedShipDate: z.string().date().nullable().optional(), destination: optionalFact, lines: z.array(z.object({ description: z.string().trim().min(1).max(300), sku: optionalFact, quantity: factQuantity, unit: optionalFact, packSize: factQuantity, department: z.enum(['PRODUCTION', 'BAR', 'SHARED', 'OTHER', 'NEEDS_REVIEW']).optional(), catalogItemId: optionalFact, backorderedQuantity: factQuantity })).max(100).default([]), shipments: z.array(z.object({ referenceType: z.enum(['PARCEL', 'FREIGHT_PRO', 'BILL_OF_LADING', 'SUPPLIER_ORDER']), reference: z.string().min(1).max(300), carrier: optionalFact, status: z.enum(['UNKNOWN', 'LABEL_CREATED', 'IN_TRANSIT', 'OUT_FOR_DELIVERY', 'DELIVERED', 'PICKUP_REQUIRED', 'DELAYED', 'CANCELLED', 'RETURNED']).optional(), eta: arrivalFact.nullable().optional() })).max(30).default([]), warning: z.object({ material: z.string().trim().min(1).max(300), materialId: optionalFact, location: z.string().trim().min(1).max(300), quantity: factQuantity, threshold: factQuantity, unit: optionalFact }).nullable().optional() }).optional(),
+  source: z.object({ mailboxConnectionId: optionalFact, provider: z.string().min(1).max(50), messageId: z.string().min(1).max(500), attachmentKey: z.string().max(500).default(''), messageDate: z.string().datetime({ offset: true }), contentHash: z.string().min(1).max(128), filename: optionalFact, mimeType: optionalFact, subject: optionalFact, historical: z.boolean().default(false), extractionStatus: z.enum(['COMPLETE', 'ERROR', 'UNSUPPORTED', 'REVIEW']), extractionError: z.string().max(1000).optional(), threadId: z.string().min(1).max(500).optional(), internetMessageId: messageFingerprint.optional(), internetReferences: z.array(messageFingerprint).max(SUPPLY_MESSAGE_REFERENCE_LIMIT).optional(), evidenceContext: z.enum(['CURRENT_MESSAGE','ATTACHMENT','QUOTED_HISTORY','VERIFIED_BOOTSTRAP']).optional(), contentVersion: z.literal('SUPPLY_CURRENT_V1').optional(), direction: z.enum(['SENT','RECEIVED']).optional(), fromEmail: z.string().email().max(300).optional(), senderAuthenticated: z.boolean().optional(), attachmentPartId:z.string().min(1).max(500).optional(),attachmentMimePath:z.string().min(1).max(500).optional(),attachmentProviderId:z.string().min(1).max(8192).optional() }),
+  evidence: z.object({ kind: z.enum(['ORDER', 'SHIPMENT', 'WARNING', 'QUOTE', 'OTHER']), productionConfirmation: z.object({purpose:z.literal('PRODUCTION_REPLENISHMENT'),basis:z.enum(['BUYER_REQUEST_SUPPLIER_ACK','EXPLICIT_SUPPLIER_CONFIRMATION']),buyerEmail:z.string().email().nullish(),purposeEvidence:optionalFact}).nullish(), productionRequest:z.boolean().nullish(), supplierAcknowledgement:z.boolean().nullish(), orderHold:z.enum(['PREPAYMENT_REQUIRED','PAYMENT_PENDING','OTHER','RELEASED']).nullish(),orderHoldDetail:optionalFact,supplierPromisedDate:z.string().date().nullish(),paymentDueDate:z.string().date().nullish(), paymentReceived:z.boolean().nullish(), billOfLadingPromised:z.boolean().nullish(), orderStatus: z.enum(['ORDERED','CANCELLED']).nullish(), orderDeliveryComplete: z.boolean().nullish(), orderDeliveredDate: z.string().date().nullish(), warningSource: z.enum(['DISTILLX5_EMAIL','OTHER_EMAIL']).nullish(), supplier: optionalFact, orderReference: optionalFact, orderedAt: z.string().date().nullable().optional(), invoiceDate: z.string().date().nullable().optional(), paymentDate: z.string().date().nullable().optional(), estimatedShipDate: z.string().date().nullable().optional(), destination: optionalFact, lines: z.array(z.object({ description: z.string().trim().min(1).max(300), sku: optionalFact, quantity: factQuantity, unit: optionalFact, packSize: factQuantity, department: z.enum(['PRODUCTION', 'BAR', 'SHARED', 'OTHER', 'NEEDS_REVIEW']).optional(), catalogItemId: optionalFact, backorderedQuantity: factQuantity })).max(100).default([]), shipments: z.array(z.object({ referenceType: z.enum(['PARCEL', 'FREIGHT_PRO', 'BILL_OF_LADING', 'SUPPLIER_ORDER']), reference: z.string().min(1).max(300), carrier: optionalFact, status: z.enum(['UNKNOWN', 'LABEL_CREATED', 'IN_TRANSIT', 'OUT_FOR_DELIVERY', 'DELIVERED', 'PICKUP_REQUIRED', 'DELAYED', 'CANCELLED', 'RETURNED']).optional(), eta: arrivalFact.nullable().optional() })).max(30).default([]), warning: z.object({ material: z.string().trim().min(1).max(300), materialId: optionalFact, location: z.string().trim().min(1).max(300), quantity: factQuantity, threshold: factQuantity, unit: optionalFact }).nullable().optional() }).optional(),
 });
 export type SupplyEvidenceInput = z.input<typeof supplyEvidenceInput>;
 export type ValidatedSupplySource = z.output<typeof supplyEvidenceInput>['source'];
@@ -393,7 +395,7 @@ async function seedConfirmedProductionWatches(tx: Tx, actor: SupplyActor, order:
 export function isSupplierOrderIdentifier(reference: string) { return reference.length <= 100 && /\d/.test(reference) && /^(?:(?:PO|SO|ORDER)[ -]?)?[A-Z0-9][A-Z0-9./_-]*$/i.test(reference.trim()); }
 
 /** Trusted caller supplies an identity; email/attachment text is validated data only. */
-export async function ingestEvidence(actor: SupplyActor, raw: unknown, db: PrismaClient = prisma, options: { reconcile?: boolean;reviewedOrderId?:string } = {}): Promise<{ sourceId: string; orderId?: string; needId?: string; review: boolean; newWatchedMaterial?: boolean }> {
+export async function ingestEvidence(actor: SupplyActor, raw: unknown, db: PrismaClient = prisma, options: { reconcile?: boolean;reviewedOrderId?:string;refreshLifecycle?:boolean } = {}): Promise<{ sourceId: string; orderId?: string; needId?: string; review: boolean; newWatchedMaterial?: boolean }> {
   const input = supplyEvidenceInput.parse(raw);
   const result = await db.$transaction(async tx => {
     const context = await assertSupplyActor(tx, actor, false);
@@ -404,10 +406,64 @@ export async function ingestEvidence(actor: SupplyActor, raw: unknown, db: Prism
       if (!mailbox || !productionMemberIds(context.organization.crmPreferences).includes(actor.userId) || !canReadSupplyMailbox(mailbox)) throw new SupplyError('An authorized Production mailbox with message-reading permission is required.');
     } else if (!manager) throw new SupplyError('Manual evidence import requires management permission.');
     await lock(tx, actor.organizationId);
-    const { threadId, evidenceContext, contentVersion, direction, fromEmail, senderAuthenticated, attachmentPartId,attachmentMimePath,attachmentProviderId, ...sourceColumns } = input.source;
+    const { threadId, internetMessageId, internetReferences, evidenceContext, contentVersion, direction, fromEmail, senderAuthenticated, attachmentPartId,attachmentMimePath,attachmentProviderId, ...sourceColumns } = input.source;
     const previousSource = await tx.supplySource.findFirst({ where: { organizationId: actor.organizationId, mailboxConnectionId: input.source.mailboxConnectionId || null, messageId: input.source.messageId, attachmentKey: input.source.attachmentKey } });
     if (previousSource?.extractionStatus === 'IGNORED') return { sourceId: previousSource.id, review: false };
-    const provenance=mergeSupplySourceProvenance(previousSource?.extractedFacts,{ threadId, evidenceContext, contentVersion, direction, fromEmail, senderAuthenticated, attachmentPartId,attachmentMimePath,attachmentProviderId, productionTeamAuthorized: productionMemberIds(context.organization.crmPreferences).includes(actor.userId) && Boolean(input.source.mailboxConnectionId || manager && evidenceContext === 'VERIFIED_BOOTSTRAP') });
+    const provenance=mergeSupplySourceProvenance(previousSource?.extractedFacts,{ threadId, internetMessageId, internetReferences, evidenceContext, contentVersion, direction, fromEmail, senderAuthenticated, attachmentPartId,attachmentMimePath,attachmentProviderId, productionTeamAuthorized: productionMemberIds(context.organization.crmPreferences).includes(actor.userId) && Boolean(input.source.mailboxConnectionId || manager && evidenceContext === 'VERIFIED_BOOTSTRAP') });
+    if (options.refreshLifecycle) {
+      // Reprocess only lifecycle facts from the exact provider message, retaining
+      // the old facts and avoiding any order, tracking or warehouse mutation.
+      const prior = readSupplySourceProvenance(previousSource?.extractedFacts);
+      const retained = supplyEvidenceInput.shape.evidence.safeParse(previousSource?.extractedFacts);
+      if (!previousSource || !input.source.mailboxConnectionId || previousSource.userId !== actor.userId ||
+          input.source.provider !== 'GOOGLE' || previousSource.provider !== 'GOOGLE' ||
+          input.source.attachmentKey !== '' || previousSource.contentHash !== input.source.contentHash ||
+          previousSource.messageDate.getTime() !== Date.parse(input.source.messageDate) ||
+          !['COMPLETE', 'REVIEW'].includes(previousSource.extractionStatus) || input.source.extractionStatus !== 'COMPLETE' ||
+          !retained.success || !retained.data || !['ORDER', 'SHIPMENT'].includes(retained.data.kind) ||
+          !isCurrentSupplyEvidence(prior) || prior.evidenceContext !== 'CURRENT_MESSAGE' ||
+          evidenceContext !== 'CURRENT_MESSAGE' || contentVersion !== 'SUPPLY_CURRENT_V1' ||
+          direction !== 'RECEIVED' || !fromEmail || senderAuthenticated !== true ||
+          (prior.senderAuthenticated && prior.fromEmail && normalize(prior.fromEmail) !== normalize(fromEmail))) {
+        throw new SupplyError('Lifecycle correction requires the original authenticated, previously processed Google message.');
+      }
+      const changes = (['paymentReceived', 'billOfLadingPromised'] as const).filter(key =>
+        input.evidence?.[key] === true && ['ORDER', 'SHIPMENT'].includes(input.evidence.kind) && retained.data?.[key] !== true);
+      const links = await tx.supplyOrderSource.findMany({
+        where: { organizationId: actor.organizationId, sourceId: previousSource.id },
+        select: { orderId: true },
+        take: 2,
+      });
+      if (links.length > 1) throw new SupplyError('Lifecycle correction requires a uniquely matching purchase.');
+      const candidate = links.length ? null : await findSupplyReplyOrder(tx, actor.organizationId, previousSource, retained.data, provenance);
+      const newOrderId = candidate && await isWatchedSupplyOrder(actor.organizationId, candidate.id, tx) ? candidate.id : undefined;
+      const orderId = links[0]?.orderId ?? newOrderId;
+      if (changes.length || !prior.replyLifecycleChecked || newOrderId) {
+        const extractedFacts = {
+          ...(previousSource.extractedFacts as Prisma.JsonObject),
+          ...Object.fromEntries(changes.map(key => [key, true])),
+          _provenance: { ...prior, ...provenance, replyLifecycleChecked: true, ...(newOrderId ? { lifecycleOnly: true } : {}) },
+        };
+        await tx.supplySource.update({ where: { id: previousSource.id }, data: { extractedFacts: json(extractedFacts) } });
+      }
+      if (newOrderId) {
+        const key = { organizationId: actor.organizationId, orderId: newOrderId, sourceId: previousSource.id };
+        await tx.supplyOrderSource.upsert({ where: { organizationId_orderId_sourceId: key }, create: key, update: {} });
+        await tx.supplyOrder.updateMany({
+          where: { organizationId: actor.organizationId, id: newOrderId, OR: [{ lastEvidenceAt: null }, { lastEvidenceAt: { lt: previousSource.messageDate } }] },
+          data: { lastEvidenceAt: previousSource.messageDate },
+        });
+        await audit(tx, actor, 'SOURCE_LIFECYCLE_REPLY_LINKED', { sourceId: previousSource.id }, newOrderId);
+      }
+      if (changes.length) {
+        await audit(tx, actor, 'SOURCE_LIFECYCLE_FACTS_CORRECTED', {
+          sourceId: previousSource.id,
+          priorFacts: Object.fromEntries(changes.map(key => [key, retained.data?.[key] ?? null])),
+          updatedFacts: Object.fromEntries(changes.map(key => [key, true])),
+        }, orderId);
+      }
+      return { sourceId: previousSource.id, orderId, review: !orderId && previousSource.extractionStatus === 'REVIEW' };
+    }
     const warningIdentity=trustedDx5WarningIdentity({...sourceColumns,extractedFacts:input.evidence?{...input.evidence,_provenance:provenance}:null});
     if(warningIdentity)provenance.dx5WarningIdentity=warningIdentity;
     const sourceData = { ...sourceColumns, organizationId: actor.organizationId, userId: actor.userId, messageDate: new Date(input.source.messageDate), extractedFacts: json({ ...(input.evidence || {}), _provenance: provenance }) };
@@ -422,9 +478,7 @@ export async function ingestEvidence(actor: SupplyActor, raw: unknown, db: Prism
     const confirmation = await resolveProductionOrderConfirmation(tx, actor.organizationId, context.organization.crmPreferences, source, input.evidence, provenance, value => { const parsed = supplyEvidenceInput.shape.evidence.safeParse(value); return parsed.success && parsed.data ? parsed.data : null; });
     if (confirmation.validated) await tx.supplySource.update({ where: { id: source.id }, data: { extractedFacts: json({ ...input.evidence, _provenance: { ...provenance, confirmationValidated: true, correlatedSourceIds: confirmation.sourceIds } }) } });
     const currentFacts=confirmation.evidence;
-    const threadCandidates=provenance.threadId && isCurrentSupplyEvidence(provenance) && currentFacts.kind==='SHIPMENT' && (currentFacts.orderHold || currentFacts.supplierPromisedDate || currentFacts.paymentDueDate || currentFacts.orderStatus || currentFacts.orderDeliveryComplete!==undefined || currentFacts.shipments.length) ? await tx.supplyOrder.findMany({where:{organizationId:actor.organizationId,ignored:false,sources:{some:{source:{extractionStatus:{not:'IGNORED'},extractedFacts:{path:['_provenance','threadId'],equals:provenance.threadId}}}}},take:10}) : [];
-    const compatibleThreads=threadCandidates.filter(candidate=>(!currentFacts.supplier || normalize(candidate.supplier)===normalize(currentFacts.supplier)) && (!currentFacts.orderReference || !candidate.orderReference || currentFacts.orderReference===candidate.orderReference) && (!normalizeSupplyLocation(candidate.destination) || !normalizeSupplyLocation(currentFacts.destination) || normalizeSupplyLocation(candidate.destination)===normalizeSupplyLocation(currentFacts.destination)));
-    const threadOrder=compatibleThreads.length===1?compatibleThreads[0]:null;
+    const threadOrder = await findSupplyReplyOrder(tx, actor.organizationId, source, currentFacts, provenance);
     const reviewedOrder=options.reviewedOrderId?await tx.supplyOrder.findFirst({where:{organizationId:actor.organizationId,id:options.reviewedOrderId,ignored:false}}):null;
     if(options.reviewedOrderId && !reviewedOrder)throw new SupplyError('The reviewed target purchase is unavailable in this organization.');
     const operationalFacts=threadOrder?{...currentFacts,supplier:currentFacts.supplier || threadOrder.supplier,orderReference:currentFacts.orderReference || threadOrder.orderReference}:currentFacts;
@@ -497,7 +551,7 @@ export async function ingestEvidence(actor: SupplyActor, raw: unknown, db: Prism
       return matches.length === 1 ? matches[0] : null;
     }) : null);
     if (!order && provenance.threadId && isCurrentSupplyEvidence(provenance) && supplier) {
-      const threadOrders = await tx.supplyOrder.findMany({where:{organizationId:actor.organizationId,normalizedSupplier,ignored:false,sources:{some:{source:{extractedFacts:{path:['_provenance','threadId'],equals:provenance.threadId}}}}},include:{lines:true},take:10});
+      const threadOrders = await tx.supplyOrder.findMany({where:{organizationId:actor.organizationId,normalizedSupplier,ignored:false,sources:{some:{source:{mailboxConnectionId:source.mailboxConnectionId,...(!source.mailboxConnectionId?{userId:source.userId}:{}),extractedFacts:{path:['_provenance','threadId'],equals:provenance.threadId}}}}},include:{lines:true},take:10});
       const matches = threadOrders.filter(candidate=>{
         if (reference && candidate.orderReference && candidate.orderReference!==reference) return false;
         if (evidence.orderedAt && candidate.orderedAt && candidate.orderedAt.toISOString().slice(0,10)!==evidence.orderedAt) return false;

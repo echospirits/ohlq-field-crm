@@ -8,6 +8,8 @@ import {
   type WholesaleOrderReconciliationRow,
 } from './wholesaleOrderReconciliation';
 import { lockWholesaleOrderLifecycle } from './wholesaleOrders';
+import { ECHO_SALES_VENDOR, lockEchoSalesDate, publishEchoSalesCoverage,
+  validateEchoSalesEvidence, type EchoSalesEvidence } from './echoBottleSalesCoverage';
 
 const REQUIRED_HEADERS = [
   'Agency_Id',
@@ -88,7 +90,7 @@ const toStrictWholesaleInt = (value: string | null | undefined) => {
   return parsed;
 };
 
-export function parseOhlqAnnualSalesCsv(csv: string | Buffer, reportDateIso: string) {
+export function parseOhlqAnnualSalesCsv(csv: string | Buffer, reportDateIso: string, strict = false) {
   const reportDate = toDateOnlyUtc(reportDateIso);
   const parsed = Papa.parse(csv.toString('utf8'), {
     header: true,
@@ -101,6 +103,10 @@ export function parseOhlqAnnualSalesCsv(csv: string | Buffer, reportDateIso: str
     throw new Error(`Unable to parse OHLQ CSV: ${firstError.message}`);
   }
 
+  if (strict && (parsed.meta as { renamedHeaders?: object }).renamedHeaders &&
+      Object.keys((parsed.meta as { renamedHeaders?: object }).renamedHeaders!).length) {
+    throw new Error('Duplicate OHLQ summary headers.');
+  }
   const headers = new Set(parsed.meta.fields ?? []);
   const missingHeaders = REQUIRED_HEADERS.filter((header) => !headers.has(header));
   if (missingHeaders.length > 0) {
@@ -110,6 +116,17 @@ export function parseOhlqAnnualSalesCsv(csv: string | Buffer, reportDateIso: str
   const data = new Map<string, Prisma.OhlqAnnualSalesRowCreateManyInput>();
   let skippedRows = 0;
 
+  function quantity(raw: string) {
+    if (!strict) return toInt(raw);
+    const value = raw.trim();
+    if (!value) return 0;
+    const parsed = Number(value.replaceAll(',', ''));
+    if (!/^-?(?:\d+|\d{1,3}(?:,\d{3})+)$/.test(value) ||
+        !Number.isInteger(parsed) || parsed < -2147483648 || parsed > 2147483647) {
+      throw new Error('Invalid signed integer in OHLQ sales summary.');
+    }
+    return parsed;
+  }
   for (const row of parsed.data) {
     const agencyId = clean(row.Agency_Id);
     const vendor = clean(row.Vendor);
@@ -120,13 +137,15 @@ export function parseOhlqAnnualSalesCsv(csv: string | Buffer, reportDateIso: str
       continue;
     }
 
-    data.set(`${reportDateIso}:${agencyId}:${vendor}:${brand}`, {
+    const key = JSON.stringify([agencyId, vendor, brand]);
+    if (strict && data.has(key)) throw new Error('Duplicate OHLQ sales summary source key.');
+    data.set(key, {
       agencyId,
       brand,
       reportDate,
-      retailBottlesSold: toInt(row.Retail_Bottles_Sold),
+      retailBottlesSold: quantity(row.Retail_Bottles_Sold),
       vendor,
-      wholesaleBottlesSold: toInt(row.Wholesale_Bottles_Sold),
+      wholesaleBottlesSold: quantity(row.Wholesale_Bottles_Sold),
     });
   }
 
@@ -256,19 +275,27 @@ export async function importOhlqAnnualSalesCsv({
   csv,
   db = prisma,
   reportDate,
+  evidence,
 }: {
   csv: string | Buffer;
   db?: PrismaClient;
   reportDate: string;
+  evidence?: EchoSalesEvidence;
 }) {
-  const parsed = parseOhlqAnnualSalesCsv(csv, reportDate);
+  const source = evidence && validateEchoSalesEvidence(csv, reportDate, evidence);
+  const parsed = parseOhlqAnnualSalesCsv(csv, reportDate, Boolean(source));
+  const vendorFiltered = source?.scope === 'VENDOR_FILTERED';
+  if (source && (parsed.skippedRows || (vendorFiltered && parsed.rows.some(row => row.vendor !== ECHO_SALES_VENDOR)))) {
+    throw new Error('Incomplete or incorrectly scoped Annual Sales Summary.');
+  }
   const reportDateValue = toDateOnlyUtc(reportDate);
   const chunkSize = 1_000;
 
   const result = await db.$transaction(
     async (tx) => {
+      if (source) await lockEchoSalesDate(tx, reportDate);
       const deleted = await tx.ohlqAnnualSalesRow.deleteMany({
-        where: { reportDate: reportDateValue },
+        where: { reportDate: reportDateValue, ...(vendorFiltered ? { vendor: ECHO_SALES_VENDOR } : {}) },
       });
 
       let importedRows = 0;
@@ -281,6 +308,10 @@ export async function importOhlqAnnualSalesCsv({
         importedRows += created.count;
       }
 
+      if (source) {
+        if (importedRows !== parsed.rows.length) throw new Error('Incomplete sales summary insert.');
+        await publishEchoSalesCoverage(tx, reportDate, parsed.rows, source);
+      }
       return {
         deletedRows: deleted.count,
         importedRows,

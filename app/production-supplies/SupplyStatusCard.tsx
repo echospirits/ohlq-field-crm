@@ -13,14 +13,18 @@ export function SupplyStatusCard({ card, canDismiss }: { card: StatusCard; canDi
   const router = useRouter();
   if (dismissed) return null;
   const arrival = card.arrival ? { ...card.arrival, current: true, sourceEventAt: card.arrival.observedAt } : undefined;
-  const status = card.status === 'INCOMING' && card.shipmentStatus ? displayStatus(card.shipmentStatus) : card.status === 'ORDERED' ? card.shipmentStatus === 'LABEL_CREATED' ? 'Label created' : 'Ordered' : card.statusLabel;
+  let status = card.statusLabel;
+  if (card.status === 'INCOMING' && card.shipmentStatus) status = displayStatus(card.shipmentStatus);
+  if (card.status === 'ORDERED' && card.statusLabel === 'Order found') status = 'Ordered';
+  if (card.status === 'ORDERED' && card.shipmentStatus === 'LABEL_CREATED') status = 'Label created';
+  const showDetail = card.status === 'ATTENTION' || status === 'Awaiting shipment';
   const milestones = supplyOrderMilestones(card);
   return <article className="supply-status-card" aria-labelledby={`supply-${card.id}`}>
     <div className="supply-status-identity"><h2 id={`supply-${card.id}`}>{card.material}</h2><p>{card.location}</p></div>
     <div className="supply-status-current">
       <p className={`supply-status-label${card.status === 'ATTENTION' ? ' supply-status-label-attention' : ''}`}>{status}</p>
       {arrival ? <><p className="supply-status-arrival">{arrivalText(arrival)}</p><p className="supply-status-source">{arrivalSource(arrival.source)} · {observed(arrival.observedAt)}</p></> : null}
-      {card.status === 'ATTENTION' && card.detail ? <p className="supply-status-detail">{card.detail}</p> : !arrival && ['ORDERED', 'INCOMING'].includes(card.status) ? <p className="supply-status-detail">Arrival not available</p> : null}
+      {showDetail && card.detail ? <p className="supply-status-detail">{card.detail}</p> : !arrival && ['ORDERED', 'INCOMING'].includes(card.status) ? <p className="supply-status-detail">Arrival not available</p> : null}
       {milestones.map(milestone => <p key={milestone.label} className="supply-status-source">{milestone.label} · <time dateTime={milestone.date}>{shortDate(milestone.date)}</time></p>)}
       {card.supplier ? <p className="supply-status-order">{card.supplier}{card.orderReference ? ` · ${card.orderReference}` : ''}</p> : null}
     </div>

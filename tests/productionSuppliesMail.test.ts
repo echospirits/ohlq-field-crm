@@ -6,8 +6,9 @@ import { encryptSupplyToken } from '../lib/productionSupplies/mailCrypto';
 import { extractSupplyMessage, type ExtractedSupply } from '../lib/productionSupplies/extraction';
 import { ingestEvidence, supplyEvidenceInput } from '../lib/productionSupplies/service';
 import { isVerifiedDx5WarningSender } from '../lib/productionSupplies/mailProvenance';
-import { SUPPLY_CONTENT_VERSION } from '../lib/productionSupplies/mailContent';
+import { prepareSupplyMessageContent, SUPPLY_CONTENT_VERSION } from '../lib/productionSupplies/mailContent';
 import { buildSupplyPriorityQueries,supplyMailCursor } from '../lib/productionSupplies/mailDiscovery';
+import { createHash } from 'node:crypto';
 
 const emptyEvidence = (kind: ExtractedSupply['kind'] = 'OTHER'): ExtractedSupply => ({ kind, supplier: null, orderReference: null, orderStatus: null, orderedAt: null, invoiceDate: null, paymentDate: null, estimatedShipDate: null, destination: null, lines: [], shipments: [], warning: null, warningSource: null, explanation: 'No placed order evidence.' });
 
@@ -98,6 +99,7 @@ function mailboxFake() {
     supplyCatalogItem: { findMany: async () => [] },
     supplyNeed: { findMany: async () => [] },
     supplyOrder: { findMany: async () => [] },
+    supplyOrderSource: { findFirst: async () => null },
     mailboxConnection: { findFirst: async () => connection.enabled?connection:null },
     supplyMailboxSync: {
       findUniqueOrThrow: async () => ({ ...sync }), findUnique: async () => ({ ...sync }),
@@ -135,6 +137,170 @@ test('malformed email source is queued independently while later messages still 
   assert.equal(fake.sync.status, 'INITIAL_IMPORT');
   assert.equal(result.continuation, true);
   assert.equal(result.catchupPhase, 'DX5');
+});
+
+test('a bounded recent watched-order search processes short replies before old pagination', async () => {
+  const fake = mailboxFake();
+  const scanStarted = new Date(Date.now() - 4 * 86400_000).toISOString();
+  fake.sync.backfillCompletedAt = new Date(scanStarted);
+  fake.sync.cursor = {
+    version: 2,
+    scans: { DX5: null, PRODUCTION_ORDERS: null, MATERIALS: null, BROAD: null },
+    completed: ['DX5', 'PRODUCTION_ORDERS', 'MATERIALS', 'BROAD'],
+    turn: 0,
+    lastIncrementalAt: scanStarted,
+    incremental: { query: 'old-query', pageToken: 'older-page', scanStarted },
+  };
+  const requests: string[] = [];
+  const messageRequests: string[] = [];
+  const fetchImpl = (async (input: string | URL | Request) => {
+    const url = new URL(String(input));
+    if (url.pathname.endsWith('/messages')) {
+      const q = url.searchParams.get('q')!;
+      if (q.startsWith('{subject:')) {
+        requests.push('recent-search');
+        assert.match(q, /subject:"more glass for echo"/);
+        assert.equal(url.searchParams.get('maxResults'), '10');
+        return Response.json({ messages: [{ id: 'short-reply' }, { id: 'unrelated' }, { id: 'linked-anchor' }] });
+      }
+      requests.push('older-search');
+      assert.equal(q, 'old-query');
+      assert.equal(url.searchParams.get('pageToken'), 'older-page');
+      return Response.json({ messages: [{ id: 'older-result' }], nextPageToken: 'next-older-page' });
+    }
+    const id = url.pathname.split('/').at(-1)!;
+    messageRequests.push(id);
+    return Response.json({
+      id, threadId: 'fixture-thread', internalDate: String(Date.now()),
+      payload: { mimeType: 'text/plain', headers: [{ name: 'Subject', value: id === 'short-reply' || id === 'linked-anchor' ? 'Re: More Glass for Echo' : 'An unrelated subject' }], body: { data: Buffer.from('I will send the BOL today.').toString('base64url') } },
+    });
+  }) as typeof fetch;
+  const result = await syncSupplyMailbox('tenant-one', 'user-one', fake.db, {
+    fetchImpl, ingest: fake.ingest,
+    discovery: async () => ({ memberEmails: [], materials: [], orderReferences: [], recentReplySubjects: ['more glass for echo'], recentReplyAnchorIds: ['linked-anchor'] }),
+    extract: async input => {
+      requests.push('extracted:' + input.subject);
+      return emptyEvidence('SHIPMENT');
+    },
+  });
+  assert.deepEqual(requests, ['recent-search', 'extracted:Re: More Glass for Echo', 'extracted:Re: More Glass for Echo', 'older-search', 'extracted:An unrelated subject']);
+  assert.deepEqual(messageRequests, ['linked-anchor', 'short-reply', 'unrelated', 'older-result']);
+  assert.equal(result.processed, 3);
+  const cursor = fake.sync.cursor as { lastRecentCheckAt: string; incremental: { scanStarted: string; pageToken: string } };
+  assert.ok(Number.isFinite(Date.parse(cursor.lastRecentCheckAt)));
+  assert.deepEqual(cursor.incremental, { query: 'old-query', scanStarted, pageToken: 'next-older-page' });
+  assert.equal((fake.sync.lastSuccessfulSyncAt as Date | null), null);
+});
+
+test('a targeted check with unread results preserves an explicit incomplete freshness marker', async () => {
+  const fake = mailboxFake();
+  let initialHead = true;
+  const queries: string[] = [];
+  const fetchImpl = (async (input: string | URL | Request) => {
+    const url = new URL(String(input));
+    assert.ok(url.pathname.endsWith('/messages'));
+    if (!url.searchParams.get('q')?.startsWith('{subject:')) return Response.json({ messages: [] });
+    queries.push(url.searchParams.get('pageToken') ?? 'head');
+    if (!initialHead) return Response.json({ messages: [] });
+    initialHead = false;
+    return Response.json({ messages: [], nextPageToken: 'unread-page' });
+  }) as typeof fetch;
+  const services = {
+    fetchImpl, ingest: fake.ingest,
+    discovery: async () => ({ memberEmails: [], materials: [], orderReferences: [], recentReplySubjects: ['watched supply order'] }),
+  };
+  const result = await syncSupplyMailbox('tenant-one', 'user-one', fake.db, services);
+  assert.equal(result.continuation, true);
+  assert.equal((fake.sync.cursor as { lastRecentCheckAt: unknown }).lastRecentCheckAt, null);
+  await syncSupplyMailbox('tenant-one', 'user-one', fake.db, services);
+  assert.deepEqual(queries, ['head', 'head', 'unread-page']);
+  const cursor = fake.sync.cursor as { lastRecentCheckAt: string; pendingRecentReplies: unknown };
+  assert.equal(cursor.pendingRecentReplies, null);
+  assert.ok(Number.isFinite(Date.parse(cursor.lastRecentCheckAt)));
+});
+
+test('retained watched replies survive a failed payment refresh and can retry linking without new extraction', async () => {
+  const fake = mailboxFake();
+  const messageId = 'existing-reply', subject = 'Re: Watched supply order';
+  const data = Buffer.from('Payment received! I will send the BOL once ready.').toString('base64url');
+  const payload = {
+    mimeType: 'text/plain',
+    headers: [
+      { name: 'Subject', value: subject },
+      { name: 'From', value: 'Supplier <supplier@fixture.invalid>' },
+      { name: 'Authentication-Results', value: 'mx.google.com; dmarc=pass header.from=fixture.invalid' },
+      { name: 'Message-ID', value: '<reply@fixture.invalid>' },
+      { name: 'In-Reply-To', value: '<order@fixture.invalid>' },
+    ],
+    body: { data },
+  };
+  const contentHash = createHash('sha256').update(subject + '\n' + prepareSupplyMessageContent(payload, subject).text).digest('hex');
+  const existing = { id: 'retained-reply', organizationId: 'tenant-one', mailboxConnectionId: 'connection-one', provider: 'GOOGLE', messageId, attachmentKey: '', contentHash, extractionStatus: 'COMPLETE', extractedFacts: { kind: 'SHIPMENT', _provenance: { contentVersion: SUPPLY_CONTENT_VERSION, evidenceContext: 'CURRENT_MESSAGE' } } };
+  fake.sources.push(existing);
+  const fetchImpl = (async (input: string | URL | Request) => {
+    const url = new URL(String(input));
+    if (url.pathname.endsWith('/messages')) return Response.json({ messages: url.searchParams.get('q')?.startsWith('{subject:') ? [{ id: messageId }] : [] });
+    return Response.json({ id: messageId, internalDate: String(Date.now()), payload });
+  }) as typeof fetch;
+  let extracted = 0, refreshed = 0;
+  const ingest: typeof ingestEvidence = async (actor, raw, _db, options) => {
+    assert.deepEqual(actor, { organizationId: 'tenant-one', userId: 'user-one' });
+    assert.deepEqual(options, { refreshLifecycle: true, reconcile: false });
+    const { source, evidence } = supplyEvidenceInput.parse(raw);
+    assert.equal(source.messageId, messageId);
+    assert.equal(source.contentHash, contentHash);
+    assert.equal(source.fromEmail, 'supplier@fixture.invalid');
+    assert.equal(source.senderAuthenticated, true);
+    assert.match(source.internetMessageId ?? '', /^[a-f0-9]{64}$/);
+    assert.equal(source.internetReferences?.length, 1);
+    assert.equal(evidence?.paymentReceived, true);
+    const retained = fake.sources[0].extractedFacts as { _provenance: Record<string, unknown> };
+    fake.sources[0].extractedFacts = { ...retained, paymentReceived: true, _provenance: { ...retained._provenance, replyLifecycleChecked: true } };
+    refreshed++;
+    return { sourceId: existing.id, review: false };
+  };
+  const services = {
+    fetchImpl, ingest,
+    discovery: async () => ({ memberEmails: [], materials: [], orderReferences: [], recentReplySubjects: ['watched supply order'] }),
+    extract: async () => {
+      if (++extracted === 1) throw new Error('Temporary provider failure');
+      return { ...emptyEvidence('SHIPMENT'), paymentReceived: true };
+    },
+  };
+  const failed = await syncSupplyMailbox('tenant-one', 'user-one', fake.db, services);
+  assert.equal(failed.continuation, true);
+  assert.equal((fake.sync.cursor as { lastRecentCheckAt: unknown }).lastRecentCheckAt, null);
+  assert.equal(fake.sources[0].extractionStatus, 'COMPLETE');
+  assert.equal((fake.sources[0].extractedFacts as { paymentReceived?: boolean }).paymentReceived, undefined);
+
+  await syncSupplyMailbox('tenant-one', 'user-one', fake.db, services);
+  (fake.sync.cursor as { lastRecentCheckAt: string }).lastRecentCheckAt = new Date(Date.now() - 7 * 3600_000).toISOString();
+  await syncSupplyMailbox('tenant-one', 'user-one', fake.db, services);
+  assert.equal(extracted, 2);
+  assert.ok(refreshed >= 2);
+  assert.equal(fake.sources.length, 1);
+});
+
+test('an incremental backlog alternates with outstanding historical work', async () => {
+  const fake = mailboxFake();
+  const scanStarted = new Date(Date.now() - 2 * 86400_000).toISOString();
+  fake.sync.cursor = {
+    version: 2,
+    scans: { DX5: null, PRODUCTION_ORDERS: null, MATERIALS: null, BROAD: { query: 'historical', scanStarted } },
+    completed: ['DX5', 'PRODUCTION_ORDERS', 'MATERIALS'],
+    turn: 3,
+    lastIncrementalAt: scanStarted,
+    incremental: { query: 'incremental', scanStarted },
+  };
+  const requests: string[] = [];
+  const fetchImpl = (async (input: string | URL | Request) => {
+    const url = new URL(String(input));
+    const query = url.searchParams.get('q')!;
+    requests.push(query);
+    return Response.json({ nextPageToken: 'continuation' });
+  }) as typeof fetch;
+  for (let attempt = 0; attempt < 3; attempt++) await syncSupplyMailbox('tenant-one', 'user-one', fake.db, { fetchImpl });
+  assert.deepEqual(requests, ['incremental', 'historical', 'incremental']);
 });
 
 test('deadline checkpoints the current page and resumes without skipping messages or redoing completed sources', async () => {

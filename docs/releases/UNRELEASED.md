@@ -1,5 +1,9 @@
 # Unreleased
 
+## Supplies email freshness — released 0.15.1, November 21, 2026
+
+Recent replies on watched orders take priority within the existing four daily batch slots. Authenticated replies can match across connected Production mailboxes, verified receipts clear payment holds, and stale email coverage appears on Supplies. Both deployments are READY. The Tennessee Bottles production card shows **Awaiting shipment**, with zero shipments and no ETA after validating the supplier's payment email. See the [release notes and verification](0.15.1.md).
+
 ## Direct Echo bottle-sales reporting — released 0.15.0, November 21, 2026
 
 Owner-authorized application **`ae13b6d4298574f9ec538de1f52c56a655669311`** / **0.15.0** is deployed READY and healthy; published stable [v0.15.0](https://github.com/echospirits/ohlq-field-crm/releases/tag/v0.15.0) is verified Latest at that exact application. The scoped 14-path release advanced from `d37ba817918ce55eb833a49569fbfd4d5872b712` / 0.12.0, preserving unrelated main/TST work. Exact-tree Node 22.23.5/npm 10.9.9 CI, scope/schema/type/build checks and reporting SQL security/coverage fixtures pass. Local tests record 1,470 passes and five unchanged Chrome fixtures blocked; no full fresh browser-suite pass is invented. The additive evidence table and fixed-Echo monthly/status views retain signed sales and identifiers while withholding uncertified history. The accepted TST adapter remains prior evidence, not the data destination.
