@@ -1,5 +1,11 @@
 # Echo bottle sales: direct reporting contract
 
+The 0.15.2 correction replaces the contiguous publication gate described in the
+historical adapter notes below. Each closed month now publishes independently
+after every day reconciles. The latest such month defines the reporting period,
+and the current and prior matched YTD flags are independently derived. See the
+[current preview handoff](echo-monthly-preview-handoff.md) for consumer changes.
+
 ## Current operating target: main / production
 
 The owner's **November 21, 2026** clarification supersedes any earlier suggestion to load the TST preview: the Echo backfill and future daily receipt writer belong only in **`echospirits/ohlq-field-crm` / `main` and its production Neon database**. The dashboard must read that same production target. The November 20 TST section below records prior adapter/connection acceptance only; it does not authorize a TST backfill or production-to-TST data synchronization. Use the [main-only Codex handoff](echo-item-sales-main-backfill-handoff.md) and [0.15.0 release status](../releases/0.15.0-validation.md) for current deployment sequencing. Preserve concurrent production ingestion work; this reporting adapter release does not implement or dispatch it.
