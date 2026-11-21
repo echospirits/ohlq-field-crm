@@ -1106,6 +1106,29 @@ model OhlqAnnualSalesRow {
   @@index([agencyId, vendor, reportDate, brand])
 }
 
+// Echo-only source evidence. Written atomically with that vendor/day's facts by
+// a separately integrated, validated importer; existing rows are not certified.
+model EchoBottleSalesDayCoverage {
+  reportDate                 DateTime  @id @db.Date
+  vendor                     String
+  sourceReportIdentity       String
+  sourceScope                String
+  requestedFrom              DateTime  @db.Date
+  requestedTo                DateTime  @db.Date
+  requestReference           String
+  sourceContentSha256         String
+  sourceByteLength            BigInt
+  sourceRowCount              Int
+  sourceSkippedRows           Int
+  sourceExportCompleted       Boolean
+  sourceAcquiredAt            DateTime? @db.Timestamptz(3)
+  completedAt                 DateTime  @db.Timestamptz(3)
+  expectedRowCount            Int
+  expectedRetailBottles       BigInt
+  expectedWholesaleBottles    BigInt
+  expectedFactsSha256         String
+}
+
 model OhlqAnnualSalesByWholesaleRow {
   reportDate           DateTime @db.Date
   agencyId             String

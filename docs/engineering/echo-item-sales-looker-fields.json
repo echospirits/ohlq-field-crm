@@ -1,0 +1,229 @@
+{
+  "capturedAt": "2026-11-20",
+  "source": "Dashboard Data - Item Sales in Board KPIs — Bottle Sales Neon Preview",
+  "purpose": "Exact existing Looker calculated fields captured from Item Sales and retained through the TST adapter preview and production-main reconnection; source and calculation IDs preserved.",
+  "fields": {
+    "Product": {
+      "id": "calc_wb3ewd6d9d",
+      "formula": "CASE Brand\n  WHEN \"2541L\" THEN \"Capital City Spiced Rum\"\n  WHEN \"2796B\" THEN \"Elusive Herbal Liqueur\"\n  WHEN \"2802B\" THEN \"Engineer Series Bourbon\"\n  WHEN \"2803B\" THEN \"Barrel Proof Rye\"\n  WHEN \"2804B\" THEN \"Small Batch Bourbon\"\n  WHEN \"2806B\" THEN \"Spiced Rum\"\n  WHEN \"2807B\" THEN \"Toasted Coconut Rum\"\n  WHEN \"2828B\" THEN \"Queen’s Share Rum\"\n  WHEN \"2829B\" THEN \"Copper Label Brandy\"\n  WHEN \"2831B\" THEN \"Single Barrel Rye\"\n  WHEN \"2839B\" THEN \"Pineapple Rum\"\n  WHEN \"2847B\" THEN \"White Rum\"\n  WHEN \"2848B\" THEN \"Straight Rye Whiskey\"\n  WHEN \"2849B\" THEN \"Genever\"\n  WHEN \"3135B\" THEN \"House Vodka\"\n  WHEN \"4216L\" THEN \"Capital City Rum\"\n  WHEN \"4421B\" THEN \"Barrel-finished Queen’s Share Rum\"\n  WHEN \"4422B\" THEN \"Maple Barrel-finished Rye\"\n  WHEN \"4424B\" THEN \"Branch & Rye Apple RTD\"\n  WHEN \"4425B\" THEN \"Barrel Select\"\n  WHEN \"4426B\" THEN \"Double Oaked Rye\"\n  WHEN \"4427B\" THEN \"Double Oaked Wheated Bourbon\"\n  WHEN \"4428B\" THEN \"Single Barrel Wheated Bourbon\"\n  WHEN \"4429B\" THEN \"Bottle Your Own\"\n  WHEN \"5656L\" THEN \"Capital City Vodka\"\n  ELSE Name\nEND "
+    },
+    "Bottle change": {
+      "id": "calc_huj06i6d9d",
+      "formula": "SUM(CASE WHEN YEAR(Month) = YEAR(Reporting_Month) AND MONTH(Month) <= MONTH(Reporting_Month)\n  THEN IFNULL(Retail_Bottles_Sold, 0) + IFNULL(Wholesale_Bottles_Sold, 0) ELSE 0 END)\n- SUM(CASE WHEN YEAR(Month) = YEAR(Reporting_Month) - 1 AND MONTH(Month) <= MONTH(Reporting_Month)\n  THEN IFNULL(Retail_Bottles_Sold, 0) + IFNULL(Wholesale_Bottles_Sold, 0) ELSE 0 END)"
+    },
+    "Prior YTD bottles": {
+      "id": "calc_gjo7rh6d9d",
+      "formula": "SUM(CASE WHEN YEAR(Month) = YEAR(Reporting_Month) - 1 AND MONTH(Month) <= MONTH(Reporting_Month)\n  THEN IFNULL(Retail_Bottles_Sold, 0) + IFNULL(Wholesale_Bottles_Sold, 0) ELSE 0 END)"
+    },
+    "Retail change": {
+      "id": "calc_2srwcl6d9d",
+      "formula": "SUM(CASE WHEN YEAR(Month) = YEAR(Reporting_Month) AND MONTH(Month) <= MONTH(Reporting_Month)\n  THEN IFNULL(Retail_Bottles_Sold, 0) ELSE 0 END)\n- SUM(CASE WHEN YEAR(Month) = YEAR(Reporting_Month) - 1 AND MONTH(Month) <= MONTH(Reporting_Month)\n  THEN IFNULL(Retail_Bottles_Sold, 0) ELSE 0 END)"
+    },
+    "Wholesale change": {
+      "id": "calc_fht6pl6d9d",
+      "formula": "SUM(CASE WHEN YEAR(Month) = YEAR(Reporting_Month) AND MONTH(Month) <= MONTH(Reporting_Month)\n  THEN IFNULL(Wholesale_Bottles_Sold, 0) ELSE 0 END)\n- SUM(CASE WHEN YEAR(Month) = YEAR(Reporting_Month) - 1 AND MONTH(Month) <= MONTH(Reporting_Month)\n  THEN IFNULL(Wholesale_Bottles_Sold, 0) ELSE 0 END)"
+    },
+    "YTD bottles": {
+      "id": "calc_z9goyg6d9d",
+      "formula": "SUM(CASE WHEN YEAR(Month) = YEAR(Reporting_Month) AND MONTH(Month) <= MONTH(Reporting_Month)\n  THEN IFNULL(Retail_Bottles_Sold, 0) + IFNULL(Wholesale_Bottles_Sold, 0) ELSE 0 END)"
+    }
+  },
+  "chartSettings": {
+    "exclusions": [
+      "3150B",
+      "3750B"
+    ],
+    "dateRange": "All available source dates",
+    "nativeComparison": false,
+    "source": "public.echo_item_sales_reporting",
+    "statusSource": "public.echo_item_sales_reporting_status",
+    "savedFilter": {
+      "name": "Neon bottle exclusions",
+      "conjunction": "AND",
+      "clauses": [
+        {
+          "action": "Exclude",
+          "field": "Brand",
+          "operator": "Equal",
+          "value": "3150B"
+        },
+        {
+          "action": "Exclude",
+          "field": "Brand",
+          "operator": "Equal",
+          "value": "3750B"
+        }
+      ],
+      "chartCount": 4,
+      "valid": true,
+      "emptyClause": false
+    },
+    "chartSpecificMetrics": {
+      "Retail bottles": {
+        "formula": "SUM(Retail_Bottles_Sold)",
+        "aggregation": "Auto"
+      },
+      "Wholesale bottles": {
+        "formula": "SUM(Wholesale_Bottles_Sold)",
+        "aggregation": "Auto"
+      },
+      "Total bottles": {
+        "formula": "Retail_Bottles_Sold+Wholesale_Bottles_Sold",
+        "aggregation": "Sum"
+      }
+    },
+    "agencyDisplayLabels": {
+      "Agency_Name": {
+        "label": "Agency",
+        "type": "Text"
+      },
+      "Agency_Id": {
+        "label": "Agency ID",
+        "type": "Text"
+      }
+    }
+  },
+  "statusFields": {
+    "Bottle data status": {
+      "id": "calc_7mhdqznh9d",
+      "formula": "CASE Coverage_Status WHEN \"AWAITING_CERTIFIED_HISTORY\" THEN \"History pending\" WHEN \"PRIOR_YEAR_HISTORY_INCOMPLETE\" THEN \"Prior year pending\" WHEN \"PARTIAL_HISTORY\" THEN CONCAT(\"Through \", FORMAT_DATETIME(\"%b %Y\", Reporting_Month), \" (partial)\") WHEN \"READY\" THEN CONCAT(\"Through \", FORMAT_DATETIME(\"%b %Y\", Reporting_Month)) ELSE \"Check history status\" END"
+    }
+  },
+  "preview": {
+    "reportId": "450b366c-ea69-4d8e-a6d9-f113d11ea513",
+    "reportUrl": "https://datastudio.google.com/u/1/reporting/450b366c-ea69-4d8e-a6d9-f113d11ea513",
+    "verifiedAt": "2026-11-21",
+    "databaseEnvironment": "production",
+    "neonTarget": {
+      "projectName": "ohlq-field-crm",
+      "projectId": "crimson-river-91402927",
+      "branchName": "main",
+      "branchId": "br-solitary-lake-am9whrqb",
+      "databaseName": "neondb"
+    },
+    "reportingRole": "looker_echo_bailment_prod",
+    "sslRetained": true,
+    "connectionChangeResult": "No field changes for either source",
+    "mainSource": {
+      "name": "Neon Production - Bottle Sales",
+      "reportDataSourceId": "ds58",
+      "reusableSourceId": "c39e0d9b-fab7-45c1-bf80-81e468b562c5",
+      "fieldCount": 23,
+      "chartCount": 4,
+      "connectionState": "Working"
+    },
+    "statusSource": {
+      "name": "Neon Production - Bottle Sales Status",
+      "reportDataSourceId": "ds59",
+      "fieldCount": 13,
+      "chartCount": 4,
+      "reusableSourceId": "2382773d-98a1-4abf-bf1a-565579e720f8",
+      "connectionState": "Working"
+    },
+    "preservedSources": {
+      "originalItemSales": {
+        "reportDataSourceId": "ds28",
+        "chartCount": 0
+      },
+      "productionBailment": {
+        "reportDataSourceId": "ds54",
+        "chartCount": 15,
+        "bindingChanged": false
+      },
+      "otherSourcesUnchanged": true
+    },
+    "verifiedStatusPages": [
+      "Monthly Bottle Sales",
+      "Product Performance",
+      "Agency Performance",
+      "Channel Trends"
+    ],
+    "observedStatus": "History pending",
+    "connectionAndBindings": "VERIFIED_PRODUCTION_MAIN_AFTER_REPORT_RELOAD",
+    "fieldIdsChanged": false,
+    "formulasChanged": false,
+    "filtersChanged": false,
+    "layoutChanged": false,
+    "emptyStateAcceptance": {
+      "tablePages": [
+        "Monthly Bottle Sales",
+        "Product Performance",
+        "Agency Performance"
+      ],
+      "tableOutput": "Valid No data",
+      "channelOutput": "Empty iframe with History pending; no Looker System Error or missing-field error",
+      "channelWarning": "Vega infinite extent for absent data",
+      "populatedChannelPlotVerifiedToday": false,
+      "channelLegendVerifiedToday": false,
+      "newMobileAcceptance": false
+    },
+    "sourceInventoryProof": {
+      "file": "/workspace/scratch/172dd72fea7b/echo-item-sales-main-validation/main-neon-source-connections.jpg",
+      "bytes": 108466,
+      "bothProductionSourcesWorking": true,
+      "chartBindingsPerSource": 4
+    },
+    "markedDeliverable": true,
+    "historyReconciliation": "PENDING",
+    "originalProductionBottleSources": "Existing spreadsheets retained until certified history and reconciliation",
+    "receiptWriterImplementedByThisChange": false,
+    "backfillStartedByThisChange": false,
+    "productionReportingMigrationApplied": true,
+    "productionApplicationRelease": "PENDING"
+  },
+  "updatedAt": "2026-11-21",
+  "historicalTstPreview": {
+    "verifiedAt": "2026-11-20",
+    "reportId": "450b366c-ea69-4d8e-a6d9-f113d11ea513",
+    "reportUrl": "https://datastudio.google.com/u/1/reporting/450b366c-ea69-4d8e-a6d9-f113d11ea513",
+    "databaseEnvironment": "test",
+    "mainSource": {
+      "name": "Neon TST - Bottle Sales",
+      "reportDataSourceId": "ds58",
+      "reusableSourceId": "c39e0d9b-fab7-45c1-bf80-81e468b562c5",
+      "fieldCount": 23,
+      "chartCount": 4
+    },
+    "statusSource": {
+      "name": "Neon TST - Bottle Sales Status",
+      "reportDataSourceId": "ds59",
+      "fieldCount": 13,
+      "chartCount": 4
+    },
+    "preservedSources": {
+      "originalItemSales": {
+        "reportDataSourceId": "ds28",
+        "chartCount": 0
+      },
+      "productionBailment": {
+        "reportDataSourceId": "ds54",
+        "chartCount": 15,
+        "bindingChanged": false
+      },
+      "otherSourcesUnchanged": true
+    },
+    "verifiedStatusPages": [
+      "Monthly Bottle Sales",
+      "Product Performance",
+      "Agency Performance",
+      "Channel Trends"
+    ],
+    "observedStatus": "History pending",
+    "connectionAndBindings": "VERIFIED",
+    "finalViewerAndVisualQa": "PASSED_AFTER_FULL_REPORT_RELOAD_IN_VIEW_MODE",
+    "visualQa": {
+      "pagesInspected": 4,
+      "statusLegible": true,
+      "overlapObserved": false,
+      "systemErrorsOrMissingFields": false,
+      "tableOutput": "No data",
+      "channelOutput": "Valid empty Vega plot with Retail / Wholesale / Total bottles legend",
+      "deliverablePage": "Product Performance",
+      "proofFile": "/workspace/scratch/172dd72fea7b/echo-item-sales-validation/neon-bottle-preview.jpg",
+      "proofBytes": 47674
+    },
+    "historyReconciliation": "PENDING",
+    "receiptWriterImplementedByThisChange": false,
+    "productionReportingMigrationReleased": false
+  }
+}
