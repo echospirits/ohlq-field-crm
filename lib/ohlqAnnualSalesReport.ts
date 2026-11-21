@@ -1254,17 +1254,19 @@ async function downloadOhlqPowerBiReportFromPage(
 
   const primary = frame.locator(`span[aria-label="Open ${report.parameter.name}"]`);
   const parameter = report.parameterFallback && !await primary.isVisible() ? { ...report.parameter, name: report.parameterFallback } : report.parameter;
-  await selectReportParameter(frame, parameter, summaries);
-  runtime.onDiagnostic?.({ stage: 'parameters-selected', parameter: parameter.name, allValues: parameter.values === 'all' });
-
   const echoFiltered = summaries && parameter.name === 'Vendor' && parameter.values !== 'all'
     && parameter.values.length === 1 && parameter.values[0] === 'Z90399001';
   if (echoFiltered) {
-    const selected = await frame.getByRole('combobox', { name: 'Vendor', exact: true }).inputValue();
-    if (!/^Z90399001(?:\s*\|\s*ETOHIO LLC)?$/i.test(selected.trim())) {
+    const vendor = frame.getByRole('combobox', { name: 'Vendor', exact: true });
+    const exactEcho = async () => /^Z90399001(?:\s*\|\s*ETOHIO LLC)?$/i.test((await vendor.inputValue()).trim());
+    if (!await exactEcho()) await selectReportParameter(frame, parameter);
+    if (!await exactEcho()) {
       throw new Error('OHLQ did not confirm the exact Echo vendor.');
     }
+  } else {
+    await selectReportParameter(frame, parameter, summaries);
   }
+  runtime.onDiagnostic?.({ stage: 'parameters-selected', parameter: parameter.name, allValues: parameter.values === 'all' });
   await viewReportIfReady(frame);
   if (summaries) {
     const datePattern = '0?' + Number(reportDate.iso.slice(5, 7)) + '/0?' + reportDate.day + '/' + reportDate.year;
