@@ -116,14 +116,19 @@ export function parseOhlqAnnualSalesCsv(csv: string | Buffer, reportDateIso: str
   const data = new Map<string, Prisma.OhlqAnnualSalesRowCreateManyInput>();
   let skippedRows = 0;
 
-  function quantity(raw: string) {
+  function quantity(raw: string, vendor: string) {
     if (!strict) return toInt(raw);
     const value = raw.trim();
     if (!value) return 0;
-    const parsed = Number(value.replaceAll(',', ''));
-    if (!/^-?(?:\d+|\d{1,3}(?:,\d{3})+)$/.test(value) ||
+    const numeric = Number(value.replaceAll(',', ''));
+    const echo = vendor === ECHO_SALES_VENDOR;
+    // The existing statewide importer truncates non-Echo decimal quantities.
+    // Echo receipts require exact whole bottles, including decimal renderings of integers.
+    const parsed = echo ? numeric : toInt(raw);
+    if (!/^[+-]?(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d+)?$/.test(value) ||
+        (echo && /[1-9]/.test(value.split('.')[1] ?? '')) ||
         !Number.isInteger(parsed) || parsed < -2147483648 || parsed > 2147483647) {
-      throw new Error('Invalid signed integer in OHLQ sales summary.');
+      throw new Error(`Invalid signed integer in OHLQ sales summary for ${echo ? 'Echo' : 'a non-Echo vendor'}.`);
     }
     return parsed;
   }
@@ -143,9 +148,9 @@ export function parseOhlqAnnualSalesCsv(csv: string | Buffer, reportDateIso: str
       agencyId,
       brand,
       reportDate,
-      retailBottlesSold: quantity(row.Retail_Bottles_Sold),
+      retailBottlesSold: quantity(row.Retail_Bottles_Sold, vendor),
       vendor,
-      wholesaleBottlesSold: quantity(row.Wholesale_Bottles_Sold),
+      wholesaleBottlesSold: quantity(row.Wholesale_Bottles_Sold, vendor),
     });
   }
 

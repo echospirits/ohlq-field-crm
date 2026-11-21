@@ -21,6 +21,12 @@ test('certification parses signed and zero quantities and rejects duplicates and
   assert.throws(() => parseOhlqAnnualSalesCsv(header + '\n' + row + '\n' + row, date, true), /Duplicate/);
   assert.throws(() => parseOhlqAnnualSalesCsv(header + '\n' + row.replace('-2','-2bad'), date, true), /Invalid signed/);
   assert.equal(parseOhlqAnnualSalesCsv(header, date, true).rows.length, 0);
+  const decimals = parseOhlqAnnualSalesCsv(
+    header + '\n001,Z90399001,0001,-2.000,0.00\n001,OTHER,0001,1.75,-0.25', date, true);
+  assert.equal(decimals.rows[0].retailBottlesSold, -2);
+  assert.equal(decimals.rows[1].retailBottlesSold, 1);
+  assert.equal(Number(decimals.rows[1].wholesaleBottlesSold), -0);
+  assert.throws(() => parseOhlqAnnualSalesCsv(header + '\n001,Z90399001,0001,1.75,0', date, true), /Echo/);
   assert.throws(() => validateEchoSalesEvidence(header, date, { ...evidence, native: {
     ...evidence.native, requestedTo: '2026-09-02',
   } }), /evidence/);
