@@ -1,14 +1,63 @@
-name: Verify isolated Echo September job access
+name: OHLQ Echo September 2026 backfill pilot
+
 on:
   create:
+  push:
+    branches:
+      - codex/echo-september-2026-backfill
+    paths:
+      - .github/workflows/ohlq-annual-sales.yml
+  workflow_dispatch:
+
 permissions:
   contents: read
+
+concurrency:
+  group: ohlq-annual-sales-sync-production
+  cancel-in-progress: false
+
 jobs:
-  environment-check:
-    if: github.repository == 'echospirits/ohlq-field-crm' && github.event.ref_type == 'branch' && github.ref == 'refs/heads/codex/echo-september-2026-backfill'
+  echo-september:
+    if: >-
+      github.repository == 'echospirits/ohlq-field-crm' &&
+      github.ref == 'refs/heads/codex/echo-september-2026-backfill' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'create' && github.event.ref_type == 'branch') ||
+       (github.event_name == 'push' && !github.event.created))
     environment: production
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 120
     steps:
-      - name: Confirm existing environment permits this ref
-        run: printf '%s\n' 'Environment gate passed. This check reads no credentials and accesses no databases.'
+      - name: Check out the pilot commit
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install locked dependencies
+        run: node scripts/retry-ohlq-command.cjs -- npm ci
+
+      - name: Install the daily loader's Chromium
+        run: node scripts/retry-ohlq-command.cjs -- npx --no-install playwright install --with-deps chromium
+
+      - name: Verify the first September sales pair
+        env:
+          APP_ENV: production
+          DATABASE_ENVIRONMENT: production
+          DATABASE_TARGET_ID: ${{ vars.DATABASE_TARGET_ID }}
+          EXPECTED_DATABASE_HOST: ${{ vars.EXPECTED_DATABASE_HOST }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          OHLQ_OPS_USERNAME: ${{ secrets.OHLQ_OPS_USERNAME }}
+          OHLQ_OPS_PASSWORD: ${{ secrets.OHLQ_OPS_PASSWORD }}
+          OHLQ_MICROSOFT_USERNAME: ${{ secrets.OHLQ_MICROSOFT_USERNAME }}
+          OHLQ_MICROSOFT_PASSWORD: ${{ secrets.OHLQ_MICROSOFT_PASSWORD }}
+          OHLQ_BROWSER_CHANNEL: ''
+          OHLQ_HEADLESS: '1'
+          OHLQ_USE_PERSISTENT_BROWSER_CONTEXT: '1'
+          OHLQ_USE_SERVERLESS_CHROMIUM: '0'
+        run: node --import tsx scripts/echo-september-pilot/run.ts --observe 2026-09-01 2026-09-01

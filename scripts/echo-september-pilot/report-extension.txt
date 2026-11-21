@@ -1,0 +1,119 @@
+import { createHash as hashEchoPilot } from 'node:crypto';
+
+const ECHO_PILOT_VENDOR = 'Z90399001';
+const ECHO_PILOT_EMPTY = 'No data meets the criteria that the user has selected';
+
+type EchoPilotProviderReceipt = {
+  fromDate: string;
+  toDate: string;
+  scope: 'echo-only';
+  source: string;
+  vendor: typeof ECHO_PILOT_VENDOR;
+  capturedAt: string;
+  complete: true;
+};
+
+type EchoPilotCapture =
+  | { kind: 'empty'; receipt: EchoPilotProviderReceipt & { noDataMessage: string } }
+  | { kind: 'csv'; csv: Buffer; receipt: EchoPilotProviderReceipt & { sha256: string; bytes: number } };
+
+async function confirmEchoPilotVendor(frame: Frame) {
+  const vendor = frame.getByRole('combobox', { name: 'Vendor', exact: true });
+  const hasEcho = async () => /^Z90399001(?:\s*\|\s*ETOHIO LLC)?$/i.test((await vendor.inputValue()).trim());
+  if (!await hasEcho()) await selectReportParameter(frame, { name: 'Vendor', values: [ECHO_PILOT_VENDOR] });
+  if (!await hasEcho()) throw new Error('The OHLQ Vendor control did not confirm the exact Echo vendor.');
+}
+
+async function captureEchoPilotReport(
+  page: Page,
+  report: OhlqPowerBiReportConfig,
+  runtime: OhlqDownloadRuntime,
+): Promise<EchoPilotCapture> {
+  const { reportDate, fromDate, debugDir } = runtime;
+  const source = buildPowerBiReportUrl(report.reportId);
+  const redirect = 'https://ops.ohlq.com/link/external/' + encodeURIComponent(source);
+  await openOhlqPowerBiReportWithSessionRetry(page, report, runtime, redirect, runtime.partnerCredentials);
+  const frame = await waitForPowerBiReportFrame(page, report, debugDir, redirect);
+  await setDate(frame, 'From date', fromDate);
+  await setDate(frame, 'To date', reportDate);
+  await confirmEchoPilotVendor(frame);
+  await frame.getByRole('button', { name: 'View report', exact: true }).click({ timeout: 30_000 });
+
+  // Native CSVs have no date column. Require evidence in the rendered report
+  // for both bounds before letting an export reach the importer.
+  const [month, day, year] = reportDate.display.split('/').map(Number);
+  const datePattern = '0?' + month + '/0?' + day + '/' + year + '\\b';
+  const from = frame.getByText(new RegExp('\\bFrom\\s*:\\s*' + datePattern, 'i')).first();
+  const to = frame.getByText(new RegExp('\\bTo\\s*:\\s*' + datePattern, 'i')).first();
+  await Promise.all([
+    from.waitFor({ state: 'visible', timeout: 120_000 }),
+    to.waitFor({ state: 'visible', timeout: 120_000 }),
+  ]);
+
+  const receipt: EchoPilotProviderReceipt = {
+    fromDate: reportDate.iso,
+    toDate: reportDate.iso,
+    scope: 'echo-only',
+    source,
+    vendor: ECHO_PILOT_VENDOR,
+    capturedAt: new Date().toISOString(),
+    complete: true,
+  };
+  const noData = frame.getByText(ECHO_PILOT_EMPTY, { exact: true }).first();
+  if (await noData.isVisible()) {
+    return { kind: 'empty', receipt: { ...receipt, noDataMessage: ECHO_PILOT_EMPTY } };
+  }
+
+  const exportMenu = await waitForReportExport(frame, report);
+  await exportMenu.click({ timeout: 30_000 });
+  const [download] = await Promise.all([
+    page.waitForEvent('download', { timeout: 180_000 }),
+    frame.getByRole('menuitem', { name: /Comma Separated Values \(\.csv\)/ }).click({ timeout: 30_000 }),
+  ]);
+  const outputPath = path.join(runtime.downloadDir, report.fileSlug + '.csv');
+  await saveDownloadWithTimeout(download, outputPath, report.fileSlug);
+  const csv = fs.readFileSync(outputPath);
+  fs.unlinkSync(outputPath);
+  if (!csv.length) throw new Error('The native CSV is empty without rendered no-data verification.');
+  return {
+    kind: 'csv',
+    csv,
+    receipt: { ...receipt, bytes: csv.length, sha256: hashEchoPilot('sha256').update(Uint8Array.from(csv)).digest('hex') },
+  };
+}
+
+export async function downloadEchoSeptemberPilot(
+  dates: readonly string[],
+  scratch: string,
+  receive: (date: string, summary: EchoPilotCapture, wholesale: EchoPilotCapture) => Promise<void>,
+  progress: (date: string, stage: string) => void,
+) {
+  if (!dates.length || dates.some((date, index) => !/^2026-09-(?:0[1-9]|[12][0-9]|30)$/.test(date) ||
+      (index > 0 && dates[index - 1] >= date))) {
+    throw new Error('The Echo pilot accepts unique, ascending September 2026 report dates only.');
+  }
+  // Use the production daily job's Chromium channel, Chromium setup,
+  // partner login, report frame selection and normal export controls.
+  const options: OhlqAnnualSalesDownloadOptions = {
+    headless: true,
+    debugDir: path.join(scratch, 'diagnostics'),
+    downloadDir: path.join(scratch, 'downloads'),
+    logger: { log() {}, error() {} },
+  };
+  progress(dates[0], 'sign-in');
+  const { browser, context, page } = await openBrowserPage(options);
+  try {
+    await signInToOhlqPartner(page);
+    for (const date of dates) {
+      const runtime = createDownloadRuntime({ ...options, reportDate: date, fromDate: date });
+      progress(date, 'summary');
+      const summary = await captureEchoPilotReport(page, OHLQ_ANNUAL_SALES_SUMMARY_REPORT, runtime);
+      progress(date, 'wholesale');
+      const wholesale = await captureEchoPilotReport(page, OHLQ_ANNUAL_SALES_BY_WHOLESALE_REPORT, runtime);
+      progress(date, 'verify-pair');
+      await receive(date, summary, wholesale);
+    }
+  } finally {
+    await closeBrowserPage(context, browser);
+  }
+}
