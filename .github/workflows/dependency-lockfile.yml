@@ -1,36 +1,24 @@
-name: Validate dependency lockfile
-
+name: Publish verified Neat 0.15.3
 on:
-  pull_request:
-    paths:
-      - package.json
-      - package-lock.json
-      - .github/workflows/dependency-lockfile.yml
-  push:
-    branches: [main, tst]
-    paths:
-      - package.json
-      - package-lock.json
-      - .github/workflows/dependency-lockfile.yml
-  workflow_dispatch:
-
+  create:
 permissions:
-  contents: read
-
+  contents: write
+  actions: read
 jobs:
-  clean-install:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+  publish:
+    if: github.repository == 'echospirits/ohlq-field-crm' && github.event.ref_type == 'branch' && github.ref == 'refs/heads/codex/echo-0153-publish'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
         with:
-          node-version: '22'
-          cache: npm
-      - name: Report Node and npm versions
+          ref: 7bacf7433e8b524776ce2312f746311006e3d9e9
+          persist-credentials: false
+      - name: Publish the verified production release
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          node --version
-          npm --version
-      # Match the data-load runner and catch incomplete lockfiles before the
-      # next scheduled import. This check needs no application credentials.
-      - run: npm ci --ignore-scripts --no-audit --no-fund
+          test "$(gh api repos/echospirits/ohlq-field-crm/branches/main --jq '.commit.sha')" = "7bacf7433e8b524776ce2312f746311006e3d9e9"
+          test "$(gh api repos/echospirits/ohlq-field-crm/actions/runs/44955981025 --jq '.conclusion')" = success
+          test "$(gh api repos/echospirits/ohlq-field-crm/actions/runs/44955981691 --jq '.conclusion')" = success
+          gh release create v0.15.3 --repo echospirits/ohlq-field-crm --target 7bacf7433e8b524776ce2312f746311006e3d9e9 --title 'Neat 0.15.3 — Echo monthly reporting' --notes-file docs/releases/0.15.3.md
