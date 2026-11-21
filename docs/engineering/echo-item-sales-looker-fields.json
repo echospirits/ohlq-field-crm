@@ -1,7 +1,7 @@
 {
   "capturedAt": "2026-11-20",
   "source": "Dashboard Data - Item Sales in Board KPIs — Bottle Sales Neon Preview",
-  "purpose": "Exact existing Looker calculated fields captured from Item Sales and retained through the TST adapter preview and production-main reconnection; source and calculation IDs preserved.",
+  "purpose": "Preserved Looker calculation IDs with requested monthly and readiness-aware formulas. See the preview handoff for live acceptance.",
   "fields": {
     "Product": {
       "id": "calc_wb3ewd6d9d",
@@ -9,29 +9,30 @@
     },
     "Bottle change": {
       "id": "calc_huj06i6d9d",
-      "formula": "SUM(CASE WHEN YEAR(Month) = YEAR(Reporting_Month) AND MONTH(Month) <= MONTH(Reporting_Month)\n  THEN IFNULL(Retail_Bottles_Sold, 0) + IFNULL(Wholesale_Bottles_Sold, 0) ELSE 0 END)\n- SUM(CASE WHEN YEAR(Month) = YEAR(Reporting_Month) - 1 AND MONTH(Month) <= MONTH(Reporting_Month)\n  THEN IFNULL(Retail_Bottles_Sold, 0) + IFNULL(Wholesale_Bottles_Sold, 0) ELSE 0 END)"
+      "formula": "CASE WHEN MIN(Current_YTD_Ready) = 1 AND MIN(Prior_YTD_Ready) = 1 THEN (\\nSUM(CASE WHEN YEAR(Month) = YEAR(Reporting_Month) AND MONTH(Month) <= MONTH(Reporting_Month)\n  THEN IFNULL(Retail_Bottles_Sold, 0) + IFNULL(Wholesale_Bottles_Sold, 0) ELSE 0 END)\n- SUM(CASE WHEN YEAR(Month) = YEAR(Reporting_Month) - 1 AND MONTH(Month) <= MONTH(Reporting_Month)\n  THEN IFNULL(Retail_Bottles_Sold, 0) + IFNULL(Wholesale_Bottles_Sold, 0) ELSE 0 END)\\n) END"
     },
     "Prior YTD bottles": {
       "id": "calc_gjo7rh6d9d",
-      "formula": "SUM(CASE WHEN YEAR(Month) = YEAR(Reporting_Month) - 1 AND MONTH(Month) <= MONTH(Reporting_Month)\n  THEN IFNULL(Retail_Bottles_Sold, 0) + IFNULL(Wholesale_Bottles_Sold, 0) ELSE 0 END)"
+      "formula": "CASE WHEN MIN(Prior_YTD_Ready) = 1 THEN (\\nSUM(CASE WHEN YEAR(Month) = YEAR(Reporting_Month) - 1 AND MONTH(Month) <= MONTH(Reporting_Month)\n  THEN IFNULL(Retail_Bottles_Sold, 0) + IFNULL(Wholesale_Bottles_Sold, 0) ELSE 0 END)\\n) END"
     },
     "Retail change": {
       "id": "calc_2srwcl6d9d",
-      "formula": "SUM(CASE WHEN YEAR(Month) = YEAR(Reporting_Month) AND MONTH(Month) <= MONTH(Reporting_Month)\n  THEN IFNULL(Retail_Bottles_Sold, 0) ELSE 0 END)\n- SUM(CASE WHEN YEAR(Month) = YEAR(Reporting_Month) - 1 AND MONTH(Month) <= MONTH(Reporting_Month)\n  THEN IFNULL(Retail_Bottles_Sold, 0) ELSE 0 END)"
+      "formula": "CASE WHEN MIN(Current_YTD_Ready) = 1 AND MIN(Prior_YTD_Ready) = 1 THEN (\\nSUM(CASE WHEN YEAR(Month) = YEAR(Reporting_Month) AND MONTH(Month) <= MONTH(Reporting_Month)\n  THEN IFNULL(Retail_Bottles_Sold, 0) ELSE 0 END)\n- SUM(CASE WHEN YEAR(Month) = YEAR(Reporting_Month) - 1 AND MONTH(Month) <= MONTH(Reporting_Month)\n  THEN IFNULL(Retail_Bottles_Sold, 0) ELSE 0 END)\\n) END"
     },
     "Wholesale change": {
       "id": "calc_fht6pl6d9d",
-      "formula": "SUM(CASE WHEN YEAR(Month) = YEAR(Reporting_Month) AND MONTH(Month) <= MONTH(Reporting_Month)\n  THEN IFNULL(Wholesale_Bottles_Sold, 0) ELSE 0 END)\n- SUM(CASE WHEN YEAR(Month) = YEAR(Reporting_Month) - 1 AND MONTH(Month) <= MONTH(Reporting_Month)\n  THEN IFNULL(Wholesale_Bottles_Sold, 0) ELSE 0 END)"
+      "formula": "CASE WHEN MIN(Current_YTD_Ready) = 1 AND MIN(Prior_YTD_Ready) = 1 THEN (\\nSUM(CASE WHEN YEAR(Month) = YEAR(Reporting_Month) AND MONTH(Month) <= MONTH(Reporting_Month)\n  THEN IFNULL(Wholesale_Bottles_Sold, 0) ELSE 0 END)\n- SUM(CASE WHEN YEAR(Month) = YEAR(Reporting_Month) - 1 AND MONTH(Month) <= MONTH(Reporting_Month)\n  THEN IFNULL(Wholesale_Bottles_Sold, 0) ELSE 0 END)\\n) END"
     },
     "YTD bottles": {
       "id": "calc_z9goyg6d9d",
-      "formula": "SUM(CASE WHEN YEAR(Month) = YEAR(Reporting_Month) AND MONTH(Month) <= MONTH(Reporting_Month)\n  THEN IFNULL(Retail_Bottles_Sold, 0) + IFNULL(Wholesale_Bottles_Sold, 0) ELSE 0 END)"
+      "formula": "CASE WHEN MIN(Current_YTD_Ready) = 1 THEN (\\nSUM(CASE WHEN YEAR(Month) = YEAR(Reporting_Month) AND MONTH(Month) <= MONTH(Reporting_Month)\n  THEN IFNULL(Retail_Bottles_Sold, 0) + IFNULL(Wholesale_Bottles_Sold, 0) ELSE 0 END)\\n) END"
     }
   },
   "chartSettings": {
     "exclusions": [
       "3150B",
-      "3750B"
+      "3750B",
+      "4359B"
     ],
     "dateRange": "All available source dates",
     "nativeComparison": false,
@@ -52,6 +53,12 @@
           "field": "Brand",
           "operator": "Equal",
           "value": "3750B"
+        },
+        {
+          "action": "Exclude",
+          "field": "Brand",
+          "operator": "Equal",
+          "value": "4359B"
         }
       ],
       "chartCount": 4,
@@ -81,12 +88,17 @@
         "label": "Agency ID",
         "type": "Text"
       }
+    },
+    "reportingMonthMetrics": {
+      "Reporting-month retail bottles": "SUM(CASE WHEN Month = Reporting_Month THEN Retail_Bottles_Sold ELSE 0 END)",
+      "Reporting-month wholesale bottles": "SUM(CASE WHEN Month = Reporting_Month THEN Wholesale_Bottles_Sold ELSE 0 END)",
+      "Reporting-month total bottles": "SUM(CASE WHEN Month = Reporting_Month THEN Retail_Bottles_Sold + Wholesale_Bottles_Sold ELSE 0 END)"
     }
   },
   "statusFields": {
     "Bottle data status": {
       "id": "calc_7mhdqznh9d",
-      "formula": "CASE Coverage_Status WHEN \"AWAITING_CERTIFIED_HISTORY\" THEN \"History pending\" WHEN \"PRIOR_YEAR_HISTORY_INCOMPLETE\" THEN \"Prior year pending\" WHEN \"PARTIAL_HISTORY\" THEN CONCAT(\"Through \", FORMAT_DATETIME(\"%b %Y\", Reporting_Month), \" (partial)\") WHEN \"READY\" THEN CONCAT(\"Through \", FORMAT_DATETIME(\"%b %Y\", Reporting_Month)) ELSE \"Check history status\" END"
+      "formula": "CASE WHEN Available_Months = 0 THEN \"History pending\" WHEN Current_YTD_Ready = 0 OR Prior_YTD_Ready = 0 THEN CONCAT(FORMAT_DATETIME(\"%b %Y\", Reporting_Month), \" available · YTD history incomplete\") ELSE CONCAT(FORMAT_DATETIME(\"%b %Y\", Reporting_Month), \" available\") END"
     }
   },
   "preview": {

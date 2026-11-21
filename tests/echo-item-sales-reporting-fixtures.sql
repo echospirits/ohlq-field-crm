@@ -1,5 +1,5 @@
 -- Run only on an isolated, production-derived rehearsal branch after applying
--- 20261120020000_echo_item_sales_reporting. Execute as one session/transaction
+-- both Echo reporting migrations. Execute as one session/transaction
 -- with stop-on-error enabled. Every fixture change is rolled back at the end.
 -- This verifies database/reporting behavior, not live provider completeness.
 -- No production connection, importer, scheduler, dashboard or grants are used.
@@ -116,8 +116,11 @@ BEGIN
             AND "First_Uncertified_Date" = DATE '2026-01-01'
        FROM public.echo_item_sales_reporting_status),
     'a completed old reporting year does not fabricate its prior-year comparison');
-  PERFORM pg_temp.echo_assert((SELECT count(*) = 0 FROM public.echo_item_sales_reporting),
-    '2025-only coverage remains gated from the existing YTD comparison source');
+  PERFORM pg_temp.echo_assert((SELECT count(*) = 6 FROM public.echo_item_sales_reporting),
+    'certified 2025 sales publish independently of prior-year readiness');
+  PERFORM pg_temp.echo_assert((SELECT "Available_Months" = 12 AND "Empty_Completed_Months" = 11
+      FROM public.echo_item_sales_reporting_status),
+    'certified zero-sales months are available without synthetic facts');
 END;
 $body$;
 
@@ -144,6 +147,10 @@ BEGIN
     'complete January advances the reporting year with matched prior-year coverage');
   PERFORM pg_temp.echo_assert((SELECT count(*) = 7 FROM public.echo_item_sales_reporting),
     'all seven monthly facts survive without other-vendor or wholesale-detail duplication');
+  PERFORM pg_temp.echo_assert((SELECT CASE WHEN min("Current_YTD_Ready") = 1
+      THEN sum(CASE WHEN "Month" = "Reporting_Month" THEN "Wholesale_Bottles_Sold" ELSE 0 END) END = 0
+      FROM public.echo_item_sales_reporting WHERE "Brand" = 'ECHO_FIXTURE_UNMATCHED_PRODUCT'),
+    'a product with only prior year sales has a true zero in a complete current period');
   PERFORM pg_temp.echo_assert(
     (SELECT sum("Retail_Bottles_Sold") = 9 AND sum("Wholesale_Bottles_Sold") = 19
        FROM public.echo_item_sales_reporting WHERE "Month" = DATE '2025-01-01'),
@@ -203,11 +210,11 @@ DELETE FROM public."EchoBottleSalesDayCoverage" WHERE "reportDate" = DATE '2025-
 DO $body$
 BEGIN
   PERFORM pg_temp.echo_assert(
-    (SELECT "Reporting_Month" IS NULL AND "First_Uncertified_Date" = DATE '2025-01-16'
+    (SELECT "Reporting_Month" = DATE '2026-01-01' AND "First_Uncertified_Date" = DATE '2025-01-16' AND "Current_YTD_Ready" = 1 AND "Prior_YTD_Ready" = 0
        FROM public.echo_item_sales_reporting_status),
     'the same physically empty day is unknown when its receipt is absent');
-  PERFORM pg_temp.echo_assert((SELECT count(*) = 0 FROM public.echo_item_sales_reporting),
-    'later complete periods cannot jump the first missing month');
+  PERFORM pg_temp.echo_assert((SELECT count(*) = 1 FROM public.echo_item_sales_reporting),
+    'only the affected month loses its facts while January 2026 remains visible');
 END;
 $body$;
 ROLLBACK TO SAVEPOINT missing_day;
@@ -217,10 +224,10 @@ DELETE FROM public."EchoBottleSalesDayCoverage" WHERE "reportDate" = DATE '2025-
 DO $body$
 BEGIN
   PERFORM pg_temp.echo_assert(
-    (SELECT "Reporting_Month" = DATE '2025-11-01' AND NOT "Comparison_Ready"
+    (SELECT "Reporting_Month" = DATE '2026-01-01' AND "Comparison_Ready"
             AND "First_Uncertified_Date" = DATE '2025-12-15'
        FROM public.echo_item_sales_reporting_status),
-    'a late historical gap prevents skipping ahead into a complete new-year month');
+    'a December gap is unrelated to the two January comparison periods');
 END;
 $body$;
 ROLLBACK TO SAVEPOINT later_gap;
@@ -239,8 +246,8 @@ BEGIN
   PERFORM pg_temp.echo_assert(
     (SELECT NOT "Is_Complete" FROM public.echo_item_sales_day_coverage WHERE "Sales_Date" = DATE '2025-01-15'),
     'changed account allocation invalidates a stale receipt despite matching totals');
-  PERFORM pg_temp.echo_assert((SELECT count(*) = 0 FROM public.echo_item_sales_reporting),
-    'stale correction evidence prevents publishing the affected contiguous history');
+  PERFORM pg_temp.echo_assert((SELECT count(*) = 1 FROM public.echo_item_sales_reporting),
+    'changed facts revoke publication of their month only');
 END;
 $body$;
 ROLLBACK TO SAVEPOINT reallocated_facts;
@@ -281,6 +288,35 @@ BEGIN
 END;
 $body$;
 ROLLBACK TO SAVEPOINT pre_dashboard_history;
+
+SAVEPOINT september_independent;
+DELETE FROM public."EchoBottleSalesDayCoverage";
+INSERT INTO public."OhlqAnnualSalesRow" VALUES
+  ('2026-09-14', 'ECHO_FIXTURE_AGENCY', 'Z90399001', 'ECHO_FIXTURE_BRAND', -4, 9);
+INSERT INTO public."EchoBottleSalesDayCoverage"
+SELECT d::date, 'Z90399001', '9781fc23-73de-4ee8-b0b8-77ae6f9b7c4e', 'VENDOR_FILTERED',
+  d::date, d::date, 'synthetic-september', repeat('a', 64), 1000::bigint,
+  CASE WHEN d::date = DATE '2026-09-14' THEN 1 ELSE 0 END,
+  0, true, NULL::timestamptz, date_trunc('milliseconds', CURRENT_TIMESTAMP),
+  CASE WHEN d::date = DATE '2026-09-14' THEN 1 ELSE 0 END,
+  CASE WHEN d::date = DATE '2026-09-14' THEN -4 ELSE 0 END,
+  CASE WHEN d::date = DATE '2026-09-14' THEN 9 ELSE 0 END,
+  encode(sha256(convert_to(CASE WHEN d::date = DATE '2026-09-14'
+    THEN '[["2026-09-14", "ECHO_FIXTURE_AGENCY", "Z90399001", "ECHO_FIXTURE_BRAND", -4, 9]]'
+    ELSE '[]' END, 'UTF8')), 'hex')
+FROM generate_series(DATE '2026-09-01', DATE '2026-09-30', INTERVAL '1 day') d;
+SELECT pg_temp.echo_assert((SELECT "Reporting_Month" = DATE '2026-09-01'
+                          AND "Current_YTD_Ready" = 0 AND "Prior_YTD_Ready" = 0
+                          FROM public.echo_item_sales_reporting_status),
+                          'September is independently available');
+SELECT pg_temp.echo_assert((SELECT count(*) = 1 AND sum("Retail_Bottles_Sold") = -4
+                          AND sum("Wholesale_Bottles_Sold") = 9
+                          FROM public.echo_item_sales_reporting),
+                          'September only exposes reconciled signed sales');
+DELETE FROM public."EchoBottleSalesDayCoverage" WHERE "reportDate" = DATE '2026-09-30';
+SELECT pg_temp.echo_assert(NOT EXISTS (SELECT 1 FROM public.echo_item_sales_reporting),
+                          'a missing September day revokes the month');
+ROLLBACK TO SAVEPOINT september_independent;
 
 -- Each bad update is contained in a PL/pgSQL subtransaction and must fail closed.
 DO $body$

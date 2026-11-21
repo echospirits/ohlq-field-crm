@@ -106,7 +106,14 @@ export async function runOhlqAnnualSalesWorkflow(options: OhlqAnnualSalesWorkflo
       throw new Error('Annual Sales Summary CSV download completed, but no CSV buffer was returned for import.');
     }
 
+    const native = annualSalesDownload.summaryNativeExport;
+    if (process.env.APP_ENV === 'production' && (!native || native.scope !== 'COMPLETE_STATEWIDE')) {
+      throw new Error('Production annual sales import requires validated statewide source evidence.');
+    }
     const annualSalesImport = await importOhlqAnnualSalesCsv({
+      evidence: process.env.APP_ENV === 'production' && native ? {
+        native, requestReference: 'daily:' + (process.env.GITHUB_RUN_ID ?? native.acquiredAt),
+      } : undefined,
       csv: annualSalesDownload.csvBuffer,
       reportDate: annualSalesDownload.reportDate,
     });
