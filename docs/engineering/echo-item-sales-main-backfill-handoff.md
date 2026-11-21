@@ -4,7 +4,7 @@
 
 **Work only in `echospirits/ohlq-field-crm`, targeting `main` and its production Neon database. Do not backfill `neat-tst`, point the worker at its database, or copy production history into TST.** Both reusable sources in the bottle-sales preview now connect to the same production database as the existing backfill. The November 20 TST preview was adapter validation, not a second historical-data destination. Original production report cutover still waits for certified history and reconciliation.
 
-Inspect the current repository, active jobs and existing backfill checkpoints first. Preserve current main changes and resume the existing agreed history range; do not reset state, start a duplicate backfill, cancel another worker or overwrite concurrent progress. The reporting adapter is a separate scoped 0.15.0 release; this task owns the ingestion integration and reliable completion of main's existing data work.
+Inspect the current repository, active jobs and existing backfill checkpoints first. Preserve current main changes and resume the existing agreed history range; do not reset state, start a duplicate backfill, cancel another worker or overwrite concurrent progress. The reporting adapter is released as **0.15.0**, application **`ae13b6d4298574f9ec538de1f52c56a655669311`**, with verified production health and stable [v0.15.0](https://github.com/echospirits/ohlq-field-crm/releases/tag/v0.15.0). Treat that SHA as the released contract reference, not an instruction to discard later main commits. This separate task owns the ingestion integration and reliable completion of main's existing data work.
 
 ## Required contract
 

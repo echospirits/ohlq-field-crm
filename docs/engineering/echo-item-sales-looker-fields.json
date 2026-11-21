@@ -169,7 +169,22 @@
     "receiptWriterImplementedByThisChange": false,
     "backfillStartedByThisChange": false,
     "productionReportingMigrationApplied": true,
-    "productionApplicationRelease": "PENDING"
+    "productionApplicationRelease": "RELEASED_0.15.0",
+    "productionApplication": {
+      "version": "0.15.0",
+      "commit": "ae13b6d4298574f9ec538de1f52c56a655669311",
+      "tree": "a735d9576a9ad6b235e17c0c397658045beba214",
+      "deploymentId": "dpl_6JxEaKiKGzW89gw2LvuLZqAxHNjr",
+      "readyAt": "2026-11-21T15:28:44.989Z",
+      "healthVerifiedAt": "2026-11-21T15:29:23Z",
+      "canonicalAndExactHealth": "HTTP_200_PRODUCTION_DATABASE_CONNECTED",
+      "tag": "v0.15.0",
+      "releaseId": 453786695,
+      "releaseUrl": "https://github.com/echospirits/ohlq-field-crm/releases/tag/v0.15.0",
+      "publishedAt": "2026-11-21T15:31:01Z",
+      "stableAndLatestVerified": true,
+      "documentationCloseoutDoesNotMoveTag": true
+    }
   },
   "updatedAt": "2026-11-21",
   "historicalTstPreview": {
