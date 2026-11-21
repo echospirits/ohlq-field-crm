@@ -1,7 +1,9 @@
 {
   "buildCommand": "npm run build",
   "framework": "nextjs",
-  "regions": ["iad1"],
+  "regions": [
+    "iad1"
+  ],
   "crons": [
     {
       "path": "/api/cron/production-supplies",
@@ -27,5 +29,10 @@
       "path": "/api/cron/account-research",
       "schedule": "0 12 * * *"
     }
-  ]
+  ],
+  "git": {
+    "deploymentEnabled": {
+      "codex/echo-0152-synthetic-db": false
+    }
+  }
 }

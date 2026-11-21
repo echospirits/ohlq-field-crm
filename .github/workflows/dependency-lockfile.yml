@@ -1,36 +1,34 @@
-name: Validate dependency lockfile
-
+name: Isolated PostgreSQL Echo writer fixtures
 on:
-  pull_request:
-    paths:
-      - package.json
-      - package-lock.json
-      - .github/workflows/dependency-lockfile.yml
-  push:
-    branches: [main, tst]
-    paths:
-      - package.json
-      - package-lock.json
-      - .github/workflows/dependency-lockfile.yml
-  workflow_dispatch:
-
+  create:
 permissions:
   contents: read
-
 jobs:
-  clean-install:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+  synthetic:
+    if: github.repository == 'echospirits/ohlq-field-crm' && github.event.ref_type == 'branch' && github.ref == 'refs/heads/codex/echo-0152-synthetic-db'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: synthetic
+          POSTGRES_DB: synthetic_echo
+        ports:
+          - 5432:5432
+        options: --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
-      - name: Report Node and npm versions
-        run: |
-          node --version
-          npm --version
-      # Match the data-load runner and catch incomplete lockfiles before the
-      # next scheduled import. This check needs no application credentials.
-      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm ci
+      - name: Race the actual receipt writers on disposable PostgreSQL
+        env:
+          APP_ENV: development
+          DATABASE_ENVIRONMENT: development
+          DATABASE_URL: postgresql://postgres:synthetic@localhost:5432/synthetic_echo
+        run: node --import tsx scripts/check-echo-writer-race.ts
