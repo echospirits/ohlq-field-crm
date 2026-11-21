@@ -25,7 +25,7 @@ const provenance = {
 };
 const notice = supplyEvidenceInput.shape.evidence.parse({ kind: 'SHIPMENT', supplier, lines: [], shipments: [], billOfLadingPromised: true })!;
 const order = {
-  id: 'fixture-order', supplier, destination: null, ignored: false, orderReference: null, orderedAt: null,
+  id: 'fixture-order', supplier, destination: null as string | null, ignored: false, orderReference: null, orderedAt: null,
   lines: [{ description: 'Fixture glass bottles', sku: null, ignored: false, allocations: [{ needId: 'fixture-need' }] }],
 };
 
@@ -144,7 +144,7 @@ test('lifecycle correction rejects changed identity, unsafe sender, and foreign 
 
 test('strict extraction keeps payment receipt and the promised bill separate from shipment records', async () => {
   const result = await extractSupplyMessage({ subject: 'Re: Production order', text: 'We received your payment. We will send the BOL today.', messageDate, timezone: 'America/New_York' }, {
-    env: { SUPPLY_MAIL_INGESTION_ENABLED: 'true', OPENAI_API_KEY: 'fixture-key' },
+    env: { NODE_ENV: 'test', SUPPLY_MAIL_INGESTION_ENABLED: 'true', OPENAI_API_KEY: 'fixture-key' },
     fetchImpl: async (_url, init) => {
       const request = JSON.parse(String(init?.body));
       assert.ok(request.text.format.schema.required.includes('paymentReceived'));

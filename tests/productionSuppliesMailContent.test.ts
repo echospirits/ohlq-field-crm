@@ -33,6 +33,48 @@ test('received Production sender attestation requires aligned Google authenticat
   assert.deepEqual(supplyMessageSender(headers,true,'different@fixture.invalid'),{});
   assert.equal(supplyMessageSender(headers,true,'buyer@fixture.invalid').senderAuthenticated,true);
 });
+
+const forwardedSummary = 'arc=pass (i=1 spf=pass spfdomain=supplier.invalid dkim=pass dkdomain=supplier.invalid dmarc=pass fromdomain=supplier.invalid)';
+const forwardedGoogleResults = `mx.google.com; dkim=pass header.i=@relay.onmicrosoft.com;\r\n ${forwardedSummary}; spf=softfail smtp.mailfrom=forwarder.invalid`;
+const forwardedHeaders = [
+  { name: 'ARC-Seal', value: 'i=2; a=rsa-sha256; cv=pass; d=google.com; s=arc-fixture; b=Zml4dHVyZQ==' },
+  { name: 'ARC-Authentication-Results', value: `i=2; ${forwardedGoogleResults}` },
+  { name: 'Authentication-Results', value: forwardedGoogleResults },
+  { name: 'ARC-Seal', value: 'i=1; a=rsa-sha256; cv=none; d=microsoft.com; s=arc-fixture; b=Zml4dHVyZQ==' },
+  { name: 'ARC-Authentication-Results', value: 'i=1; mx.microsoft.com 1; spf=pass smtp.mailfrom=supplier.invalid;\r\n dmarc=pass action=none header.from=supplier.invalid; dkim=pass (signature was verified) header.d=supplier.invalid; arc=none' },
+  { name: 'From', value: 'Fixture Warehouse <orders@supplier.invalid>' },
+];
+
+test('Google and Microsoft validated ARC preserves a forwarded supplier sender', () => {
+  assert.deepEqual(supplyMessageSender(forwardedHeaders, false), { fromEmail: 'orders@supplier.invalid', senderAuthenticated: true });
+});
+
+test('forwarded sender attestation rejects ambiguous, misaligned and sender-injected ARC', () => {
+  const replace = (index: number, value: string) => forwardedHeaders.map((header, position) => position === index ? { ...header, value } : header);
+  const fakeHeaders = [
+    replace(2, forwardedGoogleResults.replace('arc=pass', 'arc=fail')),
+    replace(2, forwardedGoogleResults.replace('dkdomain=supplier.invalid', 'dkdomain=another.invalid')),
+    replace(2, forwardedGoogleResults.replace('fromdomain=supplier.invalid', 'fromdomain=another.invalid')),
+    replace(2, forwardedGoogleResults.replace('i=1 spf=pass', 'i=1 i=1 spf=pass')),
+    replace(2, forwardedGoogleResults.replace(forwardedSummary, `arc=none (${forwardedSummary})`)),
+    replace(2, `mx.google.com; dkim=fail (untrusted; ${forwardedSummary}); dmarc=fail header.from=supplier.invalid`),
+    replace(2, `some.forwarder.invalid; ${forwardedSummary}`),
+    replace(2, `${forwardedGoogleResults}; arc=fail`),
+    replace(3, forwardedHeaders[3].value.replace('d=microsoft.com', 'd=microsoft.com.another.invalid')),
+    replace(3, forwardedHeaders[3].value.replace('i=1;', 'i=2;')),
+    replace(0, forwardedHeaders[0].value.replace('cv=pass', 'cv=fail')),
+    replace(4, forwardedHeaders[4].value.replace('header.from=supplier.invalid', 'header.from=another.invalid')),
+    replace(4, forwardedHeaders[4].value.replace('header.d=supplier.invalid', 'header.d=another.invalid')),
+    replace(4, forwardedHeaders[4].value.replace('mx.microsoft.com', 'unknown.forwarder.invalid')),
+    replace(5, 'Another warehouse <orders@another.invalid>'),
+    forwardedHeaders.filter((_, index) => index !== 3),
+    [...forwardedHeaders, forwardedHeaders[4]],
+    [{ name: 'Authentication-Results', value: 'mx.google.com; arc=none' }, ...forwardedHeaders],
+  ];
+  for (const headers of fakeHeaders) {
+    assert.deepEqual(supplyMessageSender(headers, false), {});
+  }
+});
 const now=new Date('2026-11-12T12:00:00Z'),context={memberEmails:['buyer@fixture.invalid'],materials:['Fixture raisins'],orderReferences:['PO-42']};
 const queries=buildSupplyPriorityQueries(new Date('2026-08-14T00:00:00Z'),true,context);
 test('priority discovery is tenant-member/material specific and never loses a pre-existing broad checkpoint',()=>{
