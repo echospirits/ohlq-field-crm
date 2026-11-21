@@ -1,36 +1,45 @@
 name: Validate dependency lockfile
-
 on:
-  pull_request:
-    paths:
-      - package.json
-      - package-lock.json
-      - .github/workflows/dependency-lockfile.yml
-  push:
-    branches: [main, tst]
-    paths:
-      - package.json
-      - package-lock.json
-      - .github/workflows/dependency-lockfile.yml
-  workflow_dispatch:
-
+  create:
 permissions:
   contents: read
-
 jobs:
-  clean-install:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+  candidate:
+    if: github.repository == 'echospirits/ohlq-field-crm' && github.event.ref_type == 'branch' && github.ref == 'refs/heads/codex/echo-monthly-0152-verified-candidate'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: 48b9efc05ef78e27e2127c53e7ed4d141d33dffe
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
-      - name: Report Node and npm versions
+      - name: Validate exact candidate on Node 22 and npm 10
         run: |
+          test "$(git rev-parse HEAD)" = "48b9efc05ef78e27e2127c53e7ed4d141d33dffe"
+          test "$(git rev-parse 'HEAD^{tree}')" = "16f000cc5c577567f12f3a3b9d492451dacafa55"
           node --version
           npm --version
-      # Match the data-load runner and catch incomplete lockfiles before the
-      # next scheduled import. This check needs no application credentials.
-      - run: npm ci --ignore-scripts --no-audit --no-fund
+          npm --version | grep '^10\.'
+          npm ci --ignore-scripts --no-audit --no-fund
+          npx --no-install prisma generate
+      - run: npx --no-install playwright install --with-deps chromium
+      - run: npm test
+      - run: npm run typecheck
+      - name: Build production candidate
+        env:
+          APP_ENV: production
+          APP_BASE_URL: https://crm.echospirits.com
+          DATABASE_ENVIRONMENT: production
+          DATABASE_TARGET_ID: inert-release-validation
+          EXPECTED_DATABASE_HOST: localhost
+          DATABASE_URL: postgresql://unused:unused@localhost:1/neondb
+          AUTH_SECRET: inert-release-validation-secret-not-for-use
+          CRON_JOBS_ENABLED: 'false'
+          EMAIL_SEND_ENABLED: 'false'
+          OHLQ_IMPORT_ENABLED: 'false'
+          NEXT_TELEMETRY_DISABLED: '1'
+        run: npm run build
