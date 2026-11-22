@@ -63,9 +63,13 @@ function wholesaleRows(result: OhlqAnnualSalesDownloadResult, date: string) {
   const bytes = result.csvBuffer;
   if (!bytes || !bytes.length || bytes.length !== result.sizeBytes) throw Error('Incomplete wholesale bytes.');
   const parsed = parseOhlqAnnualSalesByWholesaleCsv(bytes, date);
-  const input = Papa.parse<Record<string, string>>(bytes.toString('utf8'), { header: true, skipEmptyLines: true });
+  const input = Papa.parse(bytes.toString('utf8'), { header: true, skipEmptyLines: true }) as {
+    data: Record<string, string>[];
+    errors: unknown[];
+    meta: { fields?: string[]; renamedHeaders?: Record<string, string> };
+  };
   const columns = input.meta.fields ?? [];
-  if (input.errors.length || Object.keys((input.meta as {renamedHeaders?: object}).renamedHeaders ?? {}).length ||
+  if (input.errors.length || Object.keys(input.meta.renamedHeaders ?? {}).length ||
       !columns.includes('Wholesale_Bottles_Sold') ||
       input.data.some(x => !/^-?(?:\d+|\d{1,3}(?:,\d{3})+)$/.test(x.Wholesale_Bottles_Sold?.trim() ?? '') &&
         x.Wholesale_Bottles_Sold?.trim() !== '') ||
@@ -106,7 +110,7 @@ async function main() {
     SELECT current_database() db,current_schema() schema,NOT pg_is_in_recovery() AS "isPrimary"`;
   if (target?.db !== 'neondb' || target.schema !== 'public' || !target.isPrimary) throw Error('Invalid database session.');
   const pending = await remaining();
-  const limit = process.env.GITHUB_EVENT_NAME === 'create' ? 4 : 24;
+  const limit = process.env.GITHUB_EVENT_NAME === 'workflow_dispatch' ? 24 : 4;
   console.log(JSON.stringify({ from: pending[0]?.date, missing: pending.length, limit }));
   if (pending.length) {
     await downloadOhlqEchoSalesPairs(pending.slice(0,limit).map(x=>x.date), {
