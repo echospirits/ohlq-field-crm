@@ -1,5 +1,5 @@
 name: Echo Spirits daily sales history backfill
-run-name: Echo Spirits production history · ${{ github.event_name }}
+run-name: Echo Spirits production history · ${{ github.event_name }} · resumable
 
 on:
   create:

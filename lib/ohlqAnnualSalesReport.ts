@@ -1272,8 +1272,14 @@ async function downloadOhlqPowerBiReportFromPage(
     await selectReportParameter(frame, parameter, summaries);
   }
   runtime.onDiagnostic?.({ stage: 'parameters-selected', parameter: parameter.name, allValues: parameter.values === 'all' });
-  await viewReportIfReady(frame);
+  if (echoFiltered) {
+    runtime.onDiagnostic?.({ stage: 'view-report', historyReport: report.fileSlug });
+    await frame.getByRole('button', { name: 'View report', exact: true }).click({ timeout: 30_000 });
+  } else {
+    await viewReportIfReady(frame);
+  }
   if (exactDateRequired) {
+    runtime.onDiagnostic?.({ stage: 'verify-rendered-date', historyReport: report.fileSlug });
     const datePattern = '0?' + Number(reportDate.iso.slice(5, 7)) + '/0?' + reportDate.day + '/' + reportDate.year + '\\b';
     await Promise.all(['From', 'To'].map(label => frame
       .getByText(new RegExp('\\b' + label + '\\s*:\\s*' + datePattern, 'i'))

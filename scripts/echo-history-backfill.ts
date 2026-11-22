@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { appendFileSync } from 'node:fs';
+import { setTimeout as delay } from 'node:timers/promises';
 import { Prisma } from '@prisma/client';
 import Papa from 'papaparse';
 import { prisma } from '../lib/prisma';
@@ -8,10 +9,11 @@ import { importOhlqAnnualSalesCsv, parseOhlqAnnualSalesByWholesaleCsv } from '..
 
 const vendor = 'Z90399001';
 const start = '2019-09-01';
-const end = '2026-11-20';
+const end = '2026-11-21';
 const wholesaleId = 'dea7572c-2ea4-45bb-bbbc-29600bd326cc';
 let day: string | undefined;
 let stage = 'target';
+let report: string | undefined;
 const sha = (s: Buffer) => createHash('sha256').update(Uint8Array.from(s)).digest('hex');
 
 const daySignatures = (projection: Prisma.Sql, source: Prisma.Sql, order: Prisma.Sql, totals = Prisma.empty) => Prisma.sql`
@@ -44,9 +46,11 @@ async function remaining() {
       OR NOT (
         (c."requestReference" LIKE 'echo-pair:%' AND split_part(c."requestReference",':',3)=coalesce(w.sha,${emptyHash}))
         OR (day BETWEEN DATE '2026-09-01' AND DATE '2026-09-30' AND c."requestReference"='echo-history:44953866117')
-        OR (day=DATE '2026-11-20' AND c."requestReference"='daily:44955981691'
-          AND EXISTS (SELECT 1 FROM "OhlqReportImportStatus" where "reportDate"=day
-            AND "dataSource"='ANNUAL_SALES_SUMMARY_BY_WHOLESALE' AND status='COMPLETED'))
+        OR (c."requestReference" ~ '^daily:[0-9]+$'
+          AND EXISTS (SELECT 1 FROM "OhlqReportImportStatus" AS w WHERE w."reportDate"=day
+            AND w."dataSource"='ANNUAL_SALES_SUMMARY_BY_WHOLESALE' AND w.status='COMPLETED'
+            AND w."skippedRows"=0
+            AND w."lastSuccessfulAt" BETWEEN c."completedAt" AND c."completedAt"+interval '30 minutes'))
       )
     ORDER BY day DESC`;
 }
@@ -112,19 +116,48 @@ async function main() {
   const pending = await remaining();
   const limit = process.env.GITHUB_EVENT_NAME === 'workflow_dispatch' ? 24 : 4;
   console.log(JSON.stringify({ from: pending[0]?.date, missing: pending.length, limit }));
-  if (pending.length) {
-    await downloadOhlqEchoSalesPairs(pending.slice(0,limit).map(x=>x.date), {
-      headless:true, logger:{log(){},error(){}}, onDiagnostic: x => {if (typeof x.stage==='string') stage=x.stage;},
-    }, date=>{day=date;stage='download';console.log(JSON.stringify({starting:date}));}, async (s,w)=>{
-      stage='certify-pair';
-      const info=s.summaryNativeExport;
-      if (!s.csvBuffer || s.csvBuffer.length!==s.sizeBytes || !info || day!==s.reportDate) throw Error('Incomplete summary bytes.');
-      const detail=wholesaleRows(w,s.reportDate);
-      const result=await importOhlqAnnualSalesCsv({csv:s.csvBuffer,reportDate:s.reportDate,echoOnly:true,
-        evidence:{native:info,requestReference:'echo-pair:' + process.env.GITHUB_RUN_ID},
-        pairedWholesale:tx=>attachDetail(tx,s.reportDate,detail)});
-      console.log(JSON.stringify({date:s.reportDate,summary:result.importedRows,wholesale:detail.rows.length,committed:true}));
-    });
+  const batch = pending.slice(0, limit).map(row => row.date);
+  let committed = 0;
+  let attempts = 0;
+
+  while (committed < batch.length) {
+    day = batch[committed];
+    stage = 'sign-in';
+    report = undefined;
+    try {
+      await downloadOhlqEchoSalesPairs(batch.slice(committed), {
+        headless: true,
+        logger: { log() {}, error() {} },
+        onDiagnostic: diagnostic => {
+          if (typeof diagnostic.stage === 'string') stage = diagnostic.stage;
+          if (typeof diagnostic.historyReport === 'string') report = diagnostic.historyReport;
+        },
+      }, date => {
+        day = date;
+        stage = 'download';
+        report = undefined;
+        console.log(JSON.stringify({ starting: date }));
+      }, async (summary, wholesale) => {
+        stage = 'certify-pair';
+        const info = summary.summaryNativeExport;
+        if (!summary.csvBuffer || summary.csvBuffer.length !== summary.sizeBytes || !info || day !== summary.reportDate) {
+          throw Error('Incomplete summary bytes.');
+        }
+        const detail = wholesaleRows(wholesale, summary.reportDate);
+        const result = await importOhlqAnnualSalesCsv({
+          csv: summary.csvBuffer, reportDate: summary.reportDate, echoOnly: true,
+          evidence: { native: info, requestReference: 'echo-pair:' + process.env.GITHUB_RUN_ID },
+          pairedWholesale: tx => attachDetail(tx, summary.reportDate, detail),
+        });
+        committed += 1;
+        attempts = 0;
+        console.log(JSON.stringify({ date: summary.reportDate, summary: result.importedRows, wholesale: detail.rows.length, committed: true }));
+      });
+    } catch (error) {
+      if (!(error instanceof Error) || error.name !== 'TimeoutError' || ++attempts >= 3) throw error;
+      console.log(JSON.stringify({ retrying: day, report, stage, attempt: attempts + 1 }));
+      await delay(attempts * 15000);
+    }
   }
   const outstanding=await remaining();
   console.log(JSON.stringify({outstanding:outstanding.length,next:outstanding[0]?.date}));
@@ -134,6 +167,6 @@ async function main() {
 main().catch((e:unknown)=>{
   const code=e && typeof e==='object' && 'code' in e && /^P\d{4}$/.test(String(e.code)) ? String(e.code):undefined;
   const reason=e instanceof Error && /^[A-Za-z -]+\.$/.test(e.message)?e.message:undefined;
-  console.error(JSON.stringify({day,stage,code,reason,timeout:e instanceof Error && e.name==='TimeoutError'}));
+  console.error(JSON.stringify({day,report,stage,code,reason,timeout:e instanceof Error && e.name==='TimeoutError'}));
   process.exitCode=1;
 }).finally(()=>prisma.$disconnect());
