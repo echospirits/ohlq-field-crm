@@ -282,14 +282,17 @@ export async function importOhlqAnnualSalesCsv({
   reportDate,
   evidence,
   echoOnly = false,
+  pairedWholesale,
 }: {
   csv: string | Buffer;
   db?: PrismaClient;
   reportDate: string;
   evidence?: EchoSalesEvidence;
   echoOnly?: boolean;
+  pairedWholesale?: (tx: Prisma.TransactionClient) => Promise<string>;
 }) {
   const source = evidence && validateEchoSalesEvidence(csv, reportDate, evidence);
+  if (pairedWholesale && (!echoOnly || !source)) throw new Error('Paired wholesale requires verified Echo-only writes.');
   if (echoOnly && !source) throw new Error('Echo-only imports require native source evidence.');
   const parsed = parseOhlqAnnualSalesCsv(csv, reportDate, Boolean(source));
   const vendorFiltered = source?.scope === 'VENDOR_FILTERED';
@@ -304,6 +307,12 @@ export async function importOhlqAnnualSalesCsv({
   const result = await db.$transaction(
     async (tx) => {
       if (source) await lockEchoSalesDate(tx, reportDate);
+      if (pairedWholesale && source) {
+        const prior = await tx.echoBottleSalesDayCoverage.findUnique({ where: { reportDate: reportDateValue } });
+        if (prior && (!prior.sourceAcquiredAt || prior.sourceAcquiredAt >= source.acquiredAt)) {
+          throw new Error('Refusing an unordered Echo report pair.');
+        }
+      }
       const deleted = await tx.ohlqAnnualSalesRow.deleteMany({
         where: { reportDate: reportDateValue, ...(scopedToEcho ? { vendor: ECHO_SALES_VENDOR } : {}) },
       });
@@ -320,7 +329,8 @@ export async function importOhlqAnnualSalesCsv({
 
       if (source) {
         if (importedRows !== rowsToWrite.length) throw new Error('Incomplete sales summary insert.');
-        await publishEchoSalesCoverage(tx, reportDate, parsed.rows, source);
+        const requestReference = pairedWholesale ? await pairedWholesale(tx) : source.requestReference;
+        await publishEchoSalesCoverage(tx, reportDate, parsed.rows, { ...source, requestReference });
       }
       return {
         deletedRows: deleted.count,

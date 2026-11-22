@@ -170,6 +170,7 @@ export type OhlqSummaryNativeExport = Omit<OhlqBailmentNativeExport, 'parameterS
 
 export type OhlqAnnualSalesDownloadResult = {
   summaryNativeExport?: OhlqSummaryNativeExport;
+  echoWholesaleExport?: { reportIdentity: string; date: string; verifiedEmpty: boolean };
   csvBuffer?: Buffer;
   filename: string;
   nativeExport?: OhlqBailmentNativeExport;
@@ -1248,13 +1249,17 @@ async function downloadOhlqPowerBiReportFromPage(
   }
   if (report.historicalItems !== undefined) await selectOhlqReportHistoricalItems(frame, report.historicalItems);
   const summaries = report.reportId === OHLQ_ANNUAL_SALES_SUMMARY_REPORT.reportId;
-  if (summaries && runtime.fromDate.iso !== reportDate.iso) {
+  const echoWholesale = report.reportId === OHLQ_ANNUAL_SALES_BY_WHOLESALE_REPORT.reportId
+    && report.parameter.values !== 'all' && report.parameter.values.length === 1
+    && report.parameter.values[0] === 'Z90399001';
+  const exactDateRequired = summaries || echoWholesale;
+  if (exactDateRequired && runtime.fromDate.iso !== reportDate.iso) {
     throw new Error('The annual sales summary must cover exactly one report date.');
   }
 
   const primary = frame.locator(`span[aria-label="Open ${report.parameter.name}"]`);
   const parameter = report.parameterFallback && !await primary.isVisible() ? { ...report.parameter, name: report.parameterFallback } : report.parameter;
-  const echoFiltered = summaries && parameter.name === 'Vendor' && parameter.values !== 'all'
+  const echoFiltered = exactDateRequired && parameter.name === 'Vendor' && parameter.values !== 'all'
     && parameter.values.length === 1 && parameter.values[0] === 'Z90399001';
   if (echoFiltered) {
     const vendor = frame.getByRole('combobox', { name: 'Vendor', exact: true });
@@ -1268,13 +1273,18 @@ async function downloadOhlqPowerBiReportFromPage(
   }
   runtime.onDiagnostic?.({ stage: 'parameters-selected', parameter: parameter.name, allValues: parameter.values === 'all' });
   await viewReportIfReady(frame);
-  if (summaries) {
-    const datePattern = '0?' + Number(reportDate.iso.slice(5, 7)) + '/0?' + reportDate.day + '/' + reportDate.year;
-    const bounds = new RegExp('From:\\s*' + datePattern + '\\s*-\\s*To:\\s*' + datePattern + '\\b', 'i');
-    await frame.getByText(bounds).first().waitFor({ state: 'visible', timeout: 120_000 });
+  if (exactDateRequired) {
+    const datePattern = '0?' + Number(reportDate.iso.slice(5, 7)) + '/0?' + reportDate.day + '/' + reportDate.year + '\\b';
+    await Promise.all(['From', 'To'].map(label => frame
+      .getByText(new RegExp('\\b' + label + '\\s*:\\s*' + datePattern, 'i'))
+      .first().waitFor({ state: 'visible', timeout: 120_000 })));
     if (echoFiltered && await frame.getByText(
       'No data meets the criteria that the user has selected', { exact: true },
     ).first().isVisible()) {
+      if (echoWholesale) {
+        return { filename: '', outputPath: '', reportDate: reportDate.iso, runDate: runtime.runDateIso,
+          sizeBytes: 0, echoWholesaleExport: { reportIdentity: report.reportId, date: reportDate.iso, verifiedEmpty: true } };
+      }
       // A no-data rendering may export only a message. Obtain true native
       // statewide CSV evidence for the same date and scope the write to Echo.
       return downloadOhlqPowerBiReportFromPage(page, OHLQ_ANNUAL_SALES_SUMMARY_REPORT, runtime);
@@ -1295,6 +1305,10 @@ async function downloadOhlqPowerBiReportFromPage(
   const download = await downloadPromise;
 
   const result = await saveOhlqPowerBiReportDownload(download, report, runtime, parameter);
+  if (echoWholesale) {
+    if (!result.sizeBytes || !echoFiltered) throw new Error('Unverified Echo wholesale CSV.');
+    return { ...result, echoWholesaleExport: { reportIdentity: report.reportId, date: reportDate.iso, verifiedEmpty: false } };
+  }
   if (!summaries) return result;
   if (!result.sizeBytes || parameter.name !== 'Vendor' || (parameter.values !== 'all' && !echoFiltered)) {
     throw new Error('Annual Sales Summary requires verified statewide CSV bytes.');
@@ -1450,6 +1464,28 @@ export async function downloadOhlqEchoSalesSummaries(
     for (const date of dates) {
       const runtime = createDownloadRuntime({ ...options, reportDate: date, fromDate: date, returnBuffer: true });
       await consume(await downloadOhlqPowerBiReportFromPage(page, report, runtime));
+    }
+  } finally {
+    await closeBrowserPage(context, browser);
+  }
+}
+
+export async function downloadOhlqEchoSalesPairs(
+  dates: readonly string[],
+  options: OhlqAnnualSalesDownloadOptions,
+  start: (date: string) => void,
+  consume: (summary: OhlqAnnualSalesDownloadResult, wholesale: OhlqAnnualSalesDownloadResult) => Promise<void>,
+) {
+  const parameter = { name: 'Vendor' as const, values: ['Z90399001'] };
+  const { browser, context, page } = await openBrowserPage(options);
+  try {
+    await signInToOhlqPartner(page, options.partnerCredentials);
+    for (const date of dates) {
+      start(date);
+      const runtime = createDownloadRuntime({ ...options, reportDate: date, fromDate: date, returnBuffer: true });
+      const summary = await downloadOhlqPowerBiReportFromPage(page, { ...OHLQ_ANNUAL_SALES_SUMMARY_REPORT, parameter }, runtime);
+      const wholesale = await downloadOhlqPowerBiReportFromPage(page, { ...OHLQ_ANNUAL_SALES_BY_WHOLESALE_REPORT, parameter }, runtime);
+      await consume(summary, wholesale);
     }
   } finally {
     await closeBrowserPage(context, browser);
