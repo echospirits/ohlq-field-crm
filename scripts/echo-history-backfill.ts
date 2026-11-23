@@ -73,13 +73,16 @@ function wholesaleRows(result: OhlqAnnualSalesDownloadResult, date: string) {
     meta: { fields?: string[]; renamedHeaders?: Record<string, string> };
   };
   const columns = input.meta.fields ?? [];
-  if (input.errors.length || Object.keys(input.meta.renamedHeaders ?? {}).length ||
-      !columns.includes('Wholesale_Bottles_Sold') ||
-      input.data.some(x => !/^-?(?:\d+|\d{1,3}(?:,\d{3})+)$/.test(x.Wholesale_Bottles_Sold?.trim() ?? '') &&
-        x.Wholesale_Bottles_Sold?.trim() !== '') ||
-      parsed.skippedRows || input.data.length !== parsed.rows.length ||
-      parsed.rows.some(row => row.vendor !== vendor || row.wholesaleBottlesSold! < -2147483648 || row.wholesaleBottlesSold! > 2147483647)) {
-    throw Error('Malformed, duplicate or incorrectly scoped wholesale rows.');
+  if (input.errors.length) throw Error('Wholesale CSV did not parse.');
+  if (Object.keys(input.meta.renamedHeaders ?? {}).length) throw Error('Wholesale CSV has duplicate headers.');
+  if (!columns.includes('Wholesale_Bottles_Sold')) throw Error('Wholesale quantity column is missing.');
+  if (input.data.some(row => !/^-?(?:\d+|\d{1,3}(?:,\d{3})+)$/.test(row.Wholesale_Bottles_Sold?.trim() ?? '') &&
+      row.Wholesale_Bottles_Sold?.trim() !== '')) throw Error('Wholesale quantity syntax is invalid.');
+  if (parsed.skippedRows) throw Error('Wholesale rows are missing key identifiers.');
+  if (input.data.length !== parsed.rows.length) throw Error('Wholesale CSV has repeated row keys.');
+  if (parsed.rows.some(row => row.vendor !== vendor)) throw Error('Wholesale rows are outside the Echo scope.');
+  if (parsed.rows.some(row => row.wholesaleBottlesSold! < -2147483648 || row.wholesaleBottlesSold! > 2147483647)) {
+    throw Error('Wholesale quantity is outside the supported integer range.');
   }
   return { rows: parsed.rows, csvHash: sha(bytes) };
 }
