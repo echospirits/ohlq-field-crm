@@ -104,6 +104,108 @@ it('requires exact street number, city, ZIP, model verdict, and location evidenc
   assert.equal(validateExactResearchLocation(input, { ...parsed, evidence: parsed.evidence.map((item) => ({ ...item, exactLocation: false })) }).exact, false);
 });
 
+it('matches an inclusive permit range, including a shortened endpoint and equivalent range notation', () => {
+  const licensed = { ...input, address: '112–119 West Main Street' };
+  for (const matchedAddress of ['112 W Main St', '116 W Main St', '119 W Main St', '112-119 W Main St']) {
+    const researched = parseAccountResearchResult({ ...result, identity: { ...result.identity, matchedAddress } });
+    assert.equal(validateExactResearchLocation(licensed, researched).exact, true, matchedAddress);
+  }
+
+  const shortened = { ...input, address: '1824-28 Columbus Pike' };
+  const researched = parseAccountResearchResult({ ...result, identity: { ...result.identity, matchedAddress: '1828 Columbus Pike' } });
+  assert.equal(validateExactResearchLocation(shortened, researched).exact, true);
+});
+
+it('matches explicitly listed permit numbers without treating gaps as part of the permit', () => {
+  const licensed = { ...input, address: '1955 & 1959 East Maple Street' };
+  for (const [matchedAddress, expected] of [['1955 E Maple St', true], ['1959 E Maple St', true], ['1957 E Maple St', false]] as const) {
+    const researched = parseAccountResearchResult({ ...result, identity: { ...result.identity, matchedAddress } });
+    const validation = validateExactResearchLocation(licensed, researched);
+    assert.equal(validation.exact, expected, matchedAddress);
+    assert.equal(validation.checks.streetNumber, expected, matchedAddress);
+  }
+});
+
+it('rejects out-of-range numbers, ambiguous ranges, a range supplied only by the source, and different number suffixes', () => {
+  const nonmatchingNumbers = [
+    ['112–119 W Main St', '111 W Main St'],
+    ['112–119 W Main St', '120 W Main St'],
+    ['119–112 W Main St', '116 W Main St'],
+    ['5676-78-80 Mayberry Sq', '5678 Mayberry Sq'],
+    ['112 W Main St', '112–119 W Main St'],
+    ['112A W Main St', '112 W Main St'],
+  ];
+  for (const [address, matchedAddress] of nonmatchingNumbers) {
+    const researched = parseAccountResearchResult({ ...result, identity: { ...result.identity, matchedAddress } });
+    const validation = validateExactResearchLocation({ ...input, address }, researched);
+    assert.equal(validation.exact, false, `${address} vs. ${matchedAddress}`);
+    assert.equal(validation.checks.streetNumber, false, `${address} vs. ${matchedAddress}`);
+  }
+});
+
+it('requires the same street name, direction, and suite even when the permit covers the house number', () => {
+  const licensed = { ...input, address: '112–119 West Main Street Suite 2' };
+  for (const matchedAddress of ['116 W Lake St Suite 2', '116 E Main St Suite 2', '116 W Main St Suite 3', '116 W Main St']) {
+    const researched = parseAccountResearchResult({ ...result, identity: { ...result.identity, matchedAddress } });
+    const validation = validateExactResearchLocation(licensed, researched);
+    assert.equal(validation.checks.streetNumber, true, matchedAddress);
+    assert.equal(validation.checks.streetAddress, false, matchedAddress);
+    assert.equal(validation.exact, false, matchedAddress);
+  }
+});
+
+it('normalizes common permit address formatting while preserving explicit occupied units', () => {
+  const comparisons = [
+    ['114–118 W MAIN ST1ST FL & PARTIAL BSMT', '116 West Main Street', true],
+    ['114–118 W MAIN ST1ST FL & PATIO', '116 West Main Street 2nd Floor', false],
+    ['114–118 W MAIN ST STE 2 & PATIO', '116 West Main Street #2', true],
+    ['114–118 W MAIN ST', '116 West Main Street Suite A', true],
+    ['114–118 SR172 NE', '116 State Route 172 Northwest', false],
+    ['114–118 SR172 NE', '116 OH-172 Northeast', true],
+    ['114–118 W US HWY 36', '116 W US 36', true],
+  ] as const;
+  for (const [address, matchedAddress, exact] of comparisons) {
+    const researched = parseAccountResearchResult({ ...result, identity: { ...result.identity, matchedAddress } });
+    assert.equal(validateExactResearchLocation({ ...input, address }, researched).exact, exact, address + ' vs. ' + matchedAddress);
+  }
+});
+
+it('recognizes Ohio city abbreviations and reviewed alternate localities at the same ZIP', () => {
+  const cases = [
+    { city: 'MILFORD CTR', matchedCity: 'Milford Center', zip: '43045', matchedZip: '43045', state: 'OH', exact: true },
+    { city: 'Columbus', matchedCity: 'Dublin', zip: '43016', matchedZip: '43016-1234', state: 'Ohio', exact: true },
+    { city: 'Columbus', matchedCity: 'Dublin', zip: '43215', matchedZip: '43215', state: 'OH', exact: false },
+    { city: 'Columbus', matchedCity: 'Dublin', zip: '43016', matchedZip: '43017', state: 'OH', exact: false },
+    { city: 'Columbus', matchedCity: 'Dublin', zip: '43016', matchedZip: '43016', state: 'KY', exact: false },
+    { city: 'CENTERVILLE', matchedCity: 'Dayton/Centerville market', zip: '45459', matchedZip: '45459', state: 'OH', exact: true },
+    { city: 'CENTERVILLE', matchedCity: 'Dayton/Centerville/Toledo', zip: '45459', matchedZip: '45459', state: 'OH', exact: false },
+    { city: 'Noth Canton', matchedCity: 'North Canton', zip: '44720', matchedZip: '44720', state: 'OH', exact: true },
+    { city: 'E Liverpool', matchedCity: 'East Liverpool', zip: '43920', matchedZip: '43920', state: 'Ohio', exact: true },
+  ];
+  for (const { city, matchedCity, zip, matchedZip, state, exact } of cases) {
+    const researched = parseAccountResearchResult({ ...result, identity: { ...result.identity, matchedCity, matchedZip, matchedState: state } });
+    const validation = validateExactResearchLocation({ ...input, city, zip, state }, researched);
+    const context = `${city} vs. ${matchedCity}, ${state} ${zip} / ${matchedZip}`;
+    assert.equal(validation.checks.city, exact, context);
+    assert.equal(validation.exact, exact, context);
+  }
+});
+
+it('keeps the exact venue verdict and exact-location evidence gates for equivalent addresses', () => {
+  const licensed = { ...input, address: '112–119 West Main Street', city: 'MILFORD CTR', zip: '43045' };
+  const identity = { ...result.identity, matchedAddress: '116 W Main St', matchedCity: 'Milford Center', matchedZip: '43045' };
+  const probable = parseAccountResearchResult({ ...result, identity: { ...identity, verdict: 'PROBABLE' } });
+  const noExactEvidence = parseAccountResearchResult({ ...result, identity, evidence: result.evidence.map((item) => ({ ...item, exactLocation: false })) });
+  const probableValidation = validateExactResearchLocation(licensed, probable);
+  assert.equal(probableValidation.checks.streetNumber, true);
+  assert.equal(probableValidation.checks.city, true);
+  assert.equal(probableValidation.checks.modelVerdict, false);
+  assert.equal(probableValidation.exact, false);
+  const evidenceValidation = validateExactResearchLocation(licensed, noExactEvidence);
+  assert.equal(evidenceValidation.checks.locationEvidence, false);
+  assert.equal(evidenceValidation.exact, false);
+});
+
 it('keeps legacy Google-shaped research responses readable without asserting Google provenance', () => {
   const { publicRatings: _publicRatings, businessHours: _businessHours, ...shared } = result;
   const legacy = { ...shared, googleRating: 4.6, googleReviewCount: 400, yelpRating: null, yelpReviewCount: null };

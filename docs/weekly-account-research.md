@@ -23,9 +23,9 @@ The waterfall assigns pursued accounts and provisional scores of 70 or more to t
 The model must return strict structured JSON with field-level claims, source URLs, and an explicit exact-location marker. The server independently requires:
 
 1. An `EXACT` identity verdict.
-2. The same street number.
-3. The same city.
-4. The same five-digit ZIP.
+2. The same full street and any licensed unit. In Ohio a public house number can fall inside the licensed range or match a number explicitly listed on the permit.
+3. The same city or a verified Ohio locality equivalent in the same ZIP.
+4. The same state and five-digit ZIP.
 5. At least one source explicitly supporting that location.
 
 Every completed result is automatically checked against these rules. Exact matches upsert the account's shared public facts and immediately recalculate that tenant's affected opportunity. Uncertain or changed identities are declined and change no account or opportunity data. The job ledger preserves the evidence, validation result, cost, and decision.

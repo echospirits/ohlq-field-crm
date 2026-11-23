@@ -1,5 +1,9 @@
 # Unreleased
 
+## Account Research location matching — November 23, 2026
+
+Account Research recognizes Ohio liquor-permit street-number ranges, explicit number lists, and verified alternate city labels within the same ZIP. The validator checks the full street and any required unit alongside the existing venue evidence. See the [0.15.7 release notes](0.15.7.md).
+
 ## Retail Inventory restriction labels — November 23, 2026
 
 Retail Intelligence and retail account views show **Restricted** for store and product pairs with OHLQ-reported restricted coverage. See the [0.15.6 release notes](0.15.6.md).
