@@ -1,5 +1,4 @@
 import { createHash } from 'node:crypto';
-import { appendFileSync } from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
 import { Prisma } from '@prisma/client';
 import Papa from 'papaparse';
@@ -8,11 +7,9 @@ import { downloadOhlqEchoSalesPairs, type OhlqAnnualSalesDownloadResult } from '
 import { importOhlqAnnualSalesCsv, parseOhlqAnnualSalesByWholesaleCsv } from '../lib/ohlqAnnualSalesImport';
 
 const vendor = 'Z90399001';
-const start = '2019-09-01';
-const end = '2026-11-21';
-// Both native wholesale export scopes lack required identifiers on this date.
-// Keep it in the verification query and retry it when OHLQ supplies corrected evidence.
-const deferredSourceDates = new Set(['2025-04-12']);
+const start = '2025-04-12';
+const end = start;
+const approvedPermitHash = '3c8f9ab516e1ca34d781b6f06ba30d17e58a05a8735f3f6a7eec3fd54e2a7124';
 const wholesaleId = 'dea7572c-2ea4-45bb-bbbc-29600bd326cc';
 let day: string | undefined;
 let stage = 'target';
@@ -58,18 +55,14 @@ async function remaining() {
     ORDER BY day DESC`;
 }
 
-function wholesaleRows(result: OhlqAnnualSalesDownloadResult, date: string) {
+function wholesaleRows(result: OhlqAnnualSalesDownloadResult, date: string, permit: string) {
   const e = result.echoWholesaleExport;
   if (!e || e.reportIdentity !== wholesaleId || e.date !== date || result.reportDate !== date) {
     throw Error('Invalid wholesale source evidence.');
   }
-  if (e.verifiedEmpty) {
-    if (e.statewide || result.csvBuffer || result.sizeBytes) throw Error('Inconsistent wholesale empty export.');
-    return { rows: [], csvHash: 'provider-empty' };
-  }
+  if (e.verifiedEmpty || e.statewide || date !== start) throw Error('Expected the nonempty vendor filtered wholesale export.');
   const bytes = result.csvBuffer;
   if (!bytes || !bytes.length || bytes.length !== result.sizeBytes) throw Error('Incomplete wholesale bytes.');
-  const parsed = parseOhlqAnnualSalesByWholesaleCsv(bytes, date);
   const input = Papa.parse(bytes.toString('utf8'), { header: true, skipEmptyLines: true }) as {
     data: Record<string, string>[];
     errors: unknown[];
@@ -78,16 +71,26 @@ function wholesaleRows(result: OhlqAnnualSalesDownloadResult, date: string) {
   const columns = input.meta.fields ?? [];
   if (input.errors.length) throw Error('Wholesale CSV did not parse.');
   if (Object.keys(input.meta.renamedHeaders ?? {}).length) throw Error('Wholesale CSV has duplicate headers.');
-  if (!columns.includes('Wholesale_Bottles_Sold')) throw Error('Wholesale quantity column is missing.');
+  if (!columns.includes('Wholesale_Bottles_Sold') || !columns.includes('Permit_Number')) {
+    throw Error('Required wholesale columns are missing.');
+  }
   if (input.data.some(row => !/^-?(?:\d+|\d{1,3}(?:,\d{3})+)$/.test(row.Wholesale_Bottles_Sold?.trim() ?? '') &&
       row.Wholesale_Bottles_Sold?.trim() !== '')) throw Error('Wholesale quantity syntax is invalid.');
+  const missingPermit = input.data.filter(row => !row.Permit_Number?.trim());
+  if (missingPermit.length !== 1 || missingPermit[0].DimVendor_VendorNumber_?.trim() !== vendor ||
+      !missingPermit[0].Agency_Id?.trim() || !missingPermit[0].Brand?.trim()) {
+    throw Error('The export does not contain one matching missing permit.');
+  }
+  missingPermit[0].Permit_Number = permit;
+  const repaired = Papa.unparse(input.data, { columns });
+  const parsed = parseOhlqAnnualSalesByWholesaleCsv(repaired, date);
   if (parsed.skippedRows) throw Error('Wholesale rows are missing key identifiers.');
   if (input.data.length !== parsed.rows.length) throw Error('Wholesale CSV has repeated row keys.');
   if (!e.statewide && parsed.rows.some(row => row.vendor !== vendor)) throw Error('Wholesale rows are outside the Echo scope.');
   if (parsed.rows.some(row => row.wholesaleBottlesSold! < -2147483648 || row.wholesaleBottlesSold! > 2147483647)) {
     throw Error('Wholesale quantity is outside the supported integer range.');
   }
-  return { rows: e.statewide ? parsed.rows.filter(row => row.vendor === vendor) : parsed.rows, csvHash: sha(bytes) };
+  return { rows: parsed.rows, csvHash: sha(bytes) };
 }
 
 async function attachDetail(tx: Prisma.TransactionClient, date: string, input: ReturnType<typeof wholesaleRows>) {
@@ -107,7 +110,7 @@ async function attachDetail(tx: Prisma.TransactionClient, date: string, input: R
   const [actual] = await tx.$queryRaw<{ n: number; sha: string }[]>(digest(Prisma.sql`
     (SELECT * FROM "OhlqAnnualSalesByWholesaleRow" WHERE vendor=${vendor} AND "reportDate"=${date}::date) x`));
   if (expected.n !== actual.n || expected.sha !== actual.sha) throw Error('Persisted wholesale differs from verified source.');
-  return 'echo-pair:' + process.env.GITHUB_RUN_ID + ':' + actual.sha + ':' + input.csvHash;
+  return 'echo-pair:' + process.env.GITHUB_RUN_ID + ':' + actual.sha + ':' + input.csvHash + ':user-confirmed-permit-correction';
 }
 
 async function main() {
@@ -119,13 +122,14 @@ async function main() {
   const [target] = await prisma.$queryRaw<{db:string;schema:string;isPrimary:boolean}[]>`
     SELECT current_database() db,current_schema() schema,NOT pg_is_in_recovery() AS "isPrimary"`;
   if (target?.db !== 'neondb' || target.schema !== 'public' || !target.isPrimary) throw Error('Invalid database session.');
-  const unconfirmed = await remaining();
-  const pending = unconfirmed.filter(row => !deferredSourceDates.has(row.date));
-  const deferred = unconfirmed.filter(row => deferredSourceDates.has(row.date)).map(row => row.date);
-  if (deferred.length) console.log(JSON.stringify({ deferred, reason: 'Missing wholesale source key identifiers in both native export scopes.' }));
-  const limit = process.env.GITHUB_EVENT_NAME === 'workflow_dispatch' ? 24 : 4;
-  console.log(JSON.stringify({ from: pending[0]?.date, missing: pending.length, limit }));
-  const batch = pending.slice(0, limit).map(row => row.date);
+  const batch = (await remaining()).map(row => row.date);
+  if (!batch.length) return;
+  const permits = await prisma.$queryRaw<{ permit: string }[]>`
+    SELECT DISTINCT "permitNumber" AS permit FROM "OhlqAnnualSalesByWholesaleRow"
+    WHERE vendor=${vendor} AND encode(sha256(convert_to("permitNumber",'UTF8')),'hex')=${approvedPermitHash}
+  `;
+  if (permits.length !== 1) throw Error('Could not validate the approved permit.');
+  console.log(JSON.stringify({ from: start, missing: batch.length, singleDate: true }));
   let committed = 0;
   let attempts = 0;
 
@@ -146,23 +150,14 @@ async function main() {
         stage = 'download';
         report = undefined;
         console.log(JSON.stringify({ starting: date }));
-      }, async (summary, wholesale, acquireStatewideWholesale) => {
+      }, async (summary, wholesale) => {
         stage = 'validate-summary-evidence';
         const info = summary.summaryNativeExport;
         if (!summary.csvBuffer || summary.csvBuffer.length !== summary.sizeBytes || !info || day !== summary.reportDate) {
           throw Error('Incomplete summary bytes.');
         }
         stage = 'validate-wholesale-source';
-        let detail: ReturnType<typeof wholesaleRows>;
-        try {
-          detail = wholesaleRows(wholesale, summary.reportDate);
-        } catch (error) {
-          if (!(error instanceof Error) || error.message !== 'Wholesale rows are missing key identifiers.') throw error;
-          console.log(JSON.stringify({ date: summary.reportDate, fallback: 'statewide-wholesale' }));
-          const statewide = await acquireStatewideWholesale();
-          stage = 'validate-statewide-wholesale-source';
-          detail = wholesaleRows(statewide, summary.reportDate);
-        }
+        const detail = wholesaleRows(wholesale, summary.reportDate, permits[0].permit);
         stage = 'validate-summary-and-persist';
         const result = await importOhlqAnnualSalesCsv({
           csv: summary.csvBuffer, reportDate: summary.reportDate, echoOnly: true,
@@ -184,11 +179,8 @@ async function main() {
       await delay(attempts * 15000);
     }
   }
-  const stillUnconfirmed = await remaining();
-  const outstanding = stillUnconfirmed.filter(row => !deferredSourceDates.has(row.date));
-  console.log(JSON.stringify({ outstanding: stillUnconfirmed.length, actionable: outstanding.length, next: outstanding[0]?.date, deferred }));
-  if (pending.length && outstanding.length>=pending.length) throw Error('No durable backfill progress.');
-  if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, 'remaining='+outstanding.length+'\n');
+  if ((await remaining()).length) throw Error('The corrected day did not reconcile.');
+  console.log(JSON.stringify({ date: start, verifiedCorrection: true }));
 }
 main().catch((e:unknown)=>{
   const code=e && typeof e==='object' && 'code' in e && /^P\d{4}$/.test(String(e.code)) ? String(e.code):undefined;
