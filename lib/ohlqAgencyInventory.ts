@@ -27,6 +27,10 @@ const toDateOnlyUtc = (value: Date | string) => {
 export const isDistilleryOnlyInventoryDetail = (value: string | null | undefined) =>
   String(value ?? '').trim().toUpperCase() === OHLQ_DISTILLERY_ONLY_DETAIL;
 
+export function isRestrictedAgencyInventory(coverageGroup: string | null) {
+  return coverageGroup?.trim().toUpperCase() === 'RESTRICTED';
+}
+
 export function isTenantAgencyInventoryItem({
   config = getTenantConfig(),
   detailCodeDescription,

@@ -1,4 +1,5 @@
 import type { OhlqAgencyInventoryCurrent } from '@prisma/client';
+import { isRestrictedAgencyInventory } from '../../lib/ohlqAgencyInventory';
 import { DataFreshnessBadge } from '../components/DataFreshnessBadge';
 
 export type CurrentInventoryProduct = Pick<OhlqAgencyInventoryCurrent,
@@ -25,11 +26,15 @@ export function AgencyCurrentInventoryView({
         <table className="comparison-table inventory-comparison-table">
           <colgroup><col /><col className="inventory-quantity-column" /><col className="inventory-quantity-column" /></colgroup>
           <thead><tr><th scope="col">Product</th><th scope="col" className="numeric">On hand</th><th scope="col" className="numeric">Minimum</th></tr></thead>
-          <tbody>{products.map((product) => <tr key={product.itemCode}>
-            <th scope="row"><strong>{product.itemName}</strong><small>{[product.itemCode, product.status, product.coverageGroup].filter(Boolean).join(' · ')}</small></th>
-            <td className="numeric">{product.onHand ?? 'Unknown'}</td>
-            <td className="numeric">{product.minimum ?? 'Unknown'}</td>
-          </tr>)}</tbody>
+          <tbody>{products.map((product) => {
+            const restricted = isRestrictedAgencyInventory(product.coverageGroup);
+            const details = [product.itemCode, product.status, restricted ? null : product.coverageGroup];
+            return <tr key={product.itemCode}>
+              <th scope="row"><strong>{product.itemName}</strong><small>{details.filter(Boolean).join(' · ')}</small></th>
+              <td className="numeric">{product.onHand ?? 'Unknown'}</td>
+              <td className="numeric">{restricted ? 'Restricted' : product.minimum ?? 'Unknown'}</td>
+            </tr>;
+          })}</tbody>
         </table>
       </div> : <p className="muted activity-empty">No current inventory is recorded for this agency.</p>}
   </section>;

@@ -16,6 +16,7 @@ import { AgencyFocusSearch } from './AgencyFocusSearch';
 import { formatDateOnly } from '../../lib/dateTime';
 import { AGENCY_FOCUS_PAGE_SIZE, agencyFocusHref, agencyFocusPageNumber } from '../../lib/agencyFocusView';
 import { getAgencyOpportunitySales90 } from '../../lib/agencyFocusSales';
+import { AgencyOpportunityInventoryCell } from '../components/AgencyOpportunityInventoryCell';
 import { AGENCY_OPPORTUNITY_SALES_LABEL, AgencyOpportunitySalesCell } from '../components/AgencyOpportunitySalesCell';
 import { TargetAccountControl } from '../components/TargetAccountControl';
 import { TargetAccountMarker } from '../components/TargetAccountMarker';
@@ -137,7 +138,7 @@ export default async function AgencyFocusPage({
             <strong className="intelligence-product-name">{item.itemName}</strong><small>Item {item.itemCode} · Through {formatDateOnly(item.asOfDate)}</small>
           </th>
           <td data-label="Next action"><strong>{titleCase(item.recommendedAction)}</strong><small>{stateLabels[item.opportunityState]}</small><span className={`priority priority-${item.priorityBand.toLowerCase()}`}>{titleCase(item.priorityBand)}</span></td>
-          <td className="numeric" data-label="On hand / min"><strong>{item.onHand ?? 'Unavailable'}</strong><small>Min {item.minimum ?? 'Unavailable'}</small></td>
+          <AgencyOpportunityInventoryCell opportunity={item} />
           <AgencyOpportunitySalesCell opportunity={item} sales90={sales90ById.get(item.id)} />
           <td data-label="Evidence">
             {stringList(item.reasons)[0] ? <p className="intelligence-key-reason agency-focus-key-reason">{stringList(item.reasons)[0]}</p> : null}

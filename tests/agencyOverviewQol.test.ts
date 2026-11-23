@@ -42,6 +42,17 @@ test('current inventory retains stock, minimum, source status and freshness whil
   assert.match(html, /role="region" aria-label="Current inventory comparison" tabindex="0"/);
 });
 
+test('current inventory distinguishes restricted coverage from a zero minimum', () => {
+  const html = renderToStaticMarkup(createElement(AgencyCurrentInventoryView, {
+    products: [
+      { ...product, coverageGroup: 'Restricted', onHand: 7, minimum: 0 },
+      { ...product, itemCode: 'OTHER', coverageGroup: 'MIN', onHand: 3, minimum: 0 },
+    ],
+  }));
+  assert.match(html, /2847B · Active<\/small><\/th><td class="numeric">7<\/td><td class="numeric">Restricted<\/td>/);
+  assert.match(html, /OTHER · Active · MIN<\/small><\/th><td class="numeric">3<\/td><td class="numeric">0<\/td>/);
+});
+
 test('missing inventory and failed inventory reads are distinct from zero stock', () => {
   const empty = renderToStaticMarkup(createElement(AgencyCurrentInventoryView, { products: [] }));
   assert.match(empty, /No current inventory is recorded for this agency/);

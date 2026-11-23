@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import type { Prisma, PrismaClient } from '@prisma/client';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { AgencyOpportunityInventoryCell } from '../app/components/AgencyOpportunityInventoryCell';
 import { getAgencyOpportunitySales90 } from '../lib/agencyFocusSales';
 import { agencyFocusHref, agencyFocusPageNumber } from '../lib/agencyFocusView';
 import { formatDateOnly } from '../lib/dateTime';
@@ -32,7 +35,8 @@ test('agency focus exposes comparison facts and the decisive reason while preser
   assert.match(source, /getAgencyOpportunitySales90\(organizationId, visibleOpportunities\),/);
   assert.match(source, /\{AGENCY_OPPORTUNITY_SALES_LABEL\}<\/th>/);
   assert.match(source, /<AgencyOpportunitySalesCell opportunity=\{item\} sales90=\{sales90ById.get\(item.id\)\} \/>/);
-  for (const value of ['item.onHand', 'item.minimum', 'item.fitScore', 'item.peerCarryPercent']) assert.ok(source.includes(value));
+  assert.match(source, /<AgencyOpportunityInventoryCell opportunity=\{item\} \/>/);
+  for (const value of ['item.fitScore', 'item.peerCarryPercent']) assert.ok(source.includes(value));
   assert.match(source, /aria-label="Recommendation evidence"/);
   assert.match(source, /Why this recommendation\?/);
   assert.match(source, /className="intelligence-key-reason agency-focus-key-reason"/);
@@ -46,6 +50,18 @@ test('agency focus exposes comparison facts and the decisive reason while preser
   assert.match(source, /AgencyFocusSearch value=\{search\}/);
   assert.match(readFileSync('app/agency-focus/AgencyFocusSearch.tsx', 'utf8'), /LiveFilterForm/);
   assert.match(source, /No matching retail actions/);
+});
+
+test('opportunity inventory displays coverage restrictions alongside on-hand stock', () => {
+  const render = (coverageGroup: string | null, minimum: number | null) =>
+    renderToStaticMarkup(createElement(AgencyOpportunityInventoryCell, {
+      opportunity: { onHand: 6, minimum, coverageGroup },
+    }));
+  assert.match(render('Restricted', 0), /<strong>6<\/strong><small>Restricted<\/small>/);
+  assert.match(render(' RESTRICTED ', null), /<small>Restricted<\/small>/);
+  assert.match(render('MIN', 0), /<small>Min 0<\/small>/);
+  assert.match(render('MIN', 3), /<small>Min 3<\/small>/);
+  assert.match(render(null, null), /<small>Min Unavailable<\/small>/);
 });
 
 test('Retail Intelligence totals use the visible Echo agency and SKU windows, preserving signed quantities and missing history', async () => {

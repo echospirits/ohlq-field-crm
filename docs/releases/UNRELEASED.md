@@ -1,5 +1,9 @@
 # Unreleased
 
+## Retail Inventory restriction labels — November 23, 2026
+
+Retail Intelligence and retail account views show **Restricted** for store and product pairs with OHLQ-reported restricted coverage. See the [0.15.6 release notes](0.15.6.md).
+
 ## Automatic restaurant research recovery — released 0.15.4, November 23, 2026
 
 Give the hosted research worker explicit Echo Spirits account-state access and retain one pilot per invocation. Fill free submission slots within the existing concurrency and spending bounds. Keep inaccessible or overdue provider responses on their original jobs for reconciliation so other accounts can proceed. The production recovery resumes the existing October 4 batch and preserves prior research and submission history. See [0.15.4 release notes and recovery results](0.15.4.md).

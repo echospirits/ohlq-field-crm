@@ -8,6 +8,7 @@ import Link from 'next/link';
 import { getAgencyOpportunitySales90 } from '../../lib/agencyFocusSales';
 import { formatEasternDate } from '../../lib/dateTime';
 import { prisma } from '../../lib/prisma';
+import { AgencyOpportunityInventoryCell } from '../components/AgencyOpportunityInventoryCell';
 import { AGENCY_OPPORTUNITY_SALES_LABEL, AgencyOpportunitySalesCell } from '../components/AgencyOpportunitySalesCell';
 import { ContextualActions } from '../components/ContextualActions';
 import { DataFreshnessBadge } from '../components/DataFreshnessBadge';
@@ -100,7 +101,7 @@ export async function AgencyIntelligencePanel({ agencyId, agencyName, agencyNumb
         <tbody>{visibleProducts.map((product) => <tr key={product.id}>
           <th scope="row" data-label="Product"><strong>{product.itemName}</strong><small>Item {product.itemCode} · {titleCase(product.opportunityState)}</small></th>
           <td data-label="Next action"><strong>{actionLabels[product.recommendedAction]}</strong><span className={`priority priority-${product.priorityBand.toLowerCase()}`}>{titleCase(product.priorityBand)}</span></td>
-          <td className="numeric" data-label="On hand / min"><strong>{product.onHand ?? 'Unavailable'}</strong><small>Min {product.minimum ?? 'Unavailable'}</small></td>
+          <AgencyOpportunityInventoryCell opportunity={product} />
           <AgencyOpportunitySalesCell opportunity={product} sales90={sales90ById.get(product.id)} />
           <td data-label="Evidence"><p className="intelligence-key-reason">{stringList(product.reasons)[0]}</p><small>Fit {product.fitScore} · {titleCase(product.fitBand)} · Peer carry {product.peerCarryPercent === null ? 'Unavailable' : `${Math.round(product.peerCarryPercent)}%`}</small>{stringList(product.reasons).length > 1 ? <details className="compact-details"><summary>More evidence ({stringList(product.reasons).length - 1})</summary><ul>{stringList(product.reasons).slice(1).map((reason) => <li key={reason}>{reason}</li>)}</ul></details> : null}</td>
           <td data-label="Actions"><ContextualActions context={{ accountName: agencyName, agencyId, agencyProductIntelligenceId: product.id, productItemCode: product.itemCode, productName: product.itemName, reason: stringList(product.reasons).join(' '), returnTo: `/agencies/${agencyId}`, sourceLabel: `${titleCase(product.opportunityState)} - ${product.itemName}`, sourceType: product.opportunityState }} currentUserId={currentUserId} existingFollowUpId={product.worklistItems[0]?.id} users={users} /></td>
