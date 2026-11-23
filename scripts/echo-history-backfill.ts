@@ -10,6 +10,9 @@ import { importOhlqAnnualSalesCsv, parseOhlqAnnualSalesByWholesaleCsv } from '..
 const vendor = 'Z90399001';
 const start = '2019-09-01';
 const end = '2026-11-21';
+// Both native wholesale export scopes lack required identifiers on this date.
+// Keep it in the verification query and retry it when OHLQ supplies corrected evidence.
+const deferredSourceDates = new Set(['2025-04-12']);
 const wholesaleId = 'dea7572c-2ea4-45bb-bbbc-29600bd326cc';
 let day: string | undefined;
 let stage = 'target';
@@ -116,7 +119,10 @@ async function main() {
   const [target] = await prisma.$queryRaw<{db:string;schema:string;isPrimary:boolean}[]>`
     SELECT current_database() db,current_schema() schema,NOT pg_is_in_recovery() AS "isPrimary"`;
   if (target?.db !== 'neondb' || target.schema !== 'public' || !target.isPrimary) throw Error('Invalid database session.');
-  const pending = await remaining();
+  const unconfirmed = await remaining();
+  const pending = unconfirmed.filter(row => !deferredSourceDates.has(row.date));
+  const deferred = unconfirmed.filter(row => deferredSourceDates.has(row.date)).map(row => row.date);
+  if (deferred.length) console.log(JSON.stringify({ deferred, reason: 'Missing wholesale source key identifiers in both native export scopes.' }));
   const limit = process.env.GITHUB_EVENT_NAME === 'workflow_dispatch' ? 24 : 4;
   console.log(JSON.stringify({ from: pending[0]?.date, missing: pending.length, limit }));
   const batch = pending.slice(0, limit).map(row => row.date);
@@ -178,8 +184,9 @@ async function main() {
       await delay(attempts * 15000);
     }
   }
-  const outstanding=await remaining();
-  console.log(JSON.stringify({outstanding:outstanding.length,next:outstanding[0]?.date}));
+  const stillUnconfirmed = await remaining();
+  const outstanding = stillUnconfirmed.filter(row => !deferredSourceDates.has(row.date));
+  console.log(JSON.stringify({ outstanding: stillUnconfirmed.length, actionable: outstanding.length, next: outstanding[0]?.date, deferred }));
   if (pending.length && outstanding.length>=pending.length) throw Error('No durable backfill progress.');
   if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, 'remaining='+outstanding.length+'\n');
 }
