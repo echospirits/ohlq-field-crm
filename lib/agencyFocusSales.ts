@@ -49,15 +49,16 @@ export async function getDeadInventorySales90(
   });
   if (windows.length === 0) return totals;
 
+  const salesQuery = db.ohlqAnnualSalesRow.groupBy({
+    by: ['agencyId', 'brand'],
+    where: {
+      vendor: ECHO_VENDOR_ID,
+      OR: windows.map(({ agencyId, itemCode, reportDate }) => ({ agencyId, brand: itemCode, reportDate })),
+    },
+    _sum: { retailBottlesSold: true, wholesaleBottlesSold: true },
+  });
   const [sales, coverage, echoPlacements] = await db.$transaction([
-    db.ohlqAnnualSalesRow.groupBy({
-      by: ['agencyId', 'brand'],
-      where: {
-        vendor: ECHO_VENDOR_ID,
-        OR: windows.map(({ agencyId, itemCode, reportDate }) => ({ agencyId, brand: itemCode, reportDate })),
-      },
-      _sum: { retailBottlesSold: true, wholesaleBottlesSold: true },
-    }),
+    salesQuery,
     db.echoBottleSalesDayCoverage.findMany({
       where: { vendor: ECHO_VENDOR_ID, completedAt: { lte: new Date() }, OR: windows.map(({ reportDate }) => ({ reportDate })) },
       select: { reportDate: true },
