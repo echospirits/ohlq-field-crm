@@ -12,7 +12,7 @@ const start = '2019-09-01';
 const end = '2026-11-21';
 // Both native wholesale export scopes lack required identifiers on this date.
 // Keep it in the verification query and retry it when OHLQ supplies corrected evidence.
-const deferredSourceDates = new Set(['2025-04-12']);
+const deferredSourceDates = new Set(['2025-04-12', '2024-12-19']);
 const wholesaleId = 'dea7572c-2ea4-45bb-bbbc-29600bd326cc';
 let day: string | undefined;
 let stage = 'target';
@@ -81,7 +81,13 @@ function wholesaleRows(result: OhlqAnnualSalesDownloadResult, date: string) {
   if (!columns.includes('Wholesale_Bottles_Sold')) throw Error('Wholesale quantity column is missing.');
   if (input.data.some(row => !/^-?(?:\d+|\d{1,3}(?:,\d{3})+)$/.test(row.Wholesale_Bottles_Sold?.trim() ?? '') &&
       row.Wholesale_Bottles_Sold?.trim() !== '')) throw Error('Wholesale quantity syntax is invalid.');
-  if (parsed.skippedRows) throw Error('Wholesale rows are missing key identifiers.');
+  if (parsed.skippedRows) {
+    const observed = e.statewide ? input.data.filter(row => row.DimVendor_VendorNumber_?.trim() === vendor) : input.data;
+    const missing = Object.fromEntries(['Agency_Id', 'DimVendor_VendorNumber_', 'Brand', 'Permit_Number']
+      .map(key => [key, observed.filter(row => !row[key]?.trim()).length]));
+    console.log(JSON.stringify({ date, scope: e.statewide ? 'statewide' : 'echo', sourceRowsMissingKeys: parsed.skippedRows, echoMissingByField: missing }));
+    throw Error('Wholesale rows are missing key identifiers.');
+  }
   if (input.data.length !== parsed.rows.length) throw Error('Wholesale CSV has repeated row keys.');
   if (!e.statewide && parsed.rows.some(row => row.vendor !== vendor)) throw Error('Wholesale rows are outside the Echo scope.');
   if (parsed.rows.some(row => row.wholesaleBottlesSold! < -2147483648 || row.wholesaleBottlesSold! > 2147483647)) {
@@ -125,16 +131,17 @@ async function main() {
   if (deferred.length) console.log(JSON.stringify({ deferred, reason: 'Missing wholesale source key identifiers in both native export scopes.' }));
   const limit = process.env.GITHUB_EVENT_NAME === 'workflow_dispatch' ? 24 : 4;
   console.log(JSON.stringify({ from: pending[0]?.date, missing: pending.length, limit }));
-  const batch = pending.slice(0, limit).map(row => row.date);
-  let committed = 0;
+  const reprobe = process.env.GITHUB_EVENT_NAME === 'push' && deferred.includes('2024-12-19') ? ['2024-12-19'] : [];
+  const batch = [...reprobe, ...pending.slice(0, limit).map(row => row.date)].sort().reverse();
+  let processed = 0;
   let attempts = 0;
 
-  while (committed < batch.length) {
-    day = batch[committed];
+  while (processed < batch.length) {
+    day = batch[processed];
     stage = 'sign-in';
     report = undefined;
     try {
-      await downloadOhlqEchoSalesPairs(batch.slice(committed), {
+      await downloadOhlqEchoSalesPairs(batch.slice(processed), {
         headless: true,
         logger: { log() {}, error() {} },
         onDiagnostic: diagnostic => {
@@ -161,7 +168,16 @@ async function main() {
           console.log(JSON.stringify({ date: summary.reportDate, fallback: 'statewide-wholesale' }));
           const statewide = await acquireStatewideWholesale();
           stage = 'validate-statewide-wholesale-source';
-          detail = wholesaleRows(statewide, summary.reportDate);
+          try {
+            detail = wholesaleRows(statewide, summary.reportDate);
+          } catch (fallbackError) {
+            if (!reprobe.includes(summary.reportDate) || !(fallbackError instanceof Error) ||
+                fallbackError.message !== 'Wholesale rows are missing key identifiers.') throw fallbackError;
+            processed += 1;
+            attempts = 0;
+            console.log(JSON.stringify({ date: summary.reportDate, sourceStillUnconfirmed: true }));
+            return;
+          }
         }
         stage = 'validate-summary-and-persist';
         const result = await importOhlqAnnualSalesCsv({
@@ -174,7 +190,7 @@ async function main() {
             return reference;
           },
         });
-        committed += 1;
+        processed += 1;
         attempts = 0;
         console.log(JSON.stringify({ date: summary.reportDate, summary: result.importedRows, wholesale: detail.rows.length, committed: true }));
       });
