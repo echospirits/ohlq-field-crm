@@ -138,16 +138,23 @@ async function main() {
         report = undefined;
         console.log(JSON.stringify({ starting: date }));
       }, async (summary, wholesale) => {
-        stage = 'certify-pair';
+        stage = 'validate-summary-evidence';
         const info = summary.summaryNativeExport;
         if (!summary.csvBuffer || summary.csvBuffer.length !== summary.sizeBytes || !info || day !== summary.reportDate) {
           throw Error('Incomplete summary bytes.');
         }
+        stage = 'validate-wholesale-source';
         const detail = wholesaleRows(wholesale, summary.reportDate);
+        stage = 'validate-summary-and-persist';
         const result = await importOhlqAnnualSalesCsv({
           csv: summary.csvBuffer, reportDate: summary.reportDate, echoOnly: true,
           evidence: { native: info, requestReference: 'echo-pair:' + process.env.GITHUB_RUN_ID },
-          pairedWholesale: tx => attachDetail(tx, summary.reportDate, detail),
+          pairedWholesale: async tx => {
+            stage = 'persist-wholesale';
+            const reference = await attachDetail(tx, summary.reportDate, detail);
+            stage = 'reconcile-summary';
+            return reference;
+          },
         });
         committed += 1;
         attempts = 0;
@@ -166,7 +173,9 @@ async function main() {
 }
 main().catch((e:unknown)=>{
   const code=e && typeof e==='object' && 'code' in e && /^P\d{4}$/.test(String(e.code)) ? String(e.code):undefined;
-  const reason=e instanceof Error && /^[A-Za-z -]+\.$/.test(e.message)?e.message:undefined;
+  const message = e instanceof Error ? e.message : '';
+  const safeErrors = [["Invalid wholesale bottle quantity","wholesale-quantity"],["Unable to parse OHLQ wholesale CSV","wholesale-csv"],["OHLQ wholesale CSV is missing","wholesale-headers"],["OHLQ wholesale CSV contains conflicting duplicate","wholesale-conflicting-keys"],["Unable to parse OHLQ CSV","summary-csv"],["OHLQ CSV is missing","summary-headers"],["Invalid signed integer in OHLQ sales summary","summary-quantity"],["Invalid integer value in OHLQ CSV","summary-quantity"]];
+  const reason = /^[A-Za-z -]+\.$/.test(message) ? message : safeErrors.find(([prefix]) => message.startsWith(prefix))?.[1];
   console.error(JSON.stringify({day,report,stage,code,reason,timeout:e instanceof Error && e.name==='TimeoutError'}));
   process.exitCode=1;
 }).finally(()=>prisma.$disconnect());
