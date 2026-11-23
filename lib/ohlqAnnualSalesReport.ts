@@ -170,7 +170,7 @@ export type OhlqSummaryNativeExport = Omit<OhlqBailmentNativeExport, 'parameterS
 
 export type OhlqAnnualSalesDownloadResult = {
   summaryNativeExport?: OhlqSummaryNativeExport;
-  echoWholesaleExport?: { reportIdentity: string; date: string; verifiedEmpty: boolean };
+  echoWholesaleExport?: { reportIdentity: string; date: string; verifiedEmpty: boolean; statewide?: boolean };
   csvBuffer?: Buffer;
   filename: string;
   nativeExport?: OhlqBailmentNativeExport;
@@ -1224,6 +1224,7 @@ async function downloadOhlqPowerBiReportFromPage(
   page: Page,
   report: OhlqPowerBiReportConfig,
   runtime: OhlqDownloadRuntime,
+  verifyStatewideWholesale = false,
 ) {
   const { debugDir, logger, reportDate } = runtime;
   const powerBiReportUrl = buildPowerBiReportUrl(report.reportId);
@@ -1252,7 +1253,7 @@ async function downloadOhlqPowerBiReportFromPage(
   const echoWholesale = report.reportId === OHLQ_ANNUAL_SALES_BY_WHOLESALE_REPORT.reportId
     && report.parameter.values !== 'all' && report.parameter.values.length === 1
     && report.parameter.values[0] === 'Z90399001';
-  const exactDateRequired = summaries || echoWholesale;
+  const exactDateRequired = summaries || echoWholesale || verifyStatewideWholesale;
   if (exactDateRequired && runtime.fromDate.iso !== reportDate.iso) {
     throw new Error('The annual sales summary must cover exactly one report date.');
   }
@@ -1269,10 +1270,10 @@ async function downloadOhlqPowerBiReportFromPage(
       throw new Error('OHLQ did not confirm the exact Echo vendor.');
     }
   } else {
-    await selectReportParameter(frame, parameter, summaries);
+    await selectReportParameter(frame, parameter, summaries || verifyStatewideWholesale);
   }
   runtime.onDiagnostic?.({ stage: 'parameters-selected', parameter: parameter.name, allValues: parameter.values === 'all' });
-  if (echoFiltered) {
+  if (echoFiltered || verifyStatewideWholesale) {
     runtime.onDiagnostic?.({ stage: 'view-report', historyReport: report.fileSlug });
     await frame.getByRole('button', { name: 'View report', exact: true }).click({ timeout: 30_000 });
   } else {
@@ -1311,6 +1312,10 @@ async function downloadOhlqPowerBiReportFromPage(
   const download = await downloadPromise;
 
   const result = await saveOhlqPowerBiReportDownload(download, report, runtime, parameter);
+  if (verifyStatewideWholesale) {
+    if (!result.sizeBytes || parameter.name !== 'Vendor' || parameter.values !== 'all') throw new Error('Unverified statewide wholesale CSV.');
+    return { ...result, echoWholesaleExport: { reportIdentity: report.reportId, date: reportDate.iso, verifiedEmpty: false, statewide: true } };
+  }
   if (echoWholesale) {
     if (!result.sizeBytes || !echoFiltered) throw new Error('Unverified Echo wholesale CSV.');
     return { ...result, echoWholesaleExport: { reportIdentity: report.reportId, date: reportDate.iso, verifiedEmpty: false } };
@@ -1480,7 +1485,11 @@ export async function downloadOhlqEchoSalesPairs(
   dates: readonly string[],
   options: OhlqAnnualSalesDownloadOptions,
   start: (date: string) => void,
-  consume: (summary: OhlqAnnualSalesDownloadResult, wholesale: OhlqAnnualSalesDownloadResult) => Promise<void>,
+  consume: (
+    summary: OhlqAnnualSalesDownloadResult,
+    wholesale: OhlqAnnualSalesDownloadResult,
+    statewideWholesale: () => Promise<OhlqAnnualSalesDownloadResult>,
+  ) => Promise<void>,
 ) {
   const parameter = { name: 'Vendor' as const, values: ['Z90399001'] };
   const { browser, context, page } = await openBrowserPage(options);
@@ -1491,7 +1500,9 @@ export async function downloadOhlqEchoSalesPairs(
       const runtime = createDownloadRuntime({ ...options, reportDate: date, fromDate: date, returnBuffer: true });
       const summary = await downloadOhlqPowerBiReportFromPage(page, { ...OHLQ_ANNUAL_SALES_SUMMARY_REPORT, parameter }, runtime);
       const wholesale = await downloadOhlqPowerBiReportFromPage(page, { ...OHLQ_ANNUAL_SALES_BY_WHOLESALE_REPORT, parameter }, runtime);
-      await consume(summary, wholesale);
+      await consume(summary, wholesale, () => downloadOhlqPowerBiReportFromPage(
+        page, OHLQ_ANNUAL_SALES_BY_WHOLESALE_REPORT, runtime, true,
+      ));
     }
   } finally {
     await closeBrowserPage(context, browser);

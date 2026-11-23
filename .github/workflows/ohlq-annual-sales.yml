@@ -1,5 +1,5 @@
 name: Echo Spirits daily sales history backfill
-run-name: Echo Spirits production history · ${{ github.event_name }} · wholesale source checks
+run-name: Echo Spirits production history · ${{ github.event_name }} · statewide wholesale recovery
 
 on:
   create:

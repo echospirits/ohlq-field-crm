@@ -61,7 +61,7 @@ function wholesaleRows(result: OhlqAnnualSalesDownloadResult, date: string) {
     throw Error('Invalid wholesale source evidence.');
   }
   if (e.verifiedEmpty) {
-    if (result.csvBuffer || result.sizeBytes) throw Error('Inconsistent wholesale empty export.');
+    if (e.statewide || result.csvBuffer || result.sizeBytes) throw Error('Inconsistent wholesale empty export.');
     return { rows: [], csvHash: 'provider-empty' };
   }
   const bytes = result.csvBuffer;
@@ -80,11 +80,11 @@ function wholesaleRows(result: OhlqAnnualSalesDownloadResult, date: string) {
       row.Wholesale_Bottles_Sold?.trim() !== '')) throw Error('Wholesale quantity syntax is invalid.');
   if (parsed.skippedRows) throw Error('Wholesale rows are missing key identifiers.');
   if (input.data.length !== parsed.rows.length) throw Error('Wholesale CSV has repeated row keys.');
-  if (parsed.rows.some(row => row.vendor !== vendor)) throw Error('Wholesale rows are outside the Echo scope.');
+  if (!e.statewide && parsed.rows.some(row => row.vendor !== vendor)) throw Error('Wholesale rows are outside the Echo scope.');
   if (parsed.rows.some(row => row.wholesaleBottlesSold! < -2147483648 || row.wholesaleBottlesSold! > 2147483647)) {
     throw Error('Wholesale quantity is outside the supported integer range.');
   }
-  return { rows: parsed.rows, csvHash: sha(bytes) };
+  return { rows: e.statewide ? parsed.rows.filter(row => row.vendor === vendor) : parsed.rows, csvHash: sha(bytes) };
 }
 
 async function attachDetail(tx: Prisma.TransactionClient, date: string, input: ReturnType<typeof wholesaleRows>) {
@@ -140,14 +140,23 @@ async function main() {
         stage = 'download';
         report = undefined;
         console.log(JSON.stringify({ starting: date }));
-      }, async (summary, wholesale) => {
+      }, async (summary, wholesale, acquireStatewideWholesale) => {
         stage = 'validate-summary-evidence';
         const info = summary.summaryNativeExport;
         if (!summary.csvBuffer || summary.csvBuffer.length !== summary.sizeBytes || !info || day !== summary.reportDate) {
           throw Error('Incomplete summary bytes.');
         }
         stage = 'validate-wholesale-source';
-        const detail = wholesaleRows(wholesale, summary.reportDate);
+        let detail: ReturnType<typeof wholesaleRows>;
+        try {
+          detail = wholesaleRows(wholesale, summary.reportDate);
+        } catch (error) {
+          if (!(error instanceof Error) || error.message !== 'Wholesale rows are missing key identifiers.') throw error;
+          console.log(JSON.stringify({ date: summary.reportDate, fallback: 'statewide-wholesale' }));
+          const statewide = await acquireStatewideWholesale();
+          stage = 'validate-statewide-wholesale-source';
+          detail = wholesaleRows(statewide, summary.reportDate);
+        }
         stage = 'validate-summary-and-persist';
         const result = await importOhlqAnnualSalesCsv({
           csv: summary.csvBuffer, reportDate: summary.reportDate, echoOnly: true,
