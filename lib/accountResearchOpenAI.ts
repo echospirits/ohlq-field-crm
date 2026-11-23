@@ -14,6 +14,18 @@ export type AccountResearchExecutionMode = 'manual' | 'automatic';
 const AUTOMATIC_RATE_LIMIT_RETRIES = 3;
 const MAX_RATE_LIMIT_WAIT_MS = 10_000;
 
+class AccountResearchTransportError extends Error {}
+
+export function isAmbiguousAccountResearchSubmissionError(error: unknown) {
+  if (error instanceof AccountResearchTransportError) return true;
+  const status = (error as { status?: number })?.status;
+  return status === 408 || (typeof status === 'number' && status >= 500 && status <= 599);
+}
+
+export function isAccountResearchResponseUnavailable(error: unknown): error is Error & { status: 404 | 410 } {
+  return error instanceof Error && 'status' in error && (error.status === 404 || error.status === 410);
+}
+
 type OpenAIResponse = {
   id?: string;
   status?: string;
@@ -132,6 +144,8 @@ async function requestOpenAI(path: string, init: RequestInit, fetchImpl: Researc
         ...(init.headers ?? {}),
       },
       signal: AbortSignal.timeout(30_000),
+    }).catch((error: unknown) => {
+      throw new AccountResearchTransportError(error instanceof Error ? error.message : String(error), { cause: error });
     });
     const payload = await response.json().catch(() => ({})) as OpenAIResponse & { error?: { message?: string } };
     if (response.ok) return payload;
@@ -188,7 +202,7 @@ export async function submitAccountResearch({
       metadata: { pilot_id: pilotId, research_job_id: jobId, wholesale_account_id: input.wholesaleAccountId },
     }),
   }, fetchImpl, env, mode);
-  if (!response.id) throw new Error('OpenAI did not return a response ID.');
+  if (!response.id) throw new AccountResearchTransportError('OpenAI did not return a response ID.');
   return { responseId: response.id, status: response.status ?? 'queued' };
 }
 
@@ -208,7 +222,7 @@ export async function retrieveAccountResearch({
   mode?: AccountResearchExecutionMode;
 }): Promise<RetrievedResearchResponse> {
   const response = await requestOpenAI(`/responses/${encodeURIComponent(responseId)}`, { method: 'GET' }, fetchImpl, env, mode);
-  const status = response.status ?? 'failed';
+  const status = response.status ?? 'unknown';
   const outputText = status === 'completed' ? extractOutputText(response) : null;
   let result = null;
   let parseError: string | null = null;

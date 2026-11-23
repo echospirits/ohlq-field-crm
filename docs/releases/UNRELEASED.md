@@ -1,5 +1,9 @@
 # Unreleased
 
+## Automatic restaurant research recovery
+
+Give the hosted research worker explicit Echo Spirits account-state access and retain one pilot per invocation. Fill free submission slots within the existing concurrency and spending bounds. Keep inaccessible or overdue provider responses on their original jobs for reconciliation so other accounts can proceed. The production recovery resumes the existing October 4 batch and preserves prior research and submission history. See [0.15.4 release scope](0.15.4.md).
+
 ## Dead Inventory 90-day sales — November 23, 2026
 
 The Dead inventory filter in Retail Intelligence shows **Sales · 7 / 30 / 90d**. The 90-day figure sums retained Echo counter and wholesale bottles, including returns, through the latest complete sales report on or before each recommendation’s inventory snapshot date. Incomplete coverage is labeled in the row, and a confirmed zero requires coverage for the full window. This is a read-only display change using existing sales and coverage records.

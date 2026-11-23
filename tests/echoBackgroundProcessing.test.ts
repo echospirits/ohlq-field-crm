@@ -63,10 +63,9 @@ test('forecast workflow selects entitled Echo and rejects stale outside selectio
   assert.equal(result.completed, 1); assert.equal(result.failed, 0); assert.deepEqual(calls, [ECHO]);
 });
 
-test('automatic research resumes only Echo runs and creates no fallback ownership in another company', async () => {
-  const events: string[] = [];
+test('automatic research rejects a foreign pilot before polling or selecting fallback work', async () => {
   const db: any = {
-    organization: { findFirst: async ({ where }: any) => { assert.equal(where.id, ECHO); events.push('echo-owner'); return { id: ECHO }; } },
+    organization: { findFirst: async () => assert.fail('foreign pilot must not create another pilot') },
     accountResearchPilot: { findFirst: async ({ where, select }: any) => { assert.equal(where.organizationId, ECHO); return select.organizationId ? { id: 'stale-run', organizationId: 'outside' } : null; } },
     accountResearchJob: {
       count: async ({ where }: any) => { assert.equal(where.organizationId, ECHO); return 0; },
@@ -80,15 +79,19 @@ test('automatic research resumes only Echo runs and creates no fallback ownershi
     './accountResearchPilotService': { pollAccountResearchPilot: () => assert.fail('outside run must not poll'), submitQueuedPilotJobs: () => assert.fail('outside run must not submit') },
   });
   const result = await worker.runAutomaticAccountResearch({ db });
-  assert.equal(result.submitted, 0); assert.equal(result.outstandingJobs, 0); assert.deepEqual(events, ['echo-owner']);
+  assert.equal(result.submitted, 0); assert.equal(result.outstandingJobs, 0);
 });
 
 test('an existing Echo research run still polls and submits a bounded wave', async () => {
-  let polled = 0, submitted = 0;
+  let polled = 0, submitted = 0, refreshed = 0;
   const db: any = {
     accountResearchPilot: {
-      findFirst: async ({ where, select }: any) => { assert.equal(where.organizationId, ECHO); return select.organizationId ? { id: 'echo-run', organizationId: ECHO } : null; },
-      findUnique: async () => ({ status: 'RUNNING' }),
+      findFirst: async ({ where, select }: any) => {
+        assert.equal(where.organizationId, ECHO);
+        if (select.organizationId) return { id: 'echo-run', organizationId: ECHO };
+        assert.equal(where.id, 'echo-run');
+        return { status: 'RUNNING' };
+      },
     },
     accountResearchJob: { count: async () => 0, findMany: async () => [], groupBy: async () => [] },
   };
@@ -96,10 +99,11 @@ test('an existing Echo research run still polls and submits a bounded wave', asy
     './accountResearchOpenAI': { assertAccountResearchAutomationEnabled() {} },
     './accountResearchQueue': { getPrioritizedAccountResearchQueue: async ({ organizationId }: any) => { assert.equal(organizationId, ECHO); return []; } },
     './accountResearchPilotService': {
-      pollAccountResearchPilot: async ({ organizationId, pilotId }: any) => { assert.equal(organizationId, ECHO); assert.equal(pilotId, 'echo-run'); polled++; return { checked: 0 }; },
+      pollAccountResearchPilot: async ({ organizationId, pilotId }: any) => { assert.equal(organizationId, ECHO); assert.equal(pilotId, 'echo-run'); polled++; return { reconciliationRequired: 0, paused: false }; },
       submitQueuedPilotJobs: async ({ organizationId, take }: any) => { assert.equal(organizationId, ECHO); assert.equal(take, 3); submitted++; return { submitted: 3, failed: 0, paused: false, remaining: 0 }; },
+      refreshPilotStatus: async ({ organizationId, pilotId }: any) => { assert.equal(organizationId, ECHO); assert.equal(pilotId, 'echo-run'); refreshed++; },
     },
   });
   const result = await worker.runAutomaticAccountResearch({ db, remainingRunCapacity: 3 });
-  assert.equal(polled, 1); assert.equal(submitted, 1); assert.equal(result.submitted, 3); assert.equal(result.runLimitReached, true);
+  assert.equal(polled, 1); assert.equal(submitted, 1); assert.equal(refreshed, 1); assert.equal(result.submitted, 3); assert.equal(result.attempted, 3);
 });

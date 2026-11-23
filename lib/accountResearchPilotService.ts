@@ -22,7 +22,16 @@ import {
   type AccountResearchResult,
   type AccountResearchInputSnapshot,
 } from './accountResearchPilot';
-import { assertAccountResearchAutomationEnabled, assertAccountResearchPilotEnabled, retrieveAccountResearch, submitAccountResearch, type AccountResearchExecutionMode } from './accountResearchOpenAI';
+import { ACCOUNT_RESEARCH_RECONCILIATION_PREFIX } from './accountResearchFailures';
+import {
+  assertAccountResearchAutomationEnabled,
+  assertAccountResearchPilotEnabled,
+  isAccountResearchResponseUnavailable,
+  isAmbiguousAccountResearchSubmissionError,
+  retrieveAccountResearch,
+  submitAccountResearch,
+  type AccountResearchExecutionMode,
+} from './accountResearchOpenAI';
 import { prisma } from './prisma';
 
 const ACTIVE_PILOT_STATUSES = [
@@ -30,10 +39,18 @@ const ACTIVE_PILOT_STATUSES = [
   AccountResearchPilotStatus.PAUSED,
   AccountResearchPilotStatus.READY_FOR_REVIEW,
 ];
+const ACTIVE_PROVIDER_JOB_STATUSES = [AccountResearchJobStatus.SUBMITTED, AccountResearchJobStatus.RUNNING];
+const TERMINAL_PROVIDER_STATUSES = new Set(['completed', 'failed', 'cancelled', 'incomplete']);
+const PROVIDER_PENDING_LIMIT_MS = 60 * 60_000;
+const PROVIDER_RESULT_CHECK_FAILURE = 'Result check failed:';
 
 const clipError = (error: unknown) => (error instanceof Error ? error.message : String(error)).slice(0, 1_500);
 const isFatalSubmissionError = (error: unknown) => [401, 403, 429].includes(Number((error as { status?: number })?.status));
 const assertResearchMode = (mode: AccountResearchExecutionMode) => mode === 'automatic' ? assertAccountResearchAutomationEnabled() : assertAccountResearchPilotEnabled();
+
+async function lockResearchPilot(tx: Prisma.TransactionClient, pilotId: string, organizationId: string) {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`account-research-pilot:${organizationId}:${pilotId}`}, 0))`;
+}
 
 const researchStorageFields = (result: AccountResearchResult) => {
   const [primaryRating, secondaryRating] = result.publicRatings;
@@ -59,7 +76,7 @@ export const deriveSettledPilotStatus = (counts: PilotJobCounts) => {
   if (active > 0) return null;
   if ((counts.NEEDS_REVIEW ?? 0) > 0) return AccountResearchPilotStatus.READY_FOR_REVIEW;
   if ((counts.FAILED ?? 0) + (counts.BLOCKED_BUDGET ?? 0) > 0) return AccountResearchPilotStatus.FAILED;
-  return AccountResearchPilotStatus.COMPLETE;
+  return Object.values(counts).some((count) => count > 0) ? AccountResearchPilotStatus.COMPLETE : null;
 };
 
 export async function createAccountResearchPilot({
@@ -134,8 +151,8 @@ export async function createAccountResearchPilot({
 // blocks the active-wave gate forever. Conditional updates make overlapping
 // cron workflows release each reservation only once.
 export async function recoverInterruptedResearchSubmissions({
-  pilotId, organizationId, db = prisma, now = new Date(),
-}: { pilotId: string; organizationId: string; db?: PrismaClient; now?: Date }) {
+  pilotId, organizationId, db = prisma, now = new Date(), mode = 'manual',
+}: { pilotId: string; organizationId: string; db?: PrismaClient; now?: Date; mode?: AccountResearchExecutionMode }) {
   const staleClaimCutoff = new Date(now.getTime() - 15 * 60_000);
   const where = {
     pilotId, organizationId, status: AccountResearchJobStatus.SUBMITTED,
@@ -144,12 +161,17 @@ export async function recoverInterruptedResearchSubmissions({
   const staleClaims = await db.accountResearchJob.findMany({
     where, select: { id: true, reservedMicros: true },
   });
+  const error = 'Submission was interrupted before an OpenAI response ID was saved.';
   let recovered = 0;
   for (const stale of staleClaims) {
     recovered += await db.$transaction(async (tx) => {
       const claim = await tx.accountResearchJob.updateMany({
         where: { ...where, id: stale.id },
-        data: { status: AccountResearchJobStatus.FAILED, reservedMicros: 0, error: 'Submission was interrupted before an OpenAI response ID was saved.' },
+        data: {
+          status: AccountResearchJobStatus.FAILED,
+          reservedMicros: 0,
+          ...(mode === 'automatic' ? { error: `${ACCOUNT_RESEARCH_RECONCILIATION_PREFIX} ${error}`, completedAt: now } : { error }),
+        },
       });
       if (claim.count !== 1) return 0;
       await tx.accountResearchPilot.update({
@@ -171,64 +193,82 @@ export async function submitQueuedPilotJobs({ pilotId, organizationId, db = pris
   if (!pilot) throw new Error('The active pilot could not be found.');
   if (pilot.estimatedSpendMicros + pilot.reservedMicros > pilot.budgetLimitMicros) throw new Error('The pilot budget reservation is invalid; no jobs were submitted.');
 
-  await recoverInterruptedResearchSubmissions({ pilotId, organizationId, db });
+  const recovered = await recoverInterruptedResearchSubmissions({ pilotId, organizationId, db, mode });
+  let reconciliationRequired = mode === 'automatic' ? recovered : 0;
 
-  const activeJobs = await db.accountResearchJob.count({
-    where: { pilotId, organizationId, status: { in: [AccountResearchJobStatus.SUBMITTED, AccountResearchJobStatus.RUNNING] } },
-  });
-  if (activeJobs > 0) throw new Error('The current 25-account wave is still running. Check and apply it before submitting the next wave.');
+  const activeWhere = { pilotId, organizationId, status: { in: ACTIVE_PROVIDER_JOB_STATUSES } };
+  const queuedWhere = { pilotId, organizationId, status: AccountResearchJobStatus.QUEUED };
+  const activeJobs = await db.accountResearchJob.count({ where: activeWhere });
+  if (mode === 'manual' && activeJobs > 0) throw new Error('The current 25-account wave is still running. Check and apply it before submitting the next wave.');
 
-  const queuedJobs = await db.accountResearchJob.count({
-    where: { pilotId, organizationId, status: AccountResearchJobStatus.QUEUED },
-  });
+  const queuedJobs = await db.accountResearchJob.count({ where: queuedWhere });
+  const batchSize = mode === 'automatic' ? Math.min(take, ACCOUNT_RESEARCH_SUBMISSION_WAVE_SIZE - activeJobs) : take;
+  if (batchSize <= 0) return { submitted: 0, failed: 0, paused: false, remaining: queuedJobs, reconciliationRequired };
   const jobs = await db.accountResearchJob.findMany({
-    where: { pilotId, organizationId, status: AccountResearchJobStatus.QUEUED },
+    where: queuedWhere,
     orderBy: { priority: 'asc' },
-    take,
+    take: batchSize,
   });
   let submitted = 0;
   let failed = 0;
   let paused = false;
   for (const job of jobs) {
-    const claimedAt = new Date();
-    const claim = await db.accountResearchJob.updateMany({
-      where: { id: job.id, status: AccountResearchJobStatus.QUEUED },
-      data: { status: AccountResearchJobStatus.SUBMITTED, submittedAt: claimedAt, attemptCount: { increment: 1 }, error: null },
+    const claimJob = (tx: Prisma.TransactionClient) => tx.accountResearchJob.updateMany({
+      where: { ...queuedWhere, id: job.id },
+      data: { status: AccountResearchJobStatus.SUBMITTED, submittedAt: new Date(), attemptCount: { increment: 1 }, error: null },
     });
+    const claim = mode === 'automatic' ? await db.$transaction(async (tx) => {
+      await lockResearchPilot(tx, pilotId, organizationId);
+      const active = await tx.accountResearchJob.count({ where: activeWhere });
+      return active < ACCOUNT_RESEARCH_SUBMISSION_WAVE_SIZE ? claimJob(tx) : null;
+    }) : await claimJob(db);
+    if (!claim) break;
     if (claim.count !== 1) continue;
+    let response: Awaited<ReturnType<typeof submitAccountResearch>>;
     try {
-      const input = job.inputSnapshot as unknown as AccountResearchInputSnapshot;
-      const response = await submitAccountResearch({
-        input,
+      response = await submitAccountResearch({
+        input: job.inputSnapshot as unknown as AccountResearchInputSnapshot,
         tier: job.tier,
         pilotId,
         jobId: job.id,
         mode,
       });
-      await db.accountResearchJob.update({
-        where: { id: job.id },
-        data: {
-          responseId: response.responseId,
-          status: response.status === 'in_progress' ? AccountResearchJobStatus.RUNNING : AccountResearchJobStatus.SUBMITTED,
-          error: null,
-        },
-      });
-      submitted += 1;
     } catch (error) {
-      await db.$transaction([
-        db.accountResearchJob.update({
-          where: { id: job.id },
-          data: { status: AccountResearchJobStatus.FAILED, error: clipError(error), reservedMicros: 0 },
-        }),
-        db.accountResearchPilot.update({ where: { id: pilotId }, data: { reservedMicros: { decrement: job.reservedMicros } } }),
-      ]);
+      const ambiguous = mode === 'automatic' && isAmbiguousAccountResearchSubmissionError(error);
+      const message = clipError(error);
+      const recorded = await db.$transaction(async (tx) => {
+        const failure = await tx.accountResearchJob.updateMany({
+          where: { id: job.id, organizationId, pilotId, status: AccountResearchJobStatus.SUBMITTED, responseId: null },
+          data: {
+            status: AccountResearchJobStatus.FAILED,
+            reservedMicros: 0,
+            ...(ambiguous ? { error: `${ACCOUNT_RESEARCH_RECONCILIATION_PREFIX} OpenAI did not confirm submission. ${message}`, completedAt: new Date() } : { error: message }),
+          },
+        });
+        if (failure.count !== 1) return false;
+        await tx.accountResearchPilot.update({ where: { id: pilotId, organizationId }, data: { reservedMicros: { decrement: job.reservedMicros } } });
+        return true;
+      });
       failed += 1;
+      if (ambiguous && recorded) reconciliationRequired += 1;
       if (isFatalSubmissionError(error)) {
         await db.accountResearchPilot.update({ where: { id: pilotId }, data: { status: AccountResearchPilotStatus.PAUSED } });
         paused = true;
         break;
       }
+      continue;
     }
+
+    // Keep a claimed submission in place if persisting its response fails. A retry must not submit it again.
+    await db.accountResearchJob.update({
+      where: { id: job.id, organizationId, pilotId, status: AccountResearchJobStatus.SUBMITTED, AND: [{ responseId: null }] },
+      data: {
+        responseId: response.responseId,
+        status: response.status === 'in_progress' ? AccountResearchJobStatus.RUNNING : AccountResearchJobStatus.SUBMITTED,
+        error: null,
+      },
+    });
+    submitted += 1;
   }
   if (submitted > 0 && !paused) {
     await db.accountResearchPilot.updateMany({
@@ -236,7 +276,39 @@ export async function submitQueuedPilotJobs({ pilotId, organizationId, db = pris
       data: { status: AccountResearchPilotStatus.RUNNING },
     });
   }
-  return { submitted, failed, paused, remaining: queuedJobs - submitted - failed };
+  return { submitted, failed, paused, remaining: Math.max(0, queuedJobs - submitted - failed), reconciliationRequired };
+}
+
+type ResearchJob = Awaited<ReturnType<PrismaClient['accountResearchJob']['findMany']>>[number];
+
+function exceededProviderPendingLimit(job: ResearchJob) {
+  return Date.now() - (job.submittedAt ?? job.createdAt).getTime() >= PROVIDER_PENDING_LIMIT_MS;
+}
+
+function activeResponseWhere(job: ResearchJob) {
+  return { id: job.id, pilotId: job.pilotId, organizationId: job.organizationId, responseId: job.responseId, status: { in: ACTIVE_PROVIDER_JOB_STATUSES } };
+}
+
+async function recordResponseForReconciliation(job: ResearchJob, reason: string, db: PrismaClient) {
+  return db.$transaction(async (tx) => {
+    await lockResearchPilot(tx, job.pilotId, job.organizationId);
+    const claim = await tx.accountResearchJob.updateMany({
+      where: activeResponseWhere(job),
+      data: {
+        status: AccountResearchJobStatus.FAILED,
+        error: `${ACCOUNT_RESEARCH_RECONCILIATION_PREFIX} ${reason}`,
+        reservedMicros: 0,
+        completedAt: new Date(),
+      },
+    });
+    if (claim.count === 1) {
+      await tx.accountResearchPilot.update({
+        where: { id: job.pilotId, organizationId: job.organizationId },
+        data: { reservedMicros: { decrement: job.reservedMicros } },
+      });
+    }
+    return claim.count;
+  });
 }
 
 const finishRetrievedJob = async ({
@@ -244,40 +316,49 @@ const finishRetrievedJob = async ({
   retrieved,
   db,
 }: {
-  job: Awaited<ReturnType<PrismaClient['accountResearchJob']['findMany']>>[number];
+  job: ResearchJob;
   retrieved: Awaited<ReturnType<typeof retrieveAccountResearch>>;
   db: PrismaClient;
 }) => {
   const estimatedCostMicros = estimateResearchCostMicros(retrieved);
   const input = job.inputSnapshot as unknown as AccountResearchInputSnapshot;
   const locationValidation = retrieved.result ? validateExactResearchLocation(input, retrieved.result) : null;
-  const nextStatus = retrieved.result ? AccountResearchJobStatus.NEEDS_REVIEW : AccountResearchJobStatus.FAILED;
-  await db.$transaction(async (tx) => {
-    const claimed = await tx.accountResearchJob.updateMany({
-      where: { id: job.id, status: { in: [AccountResearchJobStatus.SUBMITTED, AccountResearchJobStatus.RUNNING] } },
-      data: {
-        status: nextStatus,
-        result: retrieved.result as unknown as Prisma.InputJsonValue ?? Prisma.JsonNull,
-        evidence: retrieved.result?.evidence as unknown as Prisma.InputJsonValue ?? [],
-        locationValidation: locationValidation as unknown as Prisma.InputJsonValue ?? Prisma.JsonNull,
-        estimatedCostMicros,
-        inputTokens: retrieved.inputTokens,
-        outputTokens: retrieved.outputTokens,
-        webSearchCalls: retrieved.webSearchCalls,
-        error: retrieved.error,
-        reservedMicros: 0,
-        completedAt: new Date(),
-      },
-    });
-    if (claimed.count === 1) {
+  const data = {
+    status: retrieved.result ? AccountResearchJobStatus.NEEDS_REVIEW : AccountResearchJobStatus.FAILED,
+    result: retrieved.result as unknown as Prisma.InputJsonValue ?? Prisma.JsonNull,
+    evidence: retrieved.result?.evidence as unknown as Prisma.InputJsonValue ?? [],
+    locationValidation: locationValidation as unknown as Prisma.InputJsonValue ?? Prisma.JsonNull,
+    estimatedCostMicros,
+    inputTokens: retrieved.inputTokens,
+    outputTokens: retrieved.outputTokens,
+    webSearchCalls: retrieved.webSearchCalls,
+    error: retrieved.error,
+    reservedMicros: 0,
+    completedAt: new Date(),
+  };
+  return db.$transaction(async (tx) => {
+    await lockResearchPilot(tx, job.pilotId, job.organizationId);
+    const where = activeResponseWhere(job);
+    const claimed = await tx.accountResearchJob.updateMany({ where, data });
+    let saved = claimed.count;
+    if (saved === 0 && retrieved.result) {
+      // A concurrent poll may have marked this ID unavailable just before the result arrived.
+      const resolved = await tx.accountResearchJob.updateMany({
+        where: { ...where, status: AccountResearchJobStatus.FAILED, error: { startsWith: ACCOUNT_RESEARCH_RECONCILIATION_PREFIX } },
+        data,
+      });
+      saved = resolved.count;
+    }
+    if (saved === 1) {
       await tx.accountResearchPilot.update({
-        where: { id: job.pilotId },
+        where: { id: job.pilotId, organizationId: job.organizationId },
         data: {
-          reservedMicros: { decrement: job.reservedMicros },
+          reservedMicros: { decrement: claimed.count === 1 ? job.reservedMicros : 0 },
           estimatedSpendMicros: { increment: estimatedCostMicros },
         },
       });
     }
+    return saved;
   });
 };
 
@@ -293,7 +374,7 @@ export async function autoResolveAccountResearchJobs({
   mode?: AccountResearchExecutionMode;
 }) {
   assertResearchMode(mode);
-  await recoverInterruptedResearchSubmissions({ pilotId, organizationId, db });
+  await recoverInterruptedResearchSubmissions({ pilotId, organizationId, db, mode });
   const jobs = await db.accountResearchJob.findMany({
     where: { pilotId, organizationId, status: AccountResearchJobStatus.NEEDS_REVIEW },
     orderBy: { priority: 'asc' },
@@ -326,8 +407,22 @@ export async function autoResolveAccountResearchJobs({
   }
 
   const resolvedAt = new Date();
-  await db.$transaction(async (tx) => {
+  const resolved = await db.$transaction(async (tx) => {
+    const reviewing = { pilotId, organizationId, status: AccountResearchJobStatus.NEEDS_REVIEW };
+    const accountIds: string[] = [];
+    let rejectedCount = 0;
+    let failedCount = 0;
     for (const { job, result } of approved) {
+      const claim = await tx.accountResearchJob.updateMany({
+        where: { ...reviewing, id: job.id },
+        data: {
+          status: AccountResearchJobStatus.APPROVED,
+          reviewedAt: resolvedAt,
+          reviewedByUserId: null,
+          reviewNote: 'Automatically applied after exact-location and structured-evidence validation.',
+        },
+      });
+      if (claim.count !== 1) continue;
       const storage = researchStorageFields(result);
       const input = job.inputSnapshot as unknown as AccountResearchInputSnapshot;
       const researchData = {
@@ -372,89 +467,111 @@ export async function autoResolveAccountResearchJobs({
         create: { wholesaleAccountId: job.wholesaleAccountId, ...researchData },
         update: researchData,
       });
-      await tx.accountResearchJob.update({
-        where: { id: job.id },
-        data: {
-          status: AccountResearchJobStatus.APPROVED,
-          reviewedAt: resolvedAt,
-          reviewedByUserId: null,
-          reviewNote: 'Automatically applied after exact-location and structured-evidence validation.',
-        },
-      });
+      accountIds.push(job.wholesaleAccountId);
     }
     for (const item of rejected) {
-      await tx.accountResearchJob.update({
-        where: { id: item.id },
+      const claim = await tx.accountResearchJob.updateMany({
+        where: { ...reviewing, id: item.id },
         data: { status: AccountResearchJobStatus.REJECTED, reviewedAt: resolvedAt, reviewedByUserId: null, reviewNote: item.note },
       });
+      rejectedCount += claim.count;
     }
     for (const item of failed) {
-      await tx.accountResearchJob.update({ where: { id: item.id }, data: { status: AccountResearchJobStatus.FAILED, error: item.error } });
+      const claim = await tx.accountResearchJob.updateMany({ where: { ...reviewing, id: item.id }, data: { status: AccountResearchJobStatus.FAILED, error: item.error } });
+      failedCount += claim.count;
     }
+    return { accountIds, rejectedCount, failedCount };
   }, { timeout: 300_000 });
 
   await refreshTenantOpportunityScoresForAccounts({
     db,
     asOfDate: resolvedAt,
-    accountIds: approved.map(({ job }) => job.wholesaleAccountId),
+    accountIds: resolved.accountIds,
   });
 
-  return { applied: approved.length, rejected: rejected.length, failed: failed.length };
+  return { applied: resolved.accountIds.length, rejected: resolved.rejectedCount, failed: resolved.failedCount };
 }
 
 export async function pollAccountResearchPilot({ pilotId, organizationId, db = prisma, mode = 'manual' }: { pilotId: string; organizationId: string; db?: PrismaClient; mode?: AccountResearchExecutionMode }) {
   assertResearchMode(mode);
-  await recoverInterruptedResearchSubmissions({ pilotId, organizationId, db });
+  const recovered = await recoverInterruptedResearchSubmissions({ pilotId, organizationId, db, mode });
   const jobs = await db.accountResearchJob.findMany({
-    where: { pilotId, organizationId, status: { in: [AccountResearchJobStatus.SUBMITTED, AccountResearchJobStatus.RUNNING] }, responseId: { not: null } },
+    where: { pilotId, organizationId, status: { in: ACTIVE_PROVIDER_JOB_STATUSES }, responseId: { not: null } },
     orderBy: { priority: 'asc' },
   });
   let completed = 0;
   let pending = 0;
   let failedChecks = 0;
+  let reconciliationRequired = mode === 'automatic' ? recovered : 0;
+  let paused = false;
   for (const job of jobs) {
+    let retrieved: Awaited<ReturnType<typeof retrieveAccountResearch>>;
     try {
-      const retrieved = await retrieveAccountResearch({ responseId: job.responseId!, mode });
-      if (['queued', 'in_progress'].includes(retrieved.status)) {
-        await db.accountResearchJob.updateMany({
-          where: { id: job.id, status: { in: [AccountResearchJobStatus.SUBMITTED, AccountResearchJobStatus.RUNNING] } },
-          data: { status: AccountResearchJobStatus.RUNNING, error: null },
-        });
-        pending += 1;
+      retrieved = await retrieveAccountResearch({ responseId: job.responseId!, mode });
+    } catch (error) {
+      if (isAccountResearchResponseUnavailable(error)) {
+        reconciliationRequired += await recordResponseForReconciliation(job, `OpenAI returned HTTP ${error.status} for the saved response.`, db);
         continue;
       }
-      await finishRetrievedJob({ job, retrieved, db });
-      completed += 1;
-    } catch (error) {
+      const fatal = isFatalSubmissionError(error);
+      if (!fatal && job.error?.startsWith(PROVIDER_RESULT_CHECK_FAILURE) && exceededProviderPendingLimit(job)) {
+        reconciliationRequired += await recordResponseForReconciliation(job, 'Repeated result checks failed for the saved response more than one hour after submission.', db);
+        continue;
+      }
       failedChecks += 1;
       await db.accountResearchJob.updateMany({
-        where: { id: job.id, status: { in: [AccountResearchJobStatus.SUBMITTED, AccountResearchJobStatus.RUNNING] } },
-        data: { error: `Result check failed: ${clipError(error)}` },
+        where: activeResponseWhere(job),
+        data: { error: `${PROVIDER_RESULT_CHECK_FAILURE} ${clipError(error)}` },
       });
-      if (isFatalSubmissionError(error)) {
+      if (fatal) {
         await db.accountResearchPilot.updateMany({
           where: { id: pilotId, organizationId },
           data: { status: AccountResearchPilotStatus.PAUSED },
         });
+        paused = true;
         break;
       }
+      continue;
+    }
+
+    if (retrieved.status === 'queued' || retrieved.status === 'in_progress') {
+      if (exceededProviderPendingLimit(job)) {
+        reconciliationRequired += await recordResponseForReconciliation(job, 'The saved response was still pending after one hour.', db);
+      } else {
+        const update = await db.accountResearchJob.updateMany({
+          where: activeResponseWhere(job),
+          data: { status: AccountResearchJobStatus.RUNNING, error: null },
+        });
+        pending += update.count;
+      }
+    } else if (!TERMINAL_PROVIDER_STATUSES.has(retrieved.status)) {
+      reconciliationRequired += await recordResponseForReconciliation(job, 'OpenAI returned an expired or unrecognized status for the saved response.', db);
+    } else {
+      completed += await finishRetrievedJob({ job, retrieved, db });
     }
   }
   const automatic = await autoResolveAccountResearchJobs({ pilotId, organizationId, db, mode });
   await refreshPilotStatus({ pilotId, organizationId, db });
   await db.accountResearchPilot.updateMany({ where: { id: pilotId, organizationId }, data: { lastPolledAt: new Date() } });
-  return { checked: jobs.length, completed, pending, failedChecks, ...automatic };
+  return { checked: jobs.length, completed, pending, failedChecks, reconciliationRequired, paused, ...automatic };
 }
 
 export async function refreshPilotStatus({ pilotId, organizationId, db = prisma }: { pilotId: string; organizationId: string; db?: PrismaClient }) {
-  const counts = await db.accountResearchJob.groupBy({ by: ['status'], where: { pilotId, organizationId }, _count: { _all: true } });
-  const count = Object.fromEntries(counts.map((item) => [item.status, item._count._all])) as PilotJobCounts;
-  const current = await db.accountResearchPilot.findFirst({ where: { id: pilotId, organizationId }, select: { status: true } });
-  if (!current) return;
-  const status = deriveSettledPilotStatus(count);
-  if (!status) return;
-  const isTerminal = status === AccountResearchPilotStatus.COMPLETE || status === AccountResearchPilotStatus.FAILED;
-  await db.accountResearchPilot.update({ where: { id: pilotId }, data: { status, completedAt: isTerminal ? new Date() : null } });
+  await db.$transaction(async (tx) => {
+    await lockResearchPilot(tx, pilotId, organizationId);
+    const pilot = await tx.accountResearchPilot.findFirst({ where: { id: pilotId, organizationId }, select: { maxAccounts: true } });
+    if (!pilot) return;
+    const counts = await tx.accountResearchJob.groupBy({ by: ['status'], where: { pilotId, organizationId }, _count: { _all: true } });
+    const total = counts.reduce((sum, item) => sum + item._count._all, 0);
+    if (!total || total < pilot.maxAccounts) {
+      throw new Error(`Account research job count does not cover the saved batch (${total} of ${pilot.maxAccounts}).`);
+    }
+    const count = Object.fromEntries(counts.map((item) => [item.status, item._count._all])) as PilotJobCounts;
+    const status = deriveSettledPilotStatus(count);
+    if (!status) return;
+    const isTerminal = status === AccountResearchPilotStatus.COMPLETE || status === AccountResearchPilotStatus.FAILED;
+    await tx.accountResearchPilot.update({ where: { id: pilotId, organizationId }, data: { status, completedAt: isTerminal ? new Date() : null } });
+  });
 }
 
 export async function approveAccountResearchJob({

@@ -1,29 +1,13 @@
 import { sleep } from 'workflow';
-import {
-  ACCOUNT_RESEARCH_AUTOMATIC_DAILY_LIMIT,
-  ACCOUNT_RESEARCH_AUTOMATIC_WAVE_PAUSE,
-  ACCOUNT_RESEARCH_SUBMISSION_WAVE_SIZE,
-} from './accountResearchPilot';
+import { ACCOUNT_RESEARCH_AUTOMATIC_DAILY_LIMIT, ACCOUNT_RESEARCH_AUTOMATIC_WAVE_PAUSE } from './accountResearchPilot';
 import { runAutomaticAccountResearch } from './accountResearchAutomation';
+import { ECHO_ORGANIZATION_ID } from './echoAccess';
+import { runWithOrganizationStateAccess } from './prisma';
 
-type AutomaticWaveResult = {
-  submitted: number;
-  submittedToday: number;
-  outstandingJobs: number;
-  queueCount: number;
-  runLimitReached: boolean;
-};
-
-async function processAutomaticResearchWave(remainingRunCapacity: number): Promise<AutomaticWaveResult> {
+async function processAutomaticResearchWave(pilotId: string | undefined, remainingRunCapacity: number) {
   'use step';
-  const result = await runAutomaticAccountResearch({ submissionTake: ACCOUNT_RESEARCH_SUBMISSION_WAVE_SIZE, remainingRunCapacity });
-  return {
-    submitted: result.submitted,
-    submittedToday: result.submittedToday,
-    outstandingJobs: result.outstandingJobs,
-    queueCount: result.queueCount,
-    runLimitReached: result.runLimitReached,
-  };
+  // Hosted workflow steps run in a new request without the cron's application authorization.
+  return runWithOrganizationStateAccess(ECHO_ORGANIZATION_ID, () => runAutomaticAccountResearch({ pilotId, remainingRunCapacity }));
 }
 
 processAutomaticResearchWave.maxRetries = 2;
@@ -31,27 +15,29 @@ processAutomaticResearchWave.maxRetries = 2;
 export async function runDailyAccountResearchWorkflow() {
   'use workflow';
 
-  let latest: AutomaticWaveResult | null = null;
-  let submittedThisRun = 0;
-  // Each invocation is capped independently. The scheduled cron invokes this
-  // once per day, while an operator can run it again from Vercel to backfill
-  // another batch without sharing the scheduled invocation's allowance.
-  // The pass bound is larger than the 20 submission waves required for 500
-  // accounts because alternate passes poll and apply background results.
+  let pilotId: string | undefined;
+  let latest: Awaited<ReturnType<typeof processAutomaticResearchWave>> | null = null;
+  let attempted = 0;
+  let submitted = 0;
+  let reconciliationRequired = 0;
+  // Keep each invocation on its original pilot, including a resumed pilot.
   for (let pass = 0; pass < 160; pass += 1) {
-    latest = await processAutomaticResearchWave(ACCOUNT_RESEARCH_AUTOMATIC_DAILY_LIMIT - submittedThisRun);
-    submittedThisRun += latest.submitted;
-    const runLimitReached = submittedThisRun >= ACCOUNT_RESEARCH_AUTOMATIC_DAILY_LIMIT;
-    // Reaching the submission ceiling must not strand the final wave. Keep
-    // polling and applying it, but pass zero remaining capacity so no further
-    // accounts can be submitted by this invocation.
-    if ((runLimitReached && latest.outstandingJobs === 0) || (latest.queueCount === 0 && latest.outstandingJobs === 0)) break;
+    latest = await processAutomaticResearchWave(pilotId, ACCOUNT_RESEARCH_AUTOMATIC_DAILY_LIMIT - attempted);
+    pilotId = latest.pilotId ?? undefined;
+    attempted += latest.attempted;
+    submitted += latest.submitted;
+    reconciliationRequired += latest.reconciliationRequired;
+    if (!pilotId || latest.outstandingJobs === 0 || latest.paused) break;
     await sleep(ACCOUNT_RESEARCH_AUTOMATIC_WAVE_PAUSE);
   }
 
   return {
     runLimit: ACCOUNT_RESEARCH_AUTOMATIC_DAILY_LIMIT,
-    submittedThisRun,
-    ...latest,
+    pilotId: pilotId ?? null,
+    attempted,
+    submitted,
+    reconciliationRequired,
+    outstandingJobs: latest?.outstandingJobs ?? 0,
+    paused: latest?.paused ?? false,
   };
 }

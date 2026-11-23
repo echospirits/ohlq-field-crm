@@ -66,6 +66,11 @@ it('reports an all-failed settled pilot as failed instead of complete', () => {
   assert.equal(deriveSettledPilotStatus({ RUNNING: 1, FAILED: 49 }), null);
 });
 
+it('does not infer a terminal pilot status from missing job counts', () => {
+  assert.equal(deriveSettledPilotStatus({}), null);
+  assert.equal(deriveSettledPilotStatus({ APPROVED: 0, FAILED: 0 }), null);
+});
+
 it('allows guarded manual research in test and production but automatic research only in production', () => {
   assert.doesNotThrow(() => assertAccountResearchPilotEnabled(staging()));
   assert.doesNotThrow(() => assertAccountResearchEnvironment({ ...staging(), OPENAI_API_KEY: '' }));
@@ -183,10 +188,8 @@ it('keeps manual tests Platform Admin protected and schedules a production-gated
   assert.match(workflow, /'use workflow'/);
   assert.match(workflow, /sleep\(ACCOUNT_RESEARCH_AUTOMATIC_WAVE_PAUSE\)/);
   const automation = readFileSync('lib/accountResearchAutomation.ts', 'utf8');
-  assert.match(automation, /settledWaveThisPass/);
   assert.match(automation, /remainingRunCapacity/);
   assert.doesNotMatch(automation, /ACCOUNT_RESEARCH_AUTOMATIC_DAILY_LIMIT - submittedToday/);
-  assert.match(automation, /activeJobs === 0 && !settledWaveThisPass/);
   const page = readFileSync('app/admin/account-research/page.tsx', 'utf8');
   assert.match(page, /const researchWhere = \{ lastRefreshedAt: \{ not: null as null \} \}/);
   assert.match(page, /orderBy: \[\{ updatedAt: 'desc' \}/);
@@ -200,9 +203,4 @@ it('keeps manual tests Platform Admin protected and schedules a production-gated
   assert.match(page, /unsuccessful/);
   assert.match(page, /hasResearchIdentityChanged\(attempt\.wholesaleAccount, attempt\.inputSnapshot\)/);
   assert.match(page, /uniqueAccountsSubmittedToday/);
-  const dailyWorkflow = readFileSync('lib/accountResearchDailyWorkflow.ts', 'utf8');
-  assert.match(dailyWorkflow, /submittedThisRun/);
-  assert.match(dailyWorkflow, /runLimit: ACCOUNT_RESEARCH_AUTOMATIC_DAILY_LIMIT/);
-  assert.match(dailyWorkflow, /runLimitReached && latest\.outstandingJobs === 0/);
-  assert.doesNotMatch(dailyWorkflow, /submittedThisRun >= ACCOUNT_RESEARCH_AUTOMATIC_DAILY_LIMIT \|\|/);
 });

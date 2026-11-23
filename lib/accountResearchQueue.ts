@@ -1,6 +1,6 @@
 import { AccountResearchJobStatus, OpportunityStatus, WorklistStatus, type PrismaClient } from '@prisma/client';
 import type { AccountResearchResult } from './accountResearchPilot';
-import { ACCOUNT_RESEARCH_CITY_RETRY_PREFIX, isActionableAccountResearchFailure } from './accountResearchFailures';
+import { ACCOUNT_RESEARCH_CITY_RETRY_PREFIX, ACCOUNT_RESEARCH_RECONCILIATION_PREFIX, isActionableAccountResearchFailure } from './accountResearchFailures';
 import { opportunityTerritoryForCounty, territoryCoverageDeficits } from './opportunityTerritories';
 import { prisma } from './prisma';
 import { isOutsideOhio, normalizeUsState } from './usStates';
@@ -222,7 +222,7 @@ export async function getPrioritizedAccountResearchQueue({
   limit = null,
   organizationId,
 }: {
-  db?: PrismaClient;
+  db?: Pick<PrismaClient, 'organizationAccountOverlay' | 'wholesaleAccount' | 'worklistItem'>;
   now?: Date;
   limit?: number | null;
   organizationId?: string;
@@ -239,6 +239,7 @@ export async function getPrioritizedAccountResearchQueue({
       zip: { not: null },
       accountResearchJobs: { none: { ...scope, OR: [
         { status: { in: ACTIVE_RESEARCH_JOB_STATUSES } },
+        { status: AccountResearchJobStatus.FAILED, error: { startsWith: ACCOUNT_RESEARCH_RECONCILIATION_PREFIX } },
       ] } },
     },
     select: {
