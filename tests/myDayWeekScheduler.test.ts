@@ -347,6 +347,12 @@ test('My Schedule loads one tenant-scoped dataset for both day and week views', 
   assert.match(legacyRoute, /redirect\(`\/\?view=week/);
 });
 
+test('My Schedule shows opportunities and team performance in always-visible sections', () => {
+  const page = readFileSync(new URL('../app/page.tsx', import.meta.url), 'utf8');
+  assert.match(page, /<section[^>]+aria-labelledby="schedule-opportunities-heading">\s*<header[^>]*>\s*<div>\s*<h2 id="schedule-opportunities-heading">Explore opportunities<\/h2>/);
+  assert.match(page, /<section[^>]+aria-labelledby="schedule-performance-heading">\s*<header[^>]*>\s*<div>\s*<h2 id="schedule-performance-heading">Team activity and performance<\/h2>/);
+});
+
 test('schedule tabs and date controls stay on the combined route and preserve the active view', () => {
   const scheduler = readFileSync(new URL('../app/my-week/WorklistScheduler.tsx', import.meta.url), 'utf8');
   assert.match(scheduler, /aria-label="Schedule view"/);

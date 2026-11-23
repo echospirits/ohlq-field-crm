@@ -1,5 +1,9 @@
 # Unreleased
 
+## My Schedule dashboard panels — November 23, 2026
+
+Explore opportunities and Team activity and performance are always expanded in My Schedule. See the [0.15.8 release notes](0.15.8.md).
+
 ## Account Research location matching — November 23, 2026
 
 Account Research recognizes Ohio liquor-permit street-number ranges, explicit number lists, and verified alternate city labels within the same ZIP. The validator checks the full street and any required unit alongside the existing venue evidence. See the [0.15.7 release notes](0.15.7.md).

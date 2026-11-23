@@ -401,23 +401,28 @@ export default async function Dashboard({ searchParams }: { searchParams?: Promi
       <section className="schedule-supporting-sections" aria-label="Planning and insights">
       <ScheduleRoute organizationId={organizationId} userId={user.id} date={anchorDate} />
       <ScheduleEvents organizationId={organizationId} />
-      <details className="dashboard-section dashboard-details">
-        <summary><span><strong>Explore opportunities</strong><small>Restaurant recommendations and retail signals</small></span></summary>
+      <section className="dashboard-section" aria-labelledby="schedule-opportunities-heading">
+        <header className="content-section-heading">
+          <div>
+            <h2 id="schedule-opportunities-heading">Explore opportunities</h2>
+            <p className="muted">Restaurant recommendations and retail signals</p>
+          </div>
+        </header>
         <div className="dashboard-details-content">
           {enabledFeatures.has('WHOLESALE_OPPORTUNITIES') ? <DashboardOpportunitySummary organizationId={organizationId} /> : null}
           {enabledFeatures.has('AGENCY_INTELLIGENCE') ? <DashboardAgencyIntelligence organizationId={organizationId} /> : null}
           {!enabledFeatures.has('WHOLESALE_OPPORTUNITIES') && !enabledFeatures.has('AGENCY_INTELLIGENCE') ? <p className="muted">Opportunity intelligence is not enabled for this organization.</p> : null}
         </div>
-      </details>
+      </section>
 
-      <details className="dashboard-section dashboard-details">
-        <summary>
-          <span>
-            <strong>Team activity and performance</strong>
-            <small>Visits, scheduling, photos, and menu placement signals</small>
-          </span>
+      <section className="dashboard-section" aria-labelledby="schedule-performance-heading">
+        <header className="content-section-heading">
+          <div>
+            <h2 id="schedule-performance-heading">Team activity and performance</h2>
+            <p className="muted">Visits, scheduling, photos, and menu placement signals</p>
+          </div>
           <span className="pill">Week starts Monday</span>
-        </summary>
+        </header>
 
         <div className="grid performance-grid dashboard-details-content">
           <div className="card metric-card">
@@ -482,7 +487,7 @@ export default async function Dashboard({ searchParams }: { searchParams?: Promi
             <p className="muted metric-caption">Live, not verified in 30 days</p>
           </div>
         </div>
-      </details>
+      </section>
       </section>
     </>
   );
