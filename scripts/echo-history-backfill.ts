@@ -7,7 +7,7 @@ import { downloadOhlqEchoSalesPairs, type OhlqAnnualSalesDownloadResult } from '
 import { importOhlqAnnualSalesCsv, parseOhlqAnnualSalesByWholesaleCsv } from '../lib/ohlqAnnualSalesImport';
 
 const vendor = 'Z90399001';
-const start = '2025-04-12';
+const start = '2024-12-19';
 const end = start;
 const approvedPermitHash = '3c8f9ab516e1ca34d781b6f06ba30d17e58a05a8735f3f6a7eec3fd54e2a7124';
 const wholesaleId = 'dea7572c-2ea4-45bb-bbbc-29600bd326cc';
