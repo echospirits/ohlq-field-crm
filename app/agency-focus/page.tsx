@@ -15,7 +15,8 @@ import { requireFeatureForUser } from '../../lib/organizations';
 import { AgencyFocusSearch } from './AgencyFocusSearch';
 import { formatDateOnly } from '../../lib/dateTime';
 import { AGENCY_FOCUS_PAGE_SIZE, agencyFocusHref, agencyFocusPageNumber } from '../../lib/agencyFocusView';
-import { getDeadInventorySales90 } from '../../lib/agencyFocusSales';
+import { getAgencyOpportunitySales90 } from '../../lib/agencyFocusSales';
+import { AGENCY_OPPORTUNITY_SALES_LABEL, AgencyOpportunitySalesCell } from '../components/AgencyOpportunitySalesCell';
 import { TargetAccountControl } from '../components/TargetAccountControl';
 import { TargetAccountMarker } from '../components/TargetAccountMarker';
 import '../intelligence-browsing.css';
@@ -90,11 +91,9 @@ export default async function AgencyFocusPage({
   }), prisma.user.findMany({ where: { organizationId, isActive: true, role: { notIn: ['TASTER', 'PLATFORM_ADMIN'] } }, orderBy: [{ name: 'asc' }, { email: 'asc' }] })]);
   const actionUsers = users.map((user) => ({ id: user.id, name: getUserDisplayName(user) }));
   const visibleOpportunities = opportunities.slice(0, AGENCY_FOCUS_PAGE_SIZE);
-  const showSales90 = state === AgencyProductOpportunityState.DEAD_INVENTORY;
-  const salesLabel = showSales90 ? 'Sales · 7 / 30 / 90d' : 'Sales · 7 / 30d';
   const [targetedAgencies, sales90ById] = await Promise.all([
     prisma.organizationAccountOverlay.findMany({ where: { organizationId, accountType: 'AGENCY', externalAccountId: { in: [...new Set(visibleOpportunities.map((item) => item.agency.id))] }, isTargeting: true }, select: { externalAccountId: true } }),
-    showSales90 ? getDeadInventorySales90(organizationId, visibleOpportunities) : null,
+    getAgencyOpportunitySales90(organizationId, visibleOpportunities),
   ]);
   const targetedAgencyIds = new Set(targetedAgencies.map((item) => item.externalAccountId));
   const hasMore = opportunities.length > AGENCY_FOCUS_PAGE_SIZE;
@@ -129,11 +128,8 @@ export default async function AgencyFocusPage({
     {pagination}
     {visibleOpportunities.length ? <div className="table-scroll" role="region" aria-label="Retail recommendations" tabIndex={0}>
       <table className="comparison-table intelligence-comparison-table retail-intelligence-table">
-        <thead><tr><th scope="col">Account / product</th><th scope="col">Next action</th><th scope="col" className="numeric">On hand / min</th><th scope="col" className="numeric">{salesLabel}</th><th scope="col">Evidence</th><th scope="col">Actions</th></tr></thead>
-        <tbody>{visibleOpportunities.map((item) => {
-          const sales90 = sales90ById?.get(item.id);
-          const bottles90 = sales90?.bottles ?? null;
-          return <tr key={item.id}>
+        <thead><tr><th scope="col">Account / product</th><th scope="col">Next action</th><th scope="col" className="numeric">On hand / min</th><th scope="col" className="numeric">{AGENCY_OPPORTUNITY_SALES_LABEL}</th><th scope="col">Evidence</th><th scope="col">Actions</th></tr></thead>
+        <tbody>{visibleOpportunities.map((item) => <tr key={item.id}>
           <th scope="row" data-label="Account / product">
             <Link className="intelligence-record-name" href={`/agencies/${item.agency.id}`}>{item.agency.name}</Link>
             {targetedAgencyIds.has(item.agency.id) ? <TargetAccountMarker /> : null}
@@ -142,11 +138,7 @@ export default async function AgencyFocusPage({
           </th>
           <td data-label="Next action"><strong>{titleCase(item.recommendedAction)}</strong><small>{stateLabels[item.opportunityState]}</small><span className={`priority priority-${item.priorityBand.toLowerCase()}`}>{titleCase(item.priorityBand)}</span></td>
           <td className="numeric" data-label="On hand / min"><strong>{item.onHand ?? 'Unavailable'}</strong><small>Min {item.minimum ?? 'Unavailable'}</small></td>
-          <td className="numeric" data-label={salesLabel}>
-            <strong>{item.retailSales7.toLocaleString()} / {item.retailSales30.toLocaleString()}{showSales90 ? ` / ${bottles90?.toLocaleString() ?? '—'}` : null}</strong>
-            <small>bottles{showSales90 && !sales90?.complete ? ` · ${bottles90 === null ? '90d history unavailable' : 'Partial 90d history'}` : null}</small>
-            {sales90 && bottles90 !== null && sales90.through.getTime() !== item.asOfDate.getTime() ? <small>90d through {formatDateOnly(sales90.through)}</small> : null}
-          </td>
+          <AgencyOpportunitySalesCell opportunity={item} sales90={sales90ById.get(item.id)} />
           <td data-label="Evidence">
             {stringList(item.reasons)[0] ? <p className="intelligence-key-reason agency-focus-key-reason">{stringList(item.reasons)[0]}</p> : null}
             <small>Fit {item.fitScore} · {titleCase(item.fitBand)} · Peer carry {item.peerCarryPercent === null ? 'Unavailable' : `${Math.round(item.peerCarryPercent)}%`}</small>
@@ -165,8 +157,7 @@ export default async function AgencyFocusPage({
               </div>
             </details>
           </div></td>
-          </tr>;
-        })}</tbody>
+        </tr>)}</tbody>
       </table>
     </div> : <div className="empty-state"><h2>No matching retail actions</h2><p>{state || search || query.agencyId ? 'Try another action type, clear your search, or show all retail accounts.' : 'No active recommendations are available yet. Check data freshness or browse your retail accounts.'}</p><Link href={state || search || query.agencyId ? '/agency-focus' : '/agencies'}>{state || search || query.agencyId ? 'Show all actions' : 'Browse retail accounts'}</Link></div>}
     {pagination}

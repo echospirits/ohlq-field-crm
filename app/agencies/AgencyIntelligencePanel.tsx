@@ -5,8 +5,10 @@ import {
   Prisma,
 } from '@prisma/client';
 import Link from 'next/link';
+import { getAgencyOpportunitySales90 } from '../../lib/agencyFocusSales';
 import { formatEasternDate } from '../../lib/dateTime';
 import { prisma } from '../../lib/prisma';
+import { AGENCY_OPPORTUNITY_SALES_LABEL, AgencyOpportunitySalesCell } from '../components/AgencyOpportunitySalesCell';
 import { ContextualActions } from '../components/ContextualActions';
 import { DataFreshnessBadge } from '../components/DataFreshnessBadge';
 
@@ -38,11 +40,18 @@ function IntelligenceBand({ label, value }: { label: string; value: string }) {
   return <div><dt>{label}</dt><dd><span className={`priority priority-${value.toLowerCase()}`}>{titleCase(value)}</span></dd></div>;
 }
 
-export async function AgencyIntelligencePanel({ agencyId, agencyName, currentUserId, organizationId, users }: { agencyId: string; agencyName: string; currentUserId: string; organizationId: string; users: Array<{ id: string; name: string }> }) {
-  const [summary, products] = await Promise.all([
+export async function AgencyIntelligencePanel({ agencyId, agencyName, agencyNumber, currentUserId, organizationId, users }: {
+  agencyId: string;
+  agencyName: string;
+  agencyNumber: string;
+  currentUserId: string;
+  organizationId: string;
+  users: Array<{ id: string; name: string }>;
+}) {
+  const [summary, activeProducts] = await Promise.all([
     prisma.agencyIntelligenceSummary.findUnique({ where: { organizationId_agencyId: { organizationId, agencyId } } }),
     prisma.agencyProductIntelligence.findMany({
-      where: { agencyId, organizationId },
+      where: { agencyId, organizationId, opportunityState: { in: actionableStates }, status: { in: visibleStatuses } },
       include: { worklistItems: { where: { organizationId, status: { in: ['OPEN', 'IN_PROGRESS'] } }, orderBy: [{ dueDate: 'asc' }, { createdAt: 'asc' }], take: 1, select: { id: true } } },
       orderBy: [{ priorityScore: 'desc' }, { itemName: 'asc' }],
     }),
@@ -55,10 +64,13 @@ export async function AgencyIntelligencePanel({ agencyId, agencyName, currentUse
     </section>;
   }
 
-  const activeProducts = products.filter((product) =>
-    actionableStates.includes(product.opportunityState) &&
-    visibleStatuses.includes(product.status),
-  );
+  const visibleProducts = activeProducts.slice(0, 5);
+  const sales90ById = await getAgencyOpportunitySales90(organizationId, visibleProducts.map((product) => ({
+    id: product.id,
+    agency: { agencyId: agencyNumber },
+    itemCode: product.itemCode,
+    asOfDate: product.asOfDate,
+  })));
   const focus = stringList(summary.recommendedFocus);
 
   return <div className="agency-intelligence-stack">
@@ -83,13 +95,13 @@ export async function AgencyIntelligencePanel({ agencyId, agencyName, currentUse
 
     <section className="dashboard-section" id="product-opportunities">
       <div className="section-heading"><h3>Product opportunities</h3><Link className="btn secondary compact-btn" href={`/agency-focus?agencyId=${agencyId}`}>Open Retail Intelligence</Link></div>
-      {activeProducts.length ? <div className="table-scroll" role="region" aria-label="Product opportunities" tabIndex={0}><table className="comparison-table intelligence-comparison-table account-product-opportunities">
-        <thead><tr><th scope="col">Product</th><th scope="col">Next action</th><th scope="col" className="numeric">On hand / min</th><th scope="col" className="numeric">Sales · 7 / 30d</th><th scope="col">Evidence</th><th scope="col">Actions</th></tr></thead>
-        <tbody>{activeProducts.slice(0, 5).map((product) => <tr key={product.id}>
+      {visibleProducts.length ? <div className="table-scroll" role="region" aria-label="Product opportunities" tabIndex={0}><table className="comparison-table intelligence-comparison-table account-product-opportunities">
+        <thead><tr><th scope="col">Product</th><th scope="col">Next action</th><th scope="col" className="numeric">On hand / min</th><th scope="col" className="numeric">{AGENCY_OPPORTUNITY_SALES_LABEL}</th><th scope="col">Evidence</th><th scope="col">Actions</th></tr></thead>
+        <tbody>{visibleProducts.map((product) => <tr key={product.id}>
           <th scope="row" data-label="Product"><strong>{product.itemName}</strong><small>Item {product.itemCode} · {titleCase(product.opportunityState)}</small></th>
           <td data-label="Next action"><strong>{actionLabels[product.recommendedAction]}</strong><span className={`priority priority-${product.priorityBand.toLowerCase()}`}>{titleCase(product.priorityBand)}</span></td>
           <td className="numeric" data-label="On hand / min"><strong>{product.onHand ?? 'Unavailable'}</strong><small>Min {product.minimum ?? 'Unavailable'}</small></td>
-          <td className="numeric" data-label="Sales · 7 / 30d"><strong>{product.retailSales7} / {product.retailSales30}</strong><small>bottles</small></td>
+          <AgencyOpportunitySalesCell opportunity={product} sales90={sales90ById.get(product.id)} />
           <td data-label="Evidence"><p className="intelligence-key-reason">{stringList(product.reasons)[0]}</p><small>Fit {product.fitScore} · {titleCase(product.fitBand)} · Peer carry {product.peerCarryPercent === null ? 'Unavailable' : `${Math.round(product.peerCarryPercent)}%`}</small>{stringList(product.reasons).length > 1 ? <details className="compact-details"><summary>More evidence ({stringList(product.reasons).length - 1})</summary><ul>{stringList(product.reasons).slice(1).map((reason) => <li key={reason}>{reason}</li>)}</ul></details> : null}</td>
           <td data-label="Actions"><ContextualActions context={{ accountName: agencyName, agencyId, agencyProductIntelligenceId: product.id, productItemCode: product.itemCode, productName: product.itemName, reason: stringList(product.reasons).join(' '), returnTo: `/agencies/${agencyId}`, sourceLabel: `${titleCase(product.opportunityState)} - ${product.itemName}`, sourceType: product.opportunityState }} currentUserId={currentUserId} existingFollowUpId={product.worklistItems[0]?.id} users={users} /></td>
         </tr>)}</tbody>

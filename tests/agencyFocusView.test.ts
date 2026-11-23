@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import type { Prisma, PrismaClient } from '@prisma/client';
-import { getDeadInventorySales90 } from '../lib/agencyFocusSales';
+import { getAgencyOpportunitySales90 } from '../lib/agencyFocusSales';
 import { agencyFocusHref, agencyFocusPageNumber } from '../lib/agencyFocusView';
 import { formatDateOnly } from '../lib/dateTime';
 import { ECHO_VENDOR_ID, getOhlqWindowStartDate } from '../lib/ohlqSalesData';
@@ -29,11 +29,10 @@ test('agency focus exposes comparison facts and the decisive reason while preser
   for (const label of ['Account / product', 'Next action', 'On hand / min', 'Evidence', 'Actions']) {
     assert.ok(source.includes(`>${label}</th>`));
   }
-  assert.match(source, /const showSales90 = state === AgencyProductOpportunityState\.DEAD_INVENTORY/);
-  assert.match(source, /showSales90 \? 'Sales · 7 \/ 30 \/ 90d' : 'Sales · 7 \/ 30d'/);
-  assert.match(source, /\{salesLabel\}<\/th>/);
-  assert.match(source, /data-label=\{salesLabel\}/);
-  for (const value of ['item.onHand', 'item.minimum', 'item.retailSales7', 'item.retailSales30', 'item.fitScore', 'item.peerCarryPercent']) assert.ok(source.includes(value));
+  assert.match(source, /getAgencyOpportunitySales90\(organizationId, visibleOpportunities\),/);
+  assert.match(source, /\{AGENCY_OPPORTUNITY_SALES_LABEL\}<\/th>/);
+  assert.match(source, /<AgencyOpportunitySalesCell opportunity=\{item\} sales90=\{sales90ById.get\(item.id\)\} \/>/);
+  for (const value of ['item.onHand', 'item.minimum', 'item.fitScore', 'item.peerCarryPercent']) assert.ok(source.includes(value));
   assert.match(source, /aria-label="Recommendation evidence"/);
   assert.match(source, /Why this recommendation\?/);
   assert.match(source, /className="intelligence-key-reason agency-focus-key-reason"/);
@@ -49,7 +48,7 @@ test('agency focus exposes comparison facts and the decisive reason while preser
   assert.match(source, /No matching retail actions/);
 });
 
-test('Dead Inventory totals use the visible Echo agency and SKU windows, preserving signed quantities and missing history', async () => {
+test('Retail Intelligence totals use the visible Echo agency and SKU windows, preserving signed quantities and missing history', async () => {
   const asOfDate = new Date('2026-11-20T00:00:00Z');
   const olderDate = new Date('2026-11-19T00:00:00Z');
   const recommendations = [
@@ -100,7 +99,7 @@ test('Dead Inventory totals use the visible Echo agency and SKU windows, preserv
     },
   } as unknown as PrismaClient;
 
-  const totals = await getDeadInventorySales90('echo-test', recommendations, db);
+  const totals = await getAgencyOpportunitySales90('echo-test', recommendations, db);
   assert.deepEqual(totals.get('sold'), { bottles: 5, complete: true, through: asOfDate });
   assert.deepEqual(totals.get('zero'), { bottles: 0, complete: true, through: asOfDate });
   assert.deepEqual(totals.get('partial'), { bottles: -2, complete: false, through: olderDate });

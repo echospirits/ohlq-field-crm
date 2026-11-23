@@ -12,15 +12,15 @@ type Recommendation = {
   asOfDate: Date;
 };
 
-type SalesTotal = { bottles: number | null; complete: boolean; through: Date };
+export type AgencyOpportunitySales90 = { bottles: number | null; complete: boolean; through: Date };
 
 // Display-only history through the latest complete sales input on or before the inventory snapshot.
-export async function getDeadInventorySales90(
+export async function getAgencyOpportunitySales90(
   organizationId: string,
   recommendations: Recommendation[],
   db: PrismaClient = prisma,
 ) {
-  const totals = new Map<string, SalesTotal>();
+  const totals = new Map<string, AgencyOpportunitySales90>();
   const lookups = recommendations.flatMap((item) => {
     const agencyId = normalizeOhlqId(item.agency.agencyId);
     if (!agencyId) return [];

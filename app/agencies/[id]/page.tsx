@@ -195,7 +195,7 @@ export default async function AgencyActivityPage({
 
       {hasAgencyIntelligence ? <>
         <div className="retail-intelligence-content">
-          <Suspense fallback={<p aria-busy="true" role="status">Loading retail intelligence…</p>}><AgencyIntelligencePanel agencyId={agency.id} agencyName={agency.name} currentUserId={currentUser.id} organizationId={organizationId} users={actionUsers} /></Suspense>
+          <Suspense fallback={<p aria-busy="true" role="status">Loading retail intelligence…</p>}><AgencyIntelligencePanel agencyId={agency.id} agencyName={agency.name} agencyNumber={agency.agencyId} currentUserId={currentUser.id} organizationId={organizationId} users={actionUsers} /></Suspense>
           <AgencyRetailMarketIntelligence market={marketProfile} fits={marketFits} />
           <AgencyStoreIntelligence agencyId={agency.id} context={storeContext} />
         </div>
