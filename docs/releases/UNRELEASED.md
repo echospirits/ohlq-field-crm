@@ -1,5 +1,9 @@
 # Unreleased
 
+## Dead Inventory 90-day sales — November 23, 2026
+
+The Dead inventory filter in Retail Intelligence shows **Sales · 7 / 30 / 90d**. The 90-day figure sums retained Echo counter and wholesale bottles, including returns, through the latest complete sales report on or before each recommendation’s inventory snapshot date. Incomplete coverage is labeled in the row, and a confirmed zero requires coverage for the full window. This is a read-only display change using existing sales and coverage records.
+
 ## Supplies email freshness — released 0.15.1, November 21, 2026
 
 Recent replies on watched orders take priority within the existing four daily batch slots. Authenticated replies can match across connected Production mailboxes, verified receipts clear payment holds, and stale email coverage appears on Supplies. Both deployments are READY. The Tennessee Bottles production card shows **Awaiting shipment**, with zero shipments and no ETA after validating the supplier's payment email. See the [release notes and verification](0.15.1.md).
