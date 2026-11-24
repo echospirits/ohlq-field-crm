@@ -111,6 +111,7 @@
 
 .dashboard-heading { margin-bottom: 18px; }
 .dashboard-heading p { font-size: 13px; }
+.dashboard-heading > .schedule-mobile-log-visit { display: none; }
 .scheduler-header { margin: 12px 0 18px; }
 .scheduler-header h2 { font-size: 19px; }
 .scheduler-header .page-eyebrow, .scheduler-mobile-day > h2 { display: none; }
@@ -144,6 +145,8 @@
 .visit-contact-details { border-bottom: 1px solid var(--line); margin-bottom: 10px; }
 .visit-contact-details > summary { font-size: 13px; font-weight: 600; min-height: 44px; }
 .visit-submit-bar { display: flex; gap: 10px; align-items: center; }
+.visit-submit-bar:has(.visit-submit-error) { flex-wrap: wrap; }
+.visit-submit-bar .visit-submit-error { flex: 0 0 100%; margin: 0; }
 .visit-submit-bar .visit-cancel { width: auto; min-width: 80px; }
 .visit-submit-bar > button { flex: 1; }
 .app-modal .visit-submit-bar .visit-cancel { display: none; }
@@ -231,6 +234,7 @@
   .schedule-team-work { padding: 16px; }
   .schedule-team-work h2 { font-size: 16px; }
   .schedule-team-work > p { font-size: 12px; }
+  .dashboard-heading > .schedule-mobile-log-visit { display: inline-flex; min-height: 44px; }
   .day-search { margin: 16px 0; }
   .field-visit-form { gap: 8px; }
   .field-visit-form .visit-account-step { padding-bottom: 10px; }

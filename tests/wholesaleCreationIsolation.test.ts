@@ -88,6 +88,7 @@ function loadFlow(flow: Flow, role: enums.UserRole | null, organizationId: strin
     setAccountSalesStatus: async (args: RecordData) => { overlays.push(args); },
     setAccountTargeting: async (args: RecordData) => { overlays.push(args); },
     createVisitDiagnostics: () => ({ mark: () => {}, failure: () => {}, bestEffort: async (_stage: string, callback: () => Promise<void>) => callback() }),
+    scheduleWorklistSync: () => {},
     unstable_rethrow: (error: Error) => { if (error.message.startsWith('REDIRECT:')) throw error; },
     prisma: {
       ...tx,

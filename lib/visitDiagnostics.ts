@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { isSampledVisitTimingId } from './visitTiming';
 
 type VisitContext = {
   userId?: string;
@@ -20,7 +21,7 @@ function errorDetails(error: unknown) {
   };
 }
 
-export function createVisitDiagnostics(operation: 'create' | 'update') {
+export function createVisitDiagnostics(operation: 'create' | 'update', browserTimingId?: unknown) {
   const startedAt = Date.now();
   const operationId = randomUUID();
   let stage = 'start';
@@ -29,6 +30,7 @@ export function createVisitDiagnostics(operation: 'create' | 'update') {
     const memory = process.memoryUsage();
     const record = JSON.stringify({
       event: `visit.${event}`, operation, operationId, stage,
+      ...(isSampledVisitTimingId(browserTimingId) ? { browserTimingId } : {}),
       timestamp: new Date().toISOString(), elapsedMs: Date.now() - startedAt,
       deployment: process.env.VERCEL_DEPLOYMENT_ID,
       revision: process.env.VERCEL_GIT_COMMIT_SHA,

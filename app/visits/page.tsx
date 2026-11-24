@@ -40,35 +40,51 @@ export default async function VisitsPage({
           ]
         : undefined,
     },
-    include: {
-      createdByUser: true,
-      contacts: { include: { contact: { select: { id: true, name: true } } } },
+    select: {
+      id: true,
+      visitAt: true,
+      locationType: true,
+      agencyId: true,
+      wholesaleAccountId: true,
+      contactId: true,
+      salesOpportunityId: true,
+      agencyProductIntelligenceId: true,
+      summary: true,
+      outcomes: true,
+      outcomeCodes: true,
+      guidedAnswers: true,
+      nextStep: true,
+      followUpMode: true,
+      followUpDate: true,
+      followUpTimeMinutes: true,
+      createdBy: true,
+      createdByUser: { select: { email: true, name: true, firstName: true, lastName: true } },
+      contacts: { select: { contact: { select: { id: true, name: true } } } },
       photos: {
         orderBy: { createdAt: 'asc' },
+        select: { id: true, url: true, caption: true, type: true },
       },
       worklistItems: {
         select: { id: true, status: true, title: true },
-      },
-      _count: {
-        select: {
-          photos: true,
-          worklistItems: true,
-        },
       },
     },
     orderBy: [{ visitAt: 'desc' }],
   });
 
+  const agencyIds = [...new Set(visits.flatMap((visit) => visit.agencyId ? [visit.agencyId] : []))];
+  const wholesaleIds = [...new Set(visits.flatMap((visit) => visit.wholesaleAccountId ? [visit.wholesaleAccountId] : []))];
+  const contactIds = [...new Set(visits.flatMap((visit) => visit.contactId ? [visit.contactId] : []))];
+  const nameFields = { id: true, name: true } as const;
   const [agencies, wholesale, contacts] = await Promise.all([
-    prisma.agency.findMany({
-      where: { id: { in: visits.map((visit) => visit.agencyId).filter(Boolean) as string[] } },
-    }),
-    prisma.wholesaleAccount.findMany({
-      where: { id: { in: visits.map((visit) => visit.wholesaleAccountId).filter(Boolean) as string[] } },
-    }),
-    prisma.locationContact.findMany({
-      where: { organizationId, id: { in: visits.map((visit) => visit.contactId).filter(Boolean) as string[] } },
-    }),
+    agencyIds.length
+      ? prisma.agency.findMany({ where: { id: { in: agencyIds } }, select: nameFields })
+      : [],
+    wholesaleIds.length
+      ? prisma.wholesaleAccount.findMany({ where: { id: { in: wholesaleIds } }, select: nameFields })
+      : [],
+    contactIds.length
+      ? prisma.locationContact.findMany({ where: { organizationId, id: { in: contactIds } }, select: nameFields })
+      : [],
   ]);
 
   const agencyMap = Object.fromEntries(agencies.map((agency) => [agency.id, agency.name]));

@@ -54,7 +54,8 @@ function harness(run: (execute: (name: string, env: Record<string, string>) => R
       ].join('\n')], {
       cwd: dir,
       encoding: 'utf8',
-      timeout: 10_000,
+      // The 30-date case starts a date subprocess per report on Windows.
+      timeout: process.platform === 'win32' ? 30_000 : 10_000,
       // Never give the harness database, OHLQ, or other hosted credentials.
       env: {
         NODE_ENV: 'test',
@@ -69,7 +70,7 @@ function harness(run: (execute: (name: string, env: Record<string, string>) => R
       },
     }), dir);
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    rmSync(dir, { recursive: true, force: true, maxRetries: 4, retryDelay: 150 });
   }
 }
 

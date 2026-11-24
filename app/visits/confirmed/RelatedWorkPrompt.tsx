@@ -12,7 +12,7 @@ export function RelatedWorkPrompt({ visitId, initialItems, completeAction }: {
   completeAction: (data: FormData) => Promise<VisitRelatedWorkResult>;
 }) {
   const [items, setItems] = useState(initialItems);
-  const [open, setOpen] = useState(initialItems.length > 0);
+  const [open, setOpen] = useState(false);
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState('');
   const submitting = useRef(false);
@@ -44,8 +44,12 @@ export function RelatedWorkPrompt({ visitId, initialItems, completeAction }: {
     }
   };
 
-  if (!open || !items.length) return null;
-  return <div aria-labelledby="related-work-title" aria-modal="true" className={`app-modal ${styles.modal}`} role="dialog">
+  if (!items.length) return null;
+  return <>
+    <button aria-expanded={open} aria-haspopup="dialog" className={`secondary ${styles.review}`} type="button" onClick={() => setOpen(true)}>
+      Review related work ({items.length})
+    </button>
+    {open ? <div aria-labelledby="related-work-title" aria-modal="true" className={`app-modal ${styles.modal}`} role="dialog">
     <button aria-label="Leave related work open" className="app-modal-backdrop" type="button" onClick={close} />
     <div className={`app-modal-panel contextual-action-sheet ${styles.panel}`} ref={dialogRef}>
       <div className="app-modal-header"><h2 id="related-work-title">Complete related work?</h2><button className="secondary app-modal-close" type="button" onClick={close}>Close</button></div>
@@ -61,5 +65,6 @@ export function RelatedWorkPrompt({ visitId, initialItems, completeAction }: {
       {error ? <p className="notice danger" role="alert">{error}</p> : null}
       <div className={styles.actions}><button disabled={pending !== null} type="button" onClick={() => void complete(items.map((item) => item.id), 'all')}>{pending === 'all' ? 'Completing…' : `Complete all (${items.length})`}</button><button className="secondary" type="button" onClick={close}>Leave open</button></div>
     </div>
-  </div>;
+    </div> : null}
+  </>;
 }

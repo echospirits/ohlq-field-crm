@@ -53,9 +53,13 @@ describe('visit contact relationships', () => {
   });
 
   it('excludes inactive contacts from normal visit selection but preserves selected history', () => {
-    const newPage = read('app/visits/new/page.tsx');
+    const contactsRoute = read('app/api/visits/account-contacts/route.ts');
     const form = read('app/visits/LogVisitForm.tsx');
-    assert.match(newPage, /where: \{ organizationId, active: true \}/);
+    assert.match(form, /fetch\(`\/api\/visits\/account-contacts\?/);
+    assert.match(contactsRoute, /const \{ organizationId \} = await requireOrganizationContext\(user\)/);
+    assert.match(contactsRoute, /where: \{\s*organizationId,\s*active: true,/);
+    assert.match(contactsRoute, /agencyId: \{ in: agency \? \[id, agency\.agencyId\] : \[id\] \}/);
+    assert.match(contactsRoute, /wholesaleAccountId: id/);
     assert.match(form, /contact\.active \|\| contactIds\.includes\(contact\.id\)/);
   });
 
