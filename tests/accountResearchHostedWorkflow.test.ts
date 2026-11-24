@@ -23,14 +23,17 @@ function loadWithMocks<T>(path: string, mocks: Record<string, unknown>): T {
   return exports as T;
 }
 
-it('opens an Echo state-access scope inside every hosted research step', async () => {
+it('opens a configured-state Echo scope inside every hosted research step', async () => {
   const scopes = new AsyncLocalStorage<string>();
   const calls: Array<{ scope: string | undefined; pilotId: string | undefined; remaining: number }> = [];
   let sleeps = 0;
   const worker = loadWithMocks<typeof import('../lib/accountResearchDailyWorkflow')>('lib/accountResearchDailyWorkflow.ts', {
     workflow: { sleep: async () => { assert.equal(scopes.getStore(), undefined); sleeps += 1; } },
     './prisma': {
-      runWithOrganizationStateAccess: (organizationId: string, work: () => Promise<unknown>) => scopes.run(organizationId, work),
+      runWithOrganizationStateAccess: (organizationId: string, work: () => Promise<unknown>, options: { restrictToConfiguredStates: boolean }) => {
+        assert.equal(options.restrictToConfiguredStates, true);
+        return scopes.run(organizationId, work);
+      },
     },
     './accountResearchAutomation': {
       runAutomaticAccountResearch: async ({ pilotId, remainingRunCapacity }: { pilotId?: string; remainingRunCapacity: number }) => {

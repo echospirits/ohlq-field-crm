@@ -26,7 +26,6 @@ import { VisitFormTiming } from '../VisitTiming';
 export const metadata = buildPageMetadata('Log Visit');
 
 const statusMessages: Record<string, string> = {
-  'state-not-enabled': 'This state is not enabled for your organization.',
   'invalid-state': 'Enter a valid US state name or two-letter abbreviation.',
   'conflicting-state': 'That Licensee ID belongs to an account in another state. Leave the ID blank to create a separate account.',
   'invalid-agency': 'Select a retail account before logging a retail account visit.',
@@ -143,7 +142,6 @@ export default async function NewVisitPage({
 
       <div className="workflow-shell"><div className="card">
         <LogVisitForm organizationId={organizationId} visitGuides={readVisitGuides(organization.crmPreferences)}
-          allowedStates={organization.enabledStates}
           action={createVisit}
           actorName={getUserDisplayName(user)}
           currentUserId={user.id}

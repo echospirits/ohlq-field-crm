@@ -94,9 +94,14 @@ function rememberReferences(scope: StateScope, value: unknown) {
 }
 const emptyScope = (): StateScope => ({states:[],agencyIds:[],restaurantIds:[],agencyNumbers:[]});
 
-export async function loadStateScope(base: PrismaClient, organizationId: string): Promise<StateScope> {
+export type StateAccessOptions = { restrictToConfiguredStates?: boolean };
+
+export async function loadStateScope(base: PrismaClient, organizationId: string, options: StateAccessOptions = {}): Promise<StateScope | null> {
   const organization = await base.organization.findUnique({where:{id:organizationId},select:{enabledStates:true,active:true,accountStatus:true}});
-  const states = organization?.active && !['SUSPENDED','CANCELLED'].includes(organization.accountStatus) ? organization.enabledStates : [];
+  if (!organization?.active || ['SUSPENDED', 'CANCELLED'].includes(organization.accountStatus)) return emptyScope();
+  // Echo's shared sales workflows use the whole directory. Provider jobs can retain their configured coverage.
+  if (organizationId === ECHO_ORGANIZATION_ID && !options.restrictToConfiguredStates) return null;
+  const states = organization.enabledStates;
   const [retail, restaurants, references] = await Promise.all([
     base.agency.findMany({where:stateWhere(states),select:{id:true,agencyId:true}}),
     base.wholesaleAccount.findMany({where:stateWhere(states),select:{id:true}}),
@@ -139,8 +144,8 @@ async function resolveRequestScope(base: PrismaClient): Promise<StateScope | nul
 }
 
 // Background tenant jobs can opt into the same policy without HTTP cookies.
-export async function withOrganizationStateAccess<T>(base: PrismaClient, organizationId: string, work: () => Promise<T>) {
-  return explicitScope.run(await loadStateScope(base,organizationId),work);
+export async function withOrganizationStateAccess<T>(base: PrismaClient, organizationId: string, work: () => Promise<T>, options?: StateAccessOptions) {
+  return explicitScope.run(await loadStateScope(base, organizationId, options), work);
 }
 export function withAccountStateScope<T>(scope: StateScope, work: () => Promise<T>) { return explicitScope.run(scope,work); }
 

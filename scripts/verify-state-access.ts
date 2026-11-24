@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { extendWithAccountStateAccess, loadStateScope, withAccountStateScope } from '../lib/accountStateAccess';
 import { modelHasStatePolicy } from '../lib/accountStatePolicy';
+import { ECHO_ORGANIZATION_ID } from '../lib/echoAccess';
 
 async function main() {
  const {url}=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
@@ -11,8 +12,10 @@ async function main() {
  const base=new PrismaClient({datasources:{db:{url}}});
  const db=extendWithAccountStateAccess(base);
  try {
-  const echo=await loadStateScope(base,'org_echo_spirits');
+  assert.equal(await loadStateScope(base, ECHO_ORGANIZATION_ID), null, 'Echo sales workflows use the shared directory.');
+  const echo=await loadStateScope(base,ECHO_ORGANIZATION_ID,{restrictToConfiguredStates:true});
   const ohio=await loadStateScope(base,'org_neat_staging');
+  assert.ok(echo && ohio, 'Both configured-state rehearsal scopes must exist.');
   const fl={...echo,states:['FL'],agencyIds:echo.agencyIds.filter(id=>id.startsWith('abc-fws-fl-')),agencyNumbers:[],restaurantIds:[]};
   await withAccountStateScope(ohio,async()=>{
    assert.equal(await db.agency.count({where:{id:{startsWith:'abc-fws-fl-'}}}),0);

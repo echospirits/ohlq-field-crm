@@ -6242,8 +6242,3 @@ legend {
 .assessment-actions button, .assessment-actions summary, .opportunities-page .opportunity-filters a { min-height:44px; }
 .assessment-actions summary { display:flex; align-items:center; }
 .assessment-actions input, .assessment-actions select { max-width:100%; }
-
-.state-access-picker { min-width: 0; border: 0; padding: 0; }
-.state-access-picker legend { font-weight: 700; }
-.state-access-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); max-height: 320px; overflow-y: auto; gap: .35rem; margin: .75rem 0; }
-.state-access-options .checkbox-label { display: flex; align-items: center; gap: .6rem; min-height: 44px; padding: .35rem .5rem; }

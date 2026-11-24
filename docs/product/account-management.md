@@ -2,7 +2,7 @@
 
 Audit baseline: TST `5faee9df930bd76b5e56b669f58a57210527f7d5`, inspected 2026-10-10.
 
-Shared agency and wholesale directories expose tenant notes, contacts, tags, targeting, relationship stage, Worklist, visits, photos and relevant sales. Wholesale import protection and platform merge authorization are established behavior. Retail/Restaurants directories now respect tenant state access. Tenant overlays support account categories, parent groups, geographic territories, teams, typed custom fields and document references; contacts can link the same person across accounts. Existing directory identities remain authoritative. Preserve raw OHLQ identifiers.
+Shared agency and wholesale directories expose tenant notes, contacts, tags, targeting, relationship stage, Worklist, visits, photos and relevant sales. Wholesale import protection and platform merge authorization are established behavior. Echo staff can browse Retail and Restaurant accounts across states within their role permissions. Sales and inventory coverage depend on the data source. Tenant overlays support account categories, parent groups, geographic territories, teams, typed custom fields and document references; contacts can link the same person across accounts. Existing directory identities remain authoritative. Preserve raw OHLQ identifiers.
 
 ## Implementation references
 

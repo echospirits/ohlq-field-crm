@@ -106,7 +106,6 @@ type VisitFormInitialValues = {
 };
 
 type LogVisitFormProps = {
-  allowedStates?: string[];
   organizationId?: string;
   visitGuides?: Array<{accountType:string;name:string;questions:string[]}>;
   action: (formData: FormData) => void | Promise<void>;
@@ -150,7 +149,6 @@ const getLastVisitLabel = (lastVisitAt: string | null) =>
   lastVisitAt ? `Visited ${lastVisitFormatter.format(new Date(lastVisitAt))}` : 'Not visited yet';
 
 export function LogVisitForm({
-  allowedStates = ['OH'],
   organizationId, visitGuides = [],
   action,
   agencies,
@@ -890,7 +888,7 @@ export function LogVisitForm({
                   <label>Phone (optional)<input name="newWholesalePhone" type="tel" autoComplete="tel" /></label>
                 </div>
               </fieldset>
-              <WholesaleAddressFields visit allowedStates={allowedStates} />
+              <WholesaleAddressFields visit />
               <label>Licensee ID (optional)<input name="newWholesaleLicenseeId" /></label>
               {tags.length > 0 ? (
                 <div className="tag-checkbox-grid">

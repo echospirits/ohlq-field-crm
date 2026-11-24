@@ -294,10 +294,9 @@ async function createWholesale(formData: FormData) {
   'use server';
 
   const user = await requireUser();
-  const { organizationId, organization } = await requireOrganizationContext(user);
+  const { organizationId } = await requireOrganizationContext(user);
   const state = normalizeUsState(String(formData.get('state') ?? 'OH'));
   if (!state) return { error: 'Enter a valid US state name or two-letter abbreviation.' };
-  if (!organization.enabledStates.includes(state)) return { error: 'This state is not enabled for your organization.' };
   const licenseeIds = stateScopedLicenseeIds(parseWholesaleLicenseeIds(
     String(formData.get('licenseeIds') ?? formData.get('licenseeId') ?? ''),
   ), state);
@@ -413,7 +412,7 @@ export default async function WholesalePage({
   searchParams?: Promise<WholesalePageParams>;
 }) {
   const user = await requireUser();
-  const { organizationId, organization } = await requireOrganizationContext(user);
+  const { organizationId } = await requireOrganizationContext(user);
   const enabledFeatures = await getOrganizationFeatures(organizationId);
   const hasWholesaleOpportunities = enabledFeatures.has('WHOLESALE_OPPORTUNITIES');
   const visibleSortColumns = hasWholesaleOpportunities
@@ -607,7 +606,7 @@ export default async function WholesalePage({
               <label>Phone (optional)<input name="phone" type="tel" autoComplete="tel" /></label>
             </div>
           </fieldset>
-          <WholesaleAddressFields allowedStates={organization.enabledStates} />
+          <WholesaleAddressFields />
           <fieldset className="wholesale-create-section">
             <legend>Additional details (optional)</legend>
             <div className="wholesale-create-grid wholesale-create-extras">

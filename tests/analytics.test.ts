@@ -5,6 +5,7 @@ import { analyticsHref, comparisonRange, coverageFor, dates, parseFilters, summa
 import { analyticsCsv } from '../lib/analytics/csv';
 import { loadAnalytics } from '../lib/analytics/service';
 import { ohioAdapter, retainedDays, type AnalyticsDb, type MarketAdapter } from '../lib/analytics/ohio';
+import { ECHO_ORGANIZATION_ID } from '../lib/echoAccess';
 
 test('date presets, leap year, custom validation and previous/prior-year comparisons', () => {
   assert.deepEqual(comparisonRange(filters()), { start: '2026-08-25', end: '2026-08-31' });
@@ -90,6 +91,38 @@ test('server product scope is Organization-owned/represented, with no tenant fal
   const denied = await loadAnalytics('org-a', filters({ product: 'OH:org-b' }), db, [adapter]);
   assert.equal(denied.quantity, null); assert.deepEqual(seen, ['org-a', 'org-b']);
   await assert.rejects(() => loadAnalytics('', filters(), db, [adapter]));
+});
+
+test('Echo Analytics markets follow available sources and Echo products independently of legacy access settings', async () => {
+  let ohioLoads = 0;
+  const db = {
+    organization: { findUnique: async () => assert.fail('Echo Analytics must not load the state allowlist') },
+    organizationProduct: {
+      findMany: async ({ where }: { where: Record<string, unknown> }) => {
+        assert.deepEqual(where, { organizationId: ECHO_ORGANIZATION_ID, status: { in: ['OWNED', 'REPRESENTED'] } });
+        return [
+          { market: 'OH', externalItemCode: 'A', displayName: 'Ohio product' },
+          { market: 'KY', externalItemCode: 'A', displayName: 'Kentucky product' },
+        ];
+      },
+    },
+  } as unknown as AnalyticsDb;
+  const adapter: MarketAdapter = { market: 'OH', load: async (_db, organizationId, products) => {
+    ohioLoads++;
+    assert.equal(organizationId, ECHO_ORGANIZATION_ID);
+    assert.deepEqual(products.map(p => p.key), ['OH:A']);
+    return fixture();
+  } };
+
+  const all = await loadAnalytics(ECHO_ORGANIZATION_ID, filters(), db, [adapter]);
+  assert.deepEqual(all.markets, ['KY', 'OH']);
+  assert.deepEqual(all.availableProducts.map(p => p.key), ['OH:A', 'KY:A']);
+  assert.match(all.warnings.join(' '), /Sales data unavailable for KY/);
+  assert.equal(all.products.find(p => p.key === 'KY:A')?.quantity, null);
+  const kentucky = await loadAnalytics(ECHO_ORGANIZATION_ID, filters({ market: 'KY', product: 'KY:A' }), db, [adapter]);
+  assert.equal(kentucky.quantity, null);
+  assert.match(kentucky.warnings.join(' '), /Sales data unavailable for KY/);
+  assert.equal(ohioLoads, 1);
 });
 test('coverage verifies physical retained counts against source-specific completed imports', async () => {
   const db = { organization: { findUnique: async () => ({ enabledStates: ['OH'] }) }, $queryRaw: async (sql: any) => { assert.ok(sql.sql.includes('COUNT(*)')); assert.ok(sql.sql.includes('COALESCE')); assert.ok(sql.sql.includes('"skippedRows" = 0')); assert.ok(sql.values.includes('ANNUAL_SALES_SUMMARY')); return [{ reportDate: new Date('2026-09-01') }]; } } as unknown as AnalyticsDb;

@@ -150,26 +150,46 @@ test('organization context stays in Echo and never reads a stale Support View co
   }
 });
 
-test('the database state-access path also rejects outside cookies and ignores stale Support View', async () => {
-  const source = readFileSync('lib/accountStateAccess.ts', 'utf8');
-  const ast = ts.createSourceFile('scope.ts', source, ts.ScriptTarget.Latest, true);
-  const fn = ast.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'resolveRequestScope')!;
-  for (const organizationId of [ECHO_ORGANIZATION_ID, 'outside-company']) {
-    const context: any = {
-      explicitScope: { getStore: () => undefined }, requestScopes: new WeakMap(), ECHO_ORGANIZATION_ID,
-      cookies: async () => ({ get: (key: string) => ({ value: key === 'echo_session' ? 'cookie' : 'outside-company' }) }),
-      headers: async () => ({ get: () => null }), createHash, Date, Buffer,
-      emptyScope: () => ({ empty: true }), loadStateScope: async (_db: unknown, id: string) => ({ organizationId: id }),
-    };
-    runInNewContext(ts.transpileModule(`${fn.getText(ast)}\nglobalThis.run = resolveRequestScope;`, {
-      compilerOptions: { target: ts.ScriptTarget.ES2022 },
-    }).outputText, context);
-    const result = await context.run({ userSession: { findFirst: async ({ where }: any) => {
-      assert.equal(where.user.organizationId, ECHO_ORGANIZATION_ID);
-      return organizationId === where.user.organizationId ? { user: actor(organizationId, UserRole.PLATFORM_ADMIN) } : null;
-    } } });
-    if (organizationId === ECHO_ORGANIZATION_ID) assert.equal(result.organizationId, ECHO_ORGANIZATION_ID);
-    else assert.equal(result.empty, true);
+test('database account reads drop geographic filtering only for valid sessions in active Echo', async () => {
+  for (const scenario of [
+    { name: 'Echo salesperson', allowed: true },
+    { name: 'guest', cookie: false },
+    { name: 'expired session', expired: true },
+    { name: 'outside platform admin', organizationId: 'outside-company' },
+    { name: 'inactive salesperson', userActive: false },
+    { name: 'inactive Echo', organizationActive: false },
+    { name: 'suspended Echo', status: 'SUSPENDED' },
+    { name: 'cancelled Echo', status: 'CANCELLED' },
+  ]) {
+    const user = { ...actor(scenario.organizationId ?? ECHO_ORGANIZATION_ID, scenario.organizationId ? UserRole.PLATFORM_ADMIN : UserRole.USER), isActive: scenario.userActive ?? true };
+    const store = { get: (key: string) => key === 'echo_session' ? (scenario.cookie === false ? undefined : { value: 'cookie' }) : { value: 'outside-company' } };
+    const { extendWithAccountStateAccess } = loadModule('lib/accountStateAccess.ts', {
+      'next/headers': { cookies: async () => store, headers: async () => ({ get: () => null }) },
+    });
+    const prisma = extendWithAccountStateAccess({
+      $extends: (configuration: any) => configuration.query.$allModels.$allOperations,
+      userSession: { findFirst: async ({ where }: any) => {
+        assert.equal(where.tokenHash, createHash('sha256').update('cookie').digest('hex'));
+        assert.equal(where.user.organizationId, ECHO_ORGANIZATION_ID);
+        assert.equal(where.user.isActive, true);
+        const expiresAt = new Date(Date.now() + (scenario.expired ? -60_000 : 60_000));
+        return user.organizationId === where.user.organizationId && user.isActive === where.user.isActive && expiresAt > where.expiresAt.gt ? { user } : null;
+      } },
+      organization: { findUnique: async ({ where }: any) => {
+        assert.equal(where.id, ECHO_ORGANIZATION_ID);
+        return { enabledStates: ['OH'], active: scenario.organizationActive ?? true, accountStatus: scenario.status ?? 'ACTIVE' };
+      } },
+    });
+    const args = { where: { id: 'california-restaurant' } };
+    const result = await prisma({ model: 'WholesaleAccount', operation: 'findUnique', args, query: async (value: unknown) => value });
+    if (scenario.allowed) {
+      assert.strictEqual(result, args, scenario.name);
+      const worklistArgs = { where: { organizationId: ECHO_ORGANIZATION_ID, wholesaleAccountId: 'california-restaurant', assignedToUserId: user.id } };
+      assert.strictEqual(await prisma({ model: 'WorklistItem', operation: 'findMany', args: worklistArgs, query: async (value: unknown) => value }), worklistArgs);
+    } else {
+      assert.equal(result.where.id, args.where.id, scenario.name);
+      assert.equal(result.where.AND[0].OR[0].state.in.length, 0, scenario.name);
+    }
   }
 });
 

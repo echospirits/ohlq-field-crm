@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-import { extendWithAccountStateAccess, withOrganizationStateAccess } from './accountStateAccess';
+import { extendWithAccountStateAccess, withOrganizationStateAccess, type StateAccessOptions } from './accountStateAccess';
 import { validateRuntimeEnvironment } from './appEnvironment';
 
 validateRuntimeEnvironment();
@@ -10,6 +10,6 @@ export const prisma = extendWithAccountStateAccess(basePrisma) as unknown as Pri
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = basePrisma;
 
 // Explicit tenant scope for cron and other background dispatchers.
-export function runWithOrganizationStateAccess<T>(organizationId: string, work: () => Promise<T>) {
-  return withOrganizationStateAccess(basePrisma, organizationId, work);
+export function runWithOrganizationStateAccess<T>(organizationId: string, work: () => Promise<T>, options?: StateAccessOptions) {
+  return withOrganizationStateAccess(basePrisma, organizationId, work, options);
 }
