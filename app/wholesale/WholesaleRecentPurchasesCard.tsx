@@ -5,6 +5,7 @@ import type { WholesalePurchaseList, WholesaleRecentPurchases } from '../../lib/
 import { DataFreshnessBadge } from '../components/DataFreshnessBadge';
 
 const numberFormatter = new Intl.NumberFormat('en-US');
+const priceFormatter = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
 const PAGE_SIZE = 50;
 
 function PurchaseSummary({ list }: { list: WholesalePurchaseList }) {
@@ -73,18 +74,36 @@ function PurchaseList({
   return (
     <>
       {pageCount > 1 ? navigation('top') : null}
-      <div className="table-scroll" id={listId} role="region" aria-label={`${label} purchase comparison`} tabIndex={0}><table className="comparison-table purchase-comparison-table">
-        <thead><tr><th scope="col">Product</th><th className="numeric" scope="col">Bottles</th><th className="numeric" scope="col">Purchase lines</th><th className="numeric" scope="col">Agencies</th><th className="numeric" scope="col">Vendors</th></tr></thead><tbody>
-        {items.map((item) => (
-          <tr key={item.itemCode}>
-            <th scope="row"><strong>{item.itemName}</strong><small className="directory-record-id">{item.itemCode}</small></th>
-            <td className="numeric">{numberFormatter.format(item.totalBottlesSold)}</td>
-            <td className="numeric">{numberFormatter.format(item.purchaseLineCount)}</td>
-            <td className="numeric">{numberFormatter.format(item.agencyCount)}</td>
-            <td className="numeric">{numberFormatter.format(item.vendorCount)}</td>
-          </tr>
-        ))}
-        </tbody></table></div>
+      <div className="table-scroll" id={listId} role="region" aria-label={`${label} purchase comparison`} tabIndex={0}>
+        <table className="comparison-table purchase-comparison-table">
+          <thead>
+            <tr>
+              <th scope="col">Product</th>
+              <th className="numeric" scope="col">Wholesale<small>per bottle</small></th>
+              <th className="numeric" scope="col">Bottles</th>
+              <th className="numeric" scope="col">Purchase lines</th>
+              <th className="numeric" scope="col">Agencies</th>
+              <th className="numeric" scope="col">Vendors</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item) => (
+              <tr key={item.itemCode}>
+                <th scope="row"><strong>{item.itemName}</strong><small className="directory-record-id">{item.itemCode}</small></th>
+                <td className="numeric purchase-price">
+                  {item.wholesalePrice === null
+                    ? <span className="muted">Unavailable</span>
+                    : priceFormatter.format(item.wholesalePrice)}
+                </td>
+                <td className="numeric">{numberFormatter.format(item.totalBottlesSold)}</td>
+                <td className="numeric">{numberFormatter.format(item.purchaseLineCount)}</td>
+                <td className="numeric">{numberFormatter.format(item.agencyCount)}</td>
+                <td className="numeric">{numberFormatter.format(item.vendorCount)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
       {pageCount > 1 ? navigation('bottom') : null}
     </>
   );
@@ -122,6 +141,7 @@ export function WholesaleRecentPurchasesCard({
       <details className="source-explanation compact-details nested-details">
         <summary>How these purchases relate to the timeline</summary>
         <p>The first list shows your organization&apos;s tracked products purchased by this account during the source-date window. All purchases includes other vendors at this location. The activity timeline shows only your organization&apos;s tracked products, so it can contain fewer purchase entries. CRM visits and tasks may also be newer than the latest OHLQ report.</p>
+        <p>Wholesale prices come from the latest imported OHLQ Brand Master and can differ from what the account paid.</p>
       </details>
       <p className="muted">Most bottles first · Product name A–Z for ties</p>
 

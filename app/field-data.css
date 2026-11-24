@@ -72,6 +72,15 @@
 .assessment-data-limit { margin: 6px 0; font-size: .8125rem; color: var(--muted); }
 .purchase-comparison-table th:first-child { min-width: 13rem; }
 .purchase-comparison-table th > small { display: block; font-weight: 400; color: var(--muted); }
+.purchase-comparison-table th[scope="row"] { overflow-wrap: anywhere; }
+.purchase-comparison-table .purchase-price { font-variant-numeric: tabular-nums; white-space: nowrap; }
+@media (max-width: 600px) {
+  .purchase-comparison-table th:first-child { min-width: 9rem; }
+  .purchase-comparison-table :is(th, td) { padding-inline: 8px; }
+}
+@media (max-width: 360px) {
+  .purchase-comparison-table th:first-child { min-width: 7.5rem; }
+}
 .agency-intelligence-stack > .agency-inventory-details { margin: 0; }
 .inventory-comparison-table .numeric, .product-fit-comparison-table .numeric { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .agency-wholesale-influence .agency-intelligence-snapshot { grid-template-columns: repeat(6, minmax(0, 1fr)); }

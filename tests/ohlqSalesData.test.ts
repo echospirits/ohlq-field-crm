@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import type { PrismaClient } from '@prisma/client';
+import { Prisma, type PrismaClient } from '@prisma/client';
 import type { TenantConfig } from '../lib/tenantConfig';
 import { getTenantConfig } from '../lib/tenantConfig';
 import {
@@ -76,8 +76,10 @@ describe('getWholesaleRecentPurchases', () => {
         findFirst: async () => ({ reportDate: new Date('2026-05-12T00:00:00.000Z') }),
         findMany: async () => rows,
       },
+      // Identical display names can have different per-bottle prices.
       ohlqBrandMasterItem: { findMany: async () => rows.map((row, index) => ({
         itemCode: row.brand, name: index < 2 ? 'Same name' : `Product ${String(277 - index).padStart(3, '0')}`,
+        wholesalePrice: [new Prisma.Decimal('12.49'), new Prisma.Decimal('17.25'), new Prisma.Decimal(0)][index] ?? null,
       })) },
     } as unknown as PrismaClient;
     const result = await getWholesaleRecentPurchases({ licenseeId: '72045', config: getTenantConfig(), db });
@@ -88,6 +90,8 @@ describe('getWholesaleRecentPurchases', () => {
       assert.equal(list.totalBottlesSold, 476);
       assert.deepEqual(list.items.slice(0, 3).map((item) => item.itemCode), ['ITEM275', 'ITEM276', 'ITEM274']);
       assert.deepEqual(list.items.slice(-2).map((item) => item.itemCode), ['ITEM000', 'ITEM001']);
+      assert.deepEqual(list.items.slice(-2).map((item) => item.wholesalePrice), [12.49, 17.25]);
+      assert.equal(list.items.find((item) => item.itemCode === 'ITEM002')?.wholesalePrice, null);
       assert.equal(list.items[0].purchaseLineCount, 2);
     }
   });
@@ -140,8 +144,8 @@ describe('getWholesaleRecentPurchases', () => {
       },
       ohlqBrandMasterItem: {
         findMany: async () => [
-          { itemCode: '0200B', name: 'Zeta Whiskey' },
-          { itemCode: '0100A', name: 'Alpha Vodka' },
+          { itemCode: '0200B', name: 'Zeta Whiskey', wholesalePrice: new Prisma.Decimal('19.50') },
+          { itemCode: '0100B', name: 'Alpha Vodka', wholesalePrice: new Prisma.Decimal('9.50') },
         ],
       },
     } as unknown as PrismaClient;
@@ -158,7 +162,9 @@ describe('getWholesaleRecentPurchases', () => {
     assert.equal(result.all.purchaseLineCount, 3);
     assert.equal(result.all.totalBottlesSold, 6);
     assert.deepEqual(result.all.items.map((item) => item.itemCode), ['0100A', '0200B']);
+    assert.deepEqual(result.all.items.map((item) => item.wholesalePrice), [null, 19.50]);
     assert.equal(result.tracked.items[0].itemCode, '0100A');
+    assert.equal(result.tracked.items[0].itemName, 'Name pending');
     assert.equal(result.tracked.items[0].totalBottlesSold, 5);
     assert.equal(result.tracked.items[0].purchaseLineCount, 2);
     assert.equal(result.tracked.items[0].agencyCount, 2);
@@ -170,6 +176,7 @@ describe('getWholesaleRecentPurchases', () => {
       db,
     });
     assert.deepEqual(otherTenantResult.tracked.items.map((item) => item.itemCode), ['0200B']);
+    assert.equal(otherTenantResult.tracked.items[0].wholesalePrice, 19.50);
     assert.equal(otherTenantResult.tracked.totalBottlesSold, 1);
     assert.equal(otherTenantResult.productLabel, 'Other Distillery');
     assert.deepEqual(otherTenantResult.all, result.all);

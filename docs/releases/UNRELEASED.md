@@ -1,5 +1,9 @@
 # Unreleased
 
+## Wholesale account purchase prices — November 24, 2026
+
+Recent OHLQ Purchases shows the latest imported wholesale price per bottle by exact item code in Tracked products and All purchases. See the [0.15.15 release notes](0.15.15.md).
+
 ## Log Visit actions and default outcome — November 24, 2026
 
 Cancel and Save visit appear after the last field. No action needed appears first and starts selected on new sales visits. Selecting another outcome replaces that default. Choosing to save a next step switches No action needed to Follow-up needed. See the [0.15.14 release notes](0.15.14.md).

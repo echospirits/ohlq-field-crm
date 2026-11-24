@@ -1,4 +1,4 @@
-import type { Prisma, PrismaClient } from '@prisma/client';
+import type { OhlqBrandMasterItem, Prisma, PrismaClient } from '@prisma/client';
 import { formatOhlqDate } from './ohlqDataStatus';
 import {
   buildPermitNumberSearchConditions,
@@ -30,6 +30,7 @@ type AgencySalesGroup = {
 };
 
 type SkuLookup = Map<string, string>;
+type BrandMasterSku = Pick<OhlqBrandMasterItem, 'name' | 'wholesalePrice'>;
 
 export type AgencySalesWindow = {
   days: number;
@@ -54,6 +55,7 @@ export type WholesalePurchaseSummaryItem = {
   purchaseLineCount: number;
   totalBottlesSold: number;
   vendorCount: number;
+  wholesalePrice: number | null;
 };
 
 export type WholesalePurchaseList = {
@@ -186,14 +188,14 @@ const formatDateOnly = (date: Date | null | undefined) => (date ? formatOhlqDate
 const sum = (value: number | null | undefined) => value ?? 0;
 
 const getSkuLookup = async (db: PrismaClient, itemCodes: string[]) => {
-  if (itemCodes.length === 0) return new Map<string, string>();
+  if (itemCodes.length === 0) return new Map<string, BrandMasterSku>();
 
   const skus = await db.ohlqBrandMasterItem.findMany({
     where: { itemCode: { in: Array.from(new Set(itemCodes)) } },
-    select: { itemCode: true, name: true },
+    select: { itemCode: true, name: true, wholesalePrice: true },
   });
 
-  return new Map(skus.map((sku) => [sku.itemCode, sku.name]));
+  return new Map(skus.map((sku) => [sku.itemCode, sku]));
 };
 
 export const getItemName = (skuLookup: SkuLookup, itemCode: string) => skuLookup.get(itemCode) ?? 'Name pending';
@@ -270,11 +272,12 @@ export async function getAgencyRecentItemSales({
   );
   const itemCodes = groupedByWindow.flatMap((window) => window.groups.map((group) => group.brand));
   const skuLookup = await getSkuLookup(db, itemCodes);
+  const itemNames = new Map(Array.from(skuLookup, ([code, sku]) => [code, sku.name]));
 
   return groupedByWindow.map((window) => ({
     days: window.days,
     endDate: formatDateOnly(endDate),
-    items: toAgencySalesSummaryItems(window.groups, skuLookup),
+    items: toAgencySalesSummaryItems(window.groups, itemNames),
     startDate: formatDateOnly(window.startDate),
   })) satisfies AgencySalesWindow[];
 }
@@ -286,14 +289,13 @@ const toPurchaseSummaryItems = (
     vendor: string;
     wholesaleBottlesSold: number;
   }>,
-  skuLookup: SkuLookup,
+  skuLookup: Map<string, BrandMasterSku>,
 ) => {
   const itemsByCode = new Map<
     string,
     {
       agencies: Set<string>;
       itemCode: string;
-      itemName: string;
       purchaseLineCount: number;
       totalBottlesSold: number;
       vendors: Set<string>;
@@ -306,7 +308,6 @@ const toPurchaseSummaryItems = (
       {
         agencies: new Set<string>(),
         itemCode: record.brand,
-        itemName: getItemName(skuLookup, record.brand),
         purchaseLineCount: 0,
         totalBottlesSold: 0,
         vendors: new Set<string>(),
@@ -319,14 +320,20 @@ const toPurchaseSummaryItems = (
     itemsByCode.set(record.brand, item);
   });
 
-  return Array.from(itemsByCode.values()).map((item) => ({
-    agencyCount: item.agencies.size,
-    itemCode: item.itemCode,
-    itemName: item.itemName,
-    purchaseLineCount: item.purchaseLineCount,
-    totalBottlesSold: item.totalBottlesSold,
-    vendorCount: item.vendors.size,
-  }));
+  return Array.from(itemsByCode.values(), (item): WholesalePurchaseSummaryItem => {
+    const sku = skuLookup.get(item.itemCode);
+    const price = Number(sku?.wholesalePrice ?? 0);
+
+    return {
+      agencyCount: item.agencies.size,
+      itemCode: item.itemCode,
+      itemName: sku?.name ?? 'Name pending',
+      purchaseLineCount: item.purchaseLineCount,
+      totalBottlesSold: item.totalBottlesSold,
+      vendorCount: item.vendors.size,
+      wholesalePrice: Number.isFinite(price) && price > 0 ? price : null,
+    };
+  });
 };
 
 const sortPurchaseItems = (left: WholesalePurchaseSummaryItem, right: WholesalePurchaseSummaryItem) =>

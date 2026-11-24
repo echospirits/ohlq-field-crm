@@ -30,13 +30,17 @@ it('labels retail sales for the selected organization, including the empty state
 });
 
 it('shows tenant purchases first and all purchases in the wholesale disclosure', () => {
+  const trackedItem = {
+    agencyCount: 1, itemCode: '0200B', itemName: 'Zeta Whiskey', purchaseLineCount: 1,
+    totalBottlesSold: 2, vendorCount: 1, wholesalePrice: 19.50,
+  };
   const html = renderToStaticMarkup(createElement(WholesaleRecentPurchasesCard, {
     purchases: {
       all: {
         count: 2,
         items: [
-          { agencyCount: 1, itemCode: '0100A', itemName: 'Echo Vodka', purchaseLineCount: 1, totalBottlesSold: 3, vendorCount: 1 },
-          { agencyCount: 1, itemCode: '0200B', itemName: 'Zeta Whiskey', purchaseLineCount: 1, totalBottlesSold: 2, vendorCount: 1 },
+          { agencyCount: 1, itemCode: '0100A', itemName: 'Echo Vodka', purchaseLineCount: 1, totalBottlesSold: 3, vendorCount: 1, wholesalePrice: null },
+          trackedItem,
         ],
         purchaseLineCount: 2,
         totalBottlesSold: 5,
@@ -48,7 +52,7 @@ it('shows tenant purchases first and all purchases in the wholesale disclosure',
       startDate: '2026-04-13',
       tracked: {
         count: 1,
-        items: [{ agencyCount: 1, itemCode: '0200B', itemName: 'Zeta Whiskey', purchaseLineCount: 1, totalBottlesSold: 2, vendorCount: 1 }],
+        items: [trackedItem],
         purchaseLineCount: 1,
         totalBottlesSold: 2,
       },
@@ -58,6 +62,10 @@ it('shows tenant purchases first and all purchases in the wholesale disclosure',
   assert.match(html, /Zeta Whiskey/);
   const allPurchasesIndex = html.indexOf('All purchases · 30 days');
   assert.ok(allPurchasesIndex > 0);
+  assert.match(html.slice(0, allPurchasesIndex), /Wholesale<small>per bottle<\/small>/);
+  assert.match(html.slice(0, allPurchasesIndex), /\$19\.50/);
   assert.doesNotMatch(html.slice(0, allPurchasesIndex), /Echo Vodka/);
   assert.match(html.slice(allPurchasesIndex), /Echo Vodka/);
+  assert.match(html.slice(allPurchasesIndex), /Unavailable/);
+  assert.match(html.slice(allPurchasesIndex), /\$19\.50/);
 });
