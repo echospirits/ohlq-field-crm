@@ -164,7 +164,8 @@ test('post-save prompt replaces physical-visit pre-save choices and opportunity 
   const form = readFileSync('app/visits/LogVisitForm.tsx', 'utf8');
   const action = readFileSync('app/visits/actions.ts', 'utf8');
   assert.match(page, /relatedWork\.length > 0 \? <RelatedWorkPrompt/);
-  assert.match(page, /getVisitRelatedWorkWhere\(organizationId, user\.id, visit\)/);
+  assert.match(page, /getVisitRelatedWorkWhere\(organizationId, userId, visit\)/);
+  assert.match(page, /<ConfirmedVisitRelatedWork organizationId=\{organizationId\} userId=\{user\.id\} visit=\{visit\}/);
   assert.match(form, /!physicalVisit && matchingWorklistItems\.length > 0/);
   assert.match(action, /requestedWorklistCompletionIds = isTaster \|\| physicalVisit\s*\? \[\]/);
   assert.doesNotMatch(page, /getVisitOriginResolution|action-opportunity|Keep open|address the opportunity/);
@@ -208,20 +209,26 @@ function loadPrompt(initialItems: Row[], completeAction: (data: FormData) => Pro
   return { render, elements, button };
 }
 
-test('prompt is absent for no qualifying items; dismissing leaves all work open without calling completion', () => {
+test('related work only opens on request; dismissing leaves all work open without calling completion', () => {
   let calls = 0;
   const action = async () => { calls++; return { completedIds: [] }; };
   assert.equal(loadPrompt([], action).render(), null);
   const h = loadPrompt([task('one')], action);
+  const collapsed = h.render();
+  assert.ok(!h.elements(collapsed).some((node) => node.props?.role === 'dialog'));
+  h.button(collapsed, 'Review related work (1)').props.onClick();
   const tree = h.render();
   assert.ok(h.elements(tree).some((node) => node.props?.role === 'dialog'));
   h.button(tree, 'Leave open').props.onClick();
-  assert.equal(h.render(), null); assert.equal(calls, 0);
+  assert.ok(!h.elements(h.render()).some((node) => node.props?.role === 'dialog'));
+  assert.ok(h.button(h.render(), 'Review related work (1)'));
+  assert.equal(calls, 0);
 });
 
 test('prompt individual and all controls submit only displayed items and block repeat submission while saving', async () => {
   const rows = [task('one'), task('two')], actions = loadActions(rows);
   const h = loadPrompt(rows.map((row) => ({ ...row })), async (data) => actions.complete(data.getAll('worklistItemId').map(String)));
+  h.button(h.render(), 'Review related work (2)').props.onClick();
   h.button(h.render(), 'Complete').props.onClick();
   assert.equal(h.button(h.render(), 'Completing…').props.disabled, true);
   await new Promise(setImmediate);
@@ -234,6 +241,7 @@ test('prompt individual and all controls submit only displayed items and block r
 
 test('prompt preserves open work and shows an actionable failure when completion is refused', async () => {
   const h = loadPrompt([task('one')], async () => ({ completedIds: [], error: 'This task changed. Refresh the worklist.' }));
+  h.button(h.render(), 'Review related work (1)').props.onClick();
   h.button(h.render(), 'Complete').props.onClick();
   await new Promise(setImmediate);
   const tree = h.render();

@@ -189,8 +189,6 @@ export default async function Dashboard({ searchParams }: { searchParams?: Promi
   const showProductionShortfalls = canViewScheduleProductionShortfalls(productionShortfallContext);
   const schedulerRangeStart = addDaysToDateInputValue(view === 'week' ? weekDates[0] : anchorDate, -30);
   const schedulerRangeEnd = addDaysToDateInputValue(view === 'week' ? weekDates[6] : anchorDate, 1);
-  const ranges = getDashboardRanges();
-  const visitQueryStart = ranges.weekStart < ranges.monthStart ? ranges.weekStart : ranges.monthStart;
   const excludedIntelligenceSources: WorklistSource[] = [
     ...(!enabledFeatures.has('AGENCY_INTELLIGENCE') ? [WorklistSource.AGENCY_INTELLIGENCE] : []),
     ...(!enabledFeatures.has('WHOLESALE_OPPORTUNITIES') ? [WorklistSource.OPPORTUNITY_INTELLIGENCE] : []),
@@ -204,79 +202,9 @@ export default async function Dashboard({ searchParams }: { searchParams?: Promi
   };
 
   const [
-    activeWorklistItems,
-    visits,
-    scheduledWorklistItems,
-    photosUploadedLastMonth,
-    liveMenuPlacements,
-    promisedMenuPlacementsWithoutProof,
-    staleMenuPlacements,
     schedulerWorklistItems,
     schedulerUsers,
-    unassignedSummary,
   ] = await Promise.all([
-    prisma.worklistItem.count({
-      where: { organizationId, status: { notIn: inactiveWorklistStatuses } },
-    }),
-    prisma.loggedVisit.findMany({
-      where: {
-        organizationId,
-        visitAt: {
-          gte: visitQueryStart,
-          lte: ranges.now,
-        },
-      },
-      select: {
-        visitAt: true,
-        locationType: true,
-        createdBy: true,
-        createdByUser: {
-          select: {
-            email: true,
-            name: true,
-          },
-        },
-      },
-    }),
-    prisma.worklistItem.groupBy({
-      by: ['category'],
-      where: {
-        organizationId,
-        status: { notIn: inactiveWorklistStatuses },
-        category: { in: [WorklistCategory.AGENCY, WorklistCategory.WHOLESALE] },
-        dueDate: {
-          gte: ranges.dueDateStart,
-          lt: ranges.nextSevenDueDateEnd,
-        },
-      },
-      _count: { _all: true },
-    }),
-    prisma.visitPhoto.count({
-      where: {
-        organizationId,
-        createdAt: {
-          gte: ranges.lastMonthStart,
-          lte: ranges.now,
-        },
-      },
-    }),
-    prisma.menuPlacement.count({
-      where: { organizationId, status: MenuPlacementStatus.LIVE },
-    }),
-    prisma.menuPlacement.count({
-      where: {
-        organizationId,
-        status: MenuPlacementStatus.PROMISED,
-        proofUrl: null,
-      },
-    }),
-    prisma.menuPlacement.count({
-      where: {
-        organizationId,
-        status: MenuPlacementStatus.LIVE,
-        OR: [{ lastVerifiedAt: null }, { lastVerifiedAt: { lt: ranges.stalePlacementCutoff } }],
-      },
-    }),
     prisma.worklistItem.findMany({
       where: {
         organizationId,
@@ -299,14 +227,9 @@ export default async function Dashboard({ searchParams }: { searchParams?: Promi
       orderBy: [{ name: 'asc' }, { email: 'asc' }],
       select: { id: true, email: true, firstName: true, lastName: true, name: true },
     }),
-    Promise.all([
-      prisma.worklistItem.count({ where: unassignedWhere }),
-      prisma.worklistItem.findMany({ where: unassignedWhere, orderBy: [{ dueDate: 'asc' }, { createdAt: 'asc' }], take: 3, include: { loggedVisit: { select: { locationType: true, agencyId: true, wholesaleAccountId: true } } } }),
-    ]),
   ]);
 
   const schedulerLocations = await getWorklistLocations(schedulerWorklistItems);
-  const unassignedLocations = await getWorklistLocations(unassignedSummary[1]);
   const schedulerAgencyIds = [...new Set([...schedulerLocations.values()].flatMap((location) => location?.type === 'agency' ? [location.id] : []))];
   const schedulerWholesaleIds = [...new Set([...schedulerLocations.values()].flatMap((location) => location?.type === 'wholesale' ? [location.id] : []))];
   const schedulerTargetOverlays = schedulerAgencyIds.length || schedulerWholesaleIds.length
@@ -347,22 +270,13 @@ export default async function Dashboard({ searchParams }: { searchParams?: Promi
     };
   });
 
-  const weekVisits = visits.filter((visit) => visit.visitAt.getTime() >= ranges.weekStart.getTime());
-  const monthVisits = visits.filter((visit) => visit.visitAt.getTime() >= ranges.monthStart.getTime());
-  const weekCounts = getVisitCounts(weekVisits);
-  const monthCounts = getVisitCounts(monthVisits);
-  const perUserCounts = getPerUserVisitCounts(visits, ranges.weekStart, ranges.monthStart);
-  const scheduledAgencyVisits =
-    scheduledWorklistItems.find((item) => item.category === WorklistCategory.AGENCY)?._count._all ?? 0;
-  const scheduledWholesaleVisits =
-    scheduledWorklistItems.find((item) => item.category === WorklistCategory.WHOLESALE)?._count._all ?? 0;
-  const scheduledVisitTotal = scheduledAgencyVisits + scheduledWholesaleVisits;
   return (
     <>
       <header className="page-heading page-header dashboard-heading">
         <div>
           <h1>My Schedule</h1>
         </div>
+        <Link className="btn schedule-mobile-log-visit" href="/visits/new">Log visit</Link>
       </header>
 
       {showProductionShortfalls ? <Suspense fallback={<ScheduleProductionShortfallsLoading />}><ScheduleProductionShortfalls {...productionShortfallContext} returnTo={`/?view=${view}&date=${anchorDate}`} /></Suspense> : null}
@@ -390,7 +304,9 @@ export default async function Dashboard({ searchParams }: { searchParams?: Promi
           </Link>
           <Link className="quick-action-card" href="/alerts">
             <strong>Worklist</strong>
-            <span>{activeWorklistItems} active</span>
+            <Suspense fallback={<span>Loading count…</span>}>
+              <ScheduleActiveWorkCount organizationId={organizationId} />
+            </Suspense>
           </Link>
           <Link className="quick-action-card" href="/search">
             <strong>Find account</strong>
@@ -399,15 +315,63 @@ export default async function Dashboard({ searchParams }: { searchParams?: Promi
         </div>
       </section>
 
-      {unassignedSummary[0] > 0 ? (
+      <Suspense fallback={<p role="status" className="muted">Loading sales and team insights…</p>}>
+        <ScheduleUnassignedWork where={unassignedWhere} />
+
+        <section className="schedule-supporting-sections" aria-label="Sales and team insights">
+          <section className="dashboard-section" aria-labelledby="schedule-opportunities-heading">
+            <header className="content-section-heading">
+              <div>
+                <h2 id="schedule-opportunities-heading">Explore opportunities</h2>
+                <p className="muted">Restaurant recommendations and retail signals</p>
+              </div>
+            </header>
+            <div className="dashboard-details-content">
+              {enabledFeatures.has('WHOLESALE_OPPORTUNITIES') ? <DashboardOpportunitySummary organizationId={organizationId} /> : null}
+              {enabledFeatures.has('AGENCY_INTELLIGENCE') ? <DashboardAgencyIntelligence organizationId={organizationId} /> : null}
+              {!enabledFeatures.has('WHOLESALE_OPPORTUNITIES') && !enabledFeatures.has('AGENCY_INTELLIGENCE') ? <p className="muted">Opportunity intelligence is not enabled for this organization.</p> : null}
+            </div>
+          </section>
+          <ScheduleTeamPerformance organizationId={organizationId} />
+        </section>
+
+        <ScheduleEvents organizationId={organizationId} />
+      </Suspense>
+    </>
+  );
+}
+
+async function ScheduleActiveWorkCount({ organizationId }: { organizationId: string }) {
+  try {
+    const count = await prisma.worklistItem.count({ where: { organizationId, status: { notIn: inactiveWorklistStatuses } } });
+    return <span>{count} active</span>;
+  } catch {
+    return <span>Count unavailable</span>;
+  }
+}
+
+async function ScheduleUnassignedWork({ where }: { where: Prisma.WorklistItemWhereInput }) {
+  try {
+    const [count, items] = await Promise.all([
+      prisma.worklistItem.count({ where }),
+      prisma.worklistItem.findMany({
+        where,
+        orderBy: [{ dueDate: 'asc' }, { createdAt: 'asc' }],
+        take: 3,
+        include: { loggedVisit: { select: { locationType: true, agencyId: true, wholesaleAccountId: true } } },
+      }),
+    ]);
+    if (!count) return null;
+    const unassignedLocations = await getWorklistLocations(items);
+    return (
         <section className="schedule-team-work" aria-labelledby="team-work-title">
           <div className="section-heading">
             <h2 id="team-work-title">Team work needs an owner</h2>
-            <span className="pill">{unassignedSummary[0]}</span>
+            <span className="pill">{count}</span>
           </div>
           <p>Unassigned work through this day, outside your personal schedule.</p>
           <ul>
-            {unassignedSummary[1].map((item) => (
+            {items.map((item) => (
               <li key={item.id}>
                 <Link href={`/alerts?owner=unassigned#worklist-${encodeURIComponent(item.id)}`}>{unassignedLocations.get(item.id)?.name ?? item.title}</Link>
                 <small>{getWorklistOverdueLabel(item.dueDate, item.status) ?? (item.dueDate ? 'Due this day' : 'No due date')} · Unassigned</small>
@@ -416,23 +380,96 @@ export default async function Dashboard({ searchParams }: { searchParams?: Promi
           </ul>
           <Link className="btn secondary" href="/alerts?owner=unassigned">Review all unassigned work</Link>
         </section>
-      ) : null}
+    );
+  } catch {
+    return <p role="status" className="muted">Unassigned work is unavailable. <Link href="/alerts?owner=unassigned">Open Worklist</Link></p>;
+  }
+}
 
-      <section className="schedule-supporting-sections" aria-label="Sales and team insights">
-      <section className="dashboard-section" aria-labelledby="schedule-opportunities-heading">
-        <header className="content-section-heading">
-          <div>
-            <h2 id="schedule-opportunities-heading">Explore opportunities</h2>
-            <p className="muted">Restaurant recommendations and retail signals</p>
-          </div>
-        </header>
-        <div className="dashboard-details-content">
-          {enabledFeatures.has('WHOLESALE_OPPORTUNITIES') ? <DashboardOpportunitySummary organizationId={organizationId} /> : null}
-          {enabledFeatures.has('AGENCY_INTELLIGENCE') ? <DashboardAgencyIntelligence organizationId={organizationId} /> : null}
-          {!enabledFeatures.has('WHOLESALE_OPPORTUNITIES') && !enabledFeatures.has('AGENCY_INTELLIGENCE') ? <p className="muted">Opportunity intelligence is not enabled for this organization.</p> : null}
-        </div>
-      </section>
+async function ScheduleTeamPerformance({ organizationId }: { organizationId: string }) {
+  const ranges = getDashboardRanges();
+  const visitQueryStart = ranges.weekStart < ranges.monthStart ? ranges.weekStart : ranges.monthStart;
+  try {
+    const [
+      visits,
+      scheduledWorklistItems,
+      photosUploadedLastMonth,
+      liveMenuPlacements,
+      promisedMenuPlacementsWithoutProof,
+      staleMenuPlacements,
+    ] = await Promise.all([
+      prisma.loggedVisit.findMany({
+        where: {
+          organizationId,
+          visitAt: {
+            gte: visitQueryStart,
+            lte: ranges.now,
+          },
+        },
+        select: {
+          visitAt: true,
+          locationType: true,
+          createdBy: true,
+          createdByUser: {
+            select: {
+              email: true,
+              name: true,
+            },
+          },
+        },
+      }),
+      prisma.worklistItem.groupBy({
+        by: ['category'],
+        where: {
+          organizationId,
+          status: { notIn: inactiveWorklistStatuses },
+          category: { in: [WorklistCategory.AGENCY, WorklistCategory.WHOLESALE] },
+          dueDate: {
+            gte: ranges.dueDateStart,
+            lt: ranges.nextSevenDueDateEnd,
+          },
+        },
+        _count: { _all: true },
+      }),
+      prisma.visitPhoto.count({
+        where: {
+          organizationId,
+          createdAt: {
+            gte: ranges.lastMonthStart,
+            lte: ranges.now,
+          },
+        },
+      }),
+      prisma.menuPlacement.count({
+        where: { organizationId, status: MenuPlacementStatus.LIVE },
+      }),
+      prisma.menuPlacement.count({
+        where: {
+          organizationId,
+          status: MenuPlacementStatus.PROMISED,
+          proofUrl: null,
+        },
+      }),
+      prisma.menuPlacement.count({
+        where: {
+          organizationId,
+          status: MenuPlacementStatus.LIVE,
+          OR: [{ lastVerifiedAt: null }, { lastVerifiedAt: { lt: ranges.stalePlacementCutoff } }],
+        },
+      }),
+    ]);
 
+    const weekVisits = visits.filter((visit) => visit.visitAt.getTime() >= ranges.weekStart.getTime());
+    const monthVisits = visits.filter((visit) => visit.visitAt.getTime() >= ranges.monthStart.getTime());
+    const weekCounts = getVisitCounts(weekVisits);
+    const monthCounts = getVisitCounts(monthVisits);
+    const perUserCounts = getPerUserVisitCounts(visits, ranges.weekStart, ranges.monthStart);
+    const scheduledAgencyVisits =
+      scheduledWorklistItems.find((item) => item.category === WorklistCategory.AGENCY)?._count._all ?? 0;
+    const scheduledWholesaleVisits =
+      scheduledWorklistItems.find((item) => item.category === WorklistCategory.WHOLESALE)?._count._all ?? 0;
+    const scheduledVisitTotal = scheduledAgencyVisits + scheduledWholesaleVisits;
+    return (
       <section className="dashboard-section" aria-labelledby="schedule-performance-heading">
         <header className="content-section-heading">
           <div>
@@ -506,9 +543,8 @@ export default async function Dashboard({ searchParams }: { searchParams?: Promi
           </div>
         </div>
       </section>
-      </section>
-
-      <ScheduleEvents organizationId={organizationId} />
-    </>
-  );
+    );
+  } catch {
+    return <p role="status" className="muted">Team activity and performance are unavailable.</p>;
+  }
 }

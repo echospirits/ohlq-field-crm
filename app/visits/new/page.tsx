@@ -1,4 +1,5 @@
 import { readVisitGuides } from '../../../lib/crm/visitGuides';
+import { randomUUID } from 'node:crypto';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
@@ -11,15 +12,16 @@ import {
   getAgenciesForVisitPicker,
   getAgencyVisitPickerOptionById,
   getInitialVisitLocationType,
-  getWholesaleAccountsForVisitPicker,
+  getVisitPickerSuggestions,
   getWholesaleVisitPickerOptionById,
-  sortVisitPickerOptions,
 } from '../../../lib/visitPickerOptions';
 import { createVisit } from '../actions';
 import { LogVisitForm } from '../LogVisitForm';
 import { TasterVisitForm } from '../TasterVisitForm';
 import { getOrganizationFeatures, requireOrganizationContext } from '../../../lib/organizations';
 import { VISIT_SALES_STATUS_OPTIONS } from '../../../lib/accountSalesStatus';
+import { startVisitServerTiming } from '../../../lib/visitTimingServer';
+import { VisitFormTiming } from '../VisitTiming';
 
 export const metadata = buildPageMetadata('Log Visit');
 
@@ -66,15 +68,20 @@ export default async function NewVisitPage({
     returnTo?: string;
   }>;
 }) {
-  const [params, user] = await Promise.all([(await searchParams) ?? {}, requireUser({ allowTaster: true })]);
+  const timingId = randomUUID();
+  const timing = startVisitServerTiming(timingId, 'form');
+  const [resolvedParams, user] = await Promise.all([searchParams, requireUser({ allowTaster: true })]);
+  const params: NonNullable<Awaited<typeof searchParams>> = resolvedParams ?? {};
   const { organizationId, organization } = await requireOrganizationContext(user);
-  const enabledFeatures = await getOrganizationFeatures(organizationId);
-
+  timing?.mark('authenticated');
   if (user.role === UserRole.TASTER) {
     const agencies = await getAgenciesForVisitPicker({ take: 8, organizationId });
 
+    timing?.mark('loaded');
+    timing?.finish('success');
     return (
       <>
+        {timing ? <VisitFormTiming id={timingId} /> : null}
         <PageHeader
             title="Log Retail Visit"
         />
@@ -87,25 +94,13 @@ export default async function NewVisitPage({
     );
   }
 
-  const [agencyOptions, wholesaleAccountOptions, contacts, tags, activeUsers, assignedWorklistItems, targetingOverlays] = await Promise.all([
-    getAgenciesForVisitPicker({ organizationId }),
-    getWholesaleAccountsForVisitPicker({ organizationId }),
-    prisma.locationContact.findMany({
-      where: { organizationId, active: true },
-      orderBy: { name: 'asc' },
-      take: 1000,
-      select: {
-        id: true,
-        name: true,
-        role: true,
-        phone: true,
-        email: true,
-        agencyId: true,
-        wholesaleAccountId: true,
-        active: true,
-        isPrimary: true,
-      },
-    }),
+  const initialLocationType = getInitialVisitLocationType(params);
+  const selectedAgencyId = initialLocationType === 'agency' ? params.agencyId : null;
+  const selectedWholesaleAccountId = initialLocationType === 'wholesale' ? params.wholesaleAccountId : null;
+  const [suggestions, selectedAgency, selectedWholesaleAccount, tags, activeUsers, assignedWorklistItems, targetingOverlays, enabledFeatures] = await Promise.all([
+    selectedAgencyId || selectedWholesaleAccountId ? null : getVisitPickerSuggestions(organizationId),
+    selectedAgencyId ? getAgencyVisitPickerOptionById({ id: selectedAgencyId, organizationId }) : null,
+    selectedWholesaleAccountId ? getWholesaleVisitPickerOptionById({ id: selectedWholesaleAccountId, organizationId }) : null,
     prisma.tag.findMany({
       where: { organizationId },
       orderBy: { name: 'asc' },
@@ -131,30 +126,16 @@ export default async function NewVisitPage({
       select: { agencyId: true, id: true, title: true, wholesaleAccountId: true },
     }),
     prisma.organizationAccountOverlay.findMany({ where: { organizationId, isTargeting: true }, select: { accountType: true, externalAccountId: true } }),
+    getOrganizationFeatures(organizationId),
   ]);
-  const initialLocationType = getInitialVisitLocationType(params);
-  const [selectedAgency, selectedWholesaleAccount] = await Promise.all([
-    params.agencyId && !agencyOptions.some((agency) => agency.id === params.agencyId)
-      ? getAgencyVisitPickerOptionById({ id: params.agencyId, organizationId })
-      : null,
-    params.wholesaleAccountId &&
-        !wholesaleAccountOptions.some((account) => account.id === params.wholesaleAccountId)
-      ? getWholesaleVisitPickerOptionById({ id: params.wholesaleAccountId, organizationId })
-      : null,
-  ]);
-  const agencies = sortVisitPickerOptions(
-    selectedAgency && !agencyOptions.some((agency) => agency.id === selectedAgency.id)
-      ? [selectedAgency, ...agencyOptions]
-      : agencyOptions,
-  );
-  const wholesaleAccounts = sortVisitPickerOptions(
-    selectedWholesaleAccount && !wholesaleAccountOptions.some((account) => account.id === selectedWholesaleAccount.id)
-      ? [selectedWholesaleAccount, ...wholesaleAccountOptions]
-      : wholesaleAccountOptions,
-  );
+  const agencies = selectedAgency ? [selectedAgency] : suggestions?.agencies ?? [];
+  const wholesaleAccounts = selectedWholesaleAccount ? [selectedWholesaleAccount] : suggestions?.wholesaleAccounts ?? [];
 
+  timing?.mark('loaded');
+  timing?.finish('success');
   return (
     <>
+      {timing ? <VisitFormTiming id={timingId} /> : null}
       <PageHeader
         title="Log Visit"
       />
@@ -168,13 +149,15 @@ export default async function NewVisitPage({
           currentUserId={user.id}
           agencies={agencies}
           assignedWorklistItems={assignedWorklistItems}
-          contacts={contacts}
+          contacts={[]}
+          loadSelectedAccountContacts
+          loadPickerSuggestions={!suggestions}
           initialValues={{
               eventId: params.eventId,
             locationType: initialLocationType,
-            agencyId: params.agencyId ?? null,
-            locationLocked: Boolean(params.agencyId || params.wholesaleAccountId),
-            wholesaleAccountId: params.wholesaleAccountId ?? null,
+            agencyId: selectedAgency?.id ?? null,
+            locationLocked: Boolean(selectedAgency || selectedWholesaleAccount),
+            wholesaleAccountId: selectedWholesaleAccount?.id ?? null,
             opportunityId: params.opportunityId ?? null,
             agencyProductIntelligenceId: params.agencyProductIntelligenceId ?? null,
             productItemCode: params.productItemCode ?? null,

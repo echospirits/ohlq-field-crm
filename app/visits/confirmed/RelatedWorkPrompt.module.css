@@ -1,3 +1,4 @@
+.review { margin-top: 16px; min-height: 44px; }
 .panel { width: min(38rem, 100%); min-width: 0; text-align: left; }
 .list { display: grid; gap: 0; padding: 0; margin: 0; list-style: none; }
 .item { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 12px; padding: 16px 0; border-bottom: 1px solid var(--border); }

@@ -51,7 +51,7 @@ export function TasterVisitForm({ action, agencies }: TasterVisitFormProps) {
   const [isContextLoading, setIsContextLoading] = useState(false);
   const [contextError, setContextError] = useState<string | null>(null);
   const { location: currentLocation, requestLocation, status: locationStatus } = useCurrentLocation();
-  const { formAction, photoUploadError } = useVisitPhotoFormAction(action);
+  const { handleSubmit, pending, photoUploadError } = useVisitPhotoFormAction(action, true);
   const searchText = normalize(agencySearch);
 
   useEffect(() => {
@@ -172,10 +172,9 @@ export function TasterVisitForm({ action, agencies }: TasterVisitFormProps) {
   };
 
   return (
-    <form action={formAction} className="visit-form field-visit-form taster-visit-form">
+    <form method="post" onSubmit={handleSubmit} className="visit-form field-visit-form taster-visit-form">
       <input name="locationType" readOnly type="hidden" value="agency" />
       <input name="agencyId" readOnly type="hidden" value={agencyId} />
-      {photoUploadError ? <p className="toast-notice page-status" role="alert">{photoUploadError}</p> : null}
 
       <fieldset className="visit-step visit-account-step">
         <legend>1. Choose the retail account</legend>
@@ -319,7 +318,8 @@ export function TasterVisitForm({ action, agencies }: TasterVisitFormProps) {
       </fieldset>
 
       <div className="visit-submit-bar">
-        <VisitSubmitButton disabled={!selectedAgency} label="Log retail visit" />
+        {photoUploadError ? <p className="visit-submit-error danger-text" role="alert">{photoUploadError}</p> : null}
+        <VisitSubmitButton disabled={!selectedAgency} pending={pending} label="Log retail visit" />
       </div>
     </form>
   );

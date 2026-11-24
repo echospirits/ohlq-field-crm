@@ -4,6 +4,7 @@ import type { PrismaClient } from '@prisma/client';
 import {
   getAgenciesForVisitPicker,
   getInitialVisitLocationType,
+  getVisitPickerSuggestions,
   getWholesaleAccountsForVisitPicker,
   searchAgenciesForVisitPicker,
   searchWholesaleAccountsForVisitPicker,
@@ -44,6 +45,41 @@ describe('sortVisitPickerOptions', () => {
 });
 
 describe('visit picker services', () => {
+  it('keeps direct suggestions bounded and finds recently visited retail accounts by legacy key', async () => {
+    const recentDate = new Date('2026-11-18T12:00:00Z');
+    const retail = { id: 'z-store', agencyId: '999', name: 'Zulu Retail', city: null, county: null, phone: null };
+    const db = {
+      loggedVisit: {
+        groupBy: async (args: { where: { organizationId: string; locationType: string }; take?: number }) => {
+          assert.equal(args.where.organizationId, 'tenant-a');
+          if (!args.take) return [];
+          assert.equal(args.take, 5);
+          return args.where.locationType === 'agency' ? [{ agencyId: '999', _max: { visitAt: recentDate } }] : [];
+        },
+      },
+      agency: {
+        findMany: async (args: { take?: number; where?: unknown }) => {
+          if (!args.take) {
+            assert.deepEqual(args.where, { OR: [{ id: { in: ['999'] } }, { agencyId: { in: ['999'] } }] });
+            return [retail];
+          }
+          assert.equal(args.take, 5);
+          return Array.from({ length: 5 }, (_, i) => ({ ...retail, id: `agency-${i}`, agencyId: String(i), name: `Alpha Retail ${i}` }));
+        },
+      },
+      wholesaleAccount: {
+        findMany: async (args: { take?: number }) => {
+          assert.equal(args.take, 5);
+          return [];
+        },
+      },
+    } as unknown as PrismaClient;
+    const { agencies, wholesaleAccounts } = await getVisitPickerSuggestions('tenant-a', db);
+    assert.equal(agencies.length, 5);
+    assert.equal(agencies[0].id, retail.id);
+    assert.equal(agencies[0].lastVisitAt, recentDate.toISOString());
+    assert.deepEqual(wholesaleAccounts, []);
+  });
   it('adds last agency visit dates without N+1 queries and sorts the result', async () => {
     const db = {
       agency: {
@@ -179,6 +215,24 @@ describe('visit picker services', () => {
     assert.equal(findManyArgs?.take, 50);
     assert.equal((findManyArgs?.where as { isActive: boolean }).isActive, true);
     assert.equal((findManyArgs?.where as { OR: unknown[] }).OR.length, 8);
+  });
+
+  it('keeps a name match visible when city and address matches fill the candidate limit', async () => {
+    const account = { agencyId: null, city: 'Zulu', county: null, phone: null, licenseeId: '1', licenseeIds: [] };
+    const exact = { ...account, id: 'exact', name: 'Zulu' };
+    const db = {
+      wholesaleAccount: {
+        findMany: async ({ where }: { where: { isActive: boolean; name?: { startsWith: string } } }) => {
+          assert.equal(where.isActive, true);
+          if (where.name?.startsWith === 'Zulu') return [exact];
+          return Array.from({ length: 50 }, (_, i) => ({ ...account, id: `candidate-${i}`, name: `Alpha ${i}` }));
+        },
+      },
+      loggedVisit: { groupBy: async () => [] },
+    } as unknown as PrismaClient;
+    const result = await searchWholesaleAccountsForVisitPicker({ db, query: 'Zulu' });
+    assert.equal(result[0].id, exact.id);
+    assert.equal(result.length, 20);
   });
 
   it('does not query the database until two search characters are entered', async () => {

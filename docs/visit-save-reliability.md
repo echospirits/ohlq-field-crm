@@ -14,10 +14,11 @@ opportunity scores and visit-based resolution refresh on the next successful
 import, rather than during submission. Explicit resolution choices on the visit
 confirmation page remain available.
 
-Calendar synchronization is best effort after the visit transaction. A lookup
-or synchronization exception is logged without turning a saved visit into an
-unsuccessful submission. Existing calendar synchronization error handling and
-photo success/partial-failure behavior remain in place.
+New physical visits schedule calendar synchronization after the response using
+the affected task IDs. A plain visit without tasks skips the calendar lookup.
+Search for `Post-save worklist calendar sync failed` when investigating the
+background sync. Conversation and edit paths retain their existing best-effort
+handling.
 
 ## Investigating an incident
 
@@ -38,3 +39,7 @@ form values or raw error messages into these diagnostic records. A process kill
 cannot be caught by JavaScript: use the last stage record together with Vercel's
 platform error and check the saved visit before retrying. Runtime log retention
 still depends on the hosting plan.
+
+For sampled end-to-end timings, match a browser event's `id` to
+`browserTimingId` in the save stages. The [field performance validation](releases/field-performance-validation.md)
+describes the available measurements and how to read them.

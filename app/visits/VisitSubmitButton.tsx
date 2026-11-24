@@ -1,19 +1,17 @@
 'use client';
 
-import { useFormStatus } from 'react-dom';
-
 export function VisitSubmitButton({
   disabled = false,
   label,
+  pending,
 }: {
   disabled?: boolean;
   label: string;
+  pending: boolean;
 }) {
-  const { pending } = useFormStatus();
-
   return (
     <button aria-live="polite" disabled={disabled || pending} type="submit">
-      {pending ? 'Logging visit…' : label}
+      {pending ? 'Saving…' : label}
     </button>
   );
 }
