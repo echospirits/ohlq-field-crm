@@ -1,7 +1,8 @@
 'use client';
 
-import { upload } from '@vercel/blob/client';
-import { useState } from 'react';
+import { unstable_rethrow } from 'next/navigation';
+import { useRef, useState, useTransition, type FormEvent } from 'react';
+import { beginVisitSave, failVisitSave, markVisitResponse } from './visitTimingClient';
 import {
   AGENCY_VISIT_PHOTO_LONG_SIDE,
   fitImageWithinLongSide,
@@ -179,6 +180,11 @@ const getPhotoUploadErrorMessage = (error: unknown) => {
 
 export async function uploadVisitPhotoFiles(formData: FormData) {
   const files = formData.getAll('photoFile');
+  if (!files.some((file) => file instanceof File && file.size > 0)) {
+    formData.delete('photoFile');
+    return;
+  }
+  const { upload } = await import('@vercel/blob/client');
   const locationType: VisitPhotoLocationType = formData.get('locationType') === 'agency' ? 'agency' : 'wholesale';
   const urls = formData.getAll('photoUrl').map((value) => String(value ?? ''));
   const photoCount = Math.max(files.length, urls.length);
@@ -215,26 +221,48 @@ export async function uploadVisitPhotoFiles(formData: FormData) {
   replaceEntries(formData, 'photoSizeBytes', sizeBytes);
 }
 
-export function useVisitPhotoFormAction(action: (formData: FormData) => void | Promise<void>) {
+export function useVisitPhotoFormAction(action: (formData: FormData) => void | Promise<void>, trackConfirmation: boolean) {
   const [photoUploadError, setPhotoUploadError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+  const submitting = useRef(false);
+  const retryAttempt = useRef(false);
 
-  const formAction = async (formData: FormData) => {
+  const handleSubmit = (event: FormEvent<HTMLFormElement>, prepareFormData?: (formData: FormData) => void) => {
+    event.preventDefault();
+    if (submitting.current) return;
+    const formData = new FormData(event.currentTarget);
+    if (formData.has('submissionKey') && !formData.get('submissionKey')) return;
+    prepareFormData?.(formData);
+    submitting.current = true;
+    const timing = trackConfirmation ? beginVisitSave(formData, retryAttempt.current) : null;
     setPhotoUploadError(null);
+    window.requestAnimationFrame(() => markVisitResponse(timing));
 
-    try {
-      await uploadVisitPhotoFiles(formData);
-    } catch (error) {
-      console.error('Visit photo client upload failed', error);
-      setPhotoUploadError(getPhotoUploadErrorMessage(error));
-      return;
-    }
+    // Keep the DOM form intact on failure, including file inputs and any
+    // uncontrolled fields. React resets those fields when a form action resolves.
+    startTransition(async () => {
+      try {
+        await uploadVisitPhotoFiles(formData);
+      } catch (error) {
+        retryAttempt.current = true;
+        failVisitSave(timing);
+        setPhotoUploadError(getPhotoUploadErrorMessage(error));
+        submitting.current = false;
+        return;
+      }
 
-    try {
-      await action(formData);
-    } catch {
-      setPhotoUploadError('Could not save. Your entries are retained. Check your connection and try again.');
-    }
+      try {
+        await action(formData);
+      } catch (error) {
+        unstable_rethrow(error);
+        retryAttempt.current = true;
+        failVisitSave(timing);
+        setPhotoUploadError('Save could not be confirmed. Check your connection and retry.');
+      } finally {
+        submitting.current = false;
+      }
+    });
   };
 
-  return { formAction, photoUploadError };
+  return { handleSubmit, pending, photoUploadError };
 }

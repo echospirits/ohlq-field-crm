@@ -355,14 +355,16 @@ test('My Schedule shows opportunities and team performance in always-visible sec
 
 test('My Schedule orders personal work and planning ahead of insights and the team events list', () => {
   const page = readFileSync(new URL('../app/page.tsx', import.meta.url), 'utf8');
-  const dashboard = page.slice(page.indexOf('className="page-heading page-header dashboard-heading"'));
+  const dashboardStart = page.indexOf('className="page-heading page-header dashboard-heading"');
+  const dashboardEnd = page.indexOf('\nasync function ', dashboardStart);
+  const dashboard = page.slice(dashboardStart, dashboardEnd);
   const sections = [
     '<WorklistScheduler',
     '<ScheduleRoute ',
     'className="day-search"',
-    'aria-labelledby="team-work-title"',
+    '<ScheduleUnassignedWork ',
     'aria-labelledby="schedule-opportunities-heading"',
-    'aria-labelledby="schedule-performance-heading"',
+    '<ScheduleTeamPerformance ',
     '<ScheduleEvents ',
   ];
 

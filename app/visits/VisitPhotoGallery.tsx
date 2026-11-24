@@ -91,3 +91,18 @@ export function VisitPhotoGallery({ photos }: VisitPhotoGalleryProps) {
     </>
   );
 }
+
+export function VisitPhotoDetails({ photos }: VisitPhotoGalleryProps) {
+  const [opened, setOpened] = useState(false);
+
+  return (
+    <details
+      className="compact-details visit-history-photos"
+      onToggle={(event) => { if (event.currentTarget.open) setOpened(true); }}
+      ref={(details) => { if (details?.open) setOpened(true); }}
+    >
+      <summary>{photos.length} {photos.length === 1 ? 'photo' : 'photos'}</summary>
+      {opened ? <VisitPhotoGallery photos={photos} /> : null}
+    </details>
+  );
+}

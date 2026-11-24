@@ -17,6 +17,7 @@ import { DatePickerField } from '../components/DatePickerField';
 import { useCurrentLocation } from '../components/useCurrentLocation';
 import { VisitSubmitButton } from './VisitSubmitButton';
 import { useVisitPhotoFormAction } from './clientPhotoUpload';
+import { beginVisitTiming, finishVisitTiming, markVisitResponse } from './visitTimingClient';
 
 const photoCategories = [
   ['OTHER', 'Other'],
@@ -112,6 +113,8 @@ type LogVisitFormProps = {
   agencies: VisitFormAgencyOption[];
   wholesaleAccounts: VisitFormWholesaleOption[];
   contacts: VisitFormContactOption[];
+  loadSelectedAccountContacts?: boolean;
+  loadPickerSuggestions?: boolean;
   tags?: VisitFormTagOption[];
   actorName: string;
   assignedWorklistItems?: VisitWorklistCandidate[];
@@ -153,6 +156,8 @@ export function LogVisitForm({
   agencies,
   wholesaleAccounts,
   contacts,
+  loadSelectedAccountContacts = false,
+  loadPickerSuggestions = false,
   tags = [],
   actorName,
   assignedWorklistItems = [],
@@ -175,8 +180,13 @@ export function LogVisitForm({
   const [isChangingLocation, setIsChangingLocation] = useState(!initialValues?.locationLocked);
   const [contactIds, setContactIds] = useState<string[]>(initialValues?.contactIds ?? (initialValues?.contactId ? [initialValues.contactId] : []));
   const [locationSearch, setLocationSearch] = useState('');
+  const [searchAttempt, setSearchAttempt] = useState(0);
+  const pendingSearchRetry = useRef<string | null>(null);
   const [contactSearch, setContactSearch] = useState('');
   const [contactOptions, setContactOptions] = useState(contacts);
+  const [contactLoad, setContactLoad] = useState<{ key: string; failed: boolean } | null>(null);
+  const [contactRetry, setContactRetry] = useState(0);
+  const [loadedContactKeys, setLoadedContactKeys] = useState<Set<string>>(() => new Set());
   const [newContact, setNewContact] = useState({ name: '', role: '', email: '', phone: '' });
   const [contactCreateStatus, setContactCreateStatus] = useState<'idle' | 'saving' | 'error'>('idle');
   const [summary, setSummary] = useState(initialValues?.summary ?? '');
@@ -202,10 +212,15 @@ export function LogVisitForm({
   const [resolvedLocationSearch, setResolvedLocationSearch] = useState('');
   const [isLocationSearching, setIsLocationSearching] = useState(false);
   const [locationSearchError, setLocationSearchError] = useState<string | null>(null);
+  const [pickedLocation, setPickedLocation] = useState<VisitFormAgencyOption | VisitFormWholesaleOption | null>(null);
+  const [pickerSuggestions, setPickerSuggestions] = useState<{ agencies: VisitFormAgencyOption[]; wholesaleAccounts: VisitFormWholesaleOption[] } | null>(null);
   const [nearbyAgencies, setNearbyAgencies] = useState<VisitFormAgencyOption[]>([]);
   const [nearbyWholesaleAccounts, setNearbyWholesaleAccounts] = useState<VisitFormWholesaleOption[]>([]);
   const { location: currentLocation, requestLocation, status: locationStatus } = useCurrentLocation();
-  const { formAction, photoUploadError } = useVisitPhotoFormAction(action);
+  const { handleSubmit, pending, photoUploadError } = useVisitPhotoFormAction(
+    action,
+    mode === 'create' && physicalVisit,
+  );
 
   useEffect(() => {
     setSubmissionKey(globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`);
@@ -214,21 +229,26 @@ export function LogVisitForm({
   useEffect(() => {
     const query = locationSearch.trim();
     const searchKey = `${locationType}:${normalize(query)}`;
+    const retried = pendingSearchRetry.current === searchKey;
+    pendingSearchRetry.current = null;
 
-    if (query.length < 2) {
+    if (!isChangingLocation || query.length < 2) {
       setIsLocationSearching(false);
       setLocationSearchError(null);
       setResolvedLocationSearch('');
       return;
     }
 
+    setIsLocationSearching(true);
+    setLocationSearchError(null);
     const controller = new AbortController();
+    const timing = beginVisitTiming('search');
+    let finished = false;
+    const responseFrame = window.requestAnimationFrame(() => markVisitResponse(timing));
     const timeout = window.setTimeout(async () => {
-      setIsLocationSearching(true);
-      setLocationSearchError(null);
-
       try {
         const params = new URLSearchParams({ q: query, type: locationType });
+        if (timing) params.set('timing', timing.id);
         if (currentLocation) {
           params.set('latitude', String(currentLocation.latitude));
           params.set('longitude', String(currentLocation.longitude));
@@ -242,23 +262,45 @@ export function LogVisitForm({
         const data = (await response.json()) as {
           results: VisitFormAgencyOption[] | VisitFormWholesaleOption[];
         };
+        if (controller.signal.aborted) return;
         if (locationType === 'agency') setAgencySearchResults(data.results as VisitFormAgencyOption[]);
         else setWholesaleSearchResults(data.results as VisitFormWholesaleOption[]);
         setResolvedLocationSearch(searchKey);
+        finished = true;
+        window.requestAnimationFrame(() => finishVisitTiming(timing, retried ? 'retry' : 'success'));
       } catch (error) {
         if (controller.signal.aborted) return;
         console.error('Visit account search failed', error);
         setLocationSearchError('Account search is unavailable. Try again.');
+        finished = true;
+        window.requestAnimationFrame(() => finishVisitTiming(timing, 'failed'));
       } finally {
         if (!controller.signal.aborted) setIsLocationSearching(false);
       }
-    }, 250);
+    }, 150);
 
     return () => {
+      window.cancelAnimationFrame(responseFrame);
       window.clearTimeout(timeout);
       controller.abort();
+      if (!finished) finishVisitTiming(timing, 'cancelled');
     };
-  }, [currentLocation, locationSearch, locationType]);
+  }, [currentLocation, isChangingLocation, locationSearch, locationType, searchAttempt]);
+
+  useEffect(() => {
+    if (!loadPickerSuggestions || !isChangingLocation || pickerSuggestions) return;
+    const controller = new AbortController();
+    fetch('/api/visits/account-search?suggestions=1', { signal: controller.signal })
+      .then((response) => {
+        if (!response.ok) throw new Error('Visit suggestions could not be loaded');
+        return response.json();
+      })
+      .then((suggestions) => {
+        if (!controller.signal.aborted) setPickerSuggestions(suggestions);
+      })
+      .catch(() => {}); // Search remains available.
+    return () => controller.abort();
+  }, [isChangingLocation, loadPickerSuggestions, pickerSuggestions]);
 
   useEffect(() => {
     if (!currentLocation) return;
@@ -293,7 +335,37 @@ export function LogVisitForm({
 
   const searchText = normalize(locationSearch);
   const contactSearchText = normalize(contactSearch);
+  const currentAccountId = locationType === 'agency' ? agencyId : wholesaleAccountId;
+  const contactKey = `${locationType}:${currentAccountId}`;
+  const contactsLoaded = !loadSelectedAccountContacts || loadedContactKeys.has(contactKey);
+  const contactLoadFailed = contactLoad?.key === contactKey && contactLoad.failed;
+  useEffect(() => {
+    if (!currentAccountId || contactsLoaded) return;
+    const controller = new AbortController();
+    const params = new URLSearchParams({ id: currentAccountId, type: locationType });
+    fetch(`/api/visits/account-contacts?${params}`, { signal: controller.signal })
+      .then((response) => {
+        if (!response.ok) throw new Error('Visit contacts could not be loaded');
+        return response.json() as Promise<{ contacts: VisitFormContactOption[] }>;
+      })
+      .then(({ contacts: loadedContacts }) => {
+        if (controller.signal.aborted) return;
+        setContactOptions((options) => {
+          const byId = new Map(options.map((contact) => [contact.id, contact]));
+          loadedContacts.forEach((contact) => byId.set(contact.id, contact));
+          return [...byId.values()];
+        });
+        setLoadedContactKeys((keys) => new Set([...keys, contactKey]));
+        setContactLoad({ key: contactKey, failed: false });
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setContactLoad({ key: contactKey, failed: true });
+      });
+    return () => controller.abort();
+  }, [contactKey, contactRetry, contactsLoaded, currentAccountId, locationType]);
+
   const selectedAgency =
+    (pickedLocation?.id === agencyId && !('licenseeId' in pickedLocation) ? pickedLocation : undefined) ??
     nearbyAgencies.find((agency) => agency.id === agencyId) ??
     agencySearchResults.find((agency) => agency.id === agencyId) ??
     agencies.find((agency) => agency.id === agencyId) ??
@@ -301,6 +373,7 @@ export function LogVisitForm({
       ? { id: agencyId, agencyId: '', lastVisitAt: null, name: initialValues.locationName, city: null, county: null, phone: null }
       : undefined);
   const selectedWholesaleAccount =
+    (pickedLocation?.id === wholesaleAccountId && 'licenseeId' in pickedLocation ? pickedLocation : undefined) ??
     nearbyWholesaleAccounts.find((account) => account.id === wholesaleAccountId) ??
     wholesaleSearchResults.find((account) => account.id === wholesaleAccountId) ??
     wholesaleAccounts.find((account) => account.id === wholesaleAccountId) ??
@@ -312,21 +385,22 @@ export function LogVisitForm({
   const locationSearchKey = `${locationType}:${searchText}`;
   const hasResolvedLocationSearch = resolvedLocationSearch === locationSearchKey;
   const visibleLocations = useMemo(() => {
-    const initialOptions = locationType === 'agency' ? agencies : wholesaleAccounts;
+    const initialOptions = locationType === 'agency'
+      ? pickerSuggestions?.agencies ?? agencies
+      : pickerSuggestions?.wholesaleAccounts ?? wholesaleAccounts;
     const searchedOptions = locationType === 'agency' ? agencySearchResults : wholesaleSearchResults;
-    const options = searchText.length >= 2
-      ? hasResolvedLocationSearch
-        ? searchedOptions
-        : []
-      : initialOptions.slice(0, 5);
+    if (searchText.length >= 2) {
+      if (hasResolvedLocationSearch) return searchedOptions;
+      return initialOptions.filter((option) =>
+        includesSearch(searchText, option.name, option.agencyId, option.city, option.county, option.phone,
+          'licenseeId' in option ? option.licenseeId : null),
+      ).slice(0, 5);
+    }
 
     const nearbyIds = new Set(
       (locationType === 'agency' ? nearbyAgencies : nearbyWholesaleAccounts).map((item) => item.id),
     );
-    return withSelected(
-      searchText.length >= 2 ? options : options.filter((item) => !nearbyIds.has(item.id)),
-      selectedLocation,
-    );
+    return withSelected(initialOptions.slice(0, 5).filter((item) => !nearbyIds.has(item.id)), selectedLocation);
   }, [
     agencies,
     agencySearchResults,
@@ -334,6 +408,7 @@ export function LogVisitForm({
     locationType,
     nearbyAgencies,
     nearbyWholesaleAccounts,
+    pickerSuggestions,
     searchText,
     selectedLocation,
     wholesaleAccounts,
@@ -341,9 +416,13 @@ export function LogVisitForm({
   ]);
   const nearbyLocations = locationType === 'agency' ? nearbyAgencies : nearbyWholesaleAccounts;
   const selectLocation = (location: VisitFormAgencyOption | VisitFormWholesaleOption) => {
+    setPickedLocation(location);
     if (locationType === 'agency') setAgencyId(location.id);
     else setWholesaleAccountId(location.id);
     setContactIds([]);
+    setContactSearch('');
+    setLocationSearch('');
+    setResolvedLocationSearch('');
     setIsChangingLocation(false);
   };
   const visibleContacts = useMemo(() => {
@@ -386,7 +465,8 @@ export function LogVisitForm({
   const outcomeOptions = getVisitOutcomes(locationType);
   const standardVisit = mode === 'create' && physicalVisit;
   const hasLocation = locationType === 'agency' ? Boolean(agencyId) : Boolean(wholesaleAccountId);
-  const canSave = hasLocation || (locationType === 'wholesale' && Boolean(newWholesaleName.trim()));
+  const canSave = (!isChangingLocation && hasLocation) ||
+    (!hasLocation && locationType === 'wholesale' && Boolean(newWholesaleName.trim()));
   const matchingWorklistItems = mode === 'create' && formOrigin === 'visits' && !isChangingLocation
     ? getMatchingVisitWorklistItems({
         agencyId,
@@ -397,10 +477,13 @@ export function LogVisitForm({
     : [];
 
   const handleLocationTypeChange = (nextType: VisitLocationType) => {
+    if (nextType === locationType) return;
+    setPickedLocation(null);
     setLocationType(nextType);
     setAgencyId('');
     setWholesaleAccountId('');
     setContactIds([]);
+    setContactSearch('');
     setLocationSearch('');
     setResolvedLocationSearch('');
     setLocationSearchError(null);
@@ -463,36 +546,34 @@ export function LogVisitForm({
     </div>
   );
 
-  const saveVisit = (formData: FormData) => {
-    if (standardVisit) {
-      for (const photo of photos) {
-        formData.append('photoFile', photo.file);
-        formData.append('photoType', photo.category);
-        formData.append('photoCaption', photo.caption);
-      }
+  const appendVisitPhotos = (formData: FormData) => {
+    for (const photo of photos) {
+      formData.append('photoFile', photo.file);
+      formData.append('photoType', photo.category);
+      formData.append('photoCaption', photo.caption);
     }
-    return formAction(formData);
   };
 
   return (
     <form
-      action={saveVisit}
+      method="post"
       className="visit-form field-visit-form"
-      onReset={(event) => {
-        // Successful saves redirect. Keep the form intact when an upload fails.
-        if (standardVisit) event.preventDefault();
-      }}
       onSubmit={(event) => {
-        if (!standardVisit) return;
-        if (!summary.trim()) {
-          event.preventDefault();
-          setFieldError('notes');
-          notesRef.current?.focus();
-        } else if (!outcomeOptions.some(({ code }) => selectedOutcomes.includes(code))) {
-          event.preventDefault();
-          setFieldError('outcomes');
-          firstOutcomeRef.current?.focus();
+        if (standardVisit) {
+          if (!summary.trim()) {
+            event.preventDefault();
+            setFieldError('notes');
+            notesRef.current?.focus();
+            return;
+          }
+          if (!outcomeOptions.some(({ code }) => selectedOutcomes.includes(code))) {
+            event.preventDefault();
+            setFieldError('outcomes');
+            firstOutcomeRef.current?.focus();
+            return;
+          }
         }
+        handleSubmit(event, standardVisit ? appendVisitPhotos : undefined);
       }}
     >
       <input name="formOrigin" readOnly type="hidden" value={formOrigin} />
@@ -512,7 +593,6 @@ export function LogVisitForm({
       {initialValues?.sourceLabel ? <input name="sourceLabel" readOnly type="hidden" value={initialValues.sourceLabel} /> : null}
       {initialValues?.reason ? <input name="contextReason" readOnly type="hidden" value={initialValues.reason} /> : null}
       {initialValues?.returnTo ? <input name="returnTo" readOnly type="hidden" value={initialValues.returnTo} /> : null}
-      {photoUploadError ? <p className="toast-notice page-status" role="alert">{photoUploadError}</p> : null}
 
       {(initialValues?.sourceLabel && initialValues.sourceLabel !== selectedLocation?.name) || initialValues?.productName || initialValues?.reason ? <section className="action-context-summary visit-action-context" aria-label="Task and recommendation context">
 
@@ -552,13 +632,21 @@ export function LogVisitForm({
                 id="visit-location-search"
                 placeholder="Search name, ID, city, or phone"
                 type="search"
+                maxLength={200}
                 value={locationSearch}
                 onChange={(event) => setLocationSearch(event.target.value)}
+                onKeyDown={(event) => { if (event.key === 'Enter') event.preventDefault(); }}
               />
-              {!searchText ? <p className="field-note">Recently visited first. Type at least 2 characters to search every account.</p> : null}
+              {!searchText ? <p className="field-note">Type at least 2 characters to search every account.</p> : null}
               {searchText.length === 1 ? <p className="field-note">Enter one more character to search every account.</p> : null}
-              {isLocationSearching ? <p aria-live="polite" className="field-note">Searching all {locationType} accounts…</p> : null}
-              {locationSearchError ? <p className="field-note danger-text" role="alert">{locationSearchError}</p> : null}
+              {isLocationSearching ? <p role="status" className="field-note">Searching {locationType === 'agency' ? 'retail' : 'restaurant'} accounts…</p> : null}
+              {locationSearchError ? <div className="field-note">
+                <p className="danger-text" role="alert">{locationSearchError}</p>
+                <button type="button" className="secondary compact-btn" onClick={() => {
+                  pendingSearchRetry.current = `${locationType}:${normalize(locationSearch.trim())}`;
+                  setSearchAttempt((attempt) => attempt + 1);
+                }}>Retry search</button>
+              </div> : null}
               {searchText.length >= 2 && hasResolvedLocationSearch && visibleLocations.length === 0 ? (
                 <p className="field-note">No {locationType} accounts match “{locationSearch.trim()}”.</p>
               ) : null}
@@ -766,7 +854,15 @@ export function LogVisitForm({
             type="button"
             onClick={() => setContactIds((current) => current.includes(contact.id) ? current.filter((id) => id !== contact.id) : [...current, contact.id])}
           ><strong>{contact.name}</strong>{contact.role ? <small>{contact.role}</small> : null}{contact.isPrimary ? <span>Primary</span> : null}</button>)}
-        </div> : <p className="field-note">No active contacts for this account.</p>}
+        </div> : contactLoadFailed ? <div className="field-note">
+          <p role="status">Contacts could not be loaded.</p>
+          <button type="button" className="secondary compact-btn" onClick={() => {
+            setContactLoad(null);
+            setContactRetry((attempt) => attempt + 1);
+          }}>Retry contacts</button>
+        </div> : <p className="field-note" role="status">
+          {!contactsLoaded ? 'Loading contacts…' : contactSearchText ? 'No contacts match your search.' : 'No active contacts for this account.'}
+        </p>}
         <details className="compact-details nested-details">
           <summary>Find or add contact</summary>
           <label htmlFor="visit-contact-search">Search saved contacts</label>
@@ -879,8 +975,9 @@ export function LogVisitForm({
       {physicalVisit && visitGuides.length ? <details className="compact-details"><summary>Visit guide</summary><input name="guideSignature" type="hidden" value={JSON.stringify(visitGuides.find(g=>g.accountType===(locationType==='agency'?'AGENCY':'WHOLESALE')))}/><label><input name="guideEnabled" type="checkbox"/>Include these answers with the visit</label>{visitGuides.find(g=>g.accountType===(locationType==='agency'?'AGENCY':'WHOLESALE'))?.questions.map((question,index)=><label key={`${locationType}:${index}`}>{question}<textarea name={`guideAnswer${index}`} maxLength={1500}/></label>)}</details> : null}
       {physicalVisit && mode==='create' && organizationId && currentUserId && (agencyId || wholesaleAccountId) ? <VisitDraft scope={`${organizationId}:${currentUserId}:${locationType}:${locationType==='agency'?agencyId:wholesaleAccountId}:${initialValues?.eventId??''}:${worklistItemId??''}:${initialValues?.opportunityId??''}`} value={{summary,followUpText,followUpDate,followUpTime,followUpMode,selectedOutcomes,submissionKey}} onRestore={draft=>{if(typeof draft.summary==='string')setSummary(draft.summary);if(typeof draft.followUpText==='string')setFollowUpText(draft.followUpText);if(typeof draft.followUpDate==='string')setFollowUpDate(draft.followUpDate);if(typeof draft.followUpTime==='string')setFollowUpTime(draft.followUpTime);if(['none','task'].includes(String(draft.followUpMode)))setFollowUpMode(draft.followUpMode as VisitFollowUpMode);if(Array.isArray(draft.selectedOutcomes))setSelectedOutcomes(draft.selectedOutcomes.filter((v):v is string=>typeof v==='string'));if(typeof draft.submissionKey==='string')setSubmissionKey(draft.submissionKey);}}/> : null}
       <div className="visit-submit-bar">
+        {photoUploadError ? <p className="visit-submit-error danger-text" role="alert">{photoUploadError}</p> : null}
         <a className="btn secondary visit-cancel" href={initialValues?.returnTo ?? '/visits'}>Cancel</a>
-        <VisitSubmitButton disabled={!canSave} label={physicalVisit ? submitLabel : 'Save interaction'} />
+        <VisitSubmitButton disabled={!canSave || !submissionKey} pending={pending} label={physicalVisit ? submitLabel : 'Save interaction'} />
         {!canSave ? <p>Select an account to save.</p> : null}
       </div>
     </form>
