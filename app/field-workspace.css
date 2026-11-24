@@ -164,8 +164,9 @@
   .account-workspace-panel .account-memory-grid .card { min-height: 0; }
   .account-sales-status-section { margin-bottom: 18px; }
   .workflow-shell { max-width: 820px; }
-  .workflow-shell .field-visit-form { padding-bottom: 70px; }
-  .workflow-shell .visit-submit-bar { position: fixed; bottom: 0; left: 224px; right: 0; padding: 12px 36px; border-top: 1px solid var(--line); background: var(--bg); z-index: 80; justify-content: flex-end; }
+  .workflow-shell .taster-visit-form { padding-bottom: 70px; }
+  .workflow-shell .visit-submit-bar { justify-content: flex-end; }
+  .workflow-shell .taster-visit-form .visit-submit-bar { position: fixed; bottom: 0; left: 224px; right: 0; padding: 12px 36px; border-top: 1px solid var(--line); background: var(--bg); z-index: 80; }
   .workflow-shell .visit-submit-bar > button { flex: 0 1 180px; }
   .scheduler-empty-day { max-width: 850px; }
 }
@@ -242,5 +243,5 @@
   .field-visit-form .visit-step { padding: 8px 0 14px; }
   .field-visit-form .visit-contact-chips { gap: 6px; }
   .field-visit-form .visit-contact-chip { min-height: 44px; }
-  .field-visit-form .visit-submit-bar { bottom: calc(76px + env(safe-area-inset-bottom)); padding: 10px; border-radius: 0; }
+  .taster-visit-form .visit-submit-bar { bottom: calc(76px + env(safe-area-inset-bottom)); padding: 10px; border-radius: 0; }
 }

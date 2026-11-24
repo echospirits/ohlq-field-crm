@@ -1,5 +1,9 @@
 # Unreleased
 
+## Log Visit actions and default outcome — November 24, 2026
+
+Cancel and Save visit appear after the last field. No action needed appears first and starts selected on new sales visits. Selecting another outcome replaces that default. Choosing to save a next step switches No action needed to Follow-up needed. See the [0.15.14 release notes](0.15.14.md).
+
 ## Echo sales account access — November 24, 2026
 
 Echo Settings drops Account states. The sales team can browse accounts and available sales data across states within its existing permissions. See the [0.15.12 release notes](0.15.12.md).

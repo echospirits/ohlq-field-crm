@@ -14,12 +14,12 @@ export type VisitOutcomeOption = {
 };
 
 const sharedOutcomes: VisitOutcomeOption[] = [
+  { code: 'no-action-needed', label: 'No action needed' },
   { code: 'met-buyer', label: 'Met buyer' },
   { code: 'buyer-unavailable', label: 'Buyer unavailable' },
   { code: 'sampled-product', label: 'Sampled product' },
   { code: 'product-interest', label: 'Product interest' },
   { code: 'follow-up-needed', label: 'Follow-up needed' },
-  { code: 'no-action-needed', label: 'No action needed' },
 ];
 
 export const wholesaleVisitOutcomes: VisitOutcomeOption[] = [

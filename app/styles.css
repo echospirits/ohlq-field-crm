@@ -3641,10 +3641,7 @@ legend {
 }
 
 .visit-submit-bar {
-  position: static;
-  z-index: 20;
   padding: 10px 0 max(4px, env(safe-area-inset-bottom));
-  background: linear-gradient(180deg, transparent, var(--bg) 45%);
 }
 
 .visit-submit-bar button {
@@ -3952,6 +3949,9 @@ legend {
 
   .field-visit-form {
     gap: 8px;
+  }
+
+  .taster-visit-form {
     padding-bottom: 88px;
   }
 
@@ -3978,7 +3978,7 @@ legend {
     padding: 8px 10px;
   }
 
-  .field-visit-form .visit-submit-bar {
+  .taster-visit-form .visit-submit-bar {
     position: fixed;
     right: auto;
     bottom: 78px;

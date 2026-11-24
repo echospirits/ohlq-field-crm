@@ -16,6 +16,8 @@ import {
 
 describe('visit outcome configuration', () => {
   it('keeps shared language but supports visit-type-specific outcomes', () => {
+    assert.equal(getVisitOutcomes('wholesale')[0]?.code, 'no-action-needed');
+    assert.equal(getVisitOutcomes('agency')[0]?.code, 'no-action-needed');
     assert.ok(wholesaleVisitOutcomes.some((outcome) => outcome.code === 'menu-opportunity'));
     assert.ok(agencyVisitOutcomes.some((outcome) => outcome.code === 'display-opportunity'));
     assert.equal(wholesaleVisitOutcomes.some((outcome) => outcome.code === 'display-opportunity'), false);
@@ -35,7 +37,6 @@ describe('visit outcome configuration', () => {
       getVisitOutcomeDisplay({ locationType: 'agency', outcomeCodes: [], legacyOutcomes: 'Quick outcomes: Met buyer, Display checked' }),
       ['Met buyer', 'Display checked'],
     );
-    assert.equal(getVisitOutcomes('agency').length > 0, true);
   });
 });
 

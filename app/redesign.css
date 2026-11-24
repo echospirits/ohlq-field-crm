@@ -253,8 +253,7 @@ summary { cursor: pointer; min-height: 44px; padding-block: 10px; }
   .contact-action { flex: 1 1 auto; font-size: 13px; }
   .field-visit-form .visit-step { padding: 14px 0 20px; }
   .field-visit-form .visit-step legend { font-size: 17px; }
-  .field-visit-form .visit-submit-bar { bottom: calc(76px + env(safe-area-inset-bottom)); background: color-mix(in srgb, var(--theme-surface, #f8f7f3) 96%, transparent); box-shadow: 0 -2px 12px #28301e0a; width: calc(100% - 24px); }
-  .app-modal .field-visit-form .visit-submit-bar { position: sticky; bottom: 0; left: auto; width: 100%; transform: none; }
+  .taster-visit-form .visit-submit-bar { bottom: calc(76px + env(safe-area-inset-bottom)); background: color-mix(in srgb, var(--theme-surface, #f8f7f3) 96%, transparent); box-shadow: 0 -2px 12px #28301e0a; width: calc(100% - 24px); }
   input, select, textarea { font-size: 16px; }
   .platform-metrics, .provisioning-step-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
   .support-view-banner { flex-wrap: wrap; }

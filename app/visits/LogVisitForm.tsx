@@ -188,7 +188,7 @@ export function LogVisitForm({
   const [newContact, setNewContact] = useState({ name: '', role: '', email: '', phone: '' });
   const [contactCreateStatus, setContactCreateStatus] = useState<'idle' | 'saving' | 'error'>('idle');
   const [summary, setSummary] = useState(initialValues?.summary ?? '');
-  const [selectedOutcomes, setSelectedOutcomes] = useState(initialValues?.outcomeCodes ?? []);
+  const [outcomeSelection, setOutcomeSelection] = useState<string[] | null>(initialValues?.outcomeCodes ?? null);
   const [salesStatus, setSalesStatus] = useState('');
   const [followUpMode, setFollowUpMode] = useState<VisitFollowUpMode>(initialValues?.followUpMode ?? 'none');
   const [followUpText, setFollowUpText] = useState(initialValues?.nextStep ?? '');
@@ -462,6 +462,9 @@ export function LogVisitForm({
 
   const outcomeOptions = getVisitOutcomes(locationType);
   const standardVisit = mode === 'create' && physicalVisit;
+  const selectedOutcomes = outcomeSelection ?? (
+    standardVisit ? [followUpMode === 'task' ? 'follow-up-needed' : 'no-action-needed'] : []
+  );
   const hasLocation = locationType === 'agency' ? Boolean(agencyId) : Boolean(wholesaleAccountId);
   const canSave = (!isChangingLocation && hasLocation) ||
     (!hasLocation && locationType === 'wholesale' && Boolean(newWholesaleName.trim()));
@@ -485,11 +488,15 @@ export function LogVisitForm({
     setLocationSearch('');
     setResolvedLocationSearch('');
     setLocationSearchError(null);
-    setSelectedOutcomes([]);
+    setOutcomeSelection(null);
+    if (fieldError === 'outcomes') setFieldError(null);
   };
 
   const handleFollowUpModeChange = (mode: VisitFollowUpMode) => {
     setFollowUpMode(mode);
+    if (standardVisit && mode === 'task') {
+      setOutcomeSelection((current) => current?.map((code) => code === 'no-action-needed' ? 'follow-up-needed' : code) ?? null);
+    }
     if (mode !== 'none' && !followUpDate) setFollowUpDate(addEasternCalendarDays(7));
     if (mode === 'none') {
       setFollowUpDate('');
@@ -510,17 +517,19 @@ export function LogVisitForm({
             type="checkbox"
             value={outcome.code}
             onChange={(event) => {
-              if (event.target.checked && fieldError === 'outcomes') setFieldError(null);
-              setSelectedOutcomes((current) => {
-                if (!event.target.checked) return current.filter((code) => code !== outcome.code);
-                if (outcome.code === 'follow-up-needed') return [...current.filter((code) => code !== 'no-action-needed'), outcome.code];
-                if (outcome.code === 'no-action-needed') return [...current.filter((code) => code !== 'follow-up-needed'), outcome.code];
-                return [...current, outcome.code];
+              const checked = event.currentTarget.checked;
+              if (checked && fieldError === 'outcomes') setFieldError(null);
+              setOutcomeSelection((current) => {
+                const chosen = current ?? [];
+                if (!checked) return chosen.filter((code) => code !== outcome.code);
+                if (outcome.code === 'follow-up-needed') return [...chosen.filter((code) => code !== 'no-action-needed'), outcome.code];
+                if (outcome.code === 'no-action-needed') return [...chosen.filter((code) => code !== 'follow-up-needed'), outcome.code];
+                return [...chosen, outcome.code];
               });
-              if (outcome.code === 'follow-up-needed' && event.target.checked && followUpMode === 'none') {
+              if (outcome.code === 'follow-up-needed' && checked && followUpMode === 'none') {
                 handleFollowUpModeChange('task');
               }
-              if (outcome.code === 'no-action-needed' && event.target.checked) handleFollowUpModeChange('none');
+              if (outcome.code === 'no-action-needed' && checked) handleFollowUpModeChange('none');
             }}
           />
           <span>{outcome.label}</span>
@@ -971,7 +980,24 @@ export function LogVisitForm({
       </section>
 
       {physicalVisit && visitGuides.length ? <details className="compact-details"><summary>Visit guide</summary><input name="guideSignature" type="hidden" value={JSON.stringify(visitGuides.find(g=>g.accountType===(locationType==='agency'?'AGENCY':'WHOLESALE')))}/><label><input name="guideEnabled" type="checkbox"/>Include these answers with the visit</label>{visitGuides.find(g=>g.accountType===(locationType==='agency'?'AGENCY':'WHOLESALE'))?.questions.map((question,index)=><label key={`${locationType}:${index}`}>{question}<textarea name={`guideAnswer${index}`} maxLength={1500}/></label>)}</details> : null}
-      {physicalVisit && mode==='create' && organizationId && currentUserId && (agencyId || wholesaleAccountId) ? <VisitDraft scope={`${organizationId}:${currentUserId}:${locationType}:${locationType==='agency'?agencyId:wholesaleAccountId}:${initialValues?.eventId??''}:${worklistItemId??''}:${initialValues?.opportunityId??''}`} value={{summary,followUpText,followUpDate,followUpTime,followUpMode,selectedOutcomes,submissionKey}} onRestore={draft=>{if(typeof draft.summary==='string')setSummary(draft.summary);if(typeof draft.followUpText==='string')setFollowUpText(draft.followUpText);if(typeof draft.followUpDate==='string')setFollowUpDate(draft.followUpDate);if(typeof draft.followUpTime==='string')setFollowUpTime(draft.followUpTime);if(['none','task'].includes(String(draft.followUpMode)))setFollowUpMode(draft.followUpMode as VisitFollowUpMode);if(Array.isArray(draft.selectedOutcomes))setSelectedOutcomes(draft.selectedOutcomes.filter((v):v is string=>typeof v==='string'));if(typeof draft.submissionKey==='string')setSubmissionKey(draft.submissionKey);}}/> : null}
+      {physicalVisit && mode === 'create' && organizationId && currentUserId && (agencyId || wholesaleAccountId) ? (
+        <VisitDraft
+          scope={`${organizationId}:${currentUserId}:${locationType}:${locationType === 'agency' ? agencyId : wholesaleAccountId}:${initialValues?.eventId ?? ''}:${worklistItemId ?? ''}:${initialValues?.opportunityId ?? ''}`}
+          value={{ summary, followUpText, followUpDate, followUpTime, followUpMode, selectedOutcomes: outcomeSelection, submissionKey }}
+          onRestore={(draft) => {
+            if (typeof draft.summary === 'string') setSummary(draft.summary);
+            if (typeof draft.followUpText === 'string') setFollowUpText(draft.followUpText);
+            if (typeof draft.followUpDate === 'string') setFollowUpDate(draft.followUpDate);
+            if (typeof draft.followUpTime === 'string') setFollowUpTime(draft.followUpTime);
+            if (draft.followUpMode === 'none' || draft.followUpMode === 'task') setFollowUpMode(draft.followUpMode);
+            if (draft.selectedOutcomes === null) setOutcomeSelection(null);
+            if (Array.isArray(draft.selectedOutcomes)) {
+              setOutcomeSelection(draft.selectedOutcomes.filter((code): code is string => typeof code === 'string'));
+            }
+            if (typeof draft.submissionKey === 'string') setSubmissionKey(draft.submissionKey);
+          }}
+        />
+      ) : null}
       <div className="visit-submit-bar">
         {photoUploadError ? <p className="visit-submit-error danger-text" role="alert">{photoUploadError}</p> : null}
         <a className="btn secondary visit-cancel" href={initialValues?.returnTo ?? '/visits'}>Cancel</a>
