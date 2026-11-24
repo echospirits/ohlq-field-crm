@@ -18,10 +18,6 @@ function settings(role: UserRole | null = UserRole.ADMIN, discoveryFails = false
   const events: { operation: string; input: any }[] = [];
   const record = (operation: string, input: any) => { events.push({ operation, input }); };
   const tx = {
-    organization: {
-      findUniqueOrThrow: async (input: any) => { record('before', input); return { enabledStates: ['OH'] }; },
-      update: async (input: any) => { record('states', input); },
-    },
     organizationVendorIdentifier: { upsert: async (input: any) => { record('vendor', input); } },
     organizationAuditEvent: { create: async (input: any) => { record('audit', input); } },
   };
@@ -43,10 +39,10 @@ function settings(role: UserRole | null = UserRole.ADMIN, discoveryFails = false
   runInNewContext(ts.transpileModule(readFileSync(filename, 'utf8'), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText, {
     exports, require: (name: string) => name in mocks ? mocks[name] : require(name),
   });
-  const form = new FormData(); form.append('enabledStates', 'OH'); form.append('enabledStates', 'FL');
+  const form = new FormData();
   form.set('vendorId', ' z90399001 '); form.set('label', 'Echo');
   form.set('organizationId', 'outside-company'); form.set('role', 'PLATFORM_ADMIN'); form.set('intelligence', 'on');
-  return { actions: exports as { saveEchoStates: (f: FormData) => Promise<void>; addEchoVendor: (f: FormData) => Promise<void> }, form, events };
+  return { actions: exports as { addEchoVendor: (f: FormData) => Promise<void> }, form, events };
 }
 
 test('retired platform pages, Support View endpoints and provisioning actions are absent', () => {
@@ -68,18 +64,11 @@ test('Echo administration retains settings, users and diagnostics without compan
   assert.ok(!getIntelligenceNavigationItems(['ADVANCED_INTELLIGENCE'], false, true).some(i => i.key === 'account-research'));
 });
 
-test('state changes use authenticated Echo context, preserve feature flags and record before/after evidence', async () => {
-  const f = settings();
-  await assert.rejects(f.actions.saveEchoStates(f.form), /states-saved/);
-  const update = f.events.find(e => e.operation === 'states')!.input;
-  assert.equal(update.where.id, ECHO_ORGANIZATION_ID);
-  assert.deepEqual(JSON.parse(JSON.stringify(update.data)), { enabledStates: ['FL','OH'] });
-  const audit = f.events.find(e => e.operation === 'audit')!.input.data;
-  assert.equal(audit.organizationId, ECHO_ORGANIZATION_ID);
-  assert.deepEqual([...audit.metadata.before], ['OH']); assert.deepEqual([...audit.metadata.after], ['FL','OH']);
-  const invalid = settings(); invalid.form.delete('enabledStates');
-  await assert.rejects(invalid.actions.saveEchoStates(invalid.form), /invalid-states/);
-  assert.equal(invalid.events.length, 0);
+test('Echo Settings retains Vendor IDs and retires the account state control and action', () => {
+  const page = readFileSync('app/admin/organization/EchoDataSettings.tsx', 'utf8');
+  assert.match(page, /Ohio Vendor IDs/);
+  assert.doesNotMatch(page, /Account states|StateAccessPicker/);
+  assert.equal('saveEchoStates' in settings().actions, false);
 });
 
 test('vendor changes normalize IDs, ignore forged ownership, and retain saved configuration if discovery fails', async () => {
@@ -100,7 +89,6 @@ test('vendor changes normalize IDs, ignore forged ownership, and retain saved co
 test('ordinary users, tasters and anonymous callers cannot save settings despite forged role fields', async () => {
   for (const role of [UserRole.USER, UserRole.TASTER, null]) {
     const f=settings(role);
-    await assert.rejects(f.actions.saveEchoStates(f.form), /redirect:/);
     await assert.rejects(f.actions.addEchoVendor(f.form), /redirect:/);
     assert.equal(f.events.length,0);
   }

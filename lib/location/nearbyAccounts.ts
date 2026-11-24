@@ -20,6 +20,7 @@ export type NearbyAccount = {
 type NearbyParams = Coordinates & {
   db?: PrismaClient;
   limit?: number;
+  organizationId: string;
   radiusMiles?: number;
 };
 
@@ -36,6 +37,7 @@ export async function getNearbyAgencies({
   latitude,
   longitude,
   limit = NEARBY_ACCOUNT_LIMITS.agency,
+  organizationId,
   radiusMiles = 10,
 }: NearbyParams): Promise<NearbyAccount[]> {
   const center = { latitude, longitude };
@@ -75,7 +77,7 @@ export async function getNearbyAgencies({
   const visits = agencyKeys.length
     ? await db.loggedVisit.groupBy({
         by: ['agencyId'],
-        where: { locationType: 'agency', agencyId: { in: agencyKeys } },
+        where: { organizationId, locationType: 'agency', agencyId: { in: agencyKeys } },
         _max: { visitAt: true },
       })
     : [];
@@ -107,6 +109,7 @@ export async function getNearbyWholesaleAccounts({
   latitude,
   longitude,
   limit = NEARBY_ACCOUNT_LIMITS.wholesale,
+  organizationId,
   radiusMiles = 10,
 }: NearbyParams): Promise<NearbyAccount[]> {
   const center = { latitude, longitude };
@@ -150,7 +153,7 @@ export async function getNearbyWholesaleAccounts({
   const visits = accountIds.length
     ? await db.loggedVisit.groupBy({
         by: ['wholesaleAccountId'],
-        where: { locationType: 'wholesale', wholesaleAccountId: { in: accountIds } },
+        where: { organizationId, locationType: 'wholesale', wholesaleAccountId: { in: accountIds } },
         _max: { visitAt: true },
       })
     : [];

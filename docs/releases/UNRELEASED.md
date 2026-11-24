@@ -1,5 +1,9 @@
 # Unreleased
 
+## Echo sales account access — November 24, 2026
+
+Echo Settings drops Account states. The sales team can browse accounts and available sales data across states within its existing permissions. See the [0.15.12 release notes](0.15.12.md).
+
 ## Faster Log Visit — November 23, 2026
 
 In-person sales visits require a note and at least one outcome. Outcomes and Sales status stay visible, with **No change** selected by default. **Add photo proof** starts with one picker and keeps offering another as photos are added. The structured dictation option and Voice note shortcut are removed. See the [0.15.10 release notes](0.15.10.md).

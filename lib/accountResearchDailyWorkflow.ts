@@ -7,7 +7,7 @@ import { runWithOrganizationStateAccess } from './prisma';
 async function processAutomaticResearchWave(pilotId: string | undefined, remainingRunCapacity: number) {
   'use step';
   // Hosted workflow steps run in a new request without the cron's application authorization.
-  return runWithOrganizationStateAccess(ECHO_ORGANIZATION_ID, () => runAutomaticAccountResearch({ pilotId, remainingRunCapacity }));
+  return runWithOrganizationStateAccess(ECHO_ORGANIZATION_ID, () => runAutomaticAccountResearch({ pilotId, remainingRunCapacity }), { restrictToConfiguredStates: true });
 }
 
 processAutomaticResearchWave.maxRetries = 2;

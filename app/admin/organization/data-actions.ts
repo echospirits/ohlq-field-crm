@@ -6,23 +6,7 @@ import { redirect } from 'next/navigation';
 import { requireEchoAdmin } from '../../../lib/auth';
 import { requireOrganizationContext, writeOrganizationAudit } from '../../../lib/organizations';
 import { prisma } from '../../../lib/prisma';
-import { parseEnabledStates } from '../../../lib/stateOptions';
 import { discoverOrganizationProducts } from '../../../lib/organizationProductDiscovery';
-
-export async function saveEchoStates(form: FormData) {
-  const actor = await requireEchoAdmin();
-  const { organizationId } = await requireOrganizationContext(actor);
-  let enabledStates: string[];
-  try { enabledStates = parseEnabledStates(form.getAll('enabledStates')); }
-  catch { redirect('/admin/organization?status=invalid-states'); }
-  await prisma.$transaction(async tx => {
-    const before = await tx.organization.findUniqueOrThrow({ where: { id: organizationId }, select: { enabledStates: true } });
-    await tx.organization.update({ where: { id: organizationId }, data: { enabledStates } });
-    await tx.organizationAuditEvent.create({ data: { actorUserId: actor.id, organizationId, action: OrganizationAuditAction.FEATURE_CHANGED, metadata: { setting: 'enabledStates', before: before.enabledStates, after: enabledStates } } });
-  });
-  revalidatePath('/', 'layout');
-  redirect('/admin/organization?status=states-saved');
-}
 
 export async function addEchoVendor(form: FormData) {
   const actor = await requireEchoAdmin();

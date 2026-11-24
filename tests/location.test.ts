@@ -68,13 +68,13 @@ describe('nearby account behavior', () => {
       loggedVisit: { groupBy: async () => [] },
     } as unknown as PrismaClient;
 
-    const results = await getNearbyWholesaleAccounts({ db, latitude: 39.9612, longitude: -82.9988 });
+    const results = await getNearbyWholesaleAccounts({ db, latitude: 39.9612, longitude: -82.9988, organizationId: 'echo' });
     assert.deepEqual(results.map((item) => item.id), ['near', 'far']);
     assert.equal(findManyWhere?.isActive, true);
     assert.equal(findManyWhere?.mergedIntoId, null);
   });
 
-  it('returns four nearby agencies and fifteen nearby wholesale accounts by default', async () => {
+  it('limits nearby results and reads visit history for the current organization only', async () => {
     const makeCoordinates = (index: number) => ({
       latitude: 39.9612 + index * 0.001,
       longitude: -82.9988,
@@ -93,19 +93,28 @@ describe('nearby account behavior', () => {
           name: `Wholesale ${index}`, phone: null,
         })),
       },
-      loggedVisit: { groupBy: async () => [] },
+      loggedVisit: { groupBy: async ({ where }: { where: { organizationId?: string; locationType: string } }) => {
+        assert.equal(where.organizationId, 'echo');
+        return [{
+          agencyId: where.locationType === 'agency' ? '0' : null,
+          wholesaleAccountId: where.locationType === 'wholesale' ? 'wholesale-0' : null,
+          _max: { visitAt: new Date('2026-11-01T12:00:00.000Z') },
+        }];
+      } },
     } as unknown as PrismaClient;
 
     const coordinates = { latitude: 39.9612, longitude: -82.9988 };
     const [agencies, wholesaleAccounts] = await Promise.all([
-      getNearbyAgencies({ db, ...coordinates }),
-      getNearbyWholesaleAccounts({ db, ...coordinates }),
+      getNearbyAgencies({ db, ...coordinates, organizationId: 'echo' }),
+      getNearbyWholesaleAccounts({ db, ...coordinates, organizationId: 'echo' }),
     ]);
 
     assert.equal(agencies.length, NEARBY_ACCOUNT_LIMITS.agency);
     assert.equal(wholesaleAccounts.length, NEARBY_ACCOUNT_LIMITS.wholesale);
     assert.deepEqual(agencies.map(({ id }) => id), ['agency-0', 'agency-1', 'agency-2', 'agency-3']);
     assert.equal(wholesaleAccounts.at(-1)?.id, 'wholesale-14');
+    assert.equal(agencies[0].lastVisitAt, '2026-11-01T12:00:00.000Z');
+    assert.equal(wholesaleAccounts[0].lastVisitAt, '2026-11-01T12:00:00.000Z');
   });
 
   it('keeps strong text relevance ahead of proximity', () => {

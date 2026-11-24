@@ -46,6 +46,7 @@ function loadFlow(flow: Flow, role: enums.UserRole | null, organizationId: strin
   const wholesaleAccount = {
     findMany: async () => { effects.push('account-read'); return accounts; },
     findFirst: async () => { effects.push('account-read'); return accounts[0] ?? null; },
+    findUnique: async ({ where }: { where: { id: string } }) => accounts.find(account => account.id === where.id) ?? null,
     update: async ({ data }: { data: RecordData }) => {
       effects.push('canonical-update'); Object.assign(accounts[0], data); return accounts[0];
     },
@@ -56,6 +57,8 @@ function loadFlow(flow: Flow, role: enums.UserRole | null, organizationId: strin
   };
   const tx = {
     wholesaleAccount,
+    agency: { findUnique: async ({ where }: { where: { id?: string; agencyId?: string } }) =>
+      where.id === 'retail-account' || where.agencyId === '123456' ? { id: 'retail-account', agencyId: '123456' } : null },
     organization:{findUniqueOrThrow:async()=>({crmPreferences:{}})},
     account: { findFirst: async () => { effects.push('official-read'); return { id: 'official-submitted' }; } },
     locationTag: { createMany: async ({ data }: { data: RecordData[] }) => { tags.push(...data); } },
@@ -187,6 +190,25 @@ for (const flow of ['directory', 'visit'] as const) {
     assert.equal(harness.tags[0].wholesaleAccountId, 'new-account');
   });
 
+  test(`${flow} validates new prospect states and accepts states outside the former configuration`, async () => {
+    const accounts: RecordData[] = [];
+    const harness = loadFlow(flow, enums.UserRole.USER, 'tenant-a', accounts);
+    const data = submission(flow, 'tenant-a');
+    const stateField = flow === 'directory' ? 'state' : 'newWholesaleState';
+    data.set(stateField, 'invalid');
+    if (flow === 'directory') assert.match((await harness.run(data)).error, /valid US state/);
+    else await assert.rejects(harness.run(data), /invalid-state/);
+    assert.equal(harness.effects.length, 0);
+
+    data.set(stateField, 'Kentucky');
+    await assert.rejects(harness.run(data), /REDIRECT:/);
+    assert.equal(accounts.length, 1);
+    assert.equal(accounts[0].state, 'KY');
+    assert.equal(accounts[0].createdByUserId, 'tenant-a-caller');
+    assert.ok(!harness.effects.includes('official-read'));
+    if (flow === 'visit') assert.equal(harness.visits[0].wholesaleAccountId, 'new-account');
+  });
+
   test(`${flow} does not reactivate or replace the official link of a matched inactive account`, async () => {
     const accounts = [{ ...sharedAccount(), isActive: false }]; const before = structuredClone(accounts);
     const harness = loadFlow(flow, enums.UserRole.ADMIN, 'tenant-a', accounts);
@@ -286,4 +308,30 @@ test('physical Visit accepts No change without sales status access and saves mor
   assert.deepEqual(harness.overlays, []);
   assert.deepEqual(harness.photos.map((photo) => photo.caption), captions);
   assert.ok(harness.photos.every((photo) => photo.type === 'MENU' && photo.organizationId === 'tenant-a'));
+});
+
+test('visits to existing accounts accept legacy retail numbers and reject missing IDs before writing', async () => {
+  for (const [locationType, field, id, expectedStatus] of [
+    ['agency', 'agencyId', 'retail-account', 'confirmed'],
+    ['agency', 'agencyId', '123456', 'confirmed'],
+    ['agency', 'agencyId', 'missing', 'invalid-agency'],
+    ['wholesale', 'wholesaleAccountId', 'shared-account', 'confirmed'],
+    ['wholesale', 'wholesaleAccountId', 'missing', 'invalid-wholesale'],
+  ]) {
+    const h = loadFlow('visit', enums.UserRole.USER, 'tenant-a', [{ ...sharedAccount(), state: 'KY' }]);
+    const data = submission('visit', 'tenant-a');
+    data.set('locationType', locationType);
+    data.set(field, id);
+    data.delete('targetAccount');
+    data.set('salesStatus', '');
+    await assert.rejects(h.run(data), new RegExp(expectedStatus));
+    if (expectedStatus === 'confirmed') {
+      assert.equal(h.visits.length, 1);
+      assert.equal(h.visits[0][field], id);
+    } else {
+      assert.equal(h.visits.length, 0);
+      assert.equal(h.contacts.length, 0);
+      assert.equal(h.tags.length, 0);
+    }
+  }
 });

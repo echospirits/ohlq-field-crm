@@ -125,7 +125,7 @@ export default async function AgenciesPage({
       {!q ? <NearbyAccountsSection type="agency" /> : null}
       <DirectoryPagination path="/agencies" params={params} page={pagination.page} total={total} />
 
-      {agencies.length === 0 ? <p className="notice">No retail accounts match your search in the states enabled for your organization.</p> : null}
+      {agencies.length === 0 ? <p className="notice">No retail accounts match your search.</p> : null}
       <div className="table-scroll" role="region" aria-label="Retail accounts" tabIndex={0}><table className="responsive-table comparison-table account-directory-table retail-directory-table">
         <thead>
           <tr>

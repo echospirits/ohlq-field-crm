@@ -1,5 +1,6 @@
 import{purchaseOutcomes}from'./outcomes';
 import type { PrismaClient } from '@prisma/client';
+import { ECHO_ORGANIZATION_ID } from '../echoAccess';
 import { prisma } from '../prisma';
 import { summarize, type AnalyticsData, type Filters, type Product } from './model';
 import { ohioAdapter, type AnalyticsDb, type MarketAdapter } from './ohio';
@@ -7,19 +8,23 @@ import { ohioAdapter, type AnalyticsDb, type MarketAdapter } from './ohio';
 export const analyticsAdapters: MarketAdapter[] = [ohioAdapter];
 export async function loadAnalytics(organizationId: string, filters: Filters, db: AnalyticsDb = prisma, adapters: MarketAdapter[] = analyticsAdapters) {
   if (!organizationId) throw new Error('Organization context is required.');
-  const organization = await db.organization.findUnique({ where: { id: organizationId }, select: { enabledStates: true } });
-  const enabledStates = organization?.enabledStates ?? [];
-  const configured = await db.organizationProduct.findMany({ where: { organizationId, market: { in: enabledStates }, status: { in: ['OWNED', 'REPRESENTED'] } }, select: { market: true, externalItemCode: true, displayName: true } });
+  const configuredMarkets = organizationId === ECHO_ORGANIZATION_ID
+    ? undefined
+    : (await db.organization.findUnique({ where: { id: organizationId }, select: { enabledStates: true } }))?.enabledStates ?? [];
+  const configured = await db.organizationProduct.findMany({
+    where: { organizationId, status: { in: ['OWNED', 'REPRESENTED'] }, ...(configuredMarkets && { market: { in: configuredMarkets } }) },
+    select: { market: true, externalItemCode: true, displayName: true },
+  });
   // Historical sales remain valid for discontinued/inactive owned products.
   // No vendor fallback, deployment defaults, or another organization's products.
   const products: Product[] = configured.map(p => ({ key: `${p.market}:${p.externalItemCode}`, market: p.market, code: p.externalItemCode, name: p.displayName || p.externalItemCode }));
   const selected = products.filter(p => (filters.market === 'all' || p.market === filters.market) && (!filters.product || p.key === filters.product));
   const data: AnalyticsData = { products: selected, accounts: [], sales: [], activity: [], coverage: [], openWork: {}, warnings: [] };
-  const markets = enabledStates.slice().sort();
   const supported = new Set(adapters.map(a => a.market));
-  const results = await Promise.all(adapters.filter(a => enabledStates.includes(a.market)).filter(a => selected.some(p => p.market === a.market) || (!filters.product && (filters.market === 'all' || filters.market === a.market))).map(a => a.load(db, organizationId, selected.filter(p => p.market === a.market), filters)));
+  const markets = [...(configuredMarkets ?? new Set([...supported, ...products.map(p => p.market)]))].sort();
+  const results = await Promise.all(adapters.filter(a => markets.includes(a.market)).filter(a => selected.some(p => p.market === a.market) || (!filters.product && (filters.market === 'all' || filters.market === a.market))).map(a => a.load(db, organizationId, selected.filter(p => p.market === a.market), filters)));
   for (const result of results) { data.accounts.push(...result.accounts); data.sales.push(...result.sales); data.activity.push(...result.activity); data.coverage.push(...result.coverage); Object.assign(data.openWork, result.openWork); data.warnings.push(...result.warnings); }
-  const unavailable = enabledStates.filter(state => !supported.has(state) && (filters.market === 'all' || filters.market === state));
+  const unavailable = markets.filter(market => !supported.has(market) && (filters.market === 'all' || filters.market === market));
   if (unavailable.length) data.warnings.push(`Sales data unavailable for ${unavailable.join(', ')}. All Markets totals include supported sources only.`);
   if (!selected.length) data.warnings.push('No owned or represented products match these filters. Clear the product/market filter or review Organization products.');
   return { ...summarize(data, filters), purchaseOutcomes:purchaseOutcomes(data,filters), availableProducts: products, markets, organizationId };

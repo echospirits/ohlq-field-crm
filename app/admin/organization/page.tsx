@@ -27,7 +27,7 @@ import { A3aLocationForm } from '../../components/A3aLocationForm';
 import { ProductSelectionEditor } from './ProductSelectionEditor';
 import { OpportunityStrategy } from './OpportunityStrategy';
 import { EchoDataSettings } from './EchoDataSettings';
-import { saveEchoStates, addEchoVendor } from './data-actions';
+import { addEchoVendor } from './data-actions';
 
 export const metadata = buildPageMetadata('Echo Settings');
 
@@ -137,7 +137,7 @@ export default async function OrganizationSetupPage({ searchParams }: { searchPa
   return <div className="admin-workspace">
     <PageHeader title="Echo Settings" />
     {status ? <p className="notice" role="status">{status.replaceAll('-', ' ')}</p> : null}
-    <EchoDataSettings enabledStates={organization.enabledStates} vendors={organization.vendorIdentifiers} saveStates={saveEchoStates} addVendor={addEchoVendor} />
+    <EchoDataSettings vendors={organization.vendorIdentifiers} addVendor={addEchoVendor} />
     <section className="platform-grid">
       <article className="card a3a-location-settings">
         <div className="section-heading"><div><h2>A-3a selling locations</h2><p className="muted">This information fills the seller section of downloaded wholesale-order PDFs.</p></div></div>

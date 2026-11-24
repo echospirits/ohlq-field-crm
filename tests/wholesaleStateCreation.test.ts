@@ -16,7 +16,7 @@ function loadCreate(existing = false) {
   let officialLookups = 0;
   const context = {
     result: undefined as unknown,
-    requireUser: async () => ({ id: 'rep' }), requireOrganizationContext: async () => ({ organizationId: 'tenant', organization: { enabledStates: ['OH','KY'] } }),
+    requireUser: async () => ({ id: 'rep' }), requireOrganizationContext: async () => ({ organizationId: 'tenant', organization: { enabledStates: ['OH'] } }),
     normalizeUsState, stateScopedLicenseeIds, parseWholesaleLicenseeIds, getPrimaryWholesaleLicenseeId, getWholesaleLicenseeIdCreateData,
     getWholesaleAddressProtectionForEdit,
     randomUUID: () => 'unique-test', getSelectedTagIds: () => [], getWholesaleLicenseeIdConflictWhere: (ids: string[]) => ({ ids }),
@@ -77,7 +77,7 @@ test('manual creation ignores agency and district IDs without clearing them on a
 test('creation has no nested disclosures or Ohio IDs and editing retains both IDs', () => {
   const source = readFileSync(new URL('../app/wholesale/page.tsx', import.meta.url), 'utf8');
   const form = source.slice(source.indexOf('<ActionForm action={createWholesale}'), source.indexOf('</ActionForm>'));
-  assert.ok(form.includes('<WholesaleAddressFields allowedStates={organization.enabledStates} />'));
+  assert.ok(form.includes('<WholesaleAddressFields />'));
   assert.doesNotMatch(form, /<details|name="(?:agencyId|districtId)"/);
   const address = readFileSync(new URL('../app/components/WholesaleAddressFields.tsx', import.meta.url), 'utf8');
   assert.ok(address.indexOf('Street address<input') < address.indexOf('City<input'));
@@ -88,11 +88,4 @@ test('creation has no nested disclosures or Ohio IDs and editing retains both ID
   const editFields = readFileSync(new URL('../app/components/WholesaleAccountEditFields.tsx', import.meta.url), 'utf8');
   assert.match(editFields, /name="agencyId"/);
   assert.match(editFields, /name="districtId"/);
-});
-
-test('a valid but unentitled state returns a clear error before account reads or writes', async () => {
-  const { run, writes, officialLookups } = loadCreate();
-  const data = new FormData(); data.set('name', 'Outside territory'); data.set('state', 'FL');
-  assert.match((await run(data)).error, /not enabled for your organization/);
-  assert.equal(writes.length, 0); assert.equal(officialLookups(), 0);
 });
