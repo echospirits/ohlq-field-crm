@@ -376,7 +376,8 @@ export default async function Dashboard({ searchParams }: { searchParams?: Promi
         users={schedulerUsers.map((member) => ({ id: member.id, name: getUserDisplayName(member) }))}
         view={view}
       />
-      {unassignedSummary[0] > 0 ? <section className="schedule-team-work" aria-labelledby="team-work-title"><div className="section-heading"><h2 id="team-work-title">Team work needs an owner</h2><span className="pill">{unassignedSummary[0]}</span></div><p>Unassigned work through this day, outside your personal schedule.</p><ul>{unassignedSummary[1].map((item) => <li key={item.id}><Link href={`/alerts?owner=unassigned#worklist-${encodeURIComponent(item.id)}`}>{unassignedLocations.get(item.id)?.name ?? item.title}</Link><small>{getWorklistOverdueLabel(item.dueDate, item.status) ?? (item.dueDate ? 'Due this day' : 'No due date')} · Unassigned</small></li>)}</ul><Link className="btn secondary" href="/alerts?owner=unassigned">Review all unassigned work</Link></section> : null}
+      <ScheduleRoute organizationId={organizationId} userId={user.id} date={anchorDate} />
+
       <div className="day-search"><GlobalSearchForm /></div>
 
       <section className="dashboard-quick-actions" aria-labelledby="quick-actions-title">
@@ -398,9 +399,26 @@ export default async function Dashboard({ searchParams }: { searchParams?: Promi
         </div>
       </section>
 
-      <section className="schedule-supporting-sections" aria-label="Planning and insights">
-      <ScheduleRoute organizationId={organizationId} userId={user.id} date={anchorDate} />
-      <ScheduleEvents organizationId={organizationId} />
+      {unassignedSummary[0] > 0 ? (
+        <section className="schedule-team-work" aria-labelledby="team-work-title">
+          <div className="section-heading">
+            <h2 id="team-work-title">Team work needs an owner</h2>
+            <span className="pill">{unassignedSummary[0]}</span>
+          </div>
+          <p>Unassigned work through this day, outside your personal schedule.</p>
+          <ul>
+            {unassignedSummary[1].map((item) => (
+              <li key={item.id}>
+                <Link href={`/alerts?owner=unassigned#worklist-${encodeURIComponent(item.id)}`}>{unassignedLocations.get(item.id)?.name ?? item.title}</Link>
+                <small>{getWorklistOverdueLabel(item.dueDate, item.status) ?? (item.dueDate ? 'Due this day' : 'No due date')} · Unassigned</small>
+              </li>
+            ))}
+          </ul>
+          <Link className="btn secondary" href="/alerts?owner=unassigned">Review all unassigned work</Link>
+        </section>
+      ) : null}
+
+      <section className="schedule-supporting-sections" aria-label="Sales and team insights">
       <section className="dashboard-section" aria-labelledby="schedule-opportunities-heading">
         <header className="content-section-heading">
           <div>
@@ -489,6 +507,8 @@ export default async function Dashboard({ searchParams }: { searchParams?: Promi
         </div>
       </section>
       </section>
+
+      <ScheduleEvents organizationId={organizationId} />
     </>
   );
 }

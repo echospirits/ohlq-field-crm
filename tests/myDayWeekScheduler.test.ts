@@ -353,6 +353,27 @@ test('My Schedule shows opportunities and team performance in always-visible sec
   assert.match(page, /<section[^>]+aria-labelledby="schedule-performance-heading">\s*<header[^>]*>\s*<div>\s*<h2 id="schedule-performance-heading">Team activity and performance<\/h2>/);
 });
 
+test('My Schedule orders personal work and planning ahead of insights and the team events list', () => {
+  const page = readFileSync(new URL('../app/page.tsx', import.meta.url), 'utf8');
+  const dashboard = page.slice(page.indexOf('className="page-heading page-header dashboard-heading"'));
+  const sections = [
+    '<WorklistScheduler',
+    '<ScheduleRoute ',
+    'className="day-search"',
+    'aria-labelledby="team-work-title"',
+    'aria-labelledby="schedule-opportunities-heading"',
+    'aria-labelledby="schedule-performance-heading"',
+    '<ScheduleEvents ',
+  ];
+
+  let previous = -1;
+  for (const section of sections) {
+    const position = dashboard.indexOf(section);
+    assert.ok(position > previous, `Missing or out-of-order section: ${section}`);
+    previous = position;
+  }
+});
+
 test('schedule tabs and date controls stay on the combined route and preserve the active view', () => {
   const scheduler = readFileSync(new URL('../app/my-week/WorklistScheduler.tsx', import.meta.url), 'utf8');
   assert.match(scheduler, /aria-label="Schedule view"/);
