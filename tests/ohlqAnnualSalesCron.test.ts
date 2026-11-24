@@ -73,12 +73,13 @@ describe('OHLQ annual sales cron date selection', () => {
 });
 
 function cronFixture({ enabled = true, failDispatch = false, configured = true } = {}) {
-  const batches: Array<{ reportDates: string[] }> = [];
+  const batches: Array<{ reportDates: string[]; dailyLoadDate?: string }> = [];
   const localImports: string[] = [];
   const exports: { GET?: (request: Request) => Promise<Response> } = {};
   const dependencies: Record<string, unknown> = {
     'next/server': { NextResponse: { json: (body: unknown, init?: ResponseInit) => Response.json(body, init) } },
     '../../../../lib/ohlqAnnualSalesCron': {
+      OHLQ_CRON_TIME_ZONE: 'America/New_York',
       getOhlqCronCatchupDays: () => 3, getOhlqCronMaxReportDates: () => 2, getOhlqCronRefreshDays: () => 2,
       getOhlqCronReportDatesToRefresh: () => ['2026-11-18', '2026-11-17'],
       getOhlqCronReportDatesToRun: async () => ['2026-11-18', '2026-11-17'],
@@ -92,6 +93,13 @@ function cronFixture({ enabled = true, failDispatch = false, configured = true }
       },
     },
     '../../../../lib/ohlqAnnualSalesReport': { getOhlqAnnualSalesReportDate: (iso: string) => ({ iso }) },
+    '../../../../lib/dateTime': {
+      formatDateInputValue: (date: Date, timeZone: string) => {
+        assert.equal(timeZone, 'America/New_York');
+        assert.ok(date instanceof Date);
+        return '2026-11-19';
+      },
+    },
     '../../../../lib/ohlqAnnualSalesWorkflow': {
       runOhlqAnnualSalesWorkflow: async ({ reportDate }: { reportDate: string }) => { localImports.push(reportDate); return { durationMs: 1 }; },
     },
@@ -117,7 +125,7 @@ describe('OHLQ daily workflow batch dispatch', () => {
     const response = await fixture.request();
     assert.equal(response.status, 200);
     const body = await response.json();
-    assert.deepEqual(fixture.batches, [{ reportDates: ['2026-11-18', '2026-11-17'] }]);
+    assert.deepEqual(fixture.batches, [{ reportDates: ['2026-11-18', '2026-11-17'], dailyLoadDate: '2026-11-19' }]);
     assert.equal(body.runCount, 1);
     assert.equal(body.runs.length, 1);
     assert.deepEqual(body.runs[0].reportDates, ['2026-11-18', '2026-11-17']);

@@ -1,5 +1,9 @@
 # Unreleased
 
+## OHLQ daily load fallback — November 23, 2026
+
+Production keeps the Vercel morning load and one GitHub fallback at 9:47 a.m. Eastern. The automatic runs share a lock and check required sales, inventory and downstream data before installing the browser or importing. Complete saved data skips another full load. A confirmed gap permits recovery and the existing final verifier checks the result. An unavailable database check retries and never authorizes another import by itself. Manual imports remain available. TST's disabled schedules and both application versions are preserved.
+
 ## My Schedule dashboard panels — November 23, 2026
 
 Explore opportunities and Team activity and performance are always expanded in My Schedule. See the [0.15.8 release notes](0.15.8.md).

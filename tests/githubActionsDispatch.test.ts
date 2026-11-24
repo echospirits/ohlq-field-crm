@@ -84,11 +84,11 @@ test('daily dispatch freezes both dates in one workflow request', async () => {
     requests.push({ url: String(url), body: JSON.parse(String(init?.body)) });
     return new Response(null, { status: 204 });
   };
-  const result = await dispatchOhlqAnnualSalesWorkflow({ reportDates: ['2026-11-18', '2026-11-17'] });
+  const result = await dispatchOhlqAnnualSalesWorkflow({ reportDates: ['2026-11-18', '2026-11-17'], dailyLoadDate: '2026-11-19' });
   assert.equal(requests.length, 1);
   assert.deepEqual(requests[0], {
     url: 'https://api.github.com/repos/echospirits/ohlq-field-crm/actions/workflows/ohlq-annual-sales.yml/dispatches',
-    body: { inputs: { days: '1', deploymentEnvironment: 'production', reportDate: '', reportDates: '2026-11-17,2026-11-18' }, ref: 'main' },
+    body: { inputs: { days: '1', deploymentEnvironment: 'production', reportDate: '', reportDates: '2026-11-17,2026-11-18', dailyLoadDate: '2026-11-19' }, ref: 'main' },
   });
   assert.equal(result?.ref, 'main');
 });

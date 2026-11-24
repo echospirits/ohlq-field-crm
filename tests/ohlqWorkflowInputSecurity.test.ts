@@ -108,9 +108,16 @@ test('date and count injection payloads are rejected as literal data without exe
     '2026-10-07\n$(touch injection-marker)',
     '2026-10-07\npurchase_state_only=true',
   ];
-  for (const input of ['reportDate', 'reportDates', 'days', 'fromDate', 'toDate']) {
+  for (const input of ['reportDate', 'reportDates', 'dailyLoadDate', 'days', 'fromDate', 'toDate']) {
     for (const payload of payloads) assertRejected(inputEnvironment({ [input]: payload }));
   }
+});
+
+test('daily observation date requires a current, normal report-date batch', () => {
+  const reportDates = '2026-11-17,2026-11-18';
+  assertRejected(inputEnvironment({ dailyLoadDate: '2026-11-18', reportDates }));
+  assertRejected(inputEnvironment({ dailyLoadDate: '2026-11-19', reportDate: '2026-11-18' }));
+  assertRejected(inputEnvironment({ dailyLoadDate: '2026-11-19', reportDates, repairTenantCredentials: 'true' }));
 });
 
 test('dates, bounded decimal counts, range pairing and booleans validate before side effects', () => {
@@ -147,6 +154,7 @@ test('valid dates are frozen and each sales date reaches the importer with exact
     { inputs: { days: '30' }, args: importArguments(priorDates(30)) },
     { inputs: { reportDate: '2024-02-29' }, args: importArguments(['2024-02-29']) },
     { inputs: { reportDates: '2026-11-18,2026-11-17' }, args: importArguments(['2026-11-17', '2026-11-18']) },
+    { inputs: { reportDates: '2026-11-18,2026-11-17', dailyLoadDate: '2026-11-19' }, args: importArguments(['2026-11-17', '2026-11-18']) },
     { inputs: { purchaseStateOnly: 'true', reportDate: '2026-10-07' }, args: ['run', 'seed:ohlq-wholesale-purchase-state', '--', '--date', '2026-10-07'] },
     { inputs: { purchaseStateOnly: 'true', fromDate: '2026-10-01', toDate: '2026-10-07' }, args: ['run', 'seed:ohlq-wholesale-purchase-state', '--', '--from', '2026-10-01', '--to', '2026-10-07'] },
     { inputs: { purchaseStateOnly: 'true', days: '120' }, args: ['run', 'seed:ohlq-wholesale-purchase-state', '--', '--days', '120'] },

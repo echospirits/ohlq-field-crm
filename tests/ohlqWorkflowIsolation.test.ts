@@ -9,6 +9,26 @@ const step = (name: string) => {
   return body.split(/\n(?:      - name: |  [A-Za-z0-9_-]+:\n)/)[0];
 };
 
+test('main schedules one timezone-aware fallback', () => {
+  assert.equal(workflow.match(/^    - cron:/gm)?.length, 1);
+  assert.match(workflow, /cron: "47 9 \* \* \*"\n      timezone: "America\/New_York"/);
+  assert.match(step('Check trigger eligibility'), /REPOSITORY.*echospirits\/ohlq-field-crm/);
+});
+
+test('automatic triggers share the load lock and check completeness before any provider work', () => {
+  assert.match(workflow, /^concurrency:\n {2}group: ohlq-annual-sales-sync-/m);
+  const preflight = step('Check for an already complete daily load');
+  assert.match(preflight, /github.event_name == 'schedule' \|\| inputs.dailyLoadDate != ''/);
+  assert.match(preflight, /--preflight/);
+  assert.match(preflight, /OHLQ_IMPORT_ENABLED: "false"/);
+  assert.ok(workflow.indexOf('- name: Check for an already complete daily load') < workflow.indexOf('- name: Install Playwright Chromium'));
+  for (const name of ['Install Playwright Chromium', 'Validate required secrets']) {
+    assert.match(step(name), /steps.preflight.outputs.already_current != 'true'/);
+  }
+  assert.match(step('Download and import current OHLQ Account Master'), /steps.required_secrets.outcome == 'success'/);
+  assert.match(workflow, /needs.sync.outputs.already_current != 'true'/);
+});
+
 test('product discovery cannot block sales or inventory and remains a visible failure', () => {
   assert.match(step('Download and import current OHLQ Brand Master'), /--defer-product-discovery/);
   const discovery = step('Discover organization products after core imports');

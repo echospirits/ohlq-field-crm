@@ -28,11 +28,12 @@ export function unverifiedOhlqProcessingStages(env: NodeJS.ProcessEnv = process.
 export async function verifyOhlqLoadWithRetries<T extends { ready: boolean }>(check: () => Promise<T>, {
   wait = (milliseconds: number) => new Promise<void>(resolve => setTimeout(resolve, milliseconds)),
   warn = console.warn,
-}: { wait?: (milliseconds: number) => Promise<void>; warn?: (message: string) => void } = {}): Promise<T> {
+  retryIncomplete = true,
+}: { wait?: (milliseconds: number) => Promise<void>; warn?: (message: string) => void; retryIncomplete?: boolean } = {}): Promise<T> {
   for (let attempt = 1; ; attempt++) {
     try {
       const result = await check();
-      if (result.ready || attempt === 3) return result;
+      if (result.ready || !retryIncomplete || attempt === 3) return result;
     } catch (error) {
       if (attempt === 3) throw error;
     }

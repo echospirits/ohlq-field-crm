@@ -40,14 +40,15 @@ export function getGithubActionsDispatchConfig() {
 }
 
 export async function dispatchOhlqAnnualSalesWorkflow(
-  input: { reportDate: string; reportDates?: never } | { reportDates: string[]; reportDate?: never },
+  input: { reportDate: string; reportDates?: never; dailyLoadDate?: never } |
+    { reportDates: string[]; reportDate?: never; dailyLoadDate?: string },
 ) {
   const config = getGithubActionsDispatchConfig();
   if (!config) return null;
   if (input.reportDate !== undefined && input.reportDates !== undefined) throw new Error('Choose one report date selector.');
   const dates = normalizeOhlqLoadDates(input.reportDates ?? [input.reportDate!]);
   const dateInputs = input.reportDates
-    ? { reportDate: '', reportDates: dates.join(',') }
+    ? { reportDate: '', reportDates: dates.join(','), ...(input.dailyLoadDate && { dailyLoadDate: input.dailyLoadDate }) }
     : { reportDate: dates[0] };
 
   const response = await fetch(

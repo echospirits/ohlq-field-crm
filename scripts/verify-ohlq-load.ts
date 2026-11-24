@@ -5,13 +5,30 @@ import { prisma } from '../lib/prisma';
 import { EASTERN_TIME_ZONE, formatDateInputValue } from '../lib/dateTime';
 
 async function main() {
+  const preflight = process.argv.includes('--preflight');
   const input = ohlqLoadVerificationInput();
   const result = await verifyOhlqLoadWithRetries(() => prisma.$transaction(async db => {
     await db.$executeRaw`SET TRANSACTION READ ONLY`;
     return checkOhlqLoadReadiness(input, db);
   }, { isolationLevel: 'RepeatableRead', maxWait: 10_000, timeout: 120_000 }), {
+    retryIncomplete: !preflight,
     warn: message => console.warn(`::warning::${message}`),
   });
+  if (preflight) {
+    // Both automatic triggers share workflow concurrency. A confirmed gap can
+    // enter recovery now. An unavailable read must not authorize writes.
+    const summary = result.ready
+      ? 'Required saved data is current. Skipping the full load.'
+      : 'Required saved data is incomplete. Proceeding with the daily load.';
+    const output = process.env.GITHUB_OUTPUT;
+    if (!output) throw new Error('Preflight requires a GitHub Actions output file.');
+    console.log(summary, JSON.stringify({ ...input, ...result }));
+    if (process.env.GITHUB_STEP_SUMMARY) {
+      appendFileSync(process.env.GITHUB_STEP_SUMMARY, `## OHLQ daily load check\n\n${summary}\n`);
+    }
+    appendFileSync(output, `already_current=${result.ready}\n`);
+    return;
+  }
   for (const source of unverifiedOhlqProcessingStages()) {
     const issue = { source, date: input.observationDate, status: 'FAIL' as const, code: 'UNVERIFIED_PROCESSING_STAGE' };
     result.checks.push(issue);

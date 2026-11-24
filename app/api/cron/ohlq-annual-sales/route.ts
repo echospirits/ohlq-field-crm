@@ -4,6 +4,7 @@ export const maxDuration = 300;
 
 import { NextResponse } from 'next/server';
 import {
+  OHLQ_CRON_TIME_ZONE,
   getOhlqCronCatchupDays,
   getOhlqCronMaxReportDates,
   getOhlqCronReportDatesToRun,
@@ -17,6 +18,7 @@ import {
 import { getOhlqAnnualSalesReportDate } from '../../../../lib/ohlqAnnualSalesReport';
 import { runOhlqAnnualSalesWorkflow } from '../../../../lib/ohlqAnnualSalesWorkflow';
 import { isSideEffectEnabled, logEnvironmentEvent } from '../../../../lib/appEnvironment';
+import { formatDateInputValue } from '../../../../lib/dateTime';
 
 const unauthorized = () => NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
@@ -40,10 +42,11 @@ export async function GET(request: Request) {
     const maxReportDates = getOhlqCronMaxReportDates(url.searchParams.get('maxDates') ?? undefined);
     const refreshDays = getOhlqCronRefreshDays(url.searchParams.get('refreshDays') ?? undefined);
     const dispatchConfig = getGithubActionsDispatchConfig();
+    const now = new Date();
     const reportDates = requestedReportDate
       ? [getOhlqAnnualSalesReportDate(requestedReportDate).iso]
       : dispatchConfig
-        ? getOhlqCronReportDatesToRefresh(new Date(), refreshDays)
+        ? getOhlqCronReportDatesToRefresh(now, refreshDays)
         : await getOhlqCronReportDatesToRun({
             catchupDays,
             maxReportDates,
@@ -64,7 +67,10 @@ export async function GET(request: Request) {
     if (dispatchConfig) {
       // One logical load owns the frozen dates, recovery and final data-health result.
       // Separate dated workflows could each notify before the other had recovered.
-      const result = await dispatchOhlqAnnualSalesWorkflow({ reportDates });
+      const result = await dispatchOhlqAnnualSalesWorkflow({
+        reportDates,
+        ...(!requestedReportDate && { dailyLoadDate: formatDateInputValue(now, OHLQ_CRON_TIME_ZONE) }),
+      });
       if (!result) throw new Error('GitHub Actions dispatch became unavailable before the batch was queued.');
       console.log(`OHLQ annual sales cron queued one GitHub Actions batch for ${reportDates.join(', ')}.`);
 
