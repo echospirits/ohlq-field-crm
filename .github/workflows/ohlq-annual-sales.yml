@@ -63,6 +63,7 @@ on:
 
 concurrency:
   group: ohlq-annual-sales-sync-${{ github.event_name == 'schedule' && (github.repository == 'echospirits/neat-tst' && 'test' || 'production') || inputs.deploymentEnvironment }}
+  queue: max
   cancel-in-progress: false
 
 jobs:

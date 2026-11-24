@@ -17,6 +17,7 @@ test('main schedules one timezone-aware fallback', () => {
 
 test('automatic triggers share the load lock and check completeness before any provider work', () => {
   assert.match(workflow, /^concurrency:\n {2}group: ohlq-annual-sales-sync-/m);
+  assert.match(workflow, /^concurrency:\n {2}group: .*\n {2}queue: max\n {2}cancel-in-progress: false/m);
   const preflight = step('Check for an already complete daily load');
   assert.match(preflight, /github.event_name == 'schedule' \|\| inputs.dailyLoadDate != ''/);
   assert.match(preflight, /--preflight/);
