@@ -2,7 +2,7 @@ import { normalizeOpportunityCategory } from './opportunityConfig';
 
 export const ASSESSMENT_VERSION = 'WHOLESALE_COMMERCIAL_V1';
 export const EVIDENCE_VERSION = 'WHOLESALE_COMMERCIAL_EVIDENCE_V1';
-export const CALIBRATION_VERSION = 'COMMERCIAL_2026_10_V1';
+export const CALIBRATION_VERSION = 'COMMERCIAL_2026_11_V2';
 export const assessmentPolicy = {
   horizonDays: 90, researchFreshDays: 180, evidenceFreshDays: 180,
   tenantToObservedPriceMin: .6, tenantToObservedPriceMax: 1.25, meaningfulProduct750Per30: 6,

@@ -5,6 +5,8 @@ import { getTenantAccountSalesEventWhere } from '../../lib/ohlqSalesData';
 import { commercialRatingOrder } from '../../lib/commercialOpportunity';
 import { opportunityFactors } from '../../lib/opportunityPresentation';
 import { prisma } from '../../lib/prisma';
+import { loadRestaurantProductRestrictions } from '../../lib/restaurantProductEligibility';
+import { restaurantAnalysisExcludedItemCodes } from '../../lib/wholesaleAssessmentInputs';
 import { ContextualActions } from '../components/ContextualActions';
 import { DataFreshnessBadge } from '../components/DataFreshnessBadge';
 import type { ReactNode } from 'react';
@@ -125,7 +127,6 @@ export async function OpportunityAccountPanel({ agencyId, wholesaleAccountId, cu
   const context = user ? await getOrganizationContext(user) : null;
   if (!context || !(await hasFeature(context.organizationId, 'WHOLESALE_OPPORTUNITIES'))) return null;
   const organizationId = context.organizationId;
-  const tenantConfig = await getOrganizationTenantConfig(organizationId);
   const isAgencyRollup = Boolean(agencyId && !wholesaleAccountId);
   const opportunityWhere: Prisma.SalesOpportunityWhereInput = wholesaleAccountId
     ? { organizationId, wholesaleAccountId, ...chosenPursuitWhere }
@@ -137,25 +138,41 @@ export async function OpportunityAccountPanel({ agencyId, wholesaleAccountId, cu
 
   if (!wholesaleAccountId) return null;
 
-  const [opportunities, sales, visits, worklist, research, account, currentAssessment] = await Promise.all([
+  const salesQuery = Promise.all([
+    getOrganizationTenantConfig(organizationId),
+    loadRestaurantProductRestrictions(organizationId),
+    prisma.organizationProduct.findMany({
+      where: { organizationId },
+      select: { externalItemCode: true, market: true, active: true, discontinued: true, status: true, strategicPriority: true },
+    }),
+    prisma.wholesaleAccount.findUnique({ where: { id: wholesaleAccountId }, select: { state: true } }),
+  ]).then(([tenantConfig, restrictedItemCodes, decisions, account]) => {
+    const excludedItemCodes = restaurantAnalysisExcludedItemCodes(decisions, account?.state ?? null, restrictedItemCodes);
+    return prisma.accountSalesEvent.findMany({
+      where: {
+        organizationId,
+        wholesaleAccountId,
+        ...getTenantAccountSalesEventWhere(tenantConfig),
+        AND: { itemCode: { notIn: [...excludedItemCodes] } },
+      },
+      orderBy: { reportDate: 'desc' },
+      take: 30,
+    });
+  });
+  const [opportunities, sales, visits, worklist, research, currentAssessment] = await Promise.all([
     prisma.salesOpportunity.findMany({
       where: opportunityWhere,
       include: { wholesaleAccount: { select: { id: true, name: true } } },
       orderBy: { actionedAt: 'desc' },
       take: 5,
     }),
-    prisma.accountSalesEvent.findMany({
-      where: { organizationId, wholesaleAccountId, ...getTenantAccountSalesEventWhere(tenantConfig) },
-      orderBy: { reportDate: 'desc' },
-      take: 30,
-    }),
+    salesQuery,
     prisma.loggedVisit.findMany({ where: { organizationId, wholesaleAccountId, locationType: 'wholesale' }, orderBy: { visitAt: 'desc' }, take: 20, select: { id: true, visitAt: true, summary: true, createdBy: true } }),
     prisma.worklistItem.findMany({ where: { organizationId, wholesaleAccountId, status: { in: ['OPEN', 'IN_PROGRESS'] } }, orderBy: { dueDate: 'asc' }, take: 10, select: { id: true, title: true, dueDate: true, salesOpportunityId: true } }),
     prisma.targetPublicResearch.findUnique({
       where: { wholesaleAccountId },
       select: { buyerStructure: true, cocktailMenuUrl: true, cocktailProgram: true, events: true, googleRating: true, googleReviewCount: true, identitySnapshot: true, isNationalChain: true, localBrandsOnMenu: true, notes: true, openStatus: true, ownershipVerification: true, patioOutdoor: true, popularitySignal: true, privateDining: true, researchConfidence: true, sourceUrls: true, lastRefreshedAt: true, websiteUrl: true, yelpRating: true, yelpReviewCount: true },
     }),
-    prisma.wholesaleAccount.findUnique({ where: { id: wholesaleAccountId }, select: { state: true } }),
     prisma.wholesaleAccountAssessment.findUnique({ where: { organizationId_wholesaleAccountId: { organizationId, wholesaleAccountId } } }),
   ]);
   const researchOnly = currentAssessment?.evidenceMode === 'RESEARCH_ONLY' || !currentAssessment;
@@ -193,7 +210,7 @@ export async function OpportunityAccountPanel({ agencyId, wholesaleAccountId, cu
       <div className="section-heading"><div><h2>Activity + sales timeline</h2><span className="muted timeline-count">{timeline.length} events</span></div><DataFreshnessBadge datePrefix="Purchases through" sourceDate={sales[0]?.reportDate} /></div>
       <details className="source-explanation compact-details nested-details">
         <summary>Why purchase totals may differ</summary>
-        <p>Purchase entries here include your organization&apos;s tracked products from the sales timeline. The Recent OHLQ Purchases card includes all matched vendors for this account, so it can show a larger total. Visits, tasks, and opportunity events use their own activity dates and may be newer than the latest OHLQ report.</p>
+        <p>This timeline shows purchases of your organization&apos;s eligible products. The Recent OHLQ Purchases card includes all matched vendors for this account, so it can show a larger total. Visits, tasks, and opportunity events use their own activity dates and may be newer than the latest OHLQ report.</p>
       </details>
       {timeline.map((event, index) => <article className={`timeline-event timeline-${event.kind}`} key={`${event.kind}-${event.at.toISOString()}-${index}`}><time>{formatEasternDate(event.at)}</time><div><strong>{event.title}</strong><p>{event.detail}</p></div></article>)}
       {timeline.length === 0 ? <p className="card muted activity-empty">No account activity is available yet.</p> : null}

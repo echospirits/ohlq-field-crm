@@ -25,7 +25,10 @@ const toDateOnlyUtc = (value: Date | string) => {
 };
 
 export const isDistilleryOnlyInventoryDetail = (value: string | null | undefined) =>
-  String(value ?? '').trim().toUpperCase() === OHLQ_DISTILLERY_ONLY_DETAIL;
+  /^A-?3A\s+(?:DIST|DISTILLERY\s+ONLY)$/i.test(value?.trim() ?? '');
+
+export const isInactiveOhlqInventoryListingStatus = (value: string | null | undefined) =>
+  /delist|inactiv|discontinu/i.test(value ?? '');
 
 export function isRestrictedAgencyInventory(coverageGroup: string | null) {
   return coverageGroup?.trim().toUpperCase() === 'RESTRICTED';

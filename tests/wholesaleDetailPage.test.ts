@@ -10,11 +10,13 @@ test('Wholesale Agency ID links to the matching Agency account when one exists',
   assert.match(page, /linkedAgency \? <Link href=\{`\/agencies\/\$\{linkedAgency\.id\}`\}>/);
 });
 
-test('Wholesale activity timeline loads only the viewing tenant portfolio purchases', () => {
+test('Wholesale intelligence timeline applies tenant and restaurant eligibility before limiting purchases', () => {
   const panel = readFileSync('app/wholesale/OpportunityAccountPanel.tsx', 'utf8');
 
   assert.match(panel, /getOrganizationTenantConfig\(organizationId\)/);
-  assert.match(panel, /where: \{ organizationId, wholesaleAccountId, \.\.\.getTenantAccountSalesEventWhere\(tenantConfig\) \}/);
+  assert.match(panel, /loadRestaurantProductRestrictions\(organizationId\)/);
+  assert.match(panel, /restaurantAnalysisExcludedItemCodes\(decisions, account\?\.state \?\? null, restrictedItemCodes\)/);
+  assert.match(panel, /accountSalesEvent\.findMany\(\{\s*where: \{\s*organizationId,\s*wholesaleAccountId,\s*\.\.\.getTenantAccountSalesEventWhere\(tenantConfig\),\s*AND: \{ itemCode: \{ notIn: \[\.\.\.excludedItemCodes\] \} \},\s*\},\s*orderBy: \{ reportDate: 'desc' \},\s*take: 30,/);
 });
 
 test('Wholesale account details retain source-attributed hours in the shared account workspace', () => {

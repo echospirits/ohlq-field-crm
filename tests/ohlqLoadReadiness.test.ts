@@ -7,7 +7,8 @@ import { BAILMENT_REPORTING_REPORT_ID } from '../lib/ohlqBailmentReporting';
 import { BAILMENT_REPORTING_SCHEMA_VERSION } from '../lib/ohlqBailmentReportingParser';
 import { AGENCY_INTELLIGENCE_RULES_VERSION, AGENCY_INTELLIGENCE_SCORING_VERSION } from '../lib/agencyIntelligenceConfig';
 import { AGENCY_MARKET_SCORING_VERSION } from '../lib/agencyMarketIntelligence';
-import { ASSESSMENT_VERSION, CALIBRATION_VERSION } from '../lib/wholesaleAssessment';
+import { ASSESSMENT_VERSION } from '../lib/wholesaleAssessment';
+import { wholesaleAssessmentConfigurationId } from '../lib/wholesaleAssessmentInputs';
 import { MODEL_VERSION, forecastConfiguration } from '../lib/productionForecasting/model';
 import { DC_INVENTORY_ADAPTER_VERSION, DC_INVENTORY_SOURCE } from '../lib/productionForecasting/operationalSignals/dcInventory';
 import { CURRENT_DEMAND_CALCULATION_VERSION, CURRENT_DEMAND_SOURCE } from '../lib/productionForecasting/operationalSignals/demand';
@@ -69,7 +70,7 @@ function fixture() {
   tables.agencyProductIntelligence = [{ organizationId: org, agencyId: 'agency-a', itemCode: '1000B', asOfDate: d(input.observationDate), rulesVersion: AGENCY_INTELLIGENCE_RULES_VERSION, scoringVersion: AGENCY_INTELLIGENCE_SCORING_VERSION, updatedAt: scored }];
   tables.agencyMarketProfile = [{ organizationId: org, agencyId: 'agency-a', asOfDate: d('2026-11-18'), scoringVersion: AGENCY_MARKET_SCORING_VERSION, updatedAt: scored }];
   tables.agencyProductMarketFit = [{ organizationId: org, agencyId: 'agency-a', itemCode: '1000B', asOfDate: d('2026-11-18'), scoringVersion: AGENCY_MARKET_SCORING_VERSION, updatedAt: scored }];
-  const configurationId = createHash('sha256').update(JSON.stringify({ calibration: CALIBRATION_VERSION, decisions: [decision], catalog: [{ code: catalog.itemCode, name: catalog.name, category: catalog.category, size: catalog.productVolume, wholesale: catalog.wholesalePrice, retail: catalog.retailPrice, status: catalog.solItemStatusCode }] })).digest('hex').slice(0, 16);
+  const configurationId = wholesaleAssessmentConfigurationId([decision], [catalog], new Set());
   const run = { id: 'assessment-run', organizationId: org, fullSweep: true, status: 'COMPLETED', startedAt: scored, completedAt: scored, modelVersion: ASSESSMENT_VERSION, configurationId, asOfDate: d('2026-11-18'), expected: 1, evaluated: 1, persisted: 1, failed: 0, skipped: 0, sourceCoverage: { status: 'REPRESENTED_PERIOD_COMPLETE', from: '2026-11-17', through: '2026-11-18', representedDays: 2, completeDays: 2, missingDates: ['2026-09-01'] } };
   tables.wholesaleAssessmentRun = [run];
   tables.wholesaleAccountAssessment = [{ organizationId: org, wholesaleAccountId: 'account-a', wholesaleAccount: { mergedIntoId: null }, asOfDate: d('2026-11-18'), modelVersion: ASSESSMENT_VERSION, configurationId, assessmentStatus: 'READY', calculatedAt: scored, run }];
@@ -91,7 +92,7 @@ function fixture() {
   tables.currentDcInventoryObservation = ['GPT', 'GRN'].map(locationCode => ({ organizationId: org, productId: 'product-a', locationCode, businessDate: d(input.observationDate), sourceBusinessDate: d(input.observationDate), source: DC_INVENTORY_SOURCE, adapterVersion: DC_INVENTORY_ADAPTER_VERSION }));
   tables.currentDcInventoryCheck = [];
   const db = new Proxy({}, { get: (_, table: string) => new Proxy({}, { get: (_delegate, method: string) => async (args: Row = {}) => {
-    assert.ok(['findMany', 'findUnique', 'findFirst', 'count'].includes(method), `Unexpected non-read call: ${table}.${method}`);
+    assert.ok(['findMany', 'findUnique', 'findFirst', 'count', 'groupBy'].includes(method), `Unexpected non-read call: ${table}.${method}`);
     calls.push({ table, method, args });
     let rows = (tables[table] ?? []).filter(row => matches(row, args.where as Row));
     const ordering = Array.isArray(args.orderBy) ? args.orderBy as Row[] : args.orderBy ? [args.orderBy as Row] : [];
@@ -108,7 +109,7 @@ function fixture() {
       features: (row.features as Row[]).filter(feature => matches(feature, isObject((args.select as Row)?.features) ? ((args.select as Row).features as Row).where as Row : {})),
       accountOverlays: (row.accountOverlays as Row[]).filter(overlay => matches(overlay, isObject((args.select as Row)?.accountOverlays) ? ((args.select as Row).accountOverlays as Row).where as Row : {})),
     }));
-    return method === 'findMany' ? rows : rows[0] ?? null;
+    return method === 'findMany' || method === 'groupBy' ? rows : rows[0] ?? null;
   } }) }) as OhlqLoadReadinessDb;
   return { tables, db, calls, organization, run };
 }
@@ -213,6 +214,13 @@ test('a source correction invalidates old agency and wholesale scores and ledger
   const result = await checkOhlqLoadReadiness(input, f.db);
   assert.ok(result.issues.some(row => row.source === 'AGENCY_INTELLIGENCE'));
   assert.ok(result.issues.some(row => row.source === 'WHOLESALE_INTELLIGENCE'));
+});
+
+test('new restaurant product restrictions invalidate an otherwise current assessment sweep', async () => {
+  const f = fixture();
+  f.tables.ohlqTenantInventoryImportStatus[0].diagnostics = { distilleryOnlyItemCodes: ['1000B'] };
+  const result = await checkOhlqLoadReadiness(input, f.db);
+  assert.ok(result.issues.some(row => row.source === 'WHOLESALE_INTELLIGENCE' && row.actual === 0));
 });
 
 test('a later failed wholesale sweep is not hidden by an older complete run', async () => {

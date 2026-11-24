@@ -1,42 +1,132 @@
+import { Prisma } from '@prisma/client';
 import { revalidatePath } from 'next/cache';
+import { z } from 'zod';
 import { requireAdmin } from '../../../lib/auth';
-import { requireFeatureForUser, hasFeature, writeOrganizationAudit } from '../../../lib/organizations';
+import { requireFeatureForUser, hasFeature } from '../../../lib/organizations';
 import { prisma } from '../../../lib/prisma';
+import { isRestaurantProductRestricted, loadRestaurantProductRestrictions } from '../../../lib/restaurantProductEligibility';
 import { ActionForm, type ActionResult } from '../../components/ActionForm';
 import { AnchoredDetails } from '../../components/AnchoredDetails';
 import { SubmitButton } from '../../components/SubmitButton';
+
+const editableProduct = {
+  active: true,
+  discontinued: false,
+  status: { in: ['OWNED', 'REPRESENTED'] },
+} satisfies Prisma.OrganizationProductWhereInput;
+
+const distributionLabels = {
+  UNVERIFIED: 'Unverified',
+  AVAILABLE: 'Available',
+  UNAVAILABLE: 'Unavailable',
+} as const;
+
+const strategyInput = z.object({
+  id: z.string().trim().min(1),
+  inclusion: z.enum(['include', 'exclude']),
+  availability: z.enum(['UNVERIFIED', 'AVAILABLE', 'UNAVAILABLE']),
+  subtype: z.string().trim(),
+});
 
 async function saveStrategy(form: FormData): Promise<ActionResult> {
   'use server';
   const user = await requireAdmin();
   const { organizationId } = await requireFeatureForUser(user, 'WHOLESALE_OPPORTUNITIES');
-  const role = String(form.get('role')), availability = String(form.get('availability'));
-  const priority = Number(form.get('priority'));
-  if (!['NEUTRAL','FOCUS','OPPORTUNISTIC','MAINTENANCE'].includes(role) || !['UNVERIFIED','AVAILABLE','UNAVAILABLE'].includes(availability) || !Number.isInteger(priority) || priority < 0 || priority > 10) return { error: 'Choose a strategy, availability and priority from 0 to 10.' };
-  const product = await prisma.organizationProduct.findFirst({ where: { id: String(form.get('id')), organizationId } });
-  if (!product) return { error: 'Product not found in this organization.' };
-  const subtype = String(form.get('subtype') ?? '').trim() || null;
-  const commercialInputsChanged = subtype !== product.subcategory || (priority === 0) !== (product.strategicPriority === 0);
-  await prisma.$transaction([
-    prisma.organizationProduct.update({ where: { id: product.id }, data: { opportunityRole: role, distributionStatus: availability, strategicPriority: priority, subcategory: subtype } }),
-    ...(commercialInputsChanged ? [prisma.wholesaleAccountAssessment.updateMany({ where: { organizationId }, data: { refreshRequestedAt: new Date() } })] : []),
-  ]);
-  await writeOrganizationAudit(user.id, organizationId, 'PRODUCT_CONFIGURATION_CHANGED', { productId: product.id, opportunityRole: role, distributionStatus: availability, strategicPriority: priority });
-  revalidatePath('/admin/organization'); revalidatePath('/opportunities');
-  return { success: commercialInputsChanged ? 'Product inclusion or style changed. Commercial ratings will recalculate during the next full daily sweep.' : 'Execution preferences saved. Commercial stars are unchanged.' };
+  const parsed = strategyInput.safeParse({
+    id: form.get('id'),
+    inclusion: form.get('inclusion'),
+    availability: form.get('availability'),
+    subtype: form.get('subtype'),
+  });
+  if (!parsed.success) return { error: 'Choose whether to include this product and select its distribution status.' };
+
+  const { id, inclusion, availability, subtype } = parsed.data;
+  const included = inclusion === 'include';
+  const result = await prisma.$transaction(async tx => {
+    const [product, restrictedCodes] = await Promise.all([
+      tx.organizationProduct.findFirst({ where: { id, organizationId, ...editableProduct } }),
+      loadRestaurantProductRestrictions(organizationId, tx),
+    ]);
+    if (!product || isRestaurantProductRestricted(product.externalItemCode, restrictedCodes)) {
+      return { error: 'This product is no longer eligible for Restaurant Opportunities. Reload Echo Settings for the current list.' };
+    }
+
+    const wasIncluded = product.strategicPriority !== 0;
+    const subcategory = subtype || null;
+    const priority = included ? wasIncluded ? product.strategicPriority : 1 : 0;
+    const refreshNeeded = included !== wasIncluded || (included && subcategory !== product.subcategory);
+    await tx.organizationProduct.update({
+      where: { id: product.id },
+      data: { strategicPriority: priority, subcategory, distributionStatus: availability },
+    });
+    if (refreshNeeded) {
+      await tx.wholesaleAccountAssessment.updateMany({ where: { organizationId }, data: { refreshRequestedAt: new Date() } });
+    }
+    await tx.organizationAuditEvent.create({
+      data: {
+        actorUserId: user.id,
+        organizationId,
+        action: 'PRODUCT_CONFIGURATION_CHANGED',
+        metadata: { productId: product.id, includedInRestaurantOpportunities: included, strategicPriority: priority, subcategory, distributionStatus: availability },
+      },
+    });
+    return { success: refreshNeeded ? 'Product strategy saved. Commercial ratings will update on the next refresh.' : 'Product strategy saved.' };
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  if ('success' in result) {
+    revalidatePath('/admin/organization');
+    revalidatePath('/opportunities');
+  }
+  return result;
 }
+
 export async function OpportunityStrategy({ organizationId }: { organizationId: string }) {
   if (!await hasFeature(organizationId, 'WHOLESALE_OPPORTUNITIES')) return null;
-  const products = await prisma.organizationProduct.findMany({ where: { organizationId, active: true, discontinued: false, status: { in: ['OWNED','REPRESENTED'] } }, orderBy: [{ market: 'asc' }, { externalItemCode: 'asc' }] });
-  return <section className="workspace-section"><h2>Restaurant product strategy</h2><p className="muted">Execution preferences · priority 0 excludes a product · other priorities do not multiply commercial stars</p>
-    {products.length ? <div className="table-scroll" role="region" aria-label="Current restaurant product strategies" tabIndex={0}><table className="comparison-table strategy-summary-table"><thead><tr><th scope="col">Product</th><th scope="col">Role</th><th scope="col" className="numeric">Priority</th><th scope="col">Verified style</th><th scope="col">Distribution</th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead><tbody>{products.map(p => <tr key={p.id}><th scope="row">{p.displayName ?? p.externalItemCode}<small>{p.market} · {p.externalItemCode}</small></th><td>{p.opportunityRole ?? 'NEUTRAL'}</td><td className="numeric">{p.strategicPriority ?? 1}</td><td>{p.subcategory || 'Unverified'}</td><td>{p.distributionStatus ?? 'UNVERIFIED'}</td><td><a href={`#strategy-${p.id}`}>Edit strategy</a></td></tr>)}</tbody></table></div> : null}
-    <div className="strategy-edit-list">
-    {products.map(p => <AnchoredDetails key={p.id} id={`strategy-${p.id}`} className="compact-details" summary={`Edit ${p.displayName ?? p.externalItemCode} strategy · ${p.market}`}>
-      <ActionForm action={saveStrategy}><input name="id" type="hidden" value={p.id}/><div className="form-grid"><label>Role<select name="role" defaultValue={p.opportunityRole ?? 'NEUTRAL'}>{['NEUTRAL','FOCUS','OPPORTUNISTIC','MAINTENANCE'].map(s => <option key={s}>{s}</option>)}</select></label>
-      <label>Priority (0 excludes)<input type="number" name="priority" min="0" max="10" defaultValue={p.strategicPriority ?? 1}/></label>
-      <label>Style/use subtype<input name="subtype" defaultValue={p.subcategory ?? ''} placeholder="Verified style, e.g. light or spiced"/></label>
-      <label>Distribution in {p.market}<select name="availability" defaultValue={p.distributionStatus ?? 'UNVERIFIED'}>{['UNVERIFIED','AVAILABLE','UNAVAILABLE'].map(s => <option key={s}>{s}</option>)}</select></label></div><SubmitButton>Save strategy</SubmitButton></ActionForm></AnchoredDetails>)}
-    {!products.length ? <p>No active included products. Configure product selection first.</p> : null}
-    </div>
+  const [products, restrictedCodes] = await Promise.all([
+    prisma.organizationProduct.findMany({
+      where: { organizationId, ...editableProduct },
+      orderBy: [{ market: 'asc' }, { externalItemCode: 'asc' }],
+    }),
+    loadRestaurantProductRestrictions(organizationId),
+  ]);
+  const eligibleProducts = products.filter(product => !isRestaurantProductRestricted(product.externalItemCode, restrictedCodes));
+
+  return <section className="workspace-section" aria-labelledby="restaurant-strategy-title">
+    <h2 id="restaurant-strategy-title">Restaurant product strategy</h2>
+    <p className="muted">Choose which products count toward Restaurant Opportunities. Verified style helps Neat match comparable products.</p>
+    {eligibleProducts.length ? <div className="strategy-edit-list">
+      {eligibleProducts.map(product => {
+        const name = product.displayName ?? product.externalItemCode;
+        const included = product.strategicPriority !== 0;
+        const distribution = product.distributionStatus as keyof typeof distributionLabels | null;
+        return <AnchoredDetails key={product.id} id={`strategy-${product.id}`} className="compact-details" summary={<>
+          <span className="strategy-product-name">
+            {name}
+            <small>{product.market} · {product.externalItemCode}{product.subcategory ? ` · ${product.subcategory}` : ''}</small>
+          </span>
+          <span>{included ? 'Included' : 'Excluded'}</span>
+        </>}>
+          <ActionForm action={saveStrategy}>
+            <input name="id" type="hidden" value={product.id} />
+            <div className="form-grid">
+              <label>Use in Restaurant Opportunities
+                <select name="inclusion" defaultValue={included ? 'include' : 'exclude'}>
+                  <option value="include">Include product</option>
+                  <option value="exclude">Exclude product</option>
+                </select>
+              </label>
+              <label>Verified style
+                <input name="subtype" defaultValue={product.subcategory ?? ''} placeholder="e.g. light or spiced" />
+              </label>
+              <label>Distribution in {product.market}
+                <select name="availability" defaultValue={distribution && distribution in distributionLabels ? distribution : 'UNVERIFIED'}>
+                  {Object.entries(distributionLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                </select>
+              </label>
+            </div>
+            <SubmitButton>Save strategy</SubmitButton>
+          </ActionForm>
+        </AnchoredDetails>;
+      })}
+    </div> : <p>No eligible restaurant products. Review Product selection below.</p>}
   </section>;
 }

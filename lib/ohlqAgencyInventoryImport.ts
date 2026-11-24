@@ -2,6 +2,7 @@ import { Prisma, type PrismaClient } from '@prisma/client';
 import Papa from 'papaparse';
 import {
   isDistilleryOnlyInventoryDetail,
+  isInactiveOhlqInventoryListingStatus,
   isTenantAgencyInventoryItem,
 } from './ohlqAgencyInventory';
 import { normalizeOhlqId } from './ohlqWholesaleMatching';
@@ -166,6 +167,7 @@ export function parseOhlqAgencyInventoryCsv(
     }
 
     const detailCodeDescription = clean(row.Detail_Code_Description);
+    const status = clean(row.Status);
     const forecastDetail = detailCodeDescription?.toUpperCase().replace(/A-3A/g, 'A3A').replace(/\s+/g, ' ');
     const forecastItemName = clean(row.Brand_Name);
     // Forecast planning uses vendor-associated bailment items independently of
@@ -179,7 +181,7 @@ export function parseOhlqAgencyInventoryCsv(
     if (matchesConfiguredVendor && isDistilleryOnlyInventoryDetail(detailCodeDescription)) {
       stats.excludedDistilleryOnlyRows += 1;
       distilleryOnlyItemCodes.add(itemCode);
-    } else if (matchesConfiguredVendor) {
+    } else if (matchesConfiguredVendor && !isInactiveOhlqInventoryListingStatus(status)) {
       wholesaleItemCodes.add(itemCode);
     }
 
@@ -226,7 +228,7 @@ export function parseOhlqAgencyInventoryCsv(
       minimum: minimum.value,
       onHand: onHand.value,
       snapshotDate,
-      status: clean(row.Status),
+      status,
       vendorId,
       vendorName: clean(row.Vendor_Name),
     });

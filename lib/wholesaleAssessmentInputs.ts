@@ -1,10 +1,30 @@
+import { createHash } from 'node:crypto';
 import type { OrganizationProduct, OhlqBrandMasterItem } from '@prisma/client';
 import { catalogLiters, isKnownOhioBrand, pricePer750 } from './opportunityAffinity';
 import { normalizeOpportunityCategory } from './opportunityConfig';
 import { isOpportunityEligibleOhlqProduct } from './ohlqProductEligibility';
+import { isRestaurantProductRestricted } from './restaurantProductEligibility';
 import { normalizeUsState } from './usStates';
 import type { AssessmentProduct, AssessmentPurchase, StrategyRole, UseEvidence, ResearchSignals, ResearchFact } from './wholesaleAssessment';
-import { positiveResearchClauses } from './wholesaleAssessment';
+import { CALIBRATION_VERSION, positiveResearchClauses } from './wholesaleAssessment';
+
+type MarketProductDecision = Pick<OrganizationProduct, 'externalItemCode' | 'market' | 'active' | 'discontinued' | 'status' | 'strategicPriority'>;
+type CatalogConfigurationProduct = Pick<OhlqBrandMasterItem, 'itemCode' | 'name' | 'category' | 'solItemStatusCode'> & {
+  productVolume: unknown; wholesalePrice: unknown; retailPrice: unknown;
+};
+
+export function wholesaleAssessmentConfigurationId(decisions: readonly { id: string }[], catalog: readonly CatalogConfigurationProduct[],
+  restrictedItemCodes: ReadonlySet<string>) {
+  return createHash('sha256').update(JSON.stringify({
+    calibration: CALIBRATION_VERSION,
+    decisions: [...decisions].sort((a, b) => a.id.localeCompare(b.id)),
+    catalog: [...catalog].sort((a, b) => a.itemCode.localeCompare(b.itemCode)).map(p => ({
+      code: p.itemCode, name: p.name, category: p.category, size: p.productVolume,
+      wholesale: p.wholesalePrice, retail: p.retailPrice, status: p.solItemStatusCode,
+    })),
+    restrictedItemCodes: [...restrictedItemCodes].sort(),
+  })).digest('hex').slice(0, 16);
+}
 
 function catalogPrices(master: OhlqBrandMasterItem | undefined, wholesaleApplicable = true) {
   const wholesalePrice750 = master && wholesaleApplicable ? pricePer750(master.wholesalePrice, master.productVolume) : null;
@@ -13,26 +33,57 @@ function catalogPrices(master: OhlqBrandMasterItem | undefined, wholesaleApplica
     priceBasis: wholesalePrice750 !== null ? 'PUBLISHED_WHOLESALE' as const : retailPrice750 !== null ? 'CATALOG_RETAIL_PROXY' as const : 'UNKNOWN' as const };
 }
 
+const includesProduct = (decision: MarketProductDecision) =>
+  decision.active && !decision.discontinued && ['OWNED', 'REPRESENTED'].includes(decision.status);
+
+function marketProductDecisions<T extends MarketProductDecision>(decisions: readonly T[], market: string | null): T[] {
+  const decisionsByCode = new Map<string, T[]>();
+  for (const decision of decisions) {
+    const code = decision.externalItemCode.trim().toUpperCase();
+    const existing = decisionsByCode.get(code);
+    if (existing) existing.push(decision);
+    else decisionsByCode.set(code, [decision]);
+  }
+  return [...decisionsByCode.values()].flatMap(rows => {
+    // Choose the market record before applying the exclusion so an explicitly
+    // excluded state cannot fall through to another record.
+    const decision = rows.find(p => p.market === market) ?? rows.find(p => p.market === 'ALL') ?? rows.find(includesProduct);
+    return decision ? [decision] : [];
+  });
+}
+
+function excludedProductCodes(decisions: readonly MarketProductDecision[], restrictedItemCodes: ReadonlySet<string>): ReadonlySet<string> {
+  const excluded = decisions.filter(p => p.strategicPriority === 0);
+  return excluded.length
+    ? new Set([...restrictedItemCodes, ...excluded.map(p => p.externalItemCode.trim().toUpperCase())])
+    : restrictedItemCodes;
+}
+
+export function restaurantAnalysisExcludedItemCodes(decisions: readonly MarketProductDecision[], state: string | null,
+  restrictedItemCodes: ReadonlySet<string>): ReadonlySet<string> {
+  return excludedProductCodes(marketProductDecisions(decisions, normalizeUsState(state)), restrictedItemCodes);
+}
+
 export function marketPortfolio(decisions: OrganizationProduct[], catalog: Map<string, OhlqBrandMasterItem>, state: string | null,
-  inventory: { trusted: boolean; available: Set<string>; distilleryOnly: Set<string> }): AssessmentProduct[] {
+  inventory: { trusted: boolean; available: ReadonlySet<string> }, restrictedItemCodes: ReadonlySet<string>) {
   const market = normalizeUsState(state);
-  const codes = [...new Set(decisions.map(p => p.externalItemCode))];
-  return codes.flatMap(code => {
-    const exact = decisions.find(p => p.externalItemCode === code && p.market === market);
-    const decision = exact ?? decisions.find(p => p.externalItemCode === code && p.market === 'ALL') ?? decisions.find(p => p.externalItemCode === code && p.active && !p.discontinued && ['OWNED', 'REPRESENTED'].includes(p.status));
-    if (!decision || !decision.active || decision.discontinued || !['OWNED', 'REPRESENTED'].includes(decision.status)) return [];
+  const selected = marketProductDecisions(decisions, market);
+  const excludedItemCodes = excludedProductCodes(selected, restrictedItemCodes);
+  const products: AssessmentProduct[] = selected.flatMap(decision => {
+    const code = decision.externalItemCode;
+    if (!includesProduct(decision) || isRestaurantProductRestricted(code, excludedItemCodes)) return [];
     const master = catalog.get(code);
-    // Catalog discontinued/ineligible products remain excluded. Current warehouse routing
-    // and temporary stock availability are execution context, never commercial inclusion.
-    if (market === 'OH' && master && !isOpportunityEligibleOhlqProduct(master, new Set<string>())) return [];
-    const availability = decision.distributionStatus === 'UNAVAILABLE' && (exact || decision.market === 'ALL') ? 'UNAVAILABLE'
-      : decision.distributionStatus === 'AVAILABLE' && (exact || decision.market === 'ALL') ? 'AVAILABLE'
+    if (market === 'OH' && master && !isOpportunityEligibleOhlqProduct(master, restrictedItemCodes)) return [];
+    const currentMarket = decision.market === market || decision.market === 'ALL';
+    const availability = decision.distributionStatus === 'UNAVAILABLE' && currentMarket ? 'UNAVAILABLE'
+      : decision.distributionStatus === 'AVAILABLE' && currentMarket ? 'AVAILABLE'
       : market === 'OH' && inventory.trusted ? inventory.available.has(code) ? 'AVAILABLE' : 'UNAVAILABLE' : 'UNVERIFIED';
     return [{ itemCode: code, name: decision.displayName ?? master?.name ?? code, category: normalizeOpportunityCategory(master?.category ?? decision.category, master?.name ?? decision.displayName),
       subtype: decision.subcategory, ...catalogPrices(master, market === 'OH'),
       liters: master ? catalogLiters(master.productVolume) : null, priority: decision.strategicPriority,
       role: ['FOCUS','OPPORTUNISTIC','MAINTENANCE'].includes(decision.opportunityRole ?? '') ? decision.opportunityRole as StrategyRole : 'NEUTRAL', availability }];
   });
+  return { products, excludedItemCodes };
 }
 
 export function aggregatePurchases(events: Array<{ itemCode: string; itemName: string; category: string | null; bottles: number; reportDate: Date }>,
@@ -61,7 +112,8 @@ export function aggregatePurchases(events: Array<{ itemCode: string; itemName: s
 
 // Read saved evidence only. Catalog identity resolution does not crawl, call a provider,
 // assign group-scale facts to a location, or infer a bottle price from a cocktail price.
-export function storedResearchSignals(research: unknown, catalog = new Map<string, OhlqBrandMasterItem>()): ResearchSignals {
+export function storedResearchSignals(research: unknown, catalog = new Map<string, OhlqBrandMasterItem>(),
+  excludedItemCodes: ReadonlySet<string> = new Set()): ResearchSignals {
   const empty: ResearchSignals = { evidence: [], publicRatings: [], comparables: [] };
   if (!research || typeof research !== 'object') return empty;
   const row = research as { identitySnapshot?: unknown; lastRefreshedAt?: Date | string | null };
@@ -73,14 +125,36 @@ export function storedResearchSignals(research: unknown, catalog = new Map<strin
   const normalize = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
   const currentPositive = (claim: string) => !/\b(?:formerly|previously|historical|used to|no|not|without|removed|discontinued)\b/i.test(claim)
     && ![...claim.matchAll(/\bin (20\d\d)\b/gi)].some(m => Number(m[1]) < new Date(observedAt).getUTCFullYear());
+  const restrictedNames = [...new Set([...catalog.values()]
+    .filter(master => isRestaurantProductRestricted(master.itemCode, excludedItemCodes))
+    .map(master => normalize(master.name))
+    .filter(name => name.length >= 5))]
+    .sort((a, b) => b.length - a.length);
+  const comparableClaim = (claim: string) => {
+    let text = ` ${normalize(claim)} `;
+    // Mask full restricted names first. A shorter eligible name can still
+    // match when it appears separately in the same claim.
+    for (const name of restrictedNames) {
+      const phrase = ` ${name} `;
+      let start = text.indexOf(phrase);
+      while (start !== -1) {
+        text = text.slice(0, start) + ' '.repeat(phrase.length) + text.slice(start + phrase.length);
+        start = text.indexOf(phrase, start + 1);
+      }
+    }
+    return text;
+  };
   const menuFacts = evidence.filter(e => e.exactLocation && e.sourceUrl && /menu|spirits|cocktail|brand|pour|beverage/i.test(e.field))
-    .flatMap(e => positiveResearchClauses(e.claim).filter(currentPositive).map(claim => ({ ...e, claim })));
+    .flatMap(e => positiveResearchClauses(e.claim).filter(currentPositive).map(claim => ({ ...e, comparableClaim: comparableClaim(claim) })));
   const comparables: ResearchSignals['comparables'] = [];
   for (const master of catalog.values()) {
+    if (isRestaurantProductRestricted(master.itemCode, excludedItemCodes)) continue;
     const name = normalize(master.name);
     if (name.length < 5) continue;
-    const fact = menuFacts.find(e => (' ' + normalize(e.claim) + ' ').includes(' ' + name + ' '));
-    const placement = (Array.isArray(snapshot.productUses) ? snapshot.productUses : []).find(e => e && e.exactLocation && e.source && e.kind === 'MENU' && currentPositive(e.claim ?? '') && !/REMOVED|INACTIVE|ENDED/.test(e.status ?? '') && e.pouredProduct && normalize(e.pouredProduct) === name);
+    const fact = menuFacts.find(e => e.comparableClaim.includes(` ${name} `));
+    const placement = (Array.isArray(snapshot.productUses) ? snapshot.productUses : []).find(e => e && e.exactLocation && e.source && e.kind === 'MENU' && currentPositive(e.claim ?? '') && !/REMOVED|INACTIVE|ENDED/.test(e.status ?? '')
+      && (!e.productCode || typeof e.productCode === 'string' && e.productCode.trim().toUpperCase() === master.itemCode.trim().toUpperCase())
+      && e.pouredProduct && normalize(e.pouredProduct) === name);
     if (!fact && !placement) continue;
     // Public menu identity gives positioning, not a verified account-facing invoice.
     comparables.push({ itemCode: master.itemCode, name: master.name, category: normalizeOpportunityCategory(master.category, master.name), subtype: null,

@@ -29,9 +29,11 @@
 .admin-workspace .activity-history-table th:first-child { min-width: 180px; }
 .admin-workspace .activity-help { border: 0; border-bottom: 1px solid var(--line); background: transparent; padding: 0; }
 .admin-workspace .activity-help p { max-width: 72ch; font-size: .8125rem; }
-.admin-workspace .strategy-summary-table { min-width: 620px; }
 .admin-workspace .strategy-edit-list { display: grid; gap: 0; }
 .admin-workspace .strategy-edit-list > details { border-bottom: 1px solid var(--line); }
+.admin-workspace .strategy-edit-list summary { display: flex; align-items: center; justify-content: space-between; gap: 8px 16px; }
+.admin-workspace .strategy-product-name { min-width: 0; overflow-wrap: anywhere; }
+.admin-workspace .strategy-product-name small { display: block; margin-top: 4px; color: var(--muted); font-weight: 400; }
 .admin-workspace .strategy-edit-list .form-grid { margin-block: 12px; }
 .admin-workspace .integration-summary dd { overflow-wrap: anywhere; }
 @media (max-width: 700px) {

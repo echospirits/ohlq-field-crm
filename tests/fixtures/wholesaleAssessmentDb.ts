@@ -10,7 +10,7 @@ export function assessmentDb(count = 3, options: { failId?: string; inactive?: b
     organization: { findFirst:async()=>options.inactive?null:{id:'org_echo_spirits'},findMany:async()=>[{id:'org_echo_spirits'}],findUnique:async()=>({id:'org_echo_spirits',appName:'CRM',digestName:'CRM',displayName:'Tenant',productLabel:'Tenant',productPluralLabel:'Tenant products',products:[],vendorIdentifiers:[]}) },
     organizationProduct:{findMany:async()=>[]},ohlqBrandMasterItem:{findMany:async()=>[]},
     ohlqReportImportStatus:{findFirst:async()=>null,findMany:async()=>[]},
-    ohlqTenantInventoryImportStatus:{findFirst:async()=>null},ohlqAgencyInventoryCurrent:{findMany:async()=>[]},
+    ohlqTenantInventoryImportStatus:{findFirst:async()=>null},ohlqAgencyInventoryCurrent:{findMany:async()=>[],groupBy:async()=>[]},
     wholesaleSalesLedgerDay:{findMany:async()=>[]},
     wholesaleAssessmentRun:{
       create:async({data}:any)=>{const row={...data,id:`run${runs.length}`};runs.push(row);return row;},

@@ -156,6 +156,61 @@ test('a non-Ohio location with explicitly linked certified sales uses actual sou
   assert.ok(account.assessment.rating!==null && account.assessment.rating>0);
 });
 
+test('restaurant assessment excludes restricted purchases from comparables and totals without certifying false zeros', async () => {
+  const f = assessmentDb(2);
+  const reportDate = new Date();
+  reportDate.setUTCDate(reportDate.getUTCDate() - 1);
+  reportDate.setUTCHours(0, 0, 0, 0);
+  const updatedAt = new Date('2026-01-01');
+  const report = { id: 'r', reportDate, updatedAt, rowCount: 5, status: 'COMPLETED', skippedRows: 0 };
+  f.raw.ohlqReportImportStatus = { findFirst: async () => report, findMany: async () => [report] };
+  f.raw.wholesaleSalesLedgerDay.findMany = async () => [{ reportDate, sourceRevision: `${updatedAt.toISOString()}:5` }];
+  const catalog = ['ACTIVE', 'PEER', 'DELISTED', 'DISTILLERY', 'MANUAL'].map(itemCode => ({
+    itemCode, name: `${itemCode} Light Rum`, category: 'RUM', productVolume: 25.4, wholesalePrice: 25, retailPrice: 25,
+    solItemStatusCode: itemCode === 'DELISTED' ? '30' : '70',
+  }));
+  f.raw.ohlqBrandMasterItem.findMany = async () => catalog;
+  f.raw.organizationProduct.findMany = async () => catalog.filter(item => item.itemCode !== 'PEER').map(item => ({
+    id: item.itemCode, externalItemCode: item.itemCode, market: 'ALL', active: true, discontinued: false, status: 'OWNED',
+    displayName: item.name, category: item.category, subcategory: 'light', strategicPriority: item.itemCode === 'MANUAL' ? 0 : 1,
+  }));
+  f.raw.ohlqAgencyInventoryCurrent.groupBy = async () => [{ itemCode: 'DISTILLERY', detailCodeDescription: 'A3A DIST', status: 'Active' }];
+  const event = (wholesaleAccountId: string, itemCode: string, bottles: number) => ({
+    wholesaleAccountId, itemCode, itemName: `${itemCode} Light Rum`, category: 'RUM', bottles, reportDate,
+  });
+  const events = [
+    event('a0000', 'PEER', 24),
+    event('a0000', 'DELISTED', 100),
+    event('a0000', 'DISTILLERY', 100),
+    event('a0000', 'MANUAL', 100),
+    event('a0001', 'DELISTED', 100),
+  ];
+  f.raw.accountSalesEvent.findMany = async () => events;
+  const result = await evaluateWholesaleAssessments({ db: f.db, organizationId: 'org_echo_spirits', dryRun: true });
+  const ohio = result.previews.find(p => p.accountId === 'a0000')!;
+  assert.deepEqual(ohio.input.products.map(product => product.itemCode), ['ACTIVE']);
+  assert.deepEqual(ohio.input.purchases.map(purchase => purchase.itemCode), ['PEER']);
+  assert.equal(ohio.assessment.observed.bottles90, 24);
+  assert.equal(ohio.assessment.commercial.compatible750, 24);
+  assert.equal(ohio.assessment.coverage.contextPeriods?.latest30.bottles, 24);
+  const kentucky = result.previews.find(p => p.accountId === 'a0001')!;
+  assert.deepEqual(kentucky.input.products.map(product => product.itemCode), ['ACTIVE']);
+  assert.equal(kentucky.assessment.coverage.identity, 'MATCHED');
+  assert.equal(kentucky.assessment.coverage.verifiedZero, false);
+  assert.equal(kentucky.assessment.commercial.compatible750, 0);
+  assert.equal(events[4].bottles, 100);
+
+  for (const itemCode of ['ACTIVE', 'DELISTED', 'DISTILLERY', 'MANUAL']) {
+    f.pursuits.push({
+      id: itemCode, wholesaleAccountId: 'a0000', status: 'ACTIONED', detectedAt: reportDate,
+      events: [{ metadata: { hypothesis: { targetProduct: { itemCode } } } }],
+    });
+  }
+  await evaluateWholesaleAssessments({ db: f.db, organizationId: 'org_echo_spirits' });
+  assert.equal(f.pursuits.length, 4, 'retain original pursuit records');
+  assert.equal(f.pursuitWrites.length, 1, 'refresh outcomes only for the eligible pursuit');
+});
+
 test('a same-date source revision arriving after input reads prevents publication and marks cached results stale',async()=>{
   const f=assessmentDb(1), day=new Date();day.setUTCDate(day.getUTCDate()-1);day.setUTCHours(0,0,0,0);
   f.assessments.set('a0000',{organizationId:'org_echo_spirits',rating:4,evidenceMode:'SALES_BACKED',assessment:{coverage:{identity:'MATCHED'},original:true},calculatedAt:'2026-01-01'});

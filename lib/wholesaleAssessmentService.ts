@@ -1,14 +1,13 @@
-import { createHash } from 'crypto';
 import { Prisma, type PrismaClient } from '@prisma/client';
 import { prisma } from './prisma';
 import { ECHO_ORGANIZATION_ID, assertEchoOrganization } from './echoAccess';
 import { getOrganizationTenantConfig } from './tenantConfig';
-import { getDistilleryOnlyItemCodes } from './ohlqProductEligibility';
+import { isRestaurantProductRestricted, loadRestaurantProductRestrictions } from './restaurantProductEligibility';
 import { buildDailyPurchaseEvents } from './opportunitySalesLedger';
 import { hasResearchIdentityChanged, readResearchEvidence } from './accountResearchQueue';
-import { isOutsideOhio } from './usStates';
-import { assessWholesaleAccount, ASSESSMENT_VERSION, CALIBRATION_VERSION, type Assessment, type AssessmentInput, type UseEvidence } from './wholesaleAssessment';
-import { aggregatePurchases, marketPortfolio, storedResearchUses, storedResearchSignals } from './wholesaleAssessmentInputs';
+import { isOutsideOhio, normalizeUsState } from './usStates';
+import { assessWholesaleAccount, ASSESSMENT_VERSION, type Assessment, type AssessmentInput, type UseEvidence } from './wholesaleAssessment';
+import { aggregatePurchases, marketPortfolio, storedResearchUses, storedResearchSignals, wholesaleAssessmentConfigurationId } from './wholesaleAssessmentInputs';
 import { assessmentDay, identityCoverage, isoDay, reportRevision, sourceCoverage, windowDates, representedWindow } from './wholesaleAssessmentCoverage';
 import { summarizePurchaseOutcome } from './wholesaleAssessmentOutcomes';
 import { forEachInBatches } from './forEachInBatches';
@@ -76,13 +75,24 @@ export async function evaluateWholesaleAssessments({ db = prisma, asOfDate = new
     const asOf = assessmentDay(new Date(Math.max(yesterday.getTime(), Math.min(asOfDate.getTime(), yesterday.getTime()), latestReport?.reportDate.getTime() ?? 0, prior?.asOfDate.getTime() ?? 0)));
     const start90 = new Date(asOf.getTime() - 89 * DAY);
     const masters = new Map(catalog.map(p => [p.itemCode, p]));
+    const restrictedItemCodes = await loadRestaurantProductRestrictions(organizationId, db, catalog);
     const tenantCodes = new Set(decisions.filter(p => ['OWNED','REPRESENTED'].includes(p.status)).map(p => p.externalItemCode));
     const identitiesById = identityCoverage(identities);
     config.productFilter.mode = 'item-list';
-    const configurationId = createHash('sha256').update(JSON.stringify({ calibration: CALIBRATION_VERSION,
-      decisions: [...decisions].sort((a,b) => a.id.localeCompare(b.id)),
-      catalog: [...catalog].sort((a,b) => a.itemCode.localeCompare(b.itemCode)).map(p => ({ code: p.itemCode, name: p.name, category: p.category, size: p.productVolume, wholesale: p.wholesalePrice, retail: p.retailPrice, status: p.solItemStatusCode })),
-    })).digest('hex').slice(0, 16);
+    const configurationId = wholesaleAssessmentConfigurationId(decisions, catalog, restrictedItemCodes);
+    const inventory = {
+      trusted: inventoryStatus?.status === 'COMPLETED' && inventoryStatus.reportDate >= new Date(asOf.getTime() - 2 * DAY),
+      available: new Set(available.map(a => a.itemCode)),
+    };
+    const portfoliosByMarket = new Map<string | null, ReturnType<typeof marketPortfolio>>();
+    const getMarketPortfolio = (state: string | null) => {
+      const market = normalizeUsState(state);
+      const cached = portfoliosByMarket.get(market);
+      if (cached) return cached;
+      const portfolio = marketPortfolio(decisions, masters, market, inventory, restrictedItemCodes);
+      portfoliosByMarket.set(market, portfolio);
+      return portfolio;
+    };
     const captureStart = new Date(Math.min(start90.getTime(), assessmentDay(asOfDate).getTime()));
     const reports = await db.ohlqReportImportStatus.findMany({ where: { dataSource: 'ANNUAL_SALES_SUMMARY_BY_WHOLESALE', reportDate: { gte: captureStart, lte: asOf } }, orderBy: { reportDate: 'asc' } });
     const sourceFingerprint = (rows: Array<{ reportDate: Date; updatedAt: Date; rowCount: number; status: string }>) => rows
@@ -139,7 +149,6 @@ export async function evaluateWholesaleAssessments({ db = prisma, asOfDate = new
       ]);
       const eventMap = groupByAccount(events), placementMap = groupByAccount(placements), visitMap = groupByAccount(visits), workMap = groupByAccount(work), pursuitMap = groupByAccount(pursuits);
       const overlayMap = new Map(overlays.map(o => [o.externalAccountId, o]));
-      const inventory = { trusted: inventoryStatus?.status === 'COMPLETED' && inventoryStatus.reportDate >= new Date(asOf.getTime() - 2 * DAY), available: new Set(available.map(a => a.itemCode)), distilleryOnly: getDistilleryOnlyItemCodes(inventoryStatus?.diagnostics) };
       const writes: AssessmentWrite[] = [];
       const outcomes: Array<{ id: string; data: Prisma.SalesOpportunityUpdateInput }> = [];
       await forEachInBatches(accounts, 4, async (account) => {
@@ -155,8 +164,9 @@ export async function evaluateWholesaleAssessments({ db = prisma, asOfDate = new
           const linkedSalesSource = accountEvents.some(e => completeDates.has(isoDay(e.reportDate)))
             || previous?.evidenceMode === 'SALES_BACKED' && previousCoverage?.identity === 'MATCHED';
           const identity = isOutsideOhio(account.state) ? linkedSalesSource ? 'MATCHED' : 'UNAVAILABLE' : identitiesById.get(account.id) ?? 'UNMATCHED';
-          const purchases = identity !== 'MATCHED' || !selected.through ? [] : aggregatePurchases(accountEvents.filter(e => selected.dates.has(isoDay(e.reportDate))), masters, tenantCodes, new Date(`${selected.through}T00:00:00Z`));
-          const products = marketPortfolio(decisions, masters, account.state, inventory);
+          const { products, excludedItemCodes } = getMarketPortfolio(account.state);
+          const eligibleEvents = accountEvents.filter(e => !isRestaurantProductRestricted(e.itemCode, excludedItemCodes));
+          const purchases = identity !== 'MATCHED' || !selected.through ? [] : aggregatePurchases(eligibleEvents.filter(e => selected.dates.has(isoDay(e.reportDate))), masters, tenantCodes, new Date(`${selected.through}T00:00:00Z`));
           const privateUses: UseEvidence[] = (placementMap.get(account.id) ?? []).filter(p => ['PROMISED','ACTIVE'].includes(p.status)).map(p => ({
             productCode: products.find(product => product.name.toLowerCase() === p.product.toLowerCase() || product.itemCode === p.product)?.itemCode ?? null,
             category: null, subtype: null, use: p.useFamily ?? p.menuItemName, kind: p.demandEvidence ? 'BUYER_PLAN' : 'PLACEMENT',
@@ -164,11 +174,14 @@ export async function evaluateWholesaleAssessments({ db = prisma, asOfDate = new
             observedAt: (p.lastVerifiedAt ?? p.firstSeenAt ?? p.createdAt).toISOString(), exactLocation: true, pouredProduct: p.pouredProduct, status: p.status }));
           const publicEvidence = validIdentity ? readResearchEvidence(research?.identitySnapshot) : [];
           const overlay = overlayMap.get(account.id);
-          const coverage = sourceCoverage({ asOf, completeDates, identity, hasPurchases: purchases.length > 0, through: selected.through });
+          const coverage = sourceCoverage({ asOf, completeDates, identity, hasPurchases: accountEvents.some(e => selected.dates.has(isoDay(e.reportDate))), through: selected.through });
+          if (coverage.mode === 'SALES_BACKED' && eligibleEvents.length < accountEvents.length) {
+            coverage.limitations.push('Assessment purchasing totals cover products eligible for restaurant analysis. Full sales history is available on the restaurant account.');
+          }
           const contextPeriod = (offset: number) => {
             const through = new Date(asOf.getTime() - offset * DAY), dates = new Set(windowDates(through, 30));
             return { from: [...dates].at(-1)!, through: isoDay(through), coveredDays: [...dates].filter(d => completeDates.has(d)).length,
-              bottles: accountEvents.filter(e => dates.has(isoDay(e.reportDate)) && completeDates.has(isoDay(e.reportDate))).reduce((n,e) => n + e.bottles, 0) };
+              bottles: eligibleEvents.filter(e => dates.has(isoDay(e.reportDate)) && completeDates.has(isoDay(e.reportDate))).reduce((n,e) => n + e.bottles, 0) };
           };
           coverage.latestSourceDate = identity === 'MATCHED' ? latestSourceDate : null;
           if (identity === 'MATCHED') coverage.contextPeriods = { latest30: contextPeriod(0), previous30: contextPeriod(30) };
@@ -179,7 +192,7 @@ export async function evaluateWholesaleAssessments({ db = prisma, asOfDate = new
             researchAt: observedAt, researchIdentityValid: validIdentity, researchConfidence: research?.researchConfidence ?? null,
             cocktailProgram: research?.cocktailProgram ?? null, operatingStatus: research?.openStatus ?? null,
             scaleEvidence: publicEvidence.find(e => e.exactLocation && /traffic|capacity|attendance/i.test(e.field) && !/review|rating|patio|meeting/i.test(`${e.field} ${e.claim}`))?.claim ?? null,
-            coverage, researchSignals: validIdentity ? storedResearchSignals(research, masters) : undefined,
+            coverage, researchSignals: validIdentity ? storedResearchSignals(research, masters, excludedItemCodes) : undefined,
             products, purchases, uses: [...storedResearchUses(research?.identitySnapshot, observedAt, validIdentity), ...privateUses],
             lastVisitAt: visitMap.get(account.id)?.[0]?.visitAt.toISOString() ?? null, plannedWork: workMap.has(account.id) };
           const priorCoverage = previousCoverage;
@@ -209,7 +222,7 @@ export async function evaluateWholesaleAssessments({ db = prisma, asOfDate = new
               if (blocked || pursuit.status !== 'ACTIONED' || assessment.evidenceMode === 'RESEARCH_ONLY') continue;
               const metadata = pursuit.events[0]?.metadata as { hypothesis?: { targetProduct?: { itemCode?: string } } } | null;
               const code = metadata?.hypothesis?.targetProduct?.itemCode;
-              if (!code) continue;
+              if (!code || isRestaurantProductRestricted(code, excludedItemCodes)) continue;
               const priorOutcome = pursuit.outcomeSummary as { purchaseDates?: string[] } | null;
               const outcome = summarizePurchaseOutcome({ detectedAt: pursuit.detectedAt, asOf, purchaseDates: [...accountEvents.filter(e => e.itemCode === code).map(e => e.reportDate), ...(priorOutcome?.purchaseDates ?? []).map(d => new Date(d))], completeDates,
                 baseline750: null, observed750: null, placementStatuses: (placementMap.get(account.id) ?? []).filter(p => p.product === code || p.product === products.find(x => x.itemCode === code)?.name).map(p => p.status) });

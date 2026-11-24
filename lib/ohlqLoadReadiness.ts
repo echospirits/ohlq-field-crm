@@ -10,8 +10,10 @@ import { isLegacyOhlqStaleWarning } from './ohlqSourceFreshness';
 import { AGENCY_INTELLIGENCE_RULES_VERSION, AGENCY_INTELLIGENCE_SCORING_VERSION } from './agencyIntelligenceConfig';
 import { AGENCY_MARKET_SCORING_VERSION } from './agencyMarketIntelligence';
 import { getAgencyMarketEligibleItemCodes } from './agencyMarketEligibility';
-import { ASSESSMENT_VERSION, CALIBRATION_VERSION } from './wholesaleAssessment';
+import { ASSESSMENT_VERSION } from './wholesaleAssessment';
 import { reportRevision, representedWindow } from './wholesaleAssessmentCoverage';
+import { wholesaleAssessmentConfigurationId } from './wholesaleAssessmentInputs';
+import { loadRestaurantProductRestrictions } from './restaurantProductEligibility';
 import { configuredProducts, loadForecastSources } from './productionForecasting/service';
 import { MODEL_VERSION, forecastConfiguration, shift, validDay } from './productionForecasting/model';
 import { parseDemandExclusions } from './productionForecasting/exclusions';
@@ -183,10 +185,8 @@ export async function checkOhlqLoadReadiness(input: OhlqLoadReadinessInput, db: 
     ]);
     // Same fingerprint as the scorer: corrected catalog/portfolio input must not
     // silently certify an old completed assessment sweep.
-    const configurationId = createHash('sha256').update(JSON.stringify({ calibration: CALIBRATION_VERSION,
-      decisions: [...decisions].sort((a, b) => a.id.localeCompare(b.id)),
-      catalog: [...catalog].sort((a, b) => a.itemCode.localeCompare(b.itemCode)).map(p => ({ code: p.itemCode, name: p.name, category: p.category, size: p.productVolume, wholesale: p.wholesalePrice, retail: p.retailPrice, status: p.solItemStatusCode })),
-    })).digest('hex').slice(0, 16);
+    const restrictedItemCodes = await loadRestaurantProductRestrictions(organizationId, db, catalog);
+    const configurationId = wholesaleAssessmentConfigurationId(decisions, catalog, restrictedItemCodes);
     const ledgerMap = new Map(ledgers.map(row => [day(row.reportDate), row]));
     const certified = (report: OhlqReportImportStatus) => {
       const ledger = ledgerMap.get(day(report.reportDate));
