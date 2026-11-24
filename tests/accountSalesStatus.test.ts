@@ -131,7 +131,8 @@ test('Pipeline, status writes, visit integration, and sales import are server ga
   assert.match(actions, /requireFeatureForUser\(user, 'ACCOUNT_SALES_STATUS'\)/);
   assert.match(visits, /hasFeature\(organizationId, 'ACCOUNT_SALES_STATUS'\)/);
   assert.match(visits, /source: physicalVisit \? AccountSalesStatusSource\.VISIT : AccountSalesStatusSource\.USER/);
-  assert.match(visitForm, /defaultChecked name="salesStatus" type="radio" value=""/);
+  assert.match(visitForm, /const \[salesStatus, setSalesStatus\] = useState\(''\);/);
+  assert.match(visitForm, /checked=\{salesStatus === ''\} name="salesStatus".*type="radio" value=""/);
   assert.match(workflow, /reconcileAccountSalesStatusAfterImport/);
   assert.match(service, /purchaseSourceKey/);
   assert.doesNotMatch(service, /WHOLESALE_OPPORTUNITIES|opportunityEngine/);

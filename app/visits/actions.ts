@@ -19,7 +19,7 @@ import { hasFeature, requireOrganizationContext } from '../../lib/organizations'
 import { getWholesaleAddressProtectionForEdit } from '../../lib/wholesaleAddressProtection';
 import { parseTimeInputToMinutes } from '../../lib/dateTime';
 import { syncWorklistItemCalendar } from '../../lib/calendar/worklistSync';
-import { parseSalesStatus, setAccountSalesStatus } from '../../lib/accountSalesStatus';
+import { parseSalesStatus, setAccountSalesStatus, VISIT_SALES_STATUS_OPTIONS } from '../../lib/accountSalesStatus';
 import { setAccountTargeting } from '../../lib/accountTargeting';
 import { scheduleTargetedAgencyResearch } from '../../lib/scheduleTargetedAgencyResearch';
 import { createVisitDiagnostics, type VisitDiagnostics } from '../../lib/visitDiagnostics';
@@ -226,14 +226,24 @@ async function createVisitWithDiagnostics(formData: FormData, diagnostics: Visit
   const newContactRole = isTaster ? null : toOptional(formData.get('newContactRole'));
   const newContactEmail = isTaster ? null : toOptional(formData.get('newContactEmail'));
   const newContactPhone = isTaster ? null : toOptional(formData.get('newContactPhone'));
-  const summary = toOptional(formData.get('summary'));
+  const submittedSummary = formData.get('summary');
+  const summary = typeof submittedSummary === 'string' ? toOptional(submittedSummary) : null;
   if (!physicalVisit && (!summary || summary.length > 4000)) throw new Error('Add conversation notes (up to 4,000 characters).');
-  const requestedSalesStatus = isTaster ? null : parseSalesStatus(formData.get('salesStatus'));
+  const submittedSalesStatus = formData.get('salesStatus');
+  const requestedSalesStatus = isTaster ? null : parseSalesStatus(submittedSalesStatus);
+  const outcomeCodes = isTaster ? [] : sanitizeOutcomeCodes(locationType, getOutcomeCodes(formData));
+  if (physicalVisit && !isTaster) {
+    if (!summary) return redirectVisitWithStatus(formOrigin, 'visit-notes-required', locationType);
+    if (summary.length > 4000) redirectVisitWithStatus(formOrigin, 'visit-notes-too-long', locationType);
+    if (!outcomeCodes.length) redirectVisitWithStatus(formOrigin, 'visit-outcome-required', locationType);
+    if (submittedSalesStatus !== '' && !VISIT_SALES_STATUS_OPTIONS.some((option) => option.value === requestedSalesStatus)) {
+      redirectVisitWithStatus(formOrigin, 'invalid-sales-status', locationType);
+    }
+  }
   const requestedTargeting = !isTaster && formData.get('targetAccount') === 'true';
   if (requestedSalesStatus && !(await hasFeature(organizationId, 'ACCOUNT_SALES_STATUS'))) {
     redirectVisitWithStatus(formOrigin, 'invalid-context', locationType);
   }
-  const outcomeCodes = isTaster ? [] : sanitizeOutcomeCodes(locationType, getOutcomeCodes(formData));
   const outcomeLabels = getOutcomeLabels(locationType, outcomeCodes);
   const typedOutcomes = isTaster ? null : toOptional(formData.get('outcomes'));
   const outcomes =

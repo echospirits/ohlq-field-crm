@@ -1,7 +1,7 @@
 'use client';
 
 import { VisitDraft } from './VisitDraft';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { WholesaleAddressFields } from '../components/WholesaleAddressFields';
 import { addEasternCalendarDays, EASTERN_TIME_ZONE } from '../../lib/dateTime';
 import { formatDistanceMiles } from '../../lib/location/distance';
@@ -15,11 +15,19 @@ import {
 } from '../../lib/visitWorkflow';
 import { DatePickerField } from '../components/DatePickerField';
 import { useCurrentLocation } from '../components/useCurrentLocation';
-import { VoiceVisitNotePanel } from './VoiceVisitNotePanel';
 import { VisitSubmitButton } from './VisitSubmitButton';
 import { useVisitPhotoFormAction } from './clientPhotoUpload';
 
-const photoSlots = [1, 2, 3] as const;
+const photoCategories = [
+  ['OTHER', 'Other'],
+  ['SHELF', 'Shelf'],
+  ['DISPLAY', 'Display'],
+  ['MENU', 'Menu'],
+  ['BACK_BAR', 'Back bar'],
+  ['COMPETITOR', 'Competitor'],
+] as const;
+
+type VisitPhoto = { id: number; file: File; category: string; caption: string };
 
 export type { VisitLocationType };
 
@@ -86,7 +94,6 @@ type VisitFormInitialValues = {
   followUpDate?: string | null;
   followUpTime?: string | null;
   followUpAssignedToUserId?: string | null;
-  startVoiceNote?: boolean;
   opportunityId?: string | null;
   agencyProductIntelligenceId?: string | null;
   productItemCode?: string | null;
@@ -174,7 +181,7 @@ export function LogVisitForm({
   const [contactCreateStatus, setContactCreateStatus] = useState<'idle' | 'saving' | 'error'>('idle');
   const [summary, setSummary] = useState(initialValues?.summary ?? '');
   const [selectedOutcomes, setSelectedOutcomes] = useState(initialValues?.outcomeCodes ?? []);
-  const [legacyOutcomes, setLegacyOutcomes] = useState(initialValues?.outcomes ?? '');
+  const [salesStatus, setSalesStatus] = useState('');
   const [followUpMode, setFollowUpMode] = useState<VisitFollowUpMode>(initialValues?.followUpMode ?? 'none');
   const [followUpText, setFollowUpText] = useState(initialValues?.nextStep ?? '');
   const [followUpDate, setFollowUpDate] = useState(initialValues?.followUpDate ?? '');
@@ -182,7 +189,12 @@ export function LogVisitForm({
   const [followUpAssignedToUserId, setFollowUpAssignedToUserId] = useState(
     initialValues?.followUpAssignedToUserId ?? currentUserId ?? '',
   );
-  const [isVoiceNoteOpen, setIsVoiceNoteOpen] = useState(initialValues?.startVoiceNote ?? false);
+  const [fieldError, setFieldError] = useState<'notes' | 'outcomes' | null>(null);
+  const notesRef = useRef<HTMLTextAreaElement>(null);
+  const firstOutcomeRef = useRef<HTMLInputElement>(null);
+  const [photos, setPhotos] = useState<VisitPhoto[]>([]);
+  const nextPhotoId = useRef(0);
+  const photoInputId = useId();
   const [submissionKey, setSubmissionKey] = useState('');
   const [newWholesaleName, setNewWholesaleName] = useState('');
   const [agencySearchResults, setAgencySearchResults] = useState<VisitFormAgencyOption[]>([]);
@@ -372,15 +384,7 @@ export function LogVisitForm({
   };
 
   const outcomeOptions = getVisitOutcomes(locationType);
-  const voiceAccountContext = selectedLocation
-    ? {
-        id: selectedLocation.id,
-        name: selectedLocation.name,
-        identifier: 'licenseeId' in selectedLocation ? selectedLocation.licenseeId : selectedLocation.agencyId,
-        city: selectedLocation.city,
-        phone: selectedLocation.phone,
-      }
-    : null;
+  const standardVisit = mode === 'create' && physicalVisit;
   const hasLocation = locationType === 'agency' ? Boolean(agencyId) : Boolean(wholesaleAccountId);
   const canSave = hasLocation || (locationType === 'wholesale' && Boolean(newWholesaleName.trim()));
   const matchingWorklistItems = mode === 'create' && formOrigin === 'visits' && !isChangingLocation
@@ -413,14 +417,90 @@ export function LogVisitForm({
     }
   };
 
+  const outcomeChoices = (
+    <div className="visit-outcome-grid">
+      {outcomeOptions.map((outcome, index) => (
+        <label className="visit-outcome-chip" key={outcome.code}>
+          <input
+            ref={index === 0 ? firstOutcomeRef : undefined}
+            aria-describedby={standardVisit && fieldError === 'outcomes' ? 'visit-outcomes-error' : undefined}
+            checked={selectedOutcomes.includes(outcome.code)}
+            name="outcomeCode"
+            type="checkbox"
+            value={outcome.code}
+            onChange={(event) => {
+              if (event.target.checked && fieldError === 'outcomes') setFieldError(null);
+              setSelectedOutcomes((current) => {
+                if (!event.target.checked) return current.filter((code) => code !== outcome.code);
+                if (outcome.code === 'follow-up-needed') return [...current.filter((code) => code !== 'no-action-needed'), outcome.code];
+                if (outcome.code === 'no-action-needed') return [...current.filter((code) => code !== 'follow-up-needed'), outcome.code];
+                return [...current, outcome.code];
+              });
+              if (outcome.code === 'follow-up-needed' && event.target.checked && followUpMode === 'none') {
+                handleFollowUpModeChange('task');
+              }
+              if (outcome.code === 'no-action-needed' && event.target.checked) handleFollowUpModeChange('none');
+            }}
+          />
+          <span>{outcome.label}</span>
+        </label>
+      ))}
+    </div>
+  );
+
+  const salesStatusChoices = (
+    <div className="visit-outcome-grid">
+      <label className="visit-outcome-chip">
+        <input checked={salesStatus === ''} name="salesStatus" onChange={() => setSalesStatus('')} required={standardVisit} type="radio" value="" />
+        <span>No change</span>
+      </label>
+      {salesStatusOptions.map((option) => (
+        <label className="visit-outcome-chip" key={option.value}>
+          <input checked={salesStatus === option.value} name="salesStatus" onChange={() => setSalesStatus(option.value)} type="radio" value={option.value} />
+          <span>{option.label}</span>
+        </label>
+      ))}
+    </div>
+  );
+
+  const saveVisit = (formData: FormData) => {
+    if (standardVisit) {
+      for (const photo of photos) {
+        formData.append('photoFile', photo.file);
+        formData.append('photoType', photo.category);
+        formData.append('photoCaption', photo.caption);
+      }
+    }
+    return formAction(formData);
+  };
+
   return (
-    <form action={formAction} className="visit-form field-visit-form">
+    <form
+      action={saveVisit}
+      className="visit-form field-visit-form"
+      onReset={(event) => {
+        // Successful saves redirect. Keep the form intact when an upload fails.
+        if (standardVisit) event.preventDefault();
+      }}
+      onSubmit={(event) => {
+        if (!standardVisit) return;
+        if (!summary.trim()) {
+          event.preventDefault();
+          setFieldError('notes');
+          notesRef.current?.focus();
+        } else if (!outcomeOptions.some(({ code }) => selectedOutcomes.includes(code))) {
+          event.preventDefault();
+          setFieldError('outcomes');
+          firstOutcomeRef.current?.focus();
+        }
+      }}
+    >
       <input name="formOrigin" readOnly type="hidden" value={formOrigin} />
       <input name="locationType" readOnly type="hidden" value={locationType} />
       <input name="agencyId" readOnly type="hidden" value={locationType === 'agency' ? agencyId : ''} />
       <input name="wholesaleAccountId" readOnly type="hidden" value={locationType === 'wholesale' ? wholesaleAccountId : ''} />
       {contactIds.map((contactId) => <input key={contactId} name="contactId" readOnly type="hidden" value={contactId} />)}
-      <input name="outcomes" readOnly type="hidden" value={legacyOutcomes} />
+      <input name="outcomes" readOnly type="hidden" value={initialValues?.outcomes ?? ''} />
       <input name="eventId" type="hidden" value={initialValues?.eventId??''} />
       <input name="submissionKey" readOnly type="hidden" value={submissionKey} />
       {worklistItemId ? <input name="worklistItemId" readOnly type="hidden" value={worklistItemId} /> : null}
@@ -537,50 +617,53 @@ export function LogVisitForm({
       </fieldset> : null}
       <fieldset className="visit-step visit-outcome-step">
         <legend className="sr-only">What happened?</legend>
-        <label htmlFor="visit-notes">{physicalVisit ? 'Visit notes' : 'Conversation notes'} {physicalVisit ? <span className="optional-label">Optional</span> : null}</label>
+        <label className={standardVisit ? 'visit-required-notes-label' : undefined} htmlFor="visit-notes">
+          {physicalVisit ? 'Visit notes' : 'Conversation notes'}
+          {physicalVisit ? <span className="optional-label"> {standardVisit ? 'Required' : 'Optional'}</span> : null}
+        </label>
         <textarea
+          ref={notesRef}
+          className={standardVisit ? 'visit-required-notes' : undefined}
           id="visit-notes"
           name="summary"
-          required={!physicalVisit}
+          required={!physicalVisit || standardVisit}
+          aria-invalid={standardVisit && fieldError === 'notes' ? true : undefined}
+          aria-describedby={standardVisit && fieldError === 'notes' ? 'visit-notes-error' : undefined}
           maxLength={4000}
           rows={mode === 'create' ? 2 : 3}
-          placeholder="Key conversation, product interest, or anything worth remembering"
+          placeholder={standardVisit ? 'What happened, and what should you remember next time?' : 'Key conversation, product interest, or anything worth remembering'}
           value={summary}
-          onChange={(event) => setSummary(event.target.value)}
+          onChange={(event) => {
+            setSummary(event.target.value);
+            if (fieldError === 'notes') setFieldError(null);
+          }}
         />
+        {standardVisit && fieldError === 'notes' ? <p className="field-note form-error" id="visit-notes-error" role="alert">Enter your visit notes.</p> : null}
         {!physicalVisit ? <div className="form-grid">
           {interactionType !== 'INTERNAL_NOTE' ? <label><input type="checkbox" name="meaningful" /> Meaningful exchange with the customer</label> : null}
           <label htmlFor="interaction-visibility">Visibility</label><select id="interaction-visibility" name="visibility" defaultValue="TEAM"><option value="TEAM">Team</option><option value="PRIVATE">Only me</option></select><p className="field-note">Follow-up titles and account status changes are shared with your team.</p>
         </div> : null}
-        <details className="visit-outcomes-details"><summary>Outcomes{selectedOutcomes.length ? ` · ${selectedOutcomes.length} selected` : ' (optional)'}</summary>
-        <div className="visit-outcome-grid">
-          {outcomeOptions.map((outcome) => (
-            <label className="visit-outcome-chip" key={outcome.code}>
-              <input
-                checked={selectedOutcomes.includes(outcome.code)}
-                name="outcomeCode"
-                type="checkbox"
-                value={outcome.code}
-                onChange={(event) => {
-                  setSelectedOutcomes((current) => {
-                    if (!event.target.checked) return current.filter((code) => code !== outcome.code);
-                    if (outcome.code === 'follow-up-needed') return [...current.filter((code) => code !== 'no-action-needed'), outcome.code];
-                    if (outcome.code === 'no-action-needed') return [...current.filter((code) => code !== 'follow-up-needed'), outcome.code];
-                    return [...current, outcome.code];
-                  });
-                  if (outcome.code === 'follow-up-needed' && event.target.checked && followUpMode === 'none') {
-                    handleFollowUpModeChange('task');
-                  }
-                  if (outcome.code === 'no-action-needed' && event.target.checked) handleFollowUpModeChange('none');
-                }}
-              />
-              <span>{outcome.label}</span>
-            </label>
-          ))}
-        </div>
-
-        </details>
+        {!standardVisit ? (
+          <details className="visit-outcomes-details">
+            <summary>Outcomes{selectedOutcomes.length ? ` · ${selectedOutcomes.length} selected` : ' (optional)'}</summary>
+            {outcomeChoices}
+          </details>
+        ) : null}
       </fieldset>
+
+      {standardVisit ? (
+        <>
+          <fieldset className="visit-step">
+            <legend>Outcomes <span className="optional-label">Select at least one</span></legend>
+            {outcomeChoices}
+            {fieldError === 'outcomes' ? <p className="field-note form-error" id="visit-outcomes-error" role="alert">Select at least one outcome.</p> : null}
+          </fieldset>
+          <fieldset className="visit-step">
+            <legend>Sales status <span className="optional-label">Required</span></legend>
+            {salesStatusChoices}
+          </fieldset>
+        </>
+      ) : null}
 
       <fieldset className="visit-step visit-follow-up-step">
         <legend>Next step</legend>
@@ -660,13 +743,10 @@ export function LogVisitForm({
         </fieldset>
       ) : null}
 
-      {mode === 'create' && salesStatusOptions.length > 0 ? <details className="visit-optional-status"><summary>Sales status · Optional</summary><fieldset className="visit-step visit-sales-status-step">
+      {!standardVisit && mode === 'create' && formOrigin === 'visits' && salesStatusOptions.length > 0 ? <details><summary>Sales status · Optional</summary><fieldset className="visit-step">
         <legend>Sales status changed?</legend>
         <p className="field-note">Optional. Keep No change selected unless this interaction moved the relationship.</p>
-        <div className="visit-outcome-grid sales-status-visit-choices">
-          <label className="visit-outcome-chip"><input defaultChecked name="salesStatus" type="radio" value="" /><span>No change</span></label>
-          {salesStatusOptions.map((option) => <label className="visit-outcome-chip" key={option.value}><input name="salesStatus" type="radio" value={option.value} /><span>{option.label}</span></label>)}
-        </div>
+        {salesStatusChoices}
       </fieldset></details> : null}
 
       {hasLocation && mode === 'create' ? <fieldset className="visit-step visit-target-account-step">
@@ -704,27 +784,6 @@ export function LogVisitForm({
 
       <section className="visit-details" aria-label="Additional visit tools">
         <div className="visit-details-content">
-          {mode === 'create' ? <details
-            className="compact-details nested-details"
-            open={isVoiceNoteOpen}
-            onToggle={(event) => setIsVoiceNoteOpen(event.currentTarget.open)}
-          >
-            <summary>Dictate and structure a visit note</summary>
-            <VoiceVisitNotePanel
-              accountContext={voiceAccountContext}
-              nextStep={followUpText}
-              outcomes={legacyOutcomes}
-              setNextStep={(value) => {
-                setFollowUpText(value);
-                if (value && followUpMode === 'none') handleFollowUpModeChange('task');
-              }}
-              setOutcomes={setLegacyOutcomes}
-              setSummary={setSummary}
-              summary={summary}
-              visitType={locationType}
-            />
-          </details> : null}
-
           {mode === 'create' && locationType === 'wholesale' && !wholesaleAccountId ? (
             <details className="compact-details nested-details">
               <summary>Create a restaurant account</summary>
@@ -751,18 +810,69 @@ export function LogVisitForm({
             </details>
           ) : null}
 
-          {mode === 'create' && physicalVisit ? <details className="compact-details nested-details">
-            <summary>Add photo proof</summary>
-            {photoSlots.map((slot) => (
-              <div className="photo-entry streamlined-photo-entry" key={slot}>
-                <label>Photo category<select name="photoType" defaultValue="OTHER"><option value="OTHER">Other</option><option value="SHELF">Shelf</option><option value="DISPLAY">Display</option><option value="MENU">Menu</option><option value="BACK_BAR">Back bar</option><option value="COMPETITOR">Competitor</option></select></label>
-                <label htmlFor={`visit-photo-${slot}`}>{slot === 1 ? 'Photo' : `Additional photo ${slot}`}</label>
-                <input id={`visit-photo-${slot}`} name="photoFile" type="file" accept="image/*" />
-                <input name="photoUrl" readOnly type="hidden" value="" />
-                <input aria-label={`Photo ${slot} caption`} name="photoCaption" placeholder="Caption (optional)" />
+          {standardVisit ? (
+            <details className="compact-details nested-details">
+              <summary>Add photo proof{photos.length ? ` · ${photos.length} added` : ''}</summary>
+              <div className="visit-photo-proof">
+                {photos.map((photo, index) => (
+                  <div className="visit-photo-proof-entry" key={photo.id}>
+                    <div className="visit-photo-proof-file">
+                      <strong>{photo.file.name}</strong>
+                      <button
+                        aria-label={`Remove photo ${index + 1}`}
+                        className="secondary compact-btn"
+                        type="button"
+                        onClick={() => {
+                          setPhotos((current) => current.filter(({ id }) => id !== photo.id));
+                          document.getElementById(photoInputId)?.focus();
+                        }}
+                      >Remove</button>
+                    </div>
+                    <details className="compact-details">
+                      <summary>Category and caption</summary>
+                      <label>
+                        Category
+                        <select
+                          value={photo.category}
+                          onChange={(event) => {
+                            const category = event.currentTarget.value;
+                            setPhotos((current) => current.map((item) => item.id === photo.id ? { ...item, category } : item));
+                          }}
+                        >
+                          {photoCategories.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                        </select>
+                      </label>
+                      <label>
+                        Caption <span className="optional-label">Optional</span>
+                        <input
+                          value={photo.caption}
+                          onChange={(event) => {
+                            const caption = event.currentTarget.value;
+                            setPhotos((current) => current.map((item) => item.id === photo.id ? { ...item, caption } : item));
+                          }}
+                        />
+                      </label>
+                    </details>
+                  </div>
+                ))}
+                <div className="visit-photo-proof-entry" key="chooser">
+                  <label htmlFor={photoInputId}>{photos.length ? 'Add another photo' : 'Photo'}</label>
+                  <input
+                    id={photoInputId}
+                    type="file"
+                    accept="image/*"
+                    onChange={(event) => {
+                      const file = event.currentTarget.files?.[0];
+                      if (!file) return;
+                      const photo = { id: nextPhotoId.current++, file, category: 'OTHER', caption: '' };
+                      setPhotos((current) => [...current, photo]);
+                      event.currentTarget.value = '';
+                    }}
+                  />
+                </div>
               </div>
-            ))}
-          </details> : null}
+            </details>
+          ) : null}
         </div>
       </section>
 

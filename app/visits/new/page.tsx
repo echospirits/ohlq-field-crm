@@ -36,6 +36,10 @@ const statusMessages: Record<string, string> = {
   'photo-upload-failed': 'The picture could not be uploaded, so the visit was not saved. Try again.',
   'photo-verification-failed': 'The picture could not be verified, so the visit was not saved. Try uploading it again.',
   'comments-required': 'Enter comments before logging the visit.',
+  'visit-notes-required': 'Add visit notes before saving.',
+  'visit-notes-too-long': 'Visit notes can be up to 4,000 characters.',
+  'visit-outcome-required': 'Select at least one outcome before saving.',
+  'invalid-sales-status': 'Select a sales status or keep No change.',
   'photo-required': 'Add one picture before logging the visit.',
   'invalid-assignee': 'Choose an active team member for the follow-up.',
   'invalid-context': 'The originating task or opportunity no longer matches this account. Start the action again from its source.',
@@ -51,7 +55,6 @@ export default async function NewVisitPage({
     type?: string;
     agencyId?: string;
     wholesaleAccountId?: string;
-    voice?: string;
     opportunityId?: string;
     agencyProductIntelligenceId?: string;
     worklistItemId?: string;
@@ -171,7 +174,6 @@ export default async function NewVisitPage({
             locationType: initialLocationType,
             agencyId: params.agencyId ?? null,
             locationLocked: Boolean(params.agencyId || params.wholesaleAccountId),
-            startVoiceNote: params.voice === '1',
             wholesaleAccountId: params.wholesaleAccountId ?? null,
             opportunityId: params.opportunityId ?? null,
             agencyProductIntelligenceId: params.agencyProductIntelligenceId ?? null,

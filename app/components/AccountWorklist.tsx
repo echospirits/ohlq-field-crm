@@ -2,6 +2,7 @@ import { AccountPlaybooks } from '../account-memory/AccountPlaybooks';
 import { playbookStep } from '../../lib/crm/playbooks';
 import { z } from 'zod';
 import { getAccountWorklist } from '../../lib/accountWorklist';
+import { VISIT_SALES_STATUS_OPTIONS } from '../../lib/accountSalesStatus';
 import { getUserDisplayName } from '../../lib/auth';
 import { prisma } from '../../lib/prisma';
 import { formatDateOnlyInputValue, formatTimeMinutesInput, formatWorklistDue } from '../../lib/dateTime';
@@ -53,6 +54,7 @@ export async function AccountWorklist(props: {
               <div className="inline-meta">{item.status === 'IN_PROGRESS' ? <span>In progress</span> : null}{getWorklistOverdueLabel(item.dueDate, item.status) ? <strong className="worklist-overdue-label">{getWorklistOverdueLabel(item.dueDate, item.status)}</strong> : null}<span>{formatWorklistDue(item.dueDate, item.dueTimeMinutes) || 'No due date'}</span><span>{item.assignedToUser ? getUserDisplayName(item.assignedToUser) : item.assignedTo || 'Unassigned'}</span></div>
               {item.detail ? <WorklistDetail detail={item.detail} /> : null}
               <WorklistActions actorName={props.actorName} currentUserId={props.currentUserId} agencies={[]} wholesaleAccounts={[]} contacts={contacts} tags={tags} users={actionUsers} returnTo={returnTo}
+                salesStatusOptions={props.enabledFeatures.has('ACCOUNT_SALES_STATUS') ? VISIT_SALES_STATUS_OPTIONS : undefined}
                 createVisitAction={createVisit} updateItemAction={updateWorklistItem} updateStatusAction={updateWorklistStatus}
                 item={{ id: item.id, title: item.title, detail: splitReactivationPurchasedAgainDetail(item.detail).detail, editDetail: item.detail,
                   dueDate: formatDateOnlyInputValue(item.dueDate), dueTime: formatTimeMinutesInput(item.dueTimeMinutes), assignedToUserId: item.assignedToUserId,

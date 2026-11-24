@@ -8,6 +8,7 @@ import { revalidatePath } from 'next/cache';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { buildPageMetadata } from '../../lib/appBrand';
+import { VISIT_SALES_STATUS_OPTIONS } from '../../lib/accountSalesStatus';
 import { getUserDisplayName, requireUser } from '../../lib/auth';
 import { formatDateOnlyInputValue, formatTimeMinutesInput, formatWorklistDue, parseTimeInputToMinutes } from '../../lib/dateTime';
 import { getOperatingHoursConflict } from '../../lib/operatingHours';
@@ -60,6 +61,10 @@ const categoryLabels: Record<WorklistCategory, string> = {
 
 const noticeMessages: Record<string, string> = {
   'visit-logged': 'Visit logged.',
+  'visit-notes-required': 'Add visit notes before saving.',
+  'visit-notes-too-long': 'Visit notes can be up to 4,000 characters.',
+  'visit-outcome-required': 'Select at least one outcome before saving.',
+  'invalid-sales-status': 'Select a sales status or keep No change.',
   'invalid-context': 'The originating task or opportunity no longer matches the selected account.',
   'invalid-agency': 'Select a retail account before logging a retail account visit.',
   'invalid-wholesale': 'Select an existing restaurant account or create one before logging a restaurant visit.',
@@ -172,6 +177,7 @@ export default async function Alerts({
   const currentUser = await requireUser();
   const { organizationId } = await requireOrganizationContext(currentUser);
   const enabledFeatures = await getOrganizationFeatures(organizationId);
+  const visitSalesStatusOptions = enabledFeatures.has('ACCOUNT_SALES_STATUS') ? VISIT_SALES_STATUS_OPTIONS : undefined;
   const excludedIntelligenceSources: WorklistSource[] = [
     ...(!enabledFeatures.has('AGENCY_INTELLIGENCE') ? [WorklistSource.AGENCY_INTELLIGENCE] : []),
     ...(!enabledFeatures.has('WHOLESALE_OPPORTUNITIES') ? [WorklistSource.OPPORTUNITY_INTELLIGENCE] : []),
@@ -399,6 +405,7 @@ export default async function Alerts({
                           agencies={agencyOptions}
                           contacts={contacts}
                           createVisitAction={createVisit}
+                          salesStatusOptions={visitSalesStatusOptions}
                           item={{
                             id: item.id,
                             title: item.title,

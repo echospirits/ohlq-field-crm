@@ -112,6 +112,16 @@ summary { cursor: pointer; min-height: 44px; padding-block: 10px; }
 .record-picker-results button[aria-pressed="true"] { background: var(--sage); border-color: var(--action); }
 .visit-outcomes-details { margin-top: 8px; }
 .visit-outcomes-details > summary { color: var(--muted); }
+.visit-step .visit-required-notes-label { font-size: 1.0625rem; color: var(--text); }
+.visit-step .visit-required-notes { min-height: 88px; }
+.field-visit-form .visit-outcome-chip { min-height: 44px; }
+.visit-photo-proof { display: grid; gap: 12px; min-width: 0; margin-top: 8px; }
+.visit-photo-proof-entry { display: grid; gap: 6px; min-width: 0; }
+.visit-photo-proof-entry + .visit-photo-proof-entry { border-top: 1px solid var(--line); padding-top: 12px; }
+.visit-photo-proof-entry input[type=file] { min-width: 0; width: 100%; }
+.visit-photo-proof-file { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.visit-photo-proof-file strong { overflow-wrap: anywhere; min-width: 0; }
+.visit-photo-proof-file button { min-height: 44px; }
 .worklist-table .item-meta { font-size: 12px; }
 .filter-panel { margin-bottom: 24px; }
 .filter-panel > summary { font-weight: 600; }

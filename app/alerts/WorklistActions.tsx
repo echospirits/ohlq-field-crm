@@ -51,6 +51,7 @@ export type WorklistActionsProps = {
   wholesaleAccounts: VisitFormWholesaleOption[];
   contacts: VisitFormContactOption[];
   tags: VisitFormTagOption[];
+  salesStatusOptions?: Array<{ label: string; value: string }>;
   createVisitAction: (formData: FormData) => void | Promise<void>;
   updateStatusAction: (formData: FormData) => Promise<ActionResult>;
   updateItemAction: (formData: FormData) => Promise<ActionResult>;
@@ -77,6 +78,7 @@ export function WorklistActions({
   wholesaleAccounts,
   contacts,
   tags,
+  salesStatusOptions,
   createVisitAction,
   updateStatusAction,
   updateItemAction,
@@ -89,7 +91,6 @@ export function WorklistActions({
   const dialogRef = useRef<HTMLDivElement>(null);
   const closeDialog = useCallback(() => setOpenAction(null), []);
   useDialogFocus(dialogRef, openAction !== null, closeDialog);
-  const initialSummary = [item.title, item.detail].filter(Boolean).join('\n\n');
   const calendarFailed = item.calendarSyncStatus === 'ERROR';
   const calendarMessage = calendarFailed ? 'Calendar sync failed' : `Calendar ${(item.calendarSyncStatus ?? 'status unavailable').toLowerCase().replaceAll('_', ' ')}`;
 
@@ -190,7 +191,6 @@ export function WorklistActions({
                 agencyId: item.location?.type === 'agency' ? item.location.id : item.agencyId,
                 wholesaleAccountId:
                   item.location?.type === 'wholesale' ? item.location.id : item.wholesaleAccountId,
-                summary: initialSummary,
                 opportunityId: item.salesOpportunityId,
                 agencyProductIntelligenceId: item.agencyProductIntelligenceId,
                 productItemCode: item.productItemCode,
@@ -200,6 +200,7 @@ export function WorklistActions({
                 reason: item.detail,
                 returnTo,
               }}
+              salesStatusOptions={salesStatusOptions}
               submitLabel="Log visit"
               tags={tags}
               users={users}

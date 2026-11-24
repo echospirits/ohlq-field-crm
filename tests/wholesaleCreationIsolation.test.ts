@@ -5,6 +5,7 @@ import { runInNewContext } from 'node:vm';
 import test from 'node:test';
 import * as enums from '@prisma/client';
 import ts from 'typescript';
+import { parseSalesStatus, VISIT_SALES_STATUS_OPTIONS } from '../lib/accountSalesStatus';
 import { isTasterRole } from '../lib/userAccess';
 import { normalizeUsState, stateScopedLicenseeIds } from '../lib/usStates';
 import * as wholesaleAccounts from '../lib/wholesaleAccounts';
@@ -33,12 +34,13 @@ function sharedAccount(): RecordData {
   };
 }
 
-function loadFlow(flow: Flow, role: enums.UserRole | null, organizationId: string, accounts: RecordData[]) {
+function loadFlow(flow: Flow, role: enums.UserRole | null, organizationId: string, accounts: RecordData[], accountSalesStatusEnabled = true) {
   const effects: string[] = [];
   const tags: RecordData[] = [];
   const visits: RecordData[] = [];
   const contacts: RecordData[] = [];
   const overlays: RecordData[] = [];
+  const photos: RecordData[] = [];
   const worklistItems: RecordData[] = [{ id: 'existing-open-task', organizationId, assignedToUserId: `${organizationId}-caller`, wholesaleAccountId: 'shared-account', agencyId: null, status: 'OPEN' }];
   const user = role ? { id: `${organizationId}-caller`, role, organizationId } : null;
   const wholesaleAccount = {
@@ -71,12 +73,12 @@ function loadFlow(flow: Flow, role: enums.UserRole | null, organizationId: strin
     } },
   };
   const context: RecordData = {
-    URLSearchParams,
+    URLSearchParams, File, parseSalesStatus, VISIT_SALES_STATUS_OPTIONS,
     ...enums, ...visitGuides, ...wholesaleAccounts, ...visitWorkflow, normalizeUsState, stateScopedLicenseeIds, isTasterRole,
     getWholesaleAddressProtectionForEdit,
     getCurrentSession: async () => user ? { user } : null,
     requireOrganizationContext: async (actor: typeof user) => ({ organizationId: actor!.organizationId, organization: { enabledStates: ['OH','FL'] } }),
-    hasFeature: async () => true,
+    hasFeature: async () => accountSalesStatusEnabled,
     getUserDisplayName: () => 'Caller', randomUUID: () => 'unique-test',
     getSelectedTagIds: (data: FormData) => data.getAll('tagId'),
     toOptional: (value: unknown) => String(value ?? '').trim() || null,
@@ -84,7 +86,8 @@ function loadFlow(flow: Flow, role: enums.UserRole | null, organizationId: strin
     syncWholesaleAccountLicenseeIds: async (_db: unknown, _id: string, ids: string[]) => {
       effects.push('licensee-sync'); accounts[0].licenseeIds = ids.map(licenseeId => ({ licenseeId }));
     },
-    getSelectedVoiceFollowUps: () => [], parseSalesStatus: (value: unknown) => value || null,
+    getSelectedVoiceFollowUps: () => [],
+    verifyClientUploadedVisitPhoto: async ({ url, storageKey }: { url: string; storageKey: string }) => ({ url, storageKey, contentType: 'image/jpeg', sizeBytes: 20 }),
     setAccountSalesStatus: async (args: RecordData) => { overlays.push(args); },
     setAccountTargeting: async (args: RecordData) => { overlays.push(args); },
     createVisitDiagnostics: () => ({ mark: () => {}, failure: () => {}, bestEffort: async (_stage: string, callback: () => Promise<void>) => callback() }),
@@ -95,6 +98,7 @@ function loadFlow(flow: Flow, role: enums.UserRole | null, organizationId: strin
         assert.equal(where.organizationId, organizationId); return [{ id: `${organizationId}-tag` }];
       } },
       worklistItem: { findMany: async () => [] },
+      visitPhoto: { createMany: async ({ data }: { data: RecordData[] }) => { photos.push(...data); } },
       $transaction: async (callback: (db: typeof tx) => Promise<unknown>) => callback(tx),
     },
     revalidatePath: () => {}, redirect: (path: string) => { throw new Error(`REDIRECT:${path}`); },
@@ -107,7 +111,7 @@ function loadFlow(flow: Flow, role: enums.UserRole | null, organizationId: strin
     : declarations(readFileSync('app/visits/actions.ts', 'utf8'));
   const code = `${auth}\n${action}\nglobalThis.action = ${flow === 'directory' ? 'createWholesale' : 'createVisit'};`;
   runInNewContext(ts.transpileModule(code, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText, context);
-  return { run: context.action as (data: FormData) => Promise<any>, effects, tags, visits, contacts, overlays, worklistItems };
+  return { run: context.action as (data: FormData) => Promise<any>, effects, tags, visits, contacts, overlays, photos, worklistItems };
 }
 
 function submission(flow: Flow, organizationId: string) {
@@ -121,7 +125,7 @@ function submission(flow: Flow, organizationId: string) {
     newWholesaleCounty: 'Wrong county', newWholesaleZip: '99999', newWholesalePhone: '000',
     newWholesaleOwnership: 'Wrong owner', newWholesaleAgencyId: '999', newWholesaleDistrictId: '999',
     newWholesaleDeliveryDay: 'Friday', summary: 'Tenant visit', followUpMode: 'none', newContactName: 'Tenant contact',
-    targetAccount: 'true', salesStatus: 'PURSUING',
+    targetAccount: 'true', salesStatus: 'INTERESTED', outcomeCode: 'met-buyer',
   };
   for (const [key, value] of Object.entries(fields)) data.set(key, value);
   data.set(flow === 'directory' ? 'tagId' : 'newWholesaleTagId', `${organizationId}-tag`);
@@ -151,6 +155,7 @@ for (const flow of ['directory', 'visit'] as const) {
           assert.equal(harness.visits[0].wholesaleAccountId, 'shared-account');
           assert.equal(harness.contacts[0].wholesaleAccountId, 'shared-account');
           assert.equal(harness.overlays.length, 2);
+          assert.equal(harness.overlays[0].status, enums.AccountSalesStatus.INTERESTED);
         }
       }
     });
@@ -223,4 +228,61 @@ test('physical Visit ignores legacy completion fields and saves with related wor
   assert.equal(h.visits.length, 1);
   assert.equal(h.worklistItems[0].status, 'OPEN');
   assert.equal(h.worklistItems[0].completedAt, undefined);
+});
+
+test('physical Visit rejects missing notes, eligible outcomes or an explicit sales status before writing', async () => {
+  const invalidFields = [
+    ['summary', '', 'visit-notes-required'],
+    ['summary', ' \n ', 'visit-notes-required'],
+    ['summary', 'A'.repeat(4001), 'visit-notes-too-long'],
+    ['outcomeCode', null, 'visit-outcome-required'],
+    ['outcomeCode', 'display-opportunity', 'visit-outcome-required'],
+    ['salesStatus', null, 'invalid-sales-status'],
+    ['salesStatus', 'unknown', 'invalid-sales-status'],
+    ['salesStatus', 'PURCHASING', 'invalid-sales-status'],
+  ] as const;
+
+  for (const [field, value, status] of invalidFields) {
+    const harness = loadFlow('visit', enums.UserRole.USER, 'tenant-a', [sharedAccount()]);
+    const data = submission('visit', 'tenant-a');
+    if (value === null) data.delete(field);
+    else data.set(field, value);
+    await assert.rejects(harness.run(data), new RegExp(`status=${status}`));
+    assert.deepEqual(harness.visits, []);
+    assert.deepEqual(harness.effects, []);
+  }
+});
+
+test('physical Visit cannot change sales status without the feature entitlement', async () => {
+  const harness = loadFlow('visit', enums.UserRole.USER, 'tenant-a', [sharedAccount()], false);
+  await assert.rejects(harness.run(submission('visit', 'tenant-a')), /status=invalid-context/);
+  assert.deepEqual(harness.visits, []);
+  assert.deepEqual(harness.overlays, []);
+});
+
+test('physical Visit accepts No change without sales status access and saves more than three photos', async () => {
+  const harness = loadFlow('visit', enums.UserRole.USER, 'tenant-a', [sharedAccount()], false);
+  const data = submission('visit', 'tenant-a');
+  data.delete('targetAccount');
+  data.set('summary', '  Tenant visit  ');
+  data.set('salesStatus', '');
+  data.set('photoUploadSessionId', 'session');
+  const captions = ['First', 'Second', 'Third', 'Fourth'];
+  for (const [index, caption] of captions.entries()) {
+    data.append('photoType', 'MENU');
+    data.append('photoCaption', caption);
+    data.append('photoUrl', `https://example.com/${index}.jpg`);
+    data.append('photoStorageKey', `visit-photos/pending/session/${index}.jpg`);
+  }
+  data.append('photoType', 'OTHER');
+  data.append('photoCaption', '');
+  data.append('photoUrl', '');
+  data.append('photoStorageKey', '');
+
+  await assert.rejects(harness.run(data), /REDIRECT:\/visits\/confirmed/);
+  assert.equal(harness.visits[0].summary, 'Tenant visit');
+  assert.deepEqual(Array.from(harness.visits[0].outcomeCodes), ['met-buyer']);
+  assert.deepEqual(harness.overlays, []);
+  assert.deepEqual(harness.photos.map((photo) => photo.caption), captions);
+  assert.ok(harness.photos.every((photo) => photo.type === 'MENU' && photo.organizationId === 'tenant-a'));
 });

@@ -1,5 +1,9 @@
 # Unreleased
 
+## Faster Log Visit — November 23, 2026
+
+In-person sales visits require a note and at least one outcome. Outcomes and Sales status stay visible, with **No change** selected by default. **Add photo proof** starts with one picker and keeps offering another as photos are added. The structured dictation option and Voice note shortcut are removed. See the [0.15.10 release notes](0.15.10.md).
+
 ## My Schedule order — November 23, 2026
 
 Route planning now follows the personal schedule. Search and unassigned work come before Explore opportunities and Team activity and performance. The organization-wide events list follows both insight sections. See the [0.15.9 release notes](0.15.9.md).

@@ -167,8 +167,6 @@ export default async function AgencyActivityPage({
           <TargetAccountControl accountType={SalesAccountType.AGENCY} externalAccountId={id} isTargeting={overlay?.isTargeting ?? false} allowStop returnTo={`/agencies/${id}`} />
 
 
-          <Link className="btn compact-btn secondary" href={`/visits/new?type=agency&agencyId=${agency.id}&voice=1`}>Voice note</Link>
-
         </>} /></div>
       </header>
       {salesStatusSummary ? <AccountSalesStatusPanel accountType={SalesAccountType.AGENCY} externalAccountId={id} returnTo={`/agencies/${id}`} {...salesStatusSummary} /> : null}
