@@ -2,6 +2,10 @@ import { z } from 'zod';
 
 export const departments = ['PRODUCTION', 'BAR', 'SHARED', 'OTHER', 'NEEDS_REVIEW'] as const;
 export const referenceTypes = ['PARCEL', 'FREIGHT_PRO', 'BILL_OF_LADING', 'SUPPLIER_ORDER'] as const;
+export const supplyFreightFact = z.object({
+  originPostalCode: z.string().trim().regex(/^\d{5}(?:-\d{4})?$/).nullish(),
+  proNumber: z.string().trim().regex(/^[a-z0-9][a-z0-9 .-]{1,49}$/i).nullish(),
+});
 const text = z.string().trim().max(300);
 const id = z.string().trim().min(1).max(120);
 const optionalId = z.preprocess(v => v === '' ? undefined : v, id.optional());

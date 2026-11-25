@@ -10,6 +10,7 @@ export type SupplyMailDiscovery = {
   orderReferences: string[];
   recentReplySubjects?: string[];
   recentReplyAnchorIds?: string[];
+  recentShipmentReferences?: string[];
 };
 const quoted = (value: string) => '"'+value.replace(/["\\\r\n]/g,' ').trim().slice(0,100)+'"';
 const suffix = (since: Date, includeSent: boolean) => ` after:${Math.floor(since.getTime()/1000)} -in:trash -in:spam${includeSent?'':' -in:sent'}`;
@@ -32,11 +33,25 @@ export function supplyReplySubject(subject: string) {
     .replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
 }
 
-export function buildSupplyRecentReplyQuery(since: Date, includeSent: boolean, subjects: string[]) {
-  return '{' + subjects.map(subject => 'subject:' + quoted(subject)).join(' ') + '}' + suffix(since, includeSent);
+export function buildSupplyRecentReplyQuery(since: Date, includeSent: boolean, subjects: string[], shipmentReferences?: string[]) {
+  const clauses = subjects.map(subject => 'subject:' + quoted(subject));
+  if (shipmentReferences) {
+    clauses.push('subject:bol', 'filename:bol', 'filename:"bill of lading"', 'subject:"bill of lading"', 'subject:"proof of delivery"',
+      '(has:attachment filename:pdf {"bill of lading" "proof of delivery"})');
+    for (const reference of shipmentReferences) clauses.push(quoted(reference));
+  }
+  return '{' + clauses.join(' ') + '}' + suffix(since, includeSent);
 }
 
-async function watchedReplyDiscovery(organizationId: string, db: PrismaClient, watched: Awaited<ReturnType<typeof getWatchedSupplyMaterials>>, connectionId?: string) {
+export function matchesSupplyRecentFreight(subject: string, text: string, attachments: Array<{ filename?: string; mimeType?: string }>, references: ReadonlySet<string>) {
+  if (references.size && [subject, text].some(value => value.split(/[^a-z0-9-]+/i).some(token => references.has(token.toLowerCase())))) return true;
+  const namedFreight = [subject, ...attachments.map(part => part.filename || '')]
+    .some(value => /(?:^|[^a-z0-9])(?:bol|bill[\s_-]+of[\s_-]+lading|proof[\s_-]+of[\s_-]+delivery)(?:[^a-z0-9]|$)/i.test(value));
+  return namedFreight || attachments.some(part => part.mimeType === 'application/pdf') &&
+    /\b(?:bill\s+of\s+lading|proof\s+of\s+delivery)\b/i.test(text);
+}
+
+async function watchedReplyDiscovery(organizationId: string, db: PrismaClient, watched: Awaited<ReturnType<typeof getWatchedSupplyMaterials>>, connectionId?: string, includeShipmentReferences?: boolean) {
   if (!watched.length) return { recentReplySubjects: [], recentReplyAnchorIds: [] };
   const orders = await db.supplyOrder.findMany({
     where: { ...watchedSupplyOrderWhere(organizationId, watched), status: { notIn: ['CANCELLED', 'RECEIVED'] }, historicalOutcomeUnknown: false },
@@ -52,24 +67,36 @@ async function watchedReplyDiscovery(organizationId: string, db: PrismaClient, w
     orderBy: [{ lastEvidenceAt: { sort: 'desc', nulls: 'last' } }, { updatedAt: 'desc' }, { id: 'asc' }],
     take: 30,
   });
-  const sources = orders.filter(order => isWatchedSupplyOrderRecord(order, watched))
-    .flatMap(order => order.sources.map(link => link.source));
+  const watchedOrders = orders.filter(order => isWatchedSupplyOrderRecord(order, watched));
+  const sources = watchedOrders.flatMap(order => order.sources.map(link => link.source));
+  const shipments = includeShipmentReferences && watchedOrders.length ? await db.supplyShipment.findMany({
+    where: {
+      organizationId, orderId: { in: watchedOrders.map(order => order.id) },
+      referenceType: { in: ['BILL_OF_LADING', 'FREIGHT_PRO'] },
+      OR: [{ providerMode: null }, { providerMode: { not: 'test' } }],
+      status: { notIn: ['DELIVERED', 'CANCELLED', 'RETURNED'] },
+    },
+    select: { reference: true },
+    orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
+    take: 20,
+  }) : [];
   const subjects = sources.map(source => supplyReplySubject(source.subject ?? ''));
   const anchorIds = sources.filter(source => source.provider === 'GOOGLE' && source.mailboxConnectionId === connectionId).map(source => source.messageId);
   return {
     recentReplySubjects: [...new Set(subjects.filter(subject => subject.length >= 6 && subject.length <= 100))].slice(0, 20),
     recentReplyAnchorIds: [...new Set(anchorIds)],
+    recentShipmentReferences: [...new Set(shipments.map(shipment => shipment.reference))].filter(reference => /^[A-Za-z0-9-]{5,40}$/.test(reference)),
   };
 }
 
-export async function supplyMailDiscovery(organizationId: string, preferences: unknown, db: PrismaClient, connectionId?: string): Promise<SupplyMailDiscovery> {
+export async function supplyMailDiscovery(organizationId: string, preferences: unknown, db: PrismaClient, connectionId?: string, includeShipmentReferences?: boolean): Promise<SupplyMailDiscovery> {
   const [members,items,orders,watched]=await Promise.all([
     db.user.findMany({where:{organizationId,id:{in:productionMemberIds(preferences)},isActive:true},select:{email:true},take:30}),
     db.supplyCatalogItem.findMany({where:{organizationId,confirmed:true,departments:{hasSome:['PRODUCTION','SHARED']}},select:{name:true,aliases:{select:{alias:true}}},take:30,orderBy:{updatedAt:'desc'}}),
     db.supplyOrder.findMany({where:{organizationId,ignored:false,OR:[{lines:{some:{department:'PRODUCTION',ignored:false}}},{sources:{some:{source:{extractedFacts:{path:['productionConfirmation','purpose'],equals:'PRODUCTION_REPLENISHMENT'}}}}}]},select:{orderReference:true},take:30,orderBy:{updatedAt:'desc'}}),
     getWatchedSupplyMaterials(organizationId,db),
   ]);
-  const replies = await watchedReplyDiscovery(organizationId, db, watched, connectionId);
+  const replies = await watchedReplyDiscovery(organizationId, db, watched, connectionId, includeShipmentReferences);
   return {memberEmails:members.map(member=>member.email),materials:[...watched.flatMap(material=>[material.material,...material.aliases]),...items.flatMap(item=>[item.name,...item.aliases.map(alias=>alias.alias)])],orderReferences:orders.flatMap(order=>order.orderReference?[order.orderReference]:[]),...replies};
 }
 
@@ -77,7 +104,7 @@ const scanInput=z.object({query:z.string(),pageToken:z.string().optional(),scanS
 export type SupplyMailScan=z.infer<typeof scanInput>;
 export const SUPPLY_MAIL_LANES=['DX5','PRODUCTION_ORDERS','MATERIALS','BROAD'] as const;
 export type SupplyMailLane=(typeof SUPPLY_MAIL_LANES)[number]|'INCREMENTAL';
-const cursorInput=z.object({version:z.literal(2),scans:z.object({DX5:scanInput.nullable(),PRODUCTION_ORDERS:scanInput.nullable(),MATERIALS:scanInput.nullable(),BROAD:scanInput.nullable()}),completed:z.array(z.enum(SUPPLY_MAIL_LANES)),turn:z.number().int().nonnegative(),lastIncrementalAt:z.string().datetime(),incremental:scanInput.nullable(),lastRecentCheckAt:z.string().datetime().nullable().optional(),pendingRecentReplies:scanInput.nullable().optional(),historicalTurnDue:z.boolean().optional(),materialsSignature:z.string().optional(),pendingMaterials:z.object({signature:z.string(),scan:scanInput.nullable()}).nullable().optional()});
+const cursorInput=z.object({version:z.literal(2),scans:z.object({DX5:scanInput.nullable(),PRODUCTION_ORDERS:scanInput.nullable(),MATERIALS:scanInput.nullable(),BROAD:scanInput.nullable()}),completed:z.array(z.enum(SUPPLY_MAIL_LANES)),turn:z.number().int().nonnegative(),lastIncrementalAt:z.string().datetime(),incremental:scanInput.nullable(),fastRecentMail:z.boolean().optional(),lastRecentCheckAt:z.string().datetime().nullable().optional(),pendingRecentReplies:scanInput.nullable().optional(),historicalTurnDue:z.boolean().optional(),materialsSignature:z.string().optional(),pendingMaterials:z.object({signature:z.string(),scan:scanInput.nullable()}).nullable().optional()});
 export type SupplyMailCursor=z.infer<typeof cursorInput>;
 const materialSignature=(query:string|null)=>query?.replace(/\safter:\d+\b/g,'').trim() ?? '';
 export function supplyMailCursor(raw: unknown, options:{now:Date;backfillComplete:boolean;lastSuccessfulSyncAt:Date|null;broadQuery:string;priorityQueries:ReturnType<typeof buildSupplyPriorityQueries>}):SupplyMailCursor {

@@ -3,7 +3,7 @@ import { Prisma, type PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import { getAppEnvironment } from '../appEnvironment';
 import { prisma } from '../prisma';
-import { SUPPLY_POLL_MINUTES, supplyJobsEnabled } from './config';
+import { nextSupplyFreshMailSlot, SUPPLY_FRESH_MAIL_MS, SUPPLY_POLL_MINUTES, supplyJobsEnabled } from './config';
 import { runSupplyJobs } from './jobs';
 
 export const SUPPLY_SCHEDULER_STATE = 'SUPPLY_SCHEDULER_STATE';
@@ -17,6 +17,7 @@ const stateInput = z.object({
   status: z.enum(['STARTING', 'RUNNING', 'SLEEPING', 'CONTROL_UNAVAILABLE', 'STOPPED']),
   completedBatches: z.number().int().nonnegative(), failedBatches: z.number().int().nonnegative(),
   pollIntervalMs: z.number().int().positive().optional(),
+  nextFullAt: z.string().datetime().optional(),
   lastResult: z.object({ mailboxChecks: z.number(), mailboxErrors: z.number(), evidenceReplays: z.number(), replayErrors: z.number(), continuation: z.boolean(), backfillIncomplete: z.boolean(),earliestMailboxNextAt:z.string().datetime().nullable().optional() }).nullable(),
 });
 export type SupplySchedulerState = z.infer<typeof stateInput>;
@@ -39,6 +40,7 @@ const parse = (detail: unknown): SupplySchedulerState | null => {
   const result = stateInput.safeParse(detail);
   if (!result.success) return null;
   const state = result.data;
+  if (state.nextFullAt) return state;
   if (state.pollIntervalMs === SUPPLY_POLL_MS) return state;
   // Upgrade old 15-minute anchors before either takeover or a replayed tick.
   // Checkpoints and failure/backfill debt remain intact until the next slot.
@@ -109,6 +111,68 @@ export async function ensureSupplySchedulers(db: PrismaClient = prisma, services
     catch { errors++; }
   }
   return { schedulers, errors };
+}
+
+/** Cron runs one bounded batch with the same fencing used by older Workflow runs. */
+export async function runSupplyCronBatches(db: PrismaClient = prisma, services: Services = {}) {
+  const env = services.env ?? process.env;
+  if (!enabled(env)) return { environmentDisabled: true as const, batches: [], errors: 0 };
+  const clock = services.now ?? Date.now;
+  const organizations = await db.organization.findMany({ where: enrolled(), select: { id: true }, orderBy: { id: 'asc' }, take: 50 });
+  const results = await Promise.allSettled(organizations.map(async ({ id: organizationId }) => {
+    const claim = await locked(db, organizationId, async (tx, state) => {
+      const now = clock();
+      if (!await tx.organization.findFirst({ where: enrolled(organizationId), select: { id: true } })) return null;
+      if (state?.workUntil && Date.parse(state.workUntil) > now) return null;
+      if (state?.nextFullAt && Date.parse(state.nextDueAt) > now) return null;
+      const legacyFullAt = state?.status === 'RUNNING'
+        ? Math.max(Date.parse(state.nextRegularAt), Date.parse(state.heartbeatAt) + SUPPLY_POLL_MS)
+        : state ? Date.parse(state.nextRegularAt) : now;
+      const fullAt = state?.nextFullAt ? Date.parse(state.nextFullAt) : legacyFullAt;
+      const full = fullAt <= now;
+      const due = nextSupplyFreshMailSlot(now);
+      const runId = `cron:${randomUUID()}`;
+      const owner = { organizationId, generation: runId, runId };
+      if (!state?.nextFullAt) {
+        // Make legacy six-hour mailbox deadlines eligible without shortening provider backoff.
+        await tx.supplyMailboxSync.updateMany({
+          where: { organizationId, connectionId: { not: null }, status: { in: ['CONNECTED', 'INITIAL_IMPORT', 'PROCESSING'] },
+            nextSyncAt: { gt: new Date(now) }, OR: [{ leaseUntil: null }, { leaseUntil: { lte: new Date(now) } }] },
+          data: { nextSyncAt: new Date(now) },
+        });
+      }
+      await save(tx, organizationId, {
+        version: 1, generation: owner.generation, runId, deployment: fingerprint(env),
+        heartbeatAt: iso(now), nextDueAt: iso(due), nextRegularAt: iso(due),
+        nextFullAt: iso(full ? now + SUPPLY_POLL_MS : fullAt),
+        leaseUntil: iso(now + SUPPLY_WORK_LEASE_MS + GRACE_MS), workUntil: iso(now + SUPPLY_WORK_LEASE_MS),
+        pollIntervalMs: SUPPLY_FRESH_MAIL_MS,
+        status: 'RUNNING', completedBatches: state?.completedBatches ?? 0, failedBatches: state?.failedBatches ?? 0, lastResult: state?.lastResult ?? null,
+      });
+      return { owner, full };
+    });
+    if (!claim) return { organizationId, status: 'not-due' as const };
+    let result: Awaited<ReturnType<typeof runSupplyJobs>> | null = null;
+    try { result = await (services.jobs ?? runSupplyJobs)(db, { organizationId, fastMail: true, recentMailOnly: !claim.full }); }
+    catch { /* Provider details stay out of cron responses and checkpoints. */ }
+    const failed = !result || result.mailboxErrors > 0 || result.replayErrors > 0;
+    await locked(db, organizationId, async (tx, state) => {
+      if (!state || !owns(state, claim.owner)) return;
+      await save(tx, organizationId, {
+        ...state, status: 'SLEEPING', heartbeatAt: iso(clock()), workUntil: null,
+        leaseUntil: iso(Date.parse(state.nextDueAt) + GRACE_MS),
+        completedBatches: state.completedBatches + Number(Boolean(result)), failedBatches: state.failedBatches + Number(failed),
+        lastResult: result ? {
+          mailboxChecks: result.mailboxChecks, mailboxErrors: result.mailboxErrors,
+          evidenceReplays: result.evidenceReplays, replayErrors: result.replayErrors, continuation: result.continuation,
+          backfillIncomplete: result.backfillIncomplete, earliestMailboxNextAt: result.earliestMailboxNextAt,
+        } : null,
+      });
+    });
+    return { organizationId, status: failed ? 'failed' as const : 'completed' as const, mode: claim.full ? 'full' as const : 'recent' as const };
+  }));
+  const batches = results.flatMap(result => result.status === 'fulfilled' ? [result.value] : []);
+  return { batches, errors: results.length - batches.length + batches.filter(batch => batch.status === 'failed').length };
 }
 
 /** Only fixed canonical destinations can receive the existing job credential. */

@@ -8,6 +8,7 @@ import { getWatchedSupplyMaterials } from './status';
 import { normalizeSupplyLocation, normalizeSupplyMaterial, type WatchedSupplyMaterial } from './statusDomain';
 import { scopeSupplyEvidence, type WatchableSupplyEvidence } from './watch';
 import { readSupplySourceProvenance } from './orderConfirmation';
+import { isAttachedBillOfLadingCandidate } from './billOfLading';
 
 export const SUPPLY_REPLAY_CHECKPOINT = 'SUPPLY_EVIDENCE_REPLAY_CHECKPOINT';
 type ReplayIngest = (actor: SupplyActor, input: unknown, db: PrismaClient, options: { reconcile: false; refreshLifecycle?: true }) => Promise<{ orderId?: string }>;
@@ -62,7 +63,7 @@ export async function replayWatchedSupplyEvidence(organizationId: string, db: Pr
         // Previously re-read current replies may be matched after their anchor
         // was enriched. Never promote prior inferred shipment fields in this path.
         const refreshLifecycle = state.phase === 'SHIPMENT' && replyLifecycleChecked === true;
-        if (!refreshLifecycle && !(await scope(organizationId, source.extractedFacts as WatchableSupplyEvidence, db)).evidence) continue;
+        if (!refreshLifecycle && !isAttachedBillOfLadingCandidate(source) && !(await scope(organizationId, source.extractedFacts as WatchableSupplyEvidence, db)).evidence) continue;
         result.attempted++;
         const replayed = await ingest({ organizationId, userId: user.id }, { source: { threadId,internetMessageId,internetReferences,evidenceContext,contentVersion,direction,fromEmail,senderAuthenticated,attachmentPartId,attachmentMimePath,attachmentProviderId,mailboxConnectionId: source.mailboxConnectionId, provider: source.provider, messageId: source.messageId, attachmentKey: source.attachmentKey, messageDate: source.messageDate.toISOString(), contentHash: source.contentHash, filename: source.filename, mimeType: source.mimeType, subject: source.subject, historical: source.historical, extractionStatus: 'COMPLETE' }, evidence: source.extractedFacts }, db, { reconcile: false, ...(refreshLifecycle ? { refreshLifecycle: true } : {}) });
         if (replayed.orderId) result.linked++;

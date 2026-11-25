@@ -4,7 +4,7 @@ import { requireSupplyActor } from '../../lib/productionSupplies/access';
 import { productionMemberIds, readSupplySettings } from '../../lib/productionSupplies/config';
 import { supplyEmailCoverage } from '../../lib/productionSupplies/mailFreshness';
 import { getSupplyStatusDashboard } from '../../lib/productionSupplies/status';
-import { getTrackingConfiguration } from '../../lib/productionSupplies/tracking';
+import { getTrackingConfiguration, isWardTrackingConfigured } from '../../lib/productionSupplies/tracking';
 import { EmptyState, PageHeader } from '../components/PageChrome';
 import { SupplyStatusCard } from './SupplyStatusCard';
 import { SupplyRefresh } from './SupplyRefresh';
@@ -29,6 +29,7 @@ export default async function SuppliesPage() {
     timeZone: timezone, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
   }).format(oldestCheckAt) : null;
   const tracking = getTrackingConfiguration();
+  const wardTracking = isWardTrackingConfigured(actor.organizationId);
 
   return <div className="supplies-page supply-status-page">
     <PageHeader title="Supplies" />
@@ -44,7 +45,7 @@ export default async function SuppliesPage() {
       <div className="supply-status-grid" aria-label="Supply status">
         {dashboard.cards.map(card => <SupplyStatusCard key={`${card.id}:${card.cycleKey}`} card={card} canDismiss={canManage} />)}
       </div>
-      {!tracking.configured ? <p className="supply-status-footnote">Live carrier updates are unavailable. Cards show the latest available email or delivery information.</p> : null}
+      {!tracking.configured && !wardTracking ? <p className="supply-status-footnote">Live carrier updates are unavailable. Cards show the latest available email or delivery information.</p> : null}
     </> : <EmptyState title={dashboard.monitoredMaterials ? 'Nothing being tracked' : 'No supplies yet'} description={dashboard.monitoredMaterials ? 'Delivered and dismissed supplies are hidden.' : 'Supplies appear from Dx5 alerts or confirmed Production orders.'} />}
   </div>;
 }

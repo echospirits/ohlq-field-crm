@@ -192,6 +192,52 @@ test('a bounded recent watched-order search processes short replies before old p
   assert.equal((fake.sync.lastSuccessfulSyncAt as Date | null), null);
 });
 
+test('frequent mail checks find current freight PDFs and known carrier PROs without advancing old inbox scans', async () => {
+  const fake = mailboxFake();
+  const scanStarted = new Date(Date.now() - 6 * 60 * 60_000).toISOString();
+  const incremental = { query: 'existing incremental search', pageToken: 'old-page', scanStarted };
+  fake.sync.cursor = {
+    version: 2, scans: { DX5: null, PRODUCTION_ORDERS: null, MATERIALS: null, BROAD: null },
+    completed: ['DX5', 'PRODUCTION_ORDERS', 'MATERIALS', 'BROAD'], turn: 0,
+    lastRecentCheckAt: scanStarted, lastIncrementalAt: scanStarted, incremental,
+  };
+  fake.sync.backfillCompletedAt = new Date(scanStarted);
+  const admitted: string[] = [];
+  const fetchImpl = (async (input: string | URL | Request) => {
+    const url = new URL(String(input));
+    if (url.pathname.endsWith('/messages')) {
+      const query = url.searchParams.get('q')!;
+      assert.match(query, /subject:bol/);
+      assert.ok(query.includes('(has:attachment filename:pdf {"bill of lading" "proof of delivery"})'));
+      assert.match(query, /"015-1002003"/);
+      assert.match(query, /"0151002003"/);
+      return Response.json({ messages: ['bol', 'carrier', 'current', 'quoted', 'no-pdf', 'other-carrier'].map(id => ({ id })) });
+    }
+    const id = url.pathname.split('/').at(-1)!;
+    const subject = id === 'carrier' ? 'Freight carrier update 0151002003' : id === 'other-carrier' ? 'Freight carrier update 0150000000' : 'Your document';
+    const text = id === 'current' || id === 'no-pdf' ? 'Please see the proof of delivery.' :
+      id === 'quoted' ? 'Thanks for confirming.\n\nOn Monday a sender wrote:\nThe bill of lading is attached.' : subject;
+    const payload = { mimeType: 'text/plain', headers: [{ name: 'Subject', value: subject }], body: { data: Buffer.from(text).toString('base64url') } };
+    const filename = id === 'bol' ? '87654321_BOL.pdf' : ['current', 'quoted'].includes(id) ? 'scan.pdf' : null;
+    return Response.json({
+      id, internalDate: String(Date.now()),
+      payload: filename ? { ...payload, mimeType: 'multipart/mixed', parts: [payload, { filename, mimeType: 'application/pdf', body: { data: Buffer.from('fixture').toString('base64url') } }] } : payload,
+    });
+  }) as typeof fetch;
+  const update = await syncSupplyMailbox('tenant-one', 'user-one', fake.db, {
+    fastMail: true, recentOnly: true, fetchImpl, ingest: fake.ingest,
+    discovery: async () => ({ memberEmails: [], materials: [], orderReferences: [], recentShipmentReferences: ['015-1002003'] }),
+    extract: async ({ subject, attachment }) => { admitted.push(attachment?.filename ?? subject); return emptyEvidence('SHIPMENT'); },
+  });
+  assert.deepEqual(admitted, ['Your document', '87654321_BOL.pdf', 'Freight carrier update 0151002003', 'Your document', 'scan.pdf']);
+  assert.equal(update.processed, 5);
+  assert.equal(update.catchupPhase, 'IDLE');
+  const cursor = fake.sync.cursor as { fastRecentMail: boolean; lastRecentCheckAt: string; incremental: typeof incremental };
+  assert.equal(cursor.fastRecentMail, true);
+  assert.ok(Date.parse(cursor.lastRecentCheckAt) > Date.parse(scanStarted));
+  assert.deepEqual(cursor.incremental, incremental);
+});
+
 test('a targeted check with unread results preserves an explicit incomplete freshness marker', async () => {
   const fake = mailboxFake();
   let initialHead = true;

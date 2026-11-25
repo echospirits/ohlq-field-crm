@@ -11,6 +11,14 @@ export { matchWatchedSupplyLine, normalizeSupplyLocation, normalizeSupplyMateria
 export type { SupplyStatusCard, WatchedSupplyMaterial } from './statusDomain';
 
 type Db = PrismaClient | Prisma.TransactionClient;
+const reviewedFreightDelivery = z.object({
+  version: z.literal(1),
+  shipmentId: z.string().min(1),
+  lineId: z.string().min(1),
+  deliveredAt: z.string().datetime(),
+  quantity: z.number().finite().positive(),
+  unit: z.string().trim().min(1),
+});
 // Future inventory adapters can join this seam without making Ollie a prerequisite.
 export const INVENTORY_WARNING_SOURCES = ['DISTILLX5_EMAIL'] as const;
 type Group = { material:WatchedSupplyMaterial; firstWarningAt:Date; latestWarningAt:Date; warningCount:number; reportedQuantity:unknown; reportedThreshold:unknown;locationWarningAt:Date|null };
@@ -73,7 +81,8 @@ export function readSupplyOrderOperationalState(sources: Array<{messageDate:Date
   const facts = [...sources].sort((a, b) => b.messageDate.getTime() - a.messageDate.getTime()).flatMap(source => {
     const value = source.extractedFacts as {kind?:unknown;orderHold?:unknown;supplierPromisedDate?:unknown;paymentDueDate?:unknown;paymentReceived?:unknown;billOfLadingPromised?:unknown}|null;
     const provenance = readSupplySourceProvenance(value);
-    if (!value || !['ORDER', 'SHIPMENT'].includes(String(value.kind)) || provenance.contentVersion !== 'SUPPLY_CURRENT_V1' || provenance.evidenceContext === 'QUOTED_HISTORY') return [];
+    if (!value || !['ORDER', 'SHIPMENT'].includes(String(value.kind)) || provenance.contentVersion !== 'SUPPLY_CURRENT_V1' ||
+      provenance.evidenceContext === 'QUOTED_HISTORY' || provenance.freightDocumentOnly) return [];
     const authenticated = provenance.productionTeamAuthorized === true && provenance.direction === 'RECEIVED' &&
       provenance.senderAuthenticated === true && !!provenance.fromEmail &&
       ['CURRENT_MESSAGE', 'ATTACHMENT', 'VERIFIED_BOOTSTRAP'].includes(provenance.evidenceContext ?? '');
@@ -115,12 +124,32 @@ async function dashboard(organizationId:string,db:Db){
   const needIds=groups.flatMap(group=>group.material.needIds),catalogIds=groups.flatMap(group=>group.material.catalogItemId?[group.material.catalogItemId]:[]),names=[...new Set(groups.flatMap(group=>[group.material.material,...group.material.aliases]).flatMap(supplyMaterialSearchTerms))];
   const [orders,audits,users]=await Promise.all([
     db.supplyOrder.findMany({where:{organizationId,ignored:false,lines:{some:{organizationId,ignored:false,OR:[{catalogItemId:{in:catalogIds}},{allocations:{some:{organizationId,needId:{in:needIds}}}},...names.map(description=>({description:{contains:description,mode:Prisma.QueryMode.insensitive}})),...groups.flatMap(group=>group.material.vendorRefs).map(ref=>({sku:{equals:ref.sku,mode:Prisma.QueryMode.insensitive},order:{normalizedSupplier:normalize(ref.supplier)}}))]}}},include:{lines:true,shipments:{include:{lines:true,arrivalEstimates:true}},sources:{where:{source:{extractionStatus:{not:'IGNORED'}}},include:{source:{select:{extractedFacts:true,messageDate:true}}}}},orderBy:{updatedAt:'desc'},take:500}),
-    db.supplyAudit.findMany({where:{organizationId,action:'SUPPLY_STATUS_DISMISSED',needId:{in:needIds}},select:{needId:true,detail:true,createdAt:true},orderBy:{createdAt:'desc'}}),
+    db.supplyAudit.findMany({where:{organizationId,action:{in:['SUPPLY_STATUS_DISMISSED','SUPPLY_FREIGHT_DELIVERY_VERIFIED']},needId:{in:needIds}},select:{action:true,orderId:true,needId:true,detail:true,createdAt:true},orderBy:{createdAt:'desc'}}),
     db.user.findMany({where:{organizationId,isActive:true},select:{id:true,name:true,firstName:true,lastName:true}}),
   ]);
-  const normalized:StatusOrder[]=orders.map(order=>({...order,...readSupplyOrderOperationalState(order.sources.map(link=>link.source)),ownerName:users.find(u=>u.id===order.ownerUserId)?.name || null,completeDeliveryEvidence:order.sources.flatMap(link=>{if (readSupplySourceProvenance(link.source.extractedFacts).lifecycleOnly) return [];const facts=link.source.extractedFacts as {orderDeliveryComplete?:unknown;orderDeliveredDate?:unknown}|null;if(typeof facts?.orderDeliveryComplete!=='boolean')return[];const zone=order.shipments[0]?.timezone || organization.timezone;const at=typeof facts.orderDeliveredDate==='string'?dateBoundary(facts.orderDeliveredDate,zone):null;const next=typeof facts.orderDeliveredDate==='string' && at?new Date(Date.parse(`${facts.orderDeliveredDate}T12:00:00Z`)+86400000).toISOString().slice(0,10):null;const through=next?dateBoundary(next,zone) || undefined:undefined;return[{at,through,complete:facts.orderDeliveryComplete,observedAt:link.source.messageDate}];})}));
+  const normalized:StatusOrder[]=orders.map(order=>({
+    ...order,
+    ...readSupplyOrderOperationalState(order.sources.map(link=>link.source)),
+    ownerName:users.find(u=>u.id===order.ownerUserId)?.name || null,
+    completeDeliveryEvidence:order.sources.flatMap(link=>{
+      const provenance=readSupplySourceProvenance(link.source.extractedFacts);
+      if (provenance.lifecycleOnly || provenance.freightDocumentOnly) return [];
+      const facts=link.source.extractedFacts as {orderDeliveryComplete?:unknown;orderDeliveredDate?:unknown}|null;
+      if (typeof facts?.orderDeliveryComplete!=='boolean') return [];
+      const zone=order.shipments[0]?.timezone || organization.timezone;
+      const at=typeof facts.orderDeliveredDate==='string'?dateBoundary(facts.orderDeliveredDate,zone):null;
+      const next=typeof facts.orderDeliveredDate==='string' && at?new Date(Date.parse(`${facts.orderDeliveredDate}T12:00:00Z`)+86400000).toISOString().slice(0,10):null;
+      const through=next?dateBoundary(next,zone) || undefined:undefined;
+      return [{at,through,complete:facts.orderDeliveryComplete,observedAt:link.source.messageDate}];
+    }),
+    reviewedFreightDeliveries:audits.flatMap(audit=>{
+      if (audit.action!=='SUPPLY_FREIGHT_DELIVERY_VERIFIED' || audit.orderId!==order.id || !audit.needId) return [];
+      const parsed=reviewedFreightDelivery.safeParse(audit.detail);
+      return parsed.success ? [{...parsed.data,needId:audit.needId}] : [];
+    }),
+  }));
   const cards=groups.flatMap(group=>{
-    const dismissals=audits.flatMap(audit=>{const detail=audit.detail as {cycleKey?:unknown}|null;return audit.needId && group.material.needIds.includes(audit.needId) && typeof detail?.cycleKey==='string'?[{cycleKey:detail.cycleKey,at:audit.createdAt}]:[];});
+    const dismissals=audits.flatMap(audit=>{const detail=audit.detail as {cycleKey?:unknown}|null;return audit.action==='SUPPLY_STATUS_DISMISSED' && audit.needId && group.material.needIds.includes(audit.needId) && typeof detail?.cycleKey==='string'?[{cycleKey:detail.cycleKey,at:audit.createdAt}]:[];});
     const card=buildSupplyStatusCard(group.material,{...group,orders:normalized,dismissals});return card?[card]:[];
   }).sort((a,b)=>a.material.localeCompare(b.material)||a.location.localeCompare(b.location));
   return{cards,monitoredMaterials:groups.length,lastAlertAt:new Date(Math.max(...groups.map(group=>group.latestWarningAt.getTime()))).toISOString()};

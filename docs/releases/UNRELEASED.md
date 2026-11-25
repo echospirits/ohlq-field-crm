@@ -1,5 +1,9 @@
 # Unreleased
 
+## Supplies freight and recent email — November 25, 2026
+
+Supplies checks recent watched-order replies and freight notices every 15 minutes in production. Old mail stays on its six-hour schedule. Authenticated vendor messages and their matching bills of lading enrich one shipment. Ward freight tracking is available for a configured tenant with approved API credentials. See [0.15.17](0.15.17.md).
+
 ## OHLQ search from wholesale purchases — November 25, 2026
 
 Item codes in Tracked products and All purchases open OHLQ search results for the exact code in a new tab. See the [0.15.16 release notes](0.15.16.md).

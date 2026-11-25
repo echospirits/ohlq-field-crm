@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { Prisma, type MailboxConnection, type PrismaClient } from '@prisma/client';
 import { prisma } from '../prisma';
-import { hasSupplyAccess, productionMemberIds, readSupplySettings } from './config';
+import { hasSupplyAccess, nextSupplyFreshMailSlot, productionMemberIds, readSupplySettings, SUPPLY_FRESH_MAIL_MS } from './config';
 import { decryptSupplyToken, encryptSupplyToken } from './mailCrypto';
 import { extractSupplyMessage, type ExtractedSupply } from './extraction';
 import { ingestEvidence } from './service';
@@ -9,12 +9,12 @@ import { isVerifiedDx5WarningSender, supplyMessageRelationship } from './mailPro
 import { canReadSupplyMailbox, GMAIL_READ_SCOPE } from './mailAccess';
 import { prepareSupplyMessageContent, supplyMessageSender, SUPPLY_CONTENT_VERSION, type GmailPart } from './mailContent';
 import { ignoredSupplyAttachmentCorrections, resolveSupplyAttachment, supplyAttachmentMetadata, type SupplyAttachmentMetadata } from './mailIdentity';
-import { buildSupplyIncrementalQuery, buildSupplyPriorityQueries, buildSupplyRecentReplyQuery, chooseSupplyMailLane, completeSupplyMailLane, supplyHistoricalComplete, supplyMailCursor, supplyMailDiscovery, supplyReplySubject, SUPPLY_MAIL_LANES, type SupplyMailScan, type SupplyMailLane } from './mailDiscovery';
+import { buildSupplyIncrementalQuery, buildSupplyPriorityQueries, buildSupplyRecentReplyQuery, chooseSupplyMailLane, completeSupplyMailLane, matchesSupplyRecentFreight, supplyHistoricalComplete, supplyMailCursor, supplyMailDiscovery, supplyReplySubject, SUPPLY_MAIL_LANES, type SupplyMailScan, type SupplyMailLane } from './mailDiscovery';
 export { flattenGmailParts } from './mailContent';
 export { canReadSupplyMailbox, GMAIL_READ_SCOPE } from './mailAccess';
 
 const GMAIL_ROOT = 'https://gmail.googleapis.com/gmail/v1/users/me';
-const DISCOVERY = '(order OR invoice OR shipment OR shipping OR tracking OR freight OR backorder OR delivery OR confirmation OR receipt OR "low stock" OR "low inventory" OR "reorder" OR "Distillx5" OR "Five x 5")';
+const DISCOVERY = '(order OR invoice OR shipment OR shipping OR tracking OR freight OR backorder OR delivery OR confirmation OR receipt OR "BOL" OR "bill of lading" OR "proof of delivery" OR "low stock" OR "low inventory" OR "reorder" OR "Distillx5" OR "Five x 5")';
 export function supplyOAuthRedirect(env: Record<string, string | undefined> = process.env) {
   const callbackPath = '/api/production-supplies/mail/google/callback';
   const value = env.SUPPLY_GOOGLE_REDIRECT_URI?.trim() || `${env.APP_BASE_URL?.replace(/\/+$/, '') || ''}${callbackPath}`;
@@ -119,7 +119,7 @@ async function trustedBootstrapOwner(organizationId:string,userId:string,db:Pris
   const [org,user]=await Promise.all([db.organization.findFirst({where:{id:organizationId,active:true,accountStatus:{notIn:['SUSPENDED','CANCELLED']},features:{some:{featureKey:'PRODUCTION_SUPPLIES',enabled:true}}},select:{crmPreferences:true}}),db.user.findFirst({where:{organizationId,id:userId,isActive:true},select:{id:true,role:true}})]);
   return Boolean(org&&user&&hasSupplyAccess(user,readSupplySettings(org.crmPreferences),true));
 }
-type MailServices = { fetchImpl?: typeof fetch; sleep?: (ms: number) => Promise<void>; extract?: typeof extractSupplyMessage; ingest?: typeof ingestEvidence; discovery?: typeof supplyMailDiscovery; now?: () => number; budgetMs?: number };
+type MailServices = { fetchImpl?: typeof fetch; sleep?: (ms: number) => Promise<void>; extract?: typeof extractSupplyMessage; ingest?: typeof ingestEvidence; discovery?: typeof supplyMailDiscovery; now?: () => number; budgetMs?: number; fastMail?: boolean; recentOnly?: boolean };
 type MailDiagnostics = { processedMessages?: number; ignoredInlineImages?: number; backfillIncomplete?: boolean; catchupPhase?: SupplyMailLane | 'IDLE' };
 export type SupplyMailboxSyncResult = MailDiagnostics & (
   { processed: number; continuation: boolean; skipped?: false; reason?: never; error?: false }
@@ -148,21 +148,33 @@ export async function syncSupplyMailbox(organizationId: string, userId: string, 
     const connectedMailbox = await db.mailboxConnection.findFirst({ where: { id: sync.connectionId!, organizationId, userId, enabled: true } });
     if (!connectedMailbox || !canReadSupplyMailbox(connectedMailbox)) throw new Error('Gmail read permission required.');
     const connection = connectedMailbox;
-    const discovery = await (services.discovery ?? supplyMailDiscovery)(organizationId, org.crmPreferences, db, connection.id);
+    const discovery = await (services.discovery ?? supplyMailDiscovery)(organizationId, org.crmPreferences, db, connection.id, services.fastMail);
     const since = new Date(now.getTime() - settings.historyDays * 86400_000);
     const state = supplyMailCursor(sync.cursor, { now, backfillComplete: Boolean(sync.backfillCompletedAt), lastSuccessfulSyncAt: sync.lastSuccessfulSyncAt, broadQuery: buildSupplyDiscoveryQuery(since, settings.includeSent), priorityQueries: buildSupplyPriorityQueries(since, settings.includeSent, discovery) });
+    if (services.fastMail) state.fastRecentMail = true;
+    else delete state.fastRecentMail;
     const recentSubjects = new Set(discovery.recentReplySubjects ?? []);
     const recentAnchorIds = new Set(discovery.recentReplyAnchorIds ?? []);
-    if (recentSubjects.size) state.lastRecentCheckAt ??= null;
+    const recentReferences = (discovery.recentShipmentReferences ?? []).flatMap(reference => [reference.toLowerCase(), reference.replace(/-/g, '').toLowerCase()]);
+    const freightReferences = new Set(recentReferences);
+    const recentEnabled = Boolean(services.fastMail || recentSubjects.size);
+    if (recentEnabled) state.lastRecentCheckAt ??= null;
     else {
       delete state.lastRecentCheckAt;
       delete state.pendingRecentReplies;
     }
-    const lane = chooseSupplyMailLane(state, now, settings.pollMinutes);
-    const recentDue = recentSubjects.size > 0 && (!state.lastRecentCheckAt || now.getTime() - Date.parse(state.lastRecentCheckAt) >= settings.pollMinutes * 60_000);
+    const lane = services.recentOnly ? null : chooseSupplyMailLane(state, now, settings.pollMinutes);
+    const currentSlot = nextSupplyFreshMailSlot(now.getTime()) - SUPPLY_FRESH_MAIL_MS;
+    const lastRecentAt = state.lastRecentCheckAt ? Date.parse(state.lastRecentCheckAt) : 0;
+    const recentDue = recentEnabled && (services.fastMail
+      ? lastRecentAt < currentSlot
+      : !state.lastRecentCheckAt || now.getTime() - lastRecentAt >= settings.pollMinutes * 60_000);
+    const regularNextAt = () => services.fastMail ? nextSupplyFreshMailSlot(now.getTime()) : Date.parse(state.lastIncrementalAt) + settings.pollMinutes * 60_000;
     if (!lane && !recentDue) {
-      await db.supplyMailboxSync.updateMany({ where: { id: sync.id, leaseId }, data: { status: 'CONNECTED', cursor: state, nextSyncAt: new Date(Date.parse(state.lastIncrementalAt) + settings.pollMinutes * 60_000), leaseId: null, leaseUntil: null } });
-      return { processed, processedMessages, ignoredInlineImages, continuation: false, backfillIncomplete: false, catchupPhase: 'IDLE' };
+      const backfillIncomplete = !supplyHistoricalComplete(state);
+      const continuation = backfillIncomplete || Boolean(state.incremental || state.pendingRecentReplies);
+      await db.supplyMailboxSync.updateMany({ where: { id: sync.id, leaseId }, data: { status: backfillIncomplete ? 'INITIAL_IMPORT' : continuation ? 'PROCESSING' : 'CONNECTED', cursor: state, nextSyncAt: new Date(regularNextAt()), leaseId: null, leaseUntil: null } });
+      return { processed, processedMessages, ignoredInlineImages, continuation, backfillIncomplete, catchupPhase: 'IDLE' };
     }
     // Persist the new freshness field before provider work, including if the check fails.
     if (recentDue) await db.supplyMailboxSync.updateMany({ where: { id: sync.id, leaseId }, data: { cursor: state } });
@@ -203,9 +215,10 @@ export async function syncSupplyMailbox(organizationId: string, userId: string, 
         if (message.id !== messageId) throw new SupplyMailProviderError('Gmail returned a mismatched message identity.');
         if (!settings.includeSent && message.labelIds?.includes('SENT')) { processedMessages++; continue; }
         const subject = message.payload.headers?.find(h => h.name.toLowerCase() === 'subject')?.value?.slice(0, 300) ?? '';
-        if (watchedReplies && !watchedReplies.has(supplyReplySubject(subject))) continue;
         if (message.labelIds?.some(label => label === 'TRASH' || label === 'SPAM')) continue;
         const prepared = prepareSupplyMessageContent(message.payload, subject), text = prepared.text;
+        if (watchedReplies && !watchedReplies.has(supplyReplySubject(subject))
+          && !(services.fastMail && matchesSupplyRecentFreight(subject, text, prepared.attachments, freightReferences))) continue;
         ignoredInlineImages += prepared.ignoredInlineImages;
         const messageDate = new Date(Number(message.internalDate));
         if (!Number.isFinite(messageDate.getTime())) throw new Error('Gmail supplied an invalid source timestamp.');
@@ -318,17 +331,18 @@ export async function syncSupplyMailbox(organizationId: string, userId: string, 
       return { deferred, nextPageToken: page.nextPageToken };
     }
 
-    let recentIncomplete = false;
+    let recentIncomplete = Boolean(state.pendingRecentReplies);
     if (recentDue) {
       // Recent watched replies get a search of their own while the wider inbox catches up.
       // Use a short overlap for delayed Gmail indexing and a bounded seven-day initial lookback.
       const pending = state.pendingRecentReplies;
       const covered = pending?.scanStarted ?? state.lastRecentCheckAt;
-      const previous = covered ? Date.parse(covered) - 6 * 3600_000 : 0;
+      const overlapMs = services.fastMail ? 60 * 60_000 : 6 * 3600_000;
+      const previous = covered ? Date.parse(covered) - overlapMs : 0;
       const replySince = new Date(Math.max(now.getTime() - 7 * 86400_000, previous));
-      const replyQuery = buildSupplyRecentReplyQuery(replySince, settings.includeSent, [...recentSubjects]);
+      const replyQuery = buildSupplyRecentReplyQuery(replySince, settings.includeSent, [...recentSubjects], services.fastMail ? [...freightReferences] : undefined);
       const replyScan = { query: replyQuery, scanStarted: now.toISOString() };
-      const stopStartingAt = Math.min(deadline - 65_000, clock() + 30_000);
+      const stopStartingAt = Math.min(deadline - 65_000, clock() + (services.fastMail ? 53_000 : 30_000));
       let headPosition: SupplyMailScan | null = null;
       const recentPage = await processPage({ scan: replyScan, stopStartingAt, watchedReplies: recentSubjects, savePosition: position => {
         headPosition = position;
@@ -366,7 +380,8 @@ export async function syncSupplyMailbox(organizationId: string, userId: string, 
       }
     }
     const backfillIncomplete = !supplyHistoricalComplete(state), continuation = recentIncomplete || backfillIncomplete || Boolean(state.incremental);
-    await db.supplyMailboxSync.updateMany({ where: { id: sync.id, leaseId }, data: { status: backfillIncomplete ? 'INITIAL_IMPORT' : continuation ? 'PROCESSING' : 'CONNECTED', cursor: state, backfillCompletedAt: !backfillIncomplete && !sync.backfillCompletedAt ? now : undefined, lastSuccessfulSyncAt: incrementalComplete ? new Date(state.lastIncrementalAt) : !backfillIncomplete && !sync.backfillCompletedAt ? now : undefined, nextSyncAt: new Date(continuation ? Date.now() + 60_000 : Math.max(Date.now(),new Date(state.lastIncrementalAt).getTime() + settings.pollMinutes * 60_000)), processedCount: { increment: processed }, failureCount: 0, errorCode: null, errorMessage: null, leaseId: null, leaseUntil: null } });
+    const nextSyncAt = services.fastMail ? regularNextAt() : continuation ? Date.now() + 60_000 : Math.max(Date.now(), regularNextAt());
+    await db.supplyMailboxSync.updateMany({ where: { id: sync.id, leaseId }, data: { status: backfillIncomplete ? 'INITIAL_IMPORT' : continuation ? 'PROCESSING' : 'CONNECTED', cursor: state, backfillCompletedAt: !backfillIncomplete && !sync.backfillCompletedAt ? now : undefined, lastSuccessfulSyncAt: incrementalComplete ? new Date(state.lastIncrementalAt) : !backfillIncomplete && !sync.backfillCompletedAt ? now : undefined, nextSyncAt: new Date(nextSyncAt), processedCount: { increment: processed }, failureCount: 0, errorCode: null, errorMessage: null, leaseId: null, leaseUntil: null } });
     return { processed, processedMessages, ignoredInlineImages, continuation, backfillIncomplete, catchupPhase: lane ?? 'IDLE' };
   } catch (error) {
     const sync = await db.supplyMailboxSync.findUnique({ where: { organizationId_userId: { organizationId, userId } } });

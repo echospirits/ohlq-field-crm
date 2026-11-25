@@ -4,7 +4,7 @@ import { prisma } from '../prisma';
 import { classifyLine, fingerprint, knownNumber, lineAvailableQuantity, normalize, sameUnit, validateAllocation } from './domain';
 import { hasSupplyAccess, productionMemberIds, readSupplySettings } from './config';
 import { normalizeSupplyLocation, normalizeSupplyMaterial } from './statusDomain';
-import { catalogInput, classificationInput, expectationInput, ignoreInput, lineDetailsInput, orderDetailsInput, linkNeedInput, manualOrderInput, needInput, needDetailsInput, noteInput, ownerInput, receiptInput, resolveNeedInput, ruleInput, trackingInput, type SupplyActor } from './schemas';
+import { catalogInput, classificationInput, expectationInput, ignoreInput, lineDetailsInput, orderDetailsInput, linkNeedInput, manualOrderInput, needInput, needDetailsInput, noteInput, ownerInput, receiptInput, resolveNeedInput, ruleInput, supplyFreightFact, trackingInput, type SupplyActor } from './schemas';
 import { isWatchedSupplyOrder, scopeSupplyEvidence } from './watch';
 import { canReadSupplyMailbox } from './mailAccess';
 import { replayWatchedSupplyEvidence, type ReplayOptions } from './replay';
@@ -12,6 +12,7 @@ import { findSupplyReplyOrder, isCurrentSupplyEvidence, mergeSupplySourceProvena
 import { quarantineUnsupportedSupplyOrders } from './evidenceSupport';
 import { SUPPLY_MESSAGE_REFERENCE_LIMIT } from './mailProvenance';
 import {compatibleDx5WarningIdentity,trustedDx5WarningIdentity} from './dx5WarningIdentity';
+import { activeBillOfLadingWhere, reconcileAttachedBillOfLading } from './billOfLading';
 
 type Tx = Prisma.TransactionClient;
 export class SupplyError extends Error { constructor(message: string) { super(message); this.name = 'SupplyError'; } }
@@ -346,7 +347,8 @@ export async function reviewSupplySource(actor: SupplyActor, raw: unknown, db: P
     orderData.reviewRequired = lineResult.review || Boolean(await tx.supplyOrderLine.count({ where: { organizationId: actor.organizationId, orderId: order.id, department: 'NEEDS_REVIEW', ignored: false } }));
     await tx.supplyOrder.update({ where: { organizationId_id: { organizationId: actor.organizationId, id: order.id } }, data: orderData });
     for (const shipping of evidence.data.shipments) {
-      const existing = await tx.supplyShipment.findFirst({ where: { organizationId: actor.organizationId, referenceType: shipping.referenceType, reference: shipping.reference, carrier: shipping.carrier || null } });
+      const { shipment: existing, ambiguous } = await findEvidenceShipment(tx, actor.organizationId, shipping);
+      if (ambiguous) throw new SupplyError('This tracking reference is ambiguous. Review the existing shipments first.');
       if (existing && existing.orderId !== order.id) throw new SupplyError('This tracking reference belongs to another order. Review that relationship first.');
       if (!existing) await tx.supplyShipment.create({ data: { organizationId: actor.organizationId, orderId: order.id, referenceType: shipping.referenceType, reference: shipping.reference, carrier: shipping.carrier || null, destination: order.destination, status: shipping.status || 'UNKNOWN', statusEventAt: source.messageDate, nextCheckAt: new Date(), arrivalEstimates: shipping.eta ? { create: [{ ...shipping.eta, sourceId: source.id, sourceEventAt: source.messageDate }] } : undefined } });
     }
@@ -362,11 +364,22 @@ const factQuantity = z.number().finite().nonnegative().max(1e10).nullable().opti
 const arrivalFact = z.object({ source: z.enum(['SUPPLIER_PROMISE', 'CARRIER', 'PREDICTION', 'APPOINTMENT', 'MANUAL']), precision: z.enum(['DATE', 'DATE_RANGE', 'TIME_WINDOW', 'APPOINTMENT']), startDate: z.string().date(), endDate: z.string().date().nullable().optional(), timeStart: optionalFact, timeEnd: optionalFact, timezone: z.string().max(100).default('America/New_York') });
 export const supplyEvidenceInput = z.object({
   source: z.object({ mailboxConnectionId: optionalFact, provider: z.string().min(1).max(50), messageId: z.string().min(1).max(500), attachmentKey: z.string().max(500).default(''), messageDate: z.string().datetime({ offset: true }), contentHash: z.string().min(1).max(128), filename: optionalFact, mimeType: optionalFact, subject: optionalFact, historical: z.boolean().default(false), extractionStatus: z.enum(['COMPLETE', 'ERROR', 'UNSUPPORTED', 'REVIEW']), extractionError: z.string().max(1000).optional(), threadId: z.string().min(1).max(500).optional(), internetMessageId: messageFingerprint.optional(), internetReferences: z.array(messageFingerprint).max(SUPPLY_MESSAGE_REFERENCE_LIMIT).optional(), evidenceContext: z.enum(['CURRENT_MESSAGE','ATTACHMENT','QUOTED_HISTORY','VERIFIED_BOOTSTRAP']).optional(), contentVersion: z.literal('SUPPLY_CURRENT_V1').optional(), direction: z.enum(['SENT','RECEIVED']).optional(), fromEmail: z.string().email().max(300).optional(), senderAuthenticated: z.boolean().optional(), attachmentPartId:z.string().min(1).max(500).optional(),attachmentMimePath:z.string().min(1).max(500).optional(),attachmentProviderId:z.string().min(1).max(8192).optional() }),
-  evidence: z.object({ kind: z.enum(['ORDER', 'SHIPMENT', 'WARNING', 'QUOTE', 'OTHER']), productionConfirmation: z.object({purpose:z.literal('PRODUCTION_REPLENISHMENT'),basis:z.enum(['BUYER_REQUEST_SUPPLIER_ACK','EXPLICIT_SUPPLIER_CONFIRMATION']),buyerEmail:z.string().email().nullish(),purposeEvidence:optionalFact}).nullish(), productionRequest:z.boolean().nullish(), supplierAcknowledgement:z.boolean().nullish(), orderHold:z.enum(['PREPAYMENT_REQUIRED','PAYMENT_PENDING','OTHER','RELEASED']).nullish(),orderHoldDetail:optionalFact,supplierPromisedDate:z.string().date().nullish(),paymentDueDate:z.string().date().nullish(), paymentReceived:z.boolean().nullish(), billOfLadingPromised:z.boolean().nullish(), orderStatus: z.enum(['ORDERED','CANCELLED']).nullish(), orderDeliveryComplete: z.boolean().nullish(), orderDeliveredDate: z.string().date().nullish(), warningSource: z.enum(['DISTILLX5_EMAIL','OTHER_EMAIL']).nullish(), supplier: optionalFact, orderReference: optionalFact, orderedAt: z.string().date().nullable().optional(), invoiceDate: z.string().date().nullable().optional(), paymentDate: z.string().date().nullable().optional(), estimatedShipDate: z.string().date().nullable().optional(), destination: optionalFact, lines: z.array(z.object({ description: z.string().trim().min(1).max(300), sku: optionalFact, quantity: factQuantity, unit: optionalFact, packSize: factQuantity, department: z.enum(['PRODUCTION', 'BAR', 'SHARED', 'OTHER', 'NEEDS_REVIEW']).optional(), catalogItemId: optionalFact, backorderedQuantity: factQuantity })).max(100).default([]), shipments: z.array(z.object({ referenceType: z.enum(['PARCEL', 'FREIGHT_PRO', 'BILL_OF_LADING', 'SUPPLIER_ORDER']), reference: z.string().min(1).max(300), carrier: optionalFact, status: z.enum(['UNKNOWN', 'LABEL_CREATED', 'IN_TRANSIT', 'OUT_FOR_DELIVERY', 'DELIVERED', 'PICKUP_REQUIRED', 'DELAYED', 'CANCELLED', 'RETURNED']).optional(), eta: arrivalFact.nullable().optional() })).max(30).default([]), warning: z.object({ material: z.string().trim().min(1).max(300), materialId: optionalFact, location: z.string().trim().min(1).max(300), quantity: factQuantity, threshold: factQuantity, unit: optionalFact }).nullable().optional() }).optional(),
+  evidence: z.object({ kind: z.enum(['ORDER', 'SHIPMENT', 'WARNING', 'QUOTE', 'OTHER']), productionConfirmation: z.object({purpose:z.literal('PRODUCTION_REPLENISHMENT'),basis:z.enum(['BUYER_REQUEST_SUPPLIER_ACK','EXPLICIT_SUPPLIER_CONFIRMATION']),buyerEmail:z.string().email().nullish(),purposeEvidence:optionalFact}).nullish(), productionRequest:z.boolean().nullish(), supplierAcknowledgement:z.boolean().nullish(), orderHold:z.enum(['PREPAYMENT_REQUIRED','PAYMENT_PENDING','OTHER','RELEASED']).nullish(),orderHoldDetail:optionalFact,supplierPromisedDate:z.string().date().nullish(),paymentDueDate:z.string().date().nullish(), paymentReceived:z.boolean().nullish(), billOfLadingPromised:z.boolean().nullish(), orderStatus: z.enum(['ORDERED','CANCELLED']).nullish(), orderDeliveryComplete: z.boolean().nullish(), orderDeliveredDate: z.string().date().nullish(), warningSource: z.enum(['DISTILLX5_EMAIL','OTHER_EMAIL']).nullish(), supplier: optionalFact, orderReference: optionalFact, orderedAt: z.string().date().nullable().optional(), invoiceDate: z.string().date().nullable().optional(), paymentDate: z.string().date().nullable().optional(), estimatedShipDate: z.string().date().nullable().optional(), destination: optionalFact, lines: z.array(z.object({ description: z.string().trim().min(1).max(300), sku: optionalFact, quantity: factQuantity, unit: optionalFact, packSize: factQuantity, department: z.enum(['PRODUCTION', 'BAR', 'SHARED', 'OTHER', 'NEEDS_REVIEW']).optional(), catalogItemId: optionalFact, backorderedQuantity: factQuantity })).max(100).default([]), shipments: z.array(z.object({ referenceType: z.enum(['PARCEL', 'FREIGHT_PRO', 'BILL_OF_LADING', 'SUPPLIER_ORDER']), reference: z.string().min(1).max(300), carrier: optionalFact, freight: supplyFreightFact.nullish(), status: z.enum(['UNKNOWN', 'LABEL_CREATED', 'IN_TRANSIT', 'OUT_FOR_DELIVERY', 'DELIVERED', 'PICKUP_REQUIRED', 'DELAYED', 'CANCELLED', 'RETURNED']).optional(), eta: arrivalFact.nullable().optional() })).max(30).default([]), warning: z.object({ material: z.string().trim().min(1).max(300), materialId: optionalFact, location: z.string().trim().min(1).max(300), quantity: factQuantity, threshold: factQuantity, unit: optionalFact }).nullable().optional() }).optional(),
 });
 export type SupplyEvidenceInput = z.input<typeof supplyEvidenceInput>;
 export type ValidatedSupplySource = z.output<typeof supplyEvidenceInput>['source'];
 export type ValidatedSupplyEvidence = NonNullable<z.output<typeof supplyEvidenceInput>['evidence']>;
+
+async function findEvidenceShipment(tx: Tx, organizationId: string, evidence: ValidatedSupplyEvidence['shipments'][number]) {
+  const { referenceType, reference, carrier } = evidence;
+  if (referenceType === 'BILL_OF_LADING') {
+    const matches = await tx.supplyShipment.findMany({ where: activeBillOfLadingWhere(organizationId, reference), take: 2 });
+    const [shipment] = matches;
+    return { shipment, ambiguous: matches.length > 1 };
+  }
+  const shipment = await tx.supplyShipment.findFirst({ where: { organizationId, referenceType, reference, carrier: carrier || null } });
+  return { shipment, ambiguous: false };
+}
 
 async function seedConfirmedProductionWatches(tx: Tx, actor: SupplyActor, order: {id:string;destination:string|null}, sourceIds: string[], triggerAt: Date, evidence:ValidatedSupplyEvidence) {
   const lines = await tx.supplyOrderLine.findMany({where:{organizationId:actor.organizationId,orderId:order.id,ignored:false},include:{catalogItem:true}});
@@ -475,6 +488,8 @@ export async function ingestEvidence(actor: SupplyActor, raw: unknown, db: Prism
       await tx.supplySource.update({where:{id:source.id},data:{extractionStatus:'REVIEW',extractionError:'Quoted or non-identifying embedded image facts cannot create an operational purchase.',nextExtractionAt:null}});if(upgradingLegacy)await quarantineUnsupportedSupplyOrders(tx,actor.organizationId,actor.userId,source.id);return{sourceId:source.id,review:true};
     }
     if(upgradingLegacy)await quarantineUnsupportedSupplyOrders(tx,actor.organizationId,actor.userId,source.id);
+    const linkedBill = await reconcileAttachedBillOfLading(tx, source, input.evidence);
+    if (linkedBill) return { sourceId: source.id, ...linkedBill };
     const confirmation = await resolveProductionOrderConfirmation(tx, actor.organizationId, context.organization.crmPreferences, source, input.evidence, provenance, value => { const parsed = supplyEvidenceInput.shape.evidence.safeParse(value); return parsed.success && parsed.data ? parsed.data : null; });
     if (confirmation.validated) await tx.supplySource.update({ where: { id: source.id }, data: { extractedFacts: json({ ...input.evidence, _provenance: { ...provenance, confirmationValidated: true, correlatedSourceIds: confirmation.sourceIds } }) } });
     const currentFacts=confirmation.evidence;
@@ -588,8 +603,9 @@ export async function ingestEvidence(actor: SupplyActor, raw: unknown, db: Prism
     if(confirmation.validated)review=false;
     for (const shipping of evidence.shipments) {
       if (shipping.referenceType==='SUPPLIER_ORDER' && !isSupplierOrderIdentifier(shipping.reference)) {review=true;continue;}
-      let shipment = await tx.supplyShipment.findFirst({ where: { organizationId: actor.organizationId, referenceType: shipping.referenceType, reference: shipping.reference, carrier: shipping.carrier || null } });
-      if (shipment && shipment.orderId !== order.id) { review = true; continue; }
+      const { shipment: existingShipment, ambiguous } = await findEvidenceShipment(tx, actor.organizationId, shipping);
+      let shipment = existingShipment;
+      if (ambiguous || shipment && (shipment.orderId !== order.id || shipment.carrier && shipping.carrier && normalize(shipment.carrier) !== normalize(shipping.carrier))) { review = true; continue; }
       if (!shipment) shipment = await tx.supplyShipment.create({ data: { organizationId: actor.organizationId, orderId: order.id, referenceType: shipping.referenceType, reference: shipping.reference, carrier: shipping.carrier || null, destination: order.destination, status: shipping.status || 'UNKNOWN', statusEventAt: observedAt, nextCheckAt: new Date() } });
       else if ((!shipment.statusEventAt || observedAt > shipment.statusEventAt) && shipping.status && !shipment.lastSuccessfulCheckAt) await tx.supplyShipment.update({ where: { organizationId_id: { organizationId: actor.organizationId, id: shipment.id } }, data: { status: shipping.status, statusEventAt: observedAt } });
       if (shipping.eta) {

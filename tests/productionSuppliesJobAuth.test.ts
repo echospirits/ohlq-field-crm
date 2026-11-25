@@ -41,3 +41,17 @@ test('cron HTTP route rejects missing or invalid credentials before any database
     if (oldSupply === undefined) delete process.env.SUPPLY_JOB_SECRET; else process.env.SUPPLY_JOB_SECRET = oldSupply;
   }
 });
+
+test('an authorized legacy workflow ownership probe retires the run without starting a batch', async () => {
+  const oldSupply = process.env.SUPPLY_JOB_SECRET, oldEnabled = process.env.SUPPLY_JOBS_ENABLED;
+  process.env.SUPPLY_JOB_SECRET = 'supply-route-fixture';
+  process.env.SUPPLY_JOBS_ENABLED = 'true';
+  try {
+    const response = await GET(new Request('http://localhost/api/cron/production-supplies?organizationId=synthetic-tenant', { headers: { authorization: 'Bearer supply-route-fixture' } }));
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { schedulers: [] });
+  } finally {
+    if (oldSupply === undefined) delete process.env.SUPPLY_JOB_SECRET; else process.env.SUPPLY_JOB_SECRET = oldSupply;
+    if (oldEnabled === undefined) delete process.env.SUPPLY_JOBS_ENABLED; else process.env.SUPPLY_JOBS_ENABLED = oldEnabled;
+  }
+});

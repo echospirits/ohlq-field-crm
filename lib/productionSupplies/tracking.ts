@@ -2,19 +2,21 @@ import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto
 import { Prisma, type PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import { prisma } from '../prisma';
+import { isCurrentSupplyEvidence, readSupplySourceProvenance } from './orderConfirmation';
+import { SupplyTrackingError, type NormalizedTrackingObservation, type TrackingEnvironment, type TrackingReference } from './trackingTypes';
+import { isWardFreight, isWardTrackingConfigured, lookupWardTracking, wardPostalCode, wardProNumber } from './wardTracking';
 import { getWatchedSupplyOrderScope, isWatchedSupplyOrder, isWatchedSupplyOrderRecord } from './watch';
 
-/** All requests go to this fixed official API. Email-supplied URLs are never fetched. */
-type TrackingEnvironment = Record<string, string | undefined>;
+export { SupplyTrackingError } from './trackingTypes';
+export type { NormalizedTrackingObservation, TrackingReference } from './trackingTypes';
+export { isWardTrackingConfigured } from './wardTracking';
+
+/** Parcel requests use this fixed official API. Email-supplied URLs are never fetched. */
 const API_ROOT = 'https://api.easypost.com/v2';
 const MAX_WEBHOOK_BYTES = 256_000;
 const MIN_REFRESH_MS = 5 * 60_000;
 const LEASE_MS = 4 * 60_000;
 export const SUPPORTED_PARCEL_CARRIERS = ['UPS', 'USPS', 'FedEx', 'DHLExpress', 'OnTrac', 'CanadaPost', 'RoyalMail'] as const;
-
-export class SupplyTrackingError extends Error {
-  constructor(message: string, readonly code: string, readonly temporary = false, readonly retryAfterSeconds?: number) { super(message); }
-}
 
 export type TrackingConfiguration = {
   mode: 'disabled' | 'test' | 'live';
@@ -50,12 +52,6 @@ const trackerSchema = z.object({
   tracking_details: z.array(z.object({ status: nullableText, status_detail: nullableText, message: nullableText, datetime: nullableText })).max(2_000).optional(),
 });
 type Tracker = z.infer<typeof trackerSchema>;
-export type TrackingReference = { referenceType: string; reference: string; carrier?: string | null; providerTrackingId?: string | null; providerMode?: string | null; timezone?: string | null; returnedAt?: Date | null };
-export type NormalizedTrackingObservation = {
-  provider: 'EASYPOST'; providerTrackingId: string; providerMode: 'test' | 'production'; trackingCode: string; carrier: string | null;
-  eventKey: string; providerEventAt: Date; observedAt: Date; status: string; summary: string; returned: boolean; deliveredAt: Date | null;
-  estimate: { source: 'CARRIER'; precision: 'DATE' | 'TIME_WINDOW'; startDate: string; endDate: string | null; timeStart: string | null; timeEnd: string | null; timezone: string } | null;
-};
 
 function validDate(value: string | null | undefined) {
   if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
@@ -200,6 +196,49 @@ type TrackingDb = PrismaClient;
 type TrackingOptions = { manual?: boolean; env?: TrackingEnvironment; fetchImpl?: typeof fetch; sleep?: (ms: number) => Promise<void>; now?: Date; timeoutMs?: number; maxAttempts?: number; budgetMs?: number; maxShipments?: number };
 export type TrackingRefreshResult = { status: 'updated' | 'busy' | 'rate_limited' | 'failed' | 'stale' | 'duplicate' | 'out_of_scope'; message?: string };
 
+const wardBolEvidence = z.object({
+  kind: z.literal('SHIPMENT'), destination: z.string().nullish(),
+  shipments: z.array(z.object({ referenceType: z.string(), reference: z.string(), carrier: z.string().nullish(),
+    freight: z.object({ originPostalCode: z.string().nullish(), proNumber: z.string().nullish() }).nullish() })),
+});
+const verifiedWardTrace = z.object({ version: z.literal(1), shipmentId: z.string(), bolSourceId: z.string(), bol: z.string(), originPostalCode: z.string(), proNumber: z.string() });
+
+async function resolveWardReference(organizationId: string, shipment: TrackingReference & { id: string; orderId: string; destination: string | null; provider: string | null }, db: TrackingDb) {
+  const destinationPostalCode = wardPostalCode(shipment.destination);
+  if (shipment.referenceType === 'FREIGHT_PRO') return { ...shipment, destinationPostalCode };
+  const sources = await db.supplyOrderSource.findMany({
+    where: { organizationId, orderId: shipment.orderId, source: { organizationId, provider: 'GOOGLE', extractionStatus: 'COMPLETE', mimeType: 'application/pdf' } },
+    select: { source: { select: { id: true, extractedFacts: true } } }, orderBy: { source: { messageDate: 'desc' } }, take: 30,
+  });
+  const matching = sources.flatMap(({ source }) => {
+    const provenance = readSupplySourceProvenance(source.extractedFacts);
+    if (!isCurrentSupplyEvidence(provenance) || provenance.evidenceContext !== 'ATTACHMENT' || provenance.direction !== 'RECEIVED' || !provenance.senderAuthenticated || !provenance.productionTeamAuthorized) return [];
+    const facts = wardBolEvidence.safeParse(source.extractedFacts);
+    if (!facts.success) return [];
+    return facts.data.shipments.filter(fact => fact.referenceType === 'BILL_OF_LADING' && fact.reference === shipment.reference && isWardFreight(fact))
+      .map(fact => ({ sourceId: source.id, origin: wardPostalCode(fact.freight?.originPostalCode), pro: wardProNumber(fact.freight?.proNumber), destination: wardPostalCode(facts.data.destination) }));
+  });
+  const destinations = new Set(matching.flatMap(source => source.destination ? [source.destination] : []));
+  const origins = new Set(matching.flatMap(source => source.origin ? [source.origin] : []));
+  const proNumbers = new Set(matching.flatMap(source => source.pro ? [source.pro] : []));
+  const retainedPro = shipment.provider === 'WARD' ? wardProNumber(shipment.providerTrackingId) : null;
+  if (retainedPro) proNumbers.add(retainedPro);
+  // A reviewed historical trace may supply the PRO missing from an older PDF extraction.
+  if (shipment.provider === 'WARD_PUBLIC_TRACE' && matching.length && !proNumbers.size) {
+    const audit = await db.supplyAudit.findFirst({ where: { organizationId, orderId: shipment.orderId, action: 'SUPPLY_FREIGHT_DELIVERY_VERIFIED',
+      detail: { path: ['shipmentId'], equals: shipment.id } }, select: { detail: true }, orderBy: { createdAt: 'desc' } });
+    const checked = verifiedWardTrace.safeParse(audit?.detail);
+    if (checked.success && checked.data.shipmentId === shipment.id && checked.data.bol === shipment.reference && matching.some(source => source.sourceId === checked.data.bolSourceId && source.destination)) {
+      const origin = wardPostalCode(checked.data.originPostalCode), pro = wardProNumber(checked.data.proNumber);
+      if (origin && pro) { origins.add(origin); proNumbers.add(pro); }
+    }
+  }
+  if (destinations.size !== 1 || origins.size > 1 || proNumbers.size > 1 || (destinationPostalCode && !destinations.has(destinationPostalCode))) {
+    throw new SupplyTrackingError('Ward needs one verified bill of lading and destination for this order.', 'invalid_reference');
+  }
+  return { ...shipment, originPostalCode: [...origins][0], proNumber: [...proNumbers][0], destinationPostalCode: [...destinations][0] };
+}
+
 async function assertTrackingTenant(organizationId: string, db: TrackingDb | Prisma.TransactionClient) {
   const enabled = await db.organizationFeature.findFirst({ where: { organizationId, featureKey: 'PRODUCTION_SUPPLIES', enabled: true, organization: { active: true, accountStatus: { notIn: ['SUSPENDED', 'CANCELLED'] } } }, select: { id: true } });
   if (!enabled) throw new SupplyTrackingError('Production Supplies is unavailable for this organization.', 'feature_disabled');
@@ -231,12 +270,14 @@ export async function persistSupplyTrackingObservation(organizationId: string, s
     if (options.expectedReference && shipment.reference !== options.expectedReference) return { status: 'stale', message: 'Tracking reference changed while this lookup was running.' };
     if (shipment.providerMode && shipment.providerMode !== observation.providerMode) throw new SupplyTrackingError('Tracking credential modes cannot be mixed.', 'mode_mismatch');
     if (shipment.reference.replace(/ /g, '').toUpperCase() !== observation.trackingCode.replace(/ /g, '').toUpperCase()) throw new SupplyTrackingError('Tracking reference does not match this shipment.', 'reference_mismatch');
-    if (shipment.providerTrackingId && shipment.providerTrackingId !== observation.providerTrackingId) throw new SupplyTrackingError('Provider tracker does not match this shipment.', 'reference_mismatch');
+    if (shipment.providerTrackingId && (shipment.providerTrackingId !== observation.providerTrackingId || shipment.provider && shipment.provider !== observation.provider)) throw new SupplyTrackingError('Provider tracker does not match this shipment.', 'reference_mismatch');
     const existing = await tx.supplyTrackingObservation.findUnique({ where: { organizationId_shipmentId_eventKey: { organizationId, shipmentId, eventKey: observation.eventKey } }, select: { id: true } });
-    const isStale = Boolean(shipment.statusEventAt && shipment.statusEventAt.getTime() > observation.providerEventAt.getTime());
+    const isStale = observation.eventTimeKnown === false
+      ? shipment.status === 'DELIVERED' && !['DELIVERED', 'RETURNED'].includes(observation.status)
+      : Boolean(shipment.statusEventAt && shipment.statusEventAt.getTime() > observation.providerEventAt.getTime());
     if (!existing) await tx.supplyTrackingObservation.create({ data: { organizationId, shipmentId, provider: observation.provider, eventKey: observation.eventKey,
       providerEventAt: observation.providerEventAt, observedAt: observation.observedAt, status: observation.status, summary: observation.summary,
-      raw: { providerTrackingId: observation.providerTrackingId, mode: observation.providerMode, estimate: observation.estimate } as Prisma.InputJsonValue } });
+      raw: { providerTrackingId: observation.providerTrackingId, mode: observation.providerMode, estimate: observation.estimate, ...(observation.eventTimeKnown === false ? { eventTimeKnown: false } : {}) } as Prisma.InputJsonValue } });
     const nextCheckAt = configuredNextCheck(observation, observation.observedAt, options.env ?? process.env);
     if (existing || isStale) {
       await tx.supplyShipment.updateMany({ where: { organizationId, id: shipmentId, ...(options.leaseId ? { leaseId: options.leaseId } : {}) }, data: {
@@ -277,7 +318,7 @@ export async function persistSupplyTrackingObservation(organizationId: string, s
     }
     await tx.supplyShipment.updateMany({ where: { organizationId, id: shipmentId, ...(options.leaseId ? { leaseId: options.leaseId } : {}) }, data: {
       provider: observation.provider, providerTrackingId: observation.providerTrackingId, providerMode: observation.providerMode, status,
-      statusEventAt: observation.providerEventAt, deliveredAt: status === 'DELIVERED' ? observation.deliveredAt ?? shipment.deliveredAt : shipment.deliveredAt,
+      statusEventAt: observation.eventTimeKnown === false ? shipment.statusEventAt : observation.providerEventAt, deliveredAt: status === 'DELIVERED' ? observation.deliveredAt ?? shipment.deliveredAt : shipment.deliveredAt,
       returnedAt: returned ? shipment.returnedAt ?? observation.providerEventAt : null,
       lastSuccessfulCheckAt: observation.observedAt, lastCheckedAt: observation.observedAt, nextCheckAt,
       checkError: null, failureCount: 0, ...(options.leaseId ? { leaseId: null, leaseUntil: null } : {}),
@@ -301,7 +342,17 @@ export async function refreshSupplyShipmentTracking(organizationId: string, ship
   ] }, data: { leaseId, leaseUntil: new Date(now.getTime() + LEASE_MS), lastCheckedAt: now } });
   if (!claimed.count) return { status: 'busy', message: 'Tracking is already refreshing or another worker has completed this check.' };
   try {
-    const observation = await lookupEasyPostTracking(shipment, { ...options, observedAt: now });
+    const lookupOptions = { ...options, observedAt: now };
+    const ward = isWardFreight(shipment);
+    if (ward && !isWardTrackingConfigured(organizationId, options.env)) {
+      await db.supplyShipment.updateMany({ where: { organizationId, id: shipmentId, leaseId }, data: {
+        lastCheckedAt: shipment.lastCheckedAt, nextCheckAt: new Date(now.getTime() + 24 * 60 * 60_000), leaseId: null, leaseUntil: null,
+      } });
+      return { status: 'out_of_scope', message: 'Ward freight tracking requires a configured account.' };
+    }
+    const observation = ward
+      ? await lookupWardTracking(organizationId, await resolveWardReference(organizationId, shipment, db), lookupOptions)
+      : await lookupEasyPostTracking(shipment, lookupOptions);
     return await persistSupplyTrackingObservation(organizationId, shipmentId, observation, db, { leaseId, env: options.env, expectedReference: shipment.reference });
   } catch (error) {
     const message = error instanceof SupplyTrackingError ? error.message : 'Tracking could not be saved. The last valid shipment result is retained.';

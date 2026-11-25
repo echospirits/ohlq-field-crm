@@ -40,9 +40,10 @@ export function matchWatchedSupplyLine(material: WatchedSupplyMaterial, line: Wa
 }
 
 export type StatusArrival = { source:string; precision:string; startDate:string; endDate:string|null; timeStart:string|null; timeEnd:string|null; timezone:string; observedAt:Date; sourceEventAt:Date; current:boolean };
-export type StatusShipment = { id:string; status:string; statusEventAt:Date|null; deliveredAt:Date|null; returnedAt:Date|null; checkError:string|null; lastSuccessfulCheckAt:Date|null; providerMode?:string|null;provider?:string|null; lines:Array<{lineId:string;quantity:unknown}>; arrivalEstimates:StatusArrival[] };
+export type StatusShipment = { id:string; status:string; statusEventAt:Date|null; deliveredAt:Date|null; returnedAt:Date|null; checkError:string|null; lastSuccessfulCheckAt:Date|null; referenceType?:string; providerMode?:string|null;provider?:string|null; lines:Array<{lineId:string;quantity:unknown}>; arrivalEstimates:StatusArrival[] };
+export type ReviewedFreightDelivery = { needId:string; lineId:string; shipmentId:string; deliveredAt:string; quantity:number; unit:string };
 export type SupplyOrderHold = 'PREPAYMENT_REQUIRED' | 'PAYMENT_PENDING' | 'OTHER' | 'RELEASED';
-export type StatusOrder = { id:string; supplier:string; orderReference:string|null; destination:string|null; status:string; ignored:boolean; historicalOutcomeUnknown:boolean; ownerName:string|null; orderedAt:Date|null; createdAt:Date; lastEvidenceAt:Date|null; lines:Array<WatchableStatusLine & {id:string;quantity:unknown;ignored:boolean;backorderedQuantity:unknown}>; shipments:StatusShipment[]; completeDeliveryEvidence:Array<{at:Date|null;complete:boolean;observedAt?:Date;through?:Date}>; orderHold?:SupplyOrderHold|null; supplierPromisedDate?:string|null; paymentDueDate?:string|null; paymentReceived?:boolean; billOfLadingPromised?:boolean };
+export type StatusOrder = { id:string; supplier:string; orderReference:string|null; destination:string|null; status:string; ignored:boolean; historicalOutcomeUnknown:boolean; ownerName:string|null; orderedAt:Date|null; createdAt:Date; lastEvidenceAt:Date|null; lines:Array<WatchableStatusLine & {id:string;quantity:unknown;ignored:boolean;backorderedQuantity:unknown}>; shipments:StatusShipment[]; completeDeliveryEvidence:Array<{at:Date|null;complete:boolean;observedAt?:Date;through?:Date}>; reviewedFreightDeliveries?:ReviewedFreightDelivery[]; orderHold?:SupplyOrderHold|null; supplierPromisedDate?:string|null; paymentDueDate?:string|null; paymentReceived?:boolean; billOfLadingPromised?:boolean };
 export type StatusDismissal = { cycleKey:string; at:Date };
 export type SupplyStatusCard = {
   id:string; needId:string; cycleKey:string; material:string; location:string; lastAlertAt:string;
@@ -77,13 +78,28 @@ function lineDelivery(order:StatusOrder, lines:StatusOrder['lines']) {
   if(last && explicit && !explicit.complete && explicit.observedAt && explicit.observedAt>=last)return null;
   return last ? {at:last,through:last,precision:'INSTANT' as const} : null;
 }
+
+function hasReviewedFreightCoverage(material:WatchedSupplyMaterial, order:StatusOrder, line:StatusOrder['lines'][number]) {
+  if (normalizeSupplyLocation(material.location) || material.sharedUse || line.department !== 'PRODUCTION') return false;
+  return order.reviewedFreightDeliveries?.some(review => {
+    if (!material.needIds.includes(review.needId) || review.lineId !== line.id || review.quantity !== number(line.quantity) ||
+      !normalizeSupplyMaterial(line.unit) || normalizeSupplyMaterial(review.unit) !== normalizeSupplyMaterial(line.unit)) return false;
+    return order.shipments.some(shipment => shipment.id === review.shipmentId && shipment.referenceType === 'BILL_OF_LADING' &&
+      shipment.status === 'DELIVERED' && shipment.deliveredAt?.toISOString() === review.deliveredAt &&
+      shipment.lines.some(link => link.lineId === line.id && number(link.quantity) === review.quantity));
+  }) ?? false;
+}
+
 export function buildSupplyStatusCard(material:WatchedSupplyMaterial, input:{firstWarningAt:Date;latestWarningAt:Date;warningCount:number;reportedQuantity:unknown;reportedThreshold:unknown;orders:StatusOrder[];dismissals:StatusDismissal[]}, now=new Date()):SupplyStatusCard|null {
   const candidates=input.orders.flatMap(order=>{
     if(order.ignored)return[];
     const lines=order.lines.filter(line=>!line.ignored && matchWatchedSupplyLine(material,{...line,supplier:order.supplier,destination:order.destination}).matched);
     if(!lines.length)return[];
     const reliable=lines.every(line=>matchWatchedSupplyLine(material,{...line,supplier:order.supplier,destination:order.destination}).statusConfirmed);
-    const physicalMatch=lines.every(line=>{const match=matchWatchedSupplyLine(material,{...line,supplier:order.supplier,destination:order.destination});return match.locationConfirmed && match.purposeConfirmed;});
+    const physicalMatch=lines.every(line=>{
+      const match=matchWatchedSupplyLine(material,{...line,supplier:order.supplier,destination:order.destination});
+      return match.purposeConfirmed && (match.locationConfirmed || hasReviewedFreightCoverage(material, order, line));
+    });
     const related=order.shipments.filter(s=>s.provider!=='SOURCE_WITHDRAWN' && (!s.lines.length || s.lines.some(link=>lines.some(l=>l.id===link.lineId))));
     const shipments=related.some(s=>s.providerMode!=='test')?related.filter(s=>s.providerMode!=='test'):related;
     const completion=physicalMatch?lineDelivery(order,lines):null;return[{order,lines,shipments,reliable,completion,completedAt:completion?.at || null}];
@@ -124,6 +140,7 @@ export function buildSupplyStatusCard(material:WatchedSupplyMaterial, input:{fir
     else if(shipments.some(s=>s.checkError)){status='ATTENTION';statusLabel='Tracking needs attention';detail='Tracking could not refresh. The last valid arrival estimate is retained when available.';arrival=arrivalFor(shipments);}
     else if(shipments.some(s=>s.status==='DELIVERED')){status='ATTENTION';statusLabel='Delivery needs checking';detail='Delivery was reported, but complete delivery of this material is not established.';arrival=arrivalFor(shipments);}
     else if(shipments.some(s=>['IN_TRANSIT','OUT_FOR_DELIVERY'].includes(s.status))){status='INCOMING';statusLabel='Incoming';detail='A matching material shipment is on its way.';arrival=arrivalFor(shipments);}
+    else if(shipments.some(s=>s.referenceType==='BILL_OF_LADING')){status='ORDERED';statusLabel='Bill of lading received';detail='Waiting for carrier pickup confirmation.';arrival=arrivalFor(shipments);}
       else if (shipmentStatus !== 'LABEL_CREATED' && (order.paymentReceived || order.billOfLadingPromised)) {
         status = 'ORDERED';
         statusLabel = 'Awaiting shipment';

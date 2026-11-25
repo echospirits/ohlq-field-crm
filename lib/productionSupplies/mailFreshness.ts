@@ -1,4 +1,4 @@
-import { SUPPLY_POLL_MINUTES } from './config';
+import { SUPPLY_FRESH_MAILBOX_LIMIT, SUPPLY_FRESH_MAIL_MS, SUPPLY_POLL_MINUTES } from './config';
 
 type MailboxCoverage = {
   status: string;
@@ -19,11 +19,14 @@ export function supplyEmailCoverage(mailboxes: MailboxCoverage[], pollMinutes: n
   // a full rotation and one hour for job timing before flagging stale email.
   const rotationMinutes = Math.ceil(connected.length / 2) * SUPPLY_POLL_MINUTES;
   const overdueBefore = now.getTime() - Math.max(pollMinutes, rotationMinutes) * 60_000 - hours;
+  const recentRotation = Math.ceil(connected.length / SUPPLY_FRESH_MAILBOX_LIMIT);
+  const recentOverdueBefore = now.getTime() - (recentRotation + 1) * SUPPLY_FRESH_MAIL_MS;
   let oldestCheckAt: Date | null = null;
   let awaitingCheck = false;
+  let stale = false;
 
   for (const mailbox of connected) {
-    const cursor = mailbox.cursor as { lastRecentCheckAt?: unknown } | null;
+    const cursor = mailbox.cursor as { lastRecentCheckAt?: unknown; fastRecentMail?: unknown } | null;
     const value = cursor?.lastRecentCheckAt;
     const checkedAt = value === undefined ? mailbox.lastSuccessfulSyncAt :
       typeof value === 'string' ? new Date(value) : null;
@@ -31,11 +34,12 @@ export function supplyEmailCoverage(mailboxes: MailboxCoverage[], pollMinutes: n
       awaitingCheck = true;
       continue;
     }
+    stale ||= checkedAt.getTime() < (cursor?.fastRecentMail === true ? recentOverdueBefore : overdueBefore);
     if (!oldestCheckAt || checkedAt < oldestCheckAt) oldestCheckAt = checkedAt;
   }
 
   return {
-    stale: oldestCheckAt !== null && oldestCheckAt.getTime() < overdueBefore,
+    stale,
     oldestCheckAt,
     awaitingCheck,
     connectionRequired,

@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { PrismaClient } from '@prisma/client';
-import { ensureSupplySchedulers, rollSupplyScheduler, runSupplySchedulerTick, supplySchedulerOrigin, SUPPLY_POLL_MS, SUPPLY_WORK_LEASE_MS, type SupplySchedulerState } from '../lib/productionSupplies/scheduler';
+import { ensureSupplySchedulers, rollSupplyScheduler, runSupplyCronBatches, runSupplySchedulerTick, supplySchedulerOrigin, SUPPLY_POLL_MS, SUPPLY_WORK_LEASE_MS, type SupplySchedulerState } from '../lib/productionSupplies/scheduler';
+import { SUPPLY_FRESH_MAIL_MS } from '../lib/productionSupplies/config';
 import type { runSupplyJobs } from '../lib/productionSupplies/jobs';
 import {runSupplyJobs as realSupplyJobs} from '../lib/productionSupplies/jobs';
 import {chooseSupplyMailLane,supplyMailCursor} from '../lib/productionSupplies/mailDiscovery';
@@ -16,10 +17,12 @@ function fixture() {
   const rows = new Map<string, { detail: SupplySchedulerState }>();
   const organizations = new Set(['org-one']);
   const launches: Array<{ organizationId: string; generation: string; runId: string }> = [];
+  const recoveredMailboxes: unknown[] = [];
   let queue: Promise<unknown> = Promise.resolve();
   const tx = {
     $executeRaw: async (_parts: TemplateStringsArray, key: string) => { assert.match(key, /^supply-scheduler:org-/); return 1; },
     organization: { findFirst: async ({ where }: { where: { id: string } }) => organizations.has(where.id) ? { id: where.id } : null },
+    supplyMailboxSync: { updateMany: async (args: unknown) => { recoveredMailboxes.push(args); return { count: 1 }; } },
     supplyAudit: {
       findFirst: async ({ where }: { where: { id: string; organizationId: string } }) => {
         assert.equal(where.id, `supply-scheduler:${where.organizationId}`);
@@ -51,17 +54,64 @@ function fixture() {
     jobs: (async () => result()) as typeof runSupplyJobs };
   const state = (organizationId = 'org-one') => rows.get(`supply-scheduler:${organizationId}`)!.detail;
   const owner = () => ({ organizationId: 'org-one', generation: state().generation, runId: state().runId });
-  return { db, services, state, owner, launches, organizations, rows, failNextSave: () => { failSave = true; }, advance: (ms: number) => { time += ms; } };
+  return { db, services, state, owner, launches, organizations, rows, recoveredMailboxes, failNextSave: () => { failSave = true; }, advance: (ms: number) => { time += ms; } };
 }
 
 test('disabled scheduling returns before database/provider work and canonical credentials cannot follow arbitrary or preview targets', async () => {
   const disabled = { env: { ...env, SUPPLY_JOBS_ENABLED: 'false' } };
   assert.equal((await ensureSupplySchedulers({} as PrismaClient, disabled)).environmentDisabled, true);
+  assert.equal((await runSupplyCronBatches({} as PrismaClient, disabled)).environmentDisabled, true);
   assert.equal((await ensureSupplySchedulers({} as PrismaClient, { env: { ...env, VERCEL: '1', VERCEL_ENV: 'preview', APP_ENV: 'test' } })).environmentDisabled, true);
   assert.equal((await runSupplySchedulerTick({ organizationId: 'org-one', generation: 'old', runId: 'old' }, {} as PrismaClient, disabled)).continue, false);
   assert.equal(supplySchedulerOrigin({ ...env, VERCEL: '1', VERCEL_ENV: 'production', APP_ENV: 'production', APP_BASE_URL: 'https://untrusted.example' }), 'https://crm.echospirits.com');
   assert.equal(supplySchedulerOrigin({ ...env, VERCEL: '1', VERCEL_ENV: 'production', APP_ENV: 'test' }), 'https://neat-tst.vercel.app');
   assert.equal(supplySchedulerOrigin({ ...env, VERCEL: '1', VERCEL_ENV: 'preview', APP_ENV: 'production' }), null);
+});
+
+test('direct cron takes over an abandoned Workflow and runs one bounded batch per quarter hour', async () => {
+  const f = fixture();
+  await ensureSupplySchedulers(f.db, f.services);
+  const old = f.owner();
+  f.advance(7 * 60_000);
+  const modes: string[] = [];
+  const services = { ...f.services, jobs: (async (_db, options) => {
+    assert.equal(options?.organizationId, 'org-one');
+    assert.equal(options?.fastMail, true);
+    modes.push(options?.recentMailOnly ? 'recent' : 'full');
+    return result();
+  }) as typeof runSupplyJobs };
+  const first = await Promise.all([runSupplyCronBatches(f.db, services), runSupplyCronBatches(f.db, services)]);
+  assert.deepEqual(first.flatMap(item => item.batches.map(batch => batch.status)).sort(), ['completed', 'not-due']);
+  assert.equal(f.launches.length, 1);
+  assert.equal(f.recoveredMailboxes.length, 1);
+  const [recovery] = f.recoveredMailboxes as Array<{ where: { status: { in: string[] } } }>;
+  assert.deepEqual(recovery.where.status.in, ['CONNECTED', 'INITIAL_IMPORT', 'PROCESSING']);
+  assert.notEqual(f.state().generation, old.generation);
+  assert.equal((await runSupplySchedulerTick(old, f.db, services)).continue, false);
+  assert.equal(Date.parse(f.state().nextDueAt), startAt + SUPPLY_FRESH_MAIL_MS);
+
+  f.advance(8 * 60_000);
+  assert.equal((await runSupplyCronBatches(f.db, services)).batches[0].status, 'completed');
+  assert.equal((await runSupplyCronBatches(f.db, services)).batches[0].status, 'not-due');
+  assert.deepEqual(modes, ['full', 'recent']);
+  f.advance(SUPPLY_POLL_MS);
+  assert.equal((await runSupplyCronBatches(f.db, services)).batches[0].status, 'completed');
+  assert.deepEqual(modes, ['full', 'recent', 'full']);
+});
+
+test('an in-flight Workflow batch must finish or lose its work lease before direct cron takeover', async () => {
+  const f = fixture();
+  await ensureSupplySchedulers(f.db, f.services);
+  let entered!: () => void, release!: () => void;
+  const running = new Promise<void>(resolve => { entered = resolve; });
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const oldTick = runSupplySchedulerTick(f.owner(), f.db, { ...f.services, jobs: (async () => { entered(); await gate; return result(); }) as typeof runSupplyJobs });
+  await running;
+  assert.equal((await runSupplyCronBatches(f.db, f.services)).batches[0].status, 'not-due');
+  release();
+  await oldTick;
+  const resumed = await runSupplyCronBatches(f.db, f.services);
+  assert.deepEqual(resumed.batches, [{ organizationId: 'org-one', status: 'completed', mode: 'recent' }]);
 });
 
 test('concurrent authenticated watchdogs start one tenant generation; other tenants retain independent ownership', async () => {

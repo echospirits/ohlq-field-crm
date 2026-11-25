@@ -23,6 +23,12 @@ test('a recent watched-reply check keeps coverage current while catch-up continu
   assert.deepEqual(result.oldestCheckAt, checked(5));
 });
 
+test('frequent connected mailbox checks flag overdue fresh coverage within two slots', () => {
+  const fast = (minutes: number) => connected(96, { fastRecentMail: true, lastRecentCheckAt: checked(minutes / 60).toISOString() });
+  assert.equal(supplyEmailCoverage([fast(14), fast(25), fast(30)], 360, now).stale, false);
+  assert.equal(supplyEmailCoverage([fast(14), fast(25), fast(31)], 360, now).stale, true);
+});
+
 test('a failed or invalid first recent check cannot inherit a successful catch-up timestamp', () => {
   for (const lastRecentCheckAt of [null, 'invalid', checked(-1).toISOString()]) {
     const result = supplyEmailCoverage([connected(1, { lastRecentCheckAt })], 360, now);

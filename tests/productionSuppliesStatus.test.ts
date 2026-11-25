@@ -60,6 +60,33 @@ test('unknown warning location permits an exact nonshared order without assertin
   assert.equal(card([order({destination:null,shipments:[]})])!.statusLabel,'Order match uncertain');
 });
 
+test('reviewed freight delivery closes only the linked material cycle when the alert omitted a location', () => {
+  const unknown = { ...material, location: 'Location unknown' };
+  const freight = shipment({ referenceType: 'BILL_OF_LADING', status: 'DELIVERED', deliveredAt: at(11) });
+  const review = { needId: 'need', lineId: 'line', shipmentId: freight.id, deliveredAt: at(11).toISOString(), quantity: 10, unit: 'case' };
+  const reviewed = order({ shipments: [freight], reviewedFreightDeliveries: [review] });
+  assert.equal(buildSupplyStatusCard(unknown, input([reviewed])), null);
+  assert.equal(buildSupplyStatusCard(unknown, input([reviewed], at(12)))?.status, 'NO_ORDER_FOUND');
+
+  for (const mismatch of [
+    { needId: 'other' }, { lineId: 'other' }, { shipmentId: 'other' },
+    { deliveredAt: at(12).toISOString() }, { quantity: 5 }, { unit: 'pallets' },
+  ]) {
+    const unverified = { ...reviewed, reviewedFreightDeliveries: [{ ...review, ...mismatch }] };
+    assert.equal(buildSupplyStatusCard(unknown, input([unverified]))?.statusLabel, 'Delivery needs checking');
+  }
+  const partial = { ...reviewed, shipments: [{ ...freight, lines: [{ lineId: 'line', quantity: 5 }] }] };
+  assert.equal(buildSupplyStatusCard(unknown, input([partial]))?.statusLabel, 'Delivery needs checking');
+  const returned = { ...reviewed, shipments: [{ ...freight, returnedAt: at(12), status: 'RETURNED' }] };
+  assert.equal(buildSupplyStatusCard(unknown, input([returned]))?.statusLabel, 'Shipment returned');
+});
+
+test('a linked bill of lading is visible while carrier pickup is still unconfirmed', () => {
+  const pending = order({ paymentReceived: true, shipments: [shipment({ referenceType: 'BILL_OF_LADING', status: 'UNKNOWN' })] });
+  assert.equal(card([pending])?.statusLabel, 'Bill of lading received');
+  assert.equal(card([pending])?.arrival, null);
+});
+
 test('confirmed production purchase cards preserve payment gate and supplier promise without inventing arrival',()=>{
   const watched={...material,watchSource:'PRODUCTION_ORDER' as const};
   const held=buildSupplyStatusCard(watched,input([order({shipments:[],orderHold:'PREPAYMENT_REQUIRED',supplierPromisedDate:'2026-11-17',paymentDueDate:'2026-11-16'})]))!;

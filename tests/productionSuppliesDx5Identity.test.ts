@@ -38,7 +38,7 @@ function need(id:string,warningSource:ReturnType<typeof source>,when:Date,locati
   return{id,description:warningSource.extractedFacts.warning.material,location,unit:'units',catalogItemId,createdAt:id==='first'?at(10):at(11),latestWarningAt:when,reportedQuantity:2,reportedThreshold:5,warnings:[{warningAt:when,reportedQuantity:2,reportedThreshold:5,source:warningSource}],audits:[] as Array<{detail:unknown;createdAt:Date;orderId:string}>,allocations:[]};
 }
 function db(needs:ReturnType<typeof need>[],dismissal=false,catalog:unknown[]=[]){
-  return{organization:{findFirst:async()=>({timezone:'America/New_York'})},supplyNeed:{findMany:async(args:{where:{organizationId:string}})=>{assert.equal(args.where.organizationId,'fixture-tenant');return needs;}},supplyCatalogItem:{findMany:async()=>catalog},supplyOrder:{findMany:async()=>[]},supplyAudit:{findMany:async()=>dismissal?[{needId:'second',detail:{cycleKey:supplyStatusKey('second','initial')},createdAt:at(3)}]:[]},user:{findMany:async()=>[]}} as unknown as PrismaClient;
+  return{organization:{findFirst:async()=>({timezone:'America/New_York'})},supplyNeed:{findMany:async(args:{where:{organizationId:string}})=>{assert.equal(args.where.organizationId,'fixture-tenant');return needs;}},supplyCatalogItem:{findMany:async()=>catalog},supplyOrder:{findMany:async()=>[]},supplyAudit:{findMany:async()=>dismissal?[{action:'SUPPLY_STATUS_DISMISSED',orderId:null,needId:'second',detail:{cycleKey:supplyStatusKey('second','initial')},createdAt:at(3)}]:[]},user:{findMany:async()=>[]}} as unknown as PrismaClient;
 }
 
 test('retained split/full warnings coalesce one cycle with latest alert while source and need history remain unchanged',async()=>{

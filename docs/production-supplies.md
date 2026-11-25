@@ -2,7 +2,7 @@
 
 Supplies is a simple ordering and delivery status dashboard for materials flagged by **Dx5** low-inventory alerts or confirmed **Production replenishment orders**. Dx5, and later Ollie, own inventory levels, forecasting and lead times. Neat answers whether an order has been found and what is happening with its delivery.
 
-The owner narrowed the earlier coordination workspace and approved production release **0.10.0**, then separately approved Echo production activation on November 12, 2026. The selective **0.10.1** reliability hotfix adds confirmed-order cards, corrects material/image/attachment matching and uses the existing durable runtime. The November 17 operational controls reduce checks to four per day and disable TST processing. See [current validation](releases/0.10.1-validation.md) and [historical production activation](releases/production-supplies-production-activation.md) for exact receipts. Production connections and each owner's consent remain separate from TST; historical backfill is still progressing.
+Production Supplies was activated for Echo on November 12, 2026. The [historical activation record](releases/production-supplies-production-activation.md) and [0.10.1 validation](releases/0.10.1-validation.md) document the original rollout. The [freight and email hotfix](releases/0.15.17.md) updates the current behavior. Production connections and each owner's consent remain separate from TST.
 
 ## Daily use
 
@@ -11,6 +11,7 @@ Open **Production → Supplies** at `/production-supplies`.
 - One card shows each watched material/location in its current replenishment cycle, identifying its Dx5 alert or confirmed Production-order source.
 - Cards show the latest reliably matched order/delivery status, supplier and available sourced arrival. Missing evidence is unknown; “No order found” does not claim nobody placed an order.
 - Prepayment holds, planned payment dates and generic supplier promised dates remain separate from shipment/arrival evidence. A plan to pay is not a payment or dispatch confirmation.
+- **Bill of lading received** means the document identifies a freight shipment and carrier pickup is still unconfirmed.
 - Repeated Dx5 alerts caused by further usage update the same cycle. They do not create additional cards.
 - The original verified Dx5 label keeps that identity stable even if extraction varies its name or splits a parenthetical fragment into an assumed ID. Reviewed catalog identities and genuine ID/location conflicts remain authoritative.
 - **Dismiss** hides the current cycle. Later repeated alerts in that cycle do not bring it back.
@@ -37,11 +38,11 @@ Attachment evidence uses stable message/MIME identity so changing download handl
 
 Connection administration remains separate at `/production-supplies/settings`, also linked from Users. Existing organization teams identify Production membership independently of role, view/manage permission and mailbox consent. Each person connects their own verified business Gmail using read-only consent; Support View never grants private mailbox access.
 
-Production uses the three verified existing Joe, Karl and Nikhil accounts, with Production membership and view/manage grants independent of their unchanged roles. Joe's own read-only production Gmail consent is connected. Karl and Nikhil must each sign in and choose **Connect my Gmail** in settings; their mailboxes remain excluded until then. No duplicate accounts or email addresses are invented. TST's earlier Joe connection is separate. Historical backfill remains bounded and checkpointed; initial live processing does not establish full 90-day completion.
+Production uses the three existing Joe, Karl and Nikhil accounts, with Production membership and view/manage grants independent of their roles. Each connected mailbox has its own read-only consent. The current state appears in **Mailbox status**. Historical backfill remains bounded and checkpointed, and TST uses separate consent.
 
 Gmail OAuth uses dedicated `SUPPLY_GOOGLE_CLIENT_ID` / `SUPPLY_GOOGLE_CLIENT_SECRET`, the stable `SUPPLY_MAIL_TOKEN_ENCRYPTION_KEY`, `SUPPLY_MAIL_INGESTION_ENABLED=true`, and matching `SUPPLY_MAIL_OAUTH_ENVIRONMENT`/`APP_ENV`. TST's supply-only callback is `https://neat-tst.vercel.app/api/production-supplies/mail/google/callback`; production's is `https://crm.echospirits.com/api/production-supplies/mail/google/callback`, set via `SUPPLY_GOOGLE_REDIRECT_URI`. Each environment needs its own client, keys, owner consent and schedule secret. Calendar configuration is independent; never transfer TST tokens into production.
 
-The supply-only worker runs without an open dashboard. The durable Workflow loop owns the six-hour schedule, with persisted tenant ownership, work leases, deployment fencing and checkpointed catch-up. GitHub Actions and Vercel cron ensure or recover that loop. TST automatic processing remains disabled. See the [November 17 controls](releases/scheduled-job-usage-2026-11-17.md).
+The supply-only worker runs without an open dashboard. Production Vercel cron invokes the authenticated route every 15 minutes to check recent watched replies and freight notices. GitHub Actions retains a six-hour backstop. The route claims the current slot in the database so overlapping invocations cannot repeat the same provider work. Broad mailbox discovery, historical backfill and evidence replay keep their six-hour budget. TST automatic processing remains paused.
 
 Each eligible mailbox checks recent replies on watched orders before resuming catch-up. Supplies warns when the oldest completed mailbox check falls behind its polling window and points to Mailbox status. An unfinished recent check keeps its previous freshness timestamp. The page refreshes while visible.
 
@@ -51,7 +52,7 @@ When a supplier reply reaches another connected mailbox, verified sender and sta
 
 Supplier promises, carrier estimates, manual expectations and actual delivery remain distinct. Date-only arrival information retains its calendar precision. Old observations cannot replace newer facts, and outages retain the last valid result.
 
-The implemented EasyPost adapter supports standalone parcel tracking behind separately approved credentials/fees. Continuous carrier API tracking remains disabled until those are supplied. The verified one-time public UPS lookup returned Label Created with no ETA; it is not continuous API verification. GFS supplier delivery and freight require additional permitted integrations. See [tracking setup](production-supplies-tracking.md).
+The EasyPost adapter supports standalone parcel tracking with separately approved credentials and fees. The Ward adapter supports authenticated freight tracking for its configured tenant. Carrier lookups require the matching credentials and configuration. Confirmed delivery can close a specifically reviewed freight replenishment while preserving an unknown stock-alert location. See [tracking setup](production-supplies-tracking.md).
 
 ## Data and recovery
 
