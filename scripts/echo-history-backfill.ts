@@ -7,8 +7,8 @@ import { downloadOhlqEchoSalesPairs, type OhlqAnnualSalesDownloadResult } from '
 import { importOhlqAnnualSalesCsv, parseOhlqAnnualSalesByWholesaleCsv } from '../lib/ohlqAnnualSalesImport';
 
 const vendor = 'Z90399001';
-const start = '2022-12-02';
-const end = start;
+const repairDates = ['2022-11-17', '2022-11-02'];
+const [end, start] = repairDates;
 const approvedPermitHash = '563ed9ef31476d1415999bf64d130406df8a8fc4d98e2c5a1c07d95c5c74e898';
 const wholesaleId = 'dea7572c-2ea4-45bb-bbbc-29600bd326cc';
 let day: string | undefined;
@@ -35,7 +35,7 @@ const emptyHash = '4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b
 async function remaining() {
   return prisma.$queryRaw<{ date: string }[]>`
     WITH summary AS (${summarySignatures}), detail AS (${detailSignatures}),
-    dates AS (SELECT d::date AS day FROM generate_series(${start}::date,${end}::date,interval '1 day') d)
+    dates(day) AS (VALUES (${end}::date), (${start}::date))
     SELECT to_char(day,'YYYY-MM-DD') AS date
     FROM dates LEFT JOIN "EchoBottleSalesDayCoverage" c ON c."reportDate"=day
     LEFT JOIN summary s ON s."reportDate"=day LEFT JOIN detail w ON w."reportDate"=day
@@ -60,7 +60,7 @@ function wholesaleRows(result: OhlqAnnualSalesDownloadResult, date: string, perm
   if (!e || e.reportIdentity !== wholesaleId || e.date !== date || result.reportDate !== date) {
     throw Error('Invalid wholesale source evidence.');
   }
-  if (e.verifiedEmpty || e.statewide || date !== start) throw Error('Expected the nonempty vendor filtered wholesale export.');
+  if (e.verifiedEmpty || e.statewide || !repairDates.includes(date)) throw Error('Expected the nonempty vendor filtered wholesale export.');
   const bytes = result.csvBuffer;
   if (!bytes || !bytes.length || bytes.length !== result.sizeBytes) throw Error('Incomplete wholesale bytes.');
   const input = Papa.parse(bytes.toString('utf8'), { header: true, skipEmptyLines: true }) as {
@@ -129,7 +129,7 @@ async function main() {
     WHERE encode(sha256(convert_to("licenseeId",'UTF8')),'hex')=${approvedPermitHash}
   `;
   if (permits.length !== 1) throw Error('Could not validate the approved permit.');
-  console.log(JSON.stringify({ from: start, missing: batch.length, singleDate: true }));
+  console.log(JSON.stringify({ repairDates: batch, missing: batch.length }));
   let committed = 0;
   let attempts = 0;
 
@@ -180,7 +180,7 @@ async function main() {
     }
   }
   if ((await remaining()).length) throw Error('The corrected day did not reconcile.');
-  console.log(JSON.stringify({ date: start, verifiedCorrection: true }));
+  console.log(JSON.stringify({ repairDates: batch, verifiedCorrection: true }));
 }
 main().catch((e:unknown)=>{
   const code=e && typeof e==='object' && 'code' in e && /^P\d{4}$/.test(String(e.code)) ? String(e.code):undefined;
