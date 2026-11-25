@@ -12,7 +12,7 @@ const start = '2019-09-01';
 const end = '2026-11-21';
 // Both native wholesale export scopes lacked required identifiers on these dates.
 // Keep them in the verification query until corrected evidence is available.
-const deferredSourceDates = new Set(['2025-04-12', '2024-12-19', '2022-12-02', '2022-11-17']);
+const deferredSourceDates = new Set(['2025-04-12', '2024-12-19', '2022-12-02', '2022-11-17', '2022-11-02']);
 const wholesaleId = 'dea7572c-2ea4-45bb-bbbc-29600bd326cc';
 let day: string | undefined;
 let stage = 'target';
