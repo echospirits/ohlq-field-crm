@@ -89,7 +89,19 @@ function PurchaseList({
           <tbody>
             {items.map((item) => (
               <tr key={item.itemCode}>
-                <th scope="row"><strong>{item.itemName}</strong><small className="directory-record-id">{item.itemCode}</small></th>
+                <th scope="row">
+                  <strong>{item.itemName}</strong>
+                  <small className="directory-record-id">
+                    <a
+                      href={`https://www.ohlq.com/search-results?query=${encodeURIComponent(item.itemCode)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label={`${item.itemCode}, search OHLQ (opens in a new tab)`}
+                    >
+                      {item.itemCode}
+                    </a>
+                  </small>
+                </th>
                 <td className="numeric purchase-price">
                   {item.wholesalePrice === null
                     ? <span className="muted">Unavailable</span>

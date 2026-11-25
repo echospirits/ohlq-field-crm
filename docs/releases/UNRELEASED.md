@@ -1,5 +1,9 @@
 # Unreleased
 
+## OHLQ search from wholesale purchases — November 25, 2026
+
+Item codes in Tracked products and All purchases open OHLQ search results for the exact code in a new tab. See the [0.15.16 release notes](0.15.16.md).
+
 ## Wholesale account purchase prices — November 24, 2026
 
 Recent OHLQ Purchases shows the latest imported wholesale price per bottle by exact item code in Tracked products and All purchases. See the [0.15.15 release notes](0.15.15.md).

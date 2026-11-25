@@ -74,9 +74,17 @@
 .purchase-comparison-table th > small { display: block; font-weight: 400; color: var(--muted); }
 .purchase-comparison-table th[scope="row"] { overflow-wrap: anywhere; }
 .purchase-comparison-table .purchase-price { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.purchase-comparison-table .directory-record-id > a {
+  display: inline-flex;
+  align-items: center;
+  min-inline-size: 44px;
+  min-block-size: 24px;
+  text-decoration: underline;
+}
 @media (max-width: 600px) {
   .purchase-comparison-table th:first-child { min-width: 9rem; }
   .purchase-comparison-table :is(th, td) { padding-inline: 8px; }
+  .purchase-comparison-table .directory-record-id > a { min-block-size: 44px; }
 }
 @media (max-width: 360px) {
   .purchase-comparison-table th:first-child { min-width: 7.5rem; }

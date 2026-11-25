@@ -39,7 +39,7 @@ it('shows tenant purchases first and all purchases in the wholesale disclosure',
       all: {
         count: 2,
         items: [
-          { agencyCount: 1, itemCode: '0100A', itemName: 'Echo Vodka', purchaseLineCount: 1, totalBottlesSold: 3, vendorCount: 1, wholesalePrice: null },
+          { agencyCount: 1, itemCode: '0100A+ALT', itemName: 'Echo Vodka', purchaseLineCount: 1, totalBottlesSold: 3, vendorCount: 1, wholesalePrice: null },
           trackedItem,
         ],
         purchaseLineCount: 2,
@@ -62,10 +62,14 @@ it('shows tenant purchases first and all purchases in the wholesale disclosure',
   assert.match(html, /Zeta Whiskey/);
   const allPurchasesIndex = html.indexOf('All purchases · 30 days');
   assert.ok(allPurchasesIndex > 0);
-  assert.match(html.slice(0, allPurchasesIndex), /Wholesale<small>per bottle<\/small>/);
-  assert.match(html.slice(0, allPurchasesIndex), /\$19\.50/);
-  assert.doesNotMatch(html.slice(0, allPurchasesIndex), /Echo Vodka/);
-  assert.match(html.slice(allPurchasesIndex), /Echo Vodka/);
-  assert.match(html.slice(allPurchasesIndex), /Unavailable/);
-  assert.match(html.slice(allPurchasesIndex), /\$19\.50/);
+  const trackedPurchases = html.slice(0, allPurchasesIndex);
+  const allPurchases = html.slice(allPurchasesIndex);
+  assert.match(trackedPurchases, /Wholesale<small>per bottle<\/small>/);
+  assert.match(trackedPurchases, /\$19\.50/);
+  assert.match(trackedPurchases, /href="https:\/\/www\.ohlq\.com\/search-results\?query=0200B" target="_blank" rel="noopener noreferrer"/);
+  assert.doesNotMatch(trackedPurchases, /Echo Vodka/);
+  assert.match(allPurchases, /Echo Vodka/);
+  assert.match(allPurchases, /href="https:\/\/www\.ohlq\.com\/search-results\?query=0100A%2BALT" target="_blank" rel="noopener noreferrer"/);
+  assert.match(allPurchases, /Unavailable/);
+  assert.match(allPurchases, /\$19\.50/);
 });
