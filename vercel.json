@@ -34,7 +34,8 @@
     "deploymentEnabled": {
       "codex/echo-history-2019-backfill": false,
       "codex/echo-april-12-permit-correction": false,
-      "codex/echo-december-19-permit-correction": false
+      "codex/echo-december-19-permit-correction": false,
+      "codex/echo-december-02-2022-permit-correction": false
     }
   }
 }

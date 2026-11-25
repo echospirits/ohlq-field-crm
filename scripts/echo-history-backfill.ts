@@ -7,9 +7,9 @@ import { downloadOhlqEchoSalesPairs, type OhlqAnnualSalesDownloadResult } from '
 import { importOhlqAnnualSalesCsv, parseOhlqAnnualSalesByWholesaleCsv } from '../lib/ohlqAnnualSalesImport';
 
 const vendor = 'Z90399001';
-const start = '2024-12-19';
+const start = '2022-12-02';
 const end = start;
-const approvedPermitHash = '3c8f9ab516e1ca34d781b6f06ba30d17e58a05a8735f3f6a7eec3fd54e2a7124';
+const approvedPermitHash = '563ed9ef31476d1415999bf64d130406df8a8fc4d98e2c5a1c07d95c5c74e898';
 const wholesaleId = 'dea7572c-2ea4-45bb-bbbc-29600bd326cc';
 let day: string | undefined;
 let stage = 'target';
@@ -125,8 +125,8 @@ async function main() {
   const batch = (await remaining()).map(row => row.date);
   if (!batch.length) return;
   const permits = await prisma.$queryRaw<{ permit: string }[]>`
-    SELECT DISTINCT "permitNumber" AS permit FROM "OhlqAnnualSalesByWholesaleRow"
-    WHERE vendor=${vendor} AND encode(sha256(convert_to("permitNumber",'UTF8')),'hex')=${approvedPermitHash}
+    SELECT DISTINCT "licenseeId" AS permit FROM "WholesaleLicenseeId"
+    WHERE encode(sha256(convert_to("licenseeId",'UTF8')),'hex')=${approvedPermitHash}
   `;
   if (permits.length !== 1) throw Error('Could not validate the approved permit.');
   console.log(JSON.stringify({ from: start, missing: batch.length, singleDate: true }));
