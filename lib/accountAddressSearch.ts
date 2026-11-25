@@ -21,7 +21,7 @@ function addressFields(term: string): AddressFilter[] {
     { city: contains },
     { county: contains },
     { state: { in: state ? accountStateValues([state]) : [term], mode: 'insensitive' } },
-    ...(state === 'OH' ? [{ state: null }, { state: '' }] : []),
+    ...(state === 'OH' ? [{ state: null }, { state: '' as const }] : []),
     { zip: contains },
   ];
 }
