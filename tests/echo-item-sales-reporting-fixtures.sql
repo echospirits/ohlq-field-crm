@@ -1,5 +1,5 @@
 -- Run only on an isolated, production-derived rehearsal branch after applying
--- both Echo reporting migrations. Execute as one session/transaction
+-- all Echo reporting migrations, including the 2019 horizon. Execute as one session/transaction
 -- with stop-on-error enabled. Every fixture change is rolled back at the end.
 -- This verifies database/reporting behavior, not live provider completeness.
 -- No production connection, importer, scheduler, dashboard or grants are used.
@@ -38,8 +38,7 @@ $body$;
 -- The branch copy is isolated. These temporary replacements are all rolled back.
 DELETE FROM public."EchoBottleSalesDayCoverage";
 DELETE FROM public."OhlqAnnualSalesRow"
- WHERE "vendor" = 'Z90399001'
-   AND "reportDate" BETWEEN DATE '2025-01-01' AND DATE '2026-01-31';
+ WHERE "vendor" = 'Z90399001';
 UPDATE public."Organization"
    SET "active" = true, "accountStatus" = 'ACTIVE', "enabledStates" = ARRAY['OH']
  WHERE "id" = 'org_echo_spirits';
@@ -99,7 +98,8 @@ DO $body$
 BEGIN
   PERFORM pg_temp.echo_assert(
     (SELECT "Reporting_Month" IS NULL AND NOT "Comparison_Ready"
-            AND "First_Uncertified_Date" = DATE '2025-01-01'
+            AND "History_Start" = DATE '2019-01-01'
+            AND "First_Uncertified_Date" = DATE '2019-01-01'
        FROM public.echo_item_sales_reporting_status),
     'physical facts without receipts cannot certify history');
   PERFORM pg_temp.echo_assert((SELECT count(*) = 0 FROM public.echo_item_sales_reporting),
@@ -113,7 +113,7 @@ DO $body$
 BEGIN
   PERFORM pg_temp.echo_assert(
     (SELECT "Reporting_Month" = DATE '2025-12-01' AND NOT "Comparison_Ready"
-            AND "First_Uncertified_Date" = DATE '2026-01-01'
+            AND "First_Uncertified_Date" = DATE '2019-01-01'
        FROM public.echo_item_sales_reporting_status),
     'a completed old reporting year does not fabricate its prior-year comparison');
   PERFORM pg_temp.echo_assert((SELECT count(*) = 6 FROM public.echo_item_sales_reporting),
@@ -130,7 +130,7 @@ DO $body$
 BEGIN
   PERFORM pg_temp.echo_assert(
     (SELECT "Reporting_Month" = DATE '2025-12-01' AND NOT "Comparison_Ready"
-            AND "First_Uncertified_Date" = DATE '2026-01-31'
+            AND "First_Uncertified_Date" = DATE '2019-01-01'
        FROM public.echo_item_sales_reporting_status),
     'one missing last day prevents advancing into the new reporting year');
 END;
@@ -210,7 +210,7 @@ DELETE FROM public."EchoBottleSalesDayCoverage" WHERE "reportDate" = DATE '2025-
 DO $body$
 BEGIN
   PERFORM pg_temp.echo_assert(
-    (SELECT "Reporting_Month" = DATE '2026-01-01' AND "First_Uncertified_Date" = DATE '2025-01-16' AND "Current_YTD_Ready" = 1 AND "Prior_YTD_Ready" = 0
+    (SELECT "Reporting_Month" = DATE '2026-01-01' AND "First_Uncertified_Date" = DATE '2019-01-01' AND "Current_YTD_Ready" = 1 AND "Prior_YTD_Ready" = 0
        FROM public.echo_item_sales_reporting_status),
     'the same physically empty day is unknown when its receipt is absent');
   PERFORM pg_temp.echo_assert((SELECT count(*) = 1 FROM public.echo_item_sales_reporting),
@@ -225,7 +225,7 @@ DO $body$
 BEGIN
   PERFORM pg_temp.echo_assert(
     (SELECT "Reporting_Month" = DATE '2026-01-01' AND "Comparison_Ready"
-            AND "First_Uncertified_Date" = DATE '2025-12-15'
+            AND "First_Uncertified_Date" = DATE '2019-01-01'
        FROM public.echo_item_sales_reporting_status),
     'a December gap is unrelated to the two January comparison periods');
 END;
@@ -267,27 +267,86 @@ ROLLBACK TO SAVEPOINT complete_state_zero;
 
 SAVEPOINT pre_dashboard_history;
 UPDATE echo_fixture_receipts
-   SET "reportDate" = DATE '2024-12-31', "requestedFrom" = DATE '2024-12-31',
-       "requestedTo" = DATE '2024-12-31', "requestReference" = 'synthetic-pre-dashboard-history'
+   SET "reportDate" = DATE '2018-12-31', "requestedFrom" = DATE '2018-12-31',
+       "requestedTo" = DATE '2018-12-31', "requestReference" = 'synthetic-pre-dashboard-history'
  WHERE "reportDate" = DATE '2025-01-16';
 INSERT INTO public."EchoBottleSalesDayCoverage"
-SELECT * FROM echo_fixture_receipts WHERE "reportDate" = DATE '2024-12-31';
+SELECT * FROM echo_fixture_receipts WHERE "reportDate" = DATE '2018-12-31';
 -- Deliberately stale pre-dashboard evidence must not claim completeness outside
 -- the private view's supported horizon or enter the public monthly quantities.
 INSERT INTO public."OhlqAnnualSalesRow"
   ("reportDate", "agencyId", "vendor", "brand", "retailBottlesSold", "wholesaleBottlesSold")
-VALUES ('2024-12-31', 'ECHO_FIXTURE_AGENCY', 'Z90399001', 'ECHO_FIXTURE_BRAND', 500, 500);
+VALUES ('2018-12-31', 'ECHO_FIXTURE_AGENCY', 'Z90399001', 'ECHO_FIXTURE_BRAND', 500, 500);
 DO $body$
 BEGIN
   PERFORM pg_temp.echo_assert(
-    EXISTS (SELECT 1 FROM public."EchoBottleSalesDayCoverage" WHERE "reportDate" = DATE '2024-12-31')
-    AND NOT EXISTS (SELECT 1 FROM public.echo_item_sales_day_coverage WHERE "Sales_Date" = DATE '2024-12-31'),
+    EXISTS (SELECT 1 FROM public."EchoBottleSalesDayCoverage" WHERE "reportDate" = DATE '2018-12-31')
+    AND NOT EXISTS (SELECT 1 FROM public.echo_item_sales_day_coverage WHERE "Sales_Date" = DATE '2018-12-31'),
     'earlier source receipts are permitted without certifying unsupported dashboard dates');
   PERFORM pg_temp.echo_assert((SELECT count(*) = 7 FROM public.echo_item_sales_reporting),
-    'pre-dashboard facts and receipts do not change the January 2025 reporting horizon');
+    'pre-dashboard facts and receipts do not change the January 2019 reporting horizon');
 END;
 $body$;
 ROLLBACK TO SAVEPOINT pre_dashboard_history;
+
+SAVEPOINT history_2019_boundary;
+DELETE FROM public."EchoBottleSalesDayCoverage";
+INSERT INTO public."OhlqAnnualSalesRow"
+  ("reportDate", "agencyId", "vendor", "brand", "retailBottlesSold", "wholesaleBottlesSold")
+VALUES
+  ('2019-01-15', 'ECHO_FIXTURE_AGENCY', 'Z90399001', 'ECHO_FIXTURE_BRAND', -2, 3),
+  ('2020-01-15', 'ECHO_FIXTURE_AGENCY', 'Z90399001', 'ECHO_FIXTURE_BRAND', 5, 7);
+-- Independent literal fingerprints of the two fixed, signed fact vectors.
+INSERT INTO public."EchoBottleSalesDayCoverage"
+SELECT d::date, 'Z90399001', '9781fc23-73de-4ee8-b0b8-77ae6f9b7c4e', 'VENDOR_FILTERED',
+  d::date, d::date, 'synthetic-history-boundary', repeat('a', 64), 1000::bigint,
+  CASE WHEN d::date IN (DATE '2019-01-15', DATE '2020-01-15') THEN 1 ELSE 0 END,
+  0, true, NULL::timestamptz, date_trunc('milliseconds', CURRENT_TIMESTAMP),
+  CASE WHEN d::date IN (DATE '2019-01-15', DATE '2020-01-15') THEN 1 ELSE 0 END,
+  CASE d::date WHEN DATE '2019-01-15' THEN -2 WHEN DATE '2020-01-15' THEN 5 ELSE 0 END,
+  CASE d::date WHEN DATE '2019-01-15' THEN 3 WHEN DATE '2020-01-15' THEN 7 ELSE 0 END,
+  CASE d::date
+    WHEN DATE '2019-01-15' THEN '96c3372df06dfcc686f8ba3c3cd1c062212d334966c5633d5097c0e0571d088b'
+    WHEN DATE '2020-01-15' THEN '37761ed52f912395bb3d11556c73cb6f4217feecd1d83ad23826d477173e1014'
+    ELSE '4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945'
+  END
+FROM (
+  SELECT generate_series(DATE '2019-01-01', DATE '2019-01-31', INTERVAL '1 day') AS d
+  UNION ALL
+  SELECT generate_series(DATE '2020-01-01', DATE '2020-01-30', INTERVAL '1 day')
+) dates;
+SELECT pg_temp.echo_assert((SELECT "History_Start" = DATE '2019-01-01'
+  AND "Reporting_Month" = DATE '2019-01-01'
+  AND "Current_YTD_Ready" = 1 AND "Prior_YTD_Ready" = 0 AND NOT "Comparison_Ready"
+  FROM public.echo_item_sales_reporting_status),
+  '2019 current YTD is available without inventing unsupported 2018 coverage');
+SELECT pg_temp.echo_assert((SELECT count(*) = 1 AND sum("Retail_Bottles_Sold") = -2
+  AND sum("Wholesale_Bottles_Sold") = 3 FROM public.echo_item_sales_reporting),
+  'complete 2019 signed facts publish while partial January 2020 remains excluded');
+INSERT INTO public."EchoBottleSalesDayCoverage"
+SELECT DATE '2020-01-31', vendor, "sourceReportIdentity", "sourceScope",
+  DATE '2020-01-31', DATE '2020-01-31', 'synthetic-history-boundary-last-day',
+  "sourceContentSha256", "sourceByteLength", "sourceRowCount", "sourceSkippedRows",
+  "sourceExportCompleted", "sourceAcquiredAt", "completedAt", "expectedRowCount",
+  "expectedRetailBottles", "expectedWholesaleBottles", "expectedFactsSha256"
+FROM echo_fixture_receipts WHERE "reportDate" = DATE '2025-01-16';
+SELECT pg_temp.echo_assert((SELECT "Reporting_Month" = DATE '2020-01-01'
+  AND "Current_YTD_Ready" = 1 AND "Prior_YTD_Ready" = 1 AND "Comparison_Ready"
+  AND "First_Uncertified_Date" = DATE '2019-02-01'
+  FROM public.echo_item_sales_reporting_status),
+  '2020 matched YTD uses certified January 2019 despite unrelated old gaps');
+SELECT pg_temp.echo_assert((SELECT count(*) = 2 AND sum("Retail_Bottles_Sold") = 3
+  AND sum("Wholesale_Bottles_Sold") = 10 FROM public.echo_item_sales_reporting),
+  'both complete historical months retain their signed quantities');
+DELETE FROM public."EchoBottleSalesDayCoverage" WHERE "reportDate" = DATE '2019-01-31';
+SELECT pg_temp.echo_assert((SELECT "Reporting_Month" = DATE '2020-01-01'
+  AND "Current_YTD_Ready" = 1 AND "Prior_YTD_Ready" = 0 AND NOT "Comparison_Ready"
+  FROM public.echo_item_sales_reporting_status),
+  'missing earliest prior-year day suppresses only that comparison');
+SELECT pg_temp.echo_assert((SELECT count(*) = 1 AND min("Month") = DATE '2020-01-01'
+  FROM public.echo_item_sales_reporting),
+  'incomplete 2019 month is revoked without hiding the complete 2020 month');
+ROLLBACK TO SAVEPOINT history_2019_boundary;
 
 SAVEPOINT september_independent;
 DELETE FROM public."EchoBottleSalesDayCoverage";
@@ -399,7 +458,8 @@ SELECT jsonb_build_object(
   'checks', ARRAY['field-contract', 'uncertified-history', 'explicit-empty-day',
     'year-rollover', 'first-gap', 'signed-totals', 'scope-and-no-double-count',
     'current-master-and-A3A-fallback', 'missing-dimensions', 'unchanged-totals-hash-mismatch',
-    'statewide-zero-Echo', 'pre-dashboard-history', '15-provenance-constraints',
+    'statewide-zero-Echo', 'pre-dashboard-history', '2019-current-YTD',
+    '2020-prior-YTD', 'independent-older-months', '15-provenance-constraints',
     'future-completion', 'tenant-gates'],
   'disposition', 'All fixture mutations roll back in the following statement'
 ) AS fixture_result;
