@@ -1,9 +1,9 @@
-name: Recover Production Supplies checks
+name: Check recent Production Supplies email
 
 on:
   schedule:
-    # Backstop the direct Vercel checks without creating a second provider batch.
-    - cron: "8 */6 * * *"
+    # Leave the top of the hour clear and retain the authentication and activation guards below.
+    - cron: "3,18,33,48 * * * *"
   workflow_dispatch:
 
 permissions:
