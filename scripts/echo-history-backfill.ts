@@ -10,9 +10,9 @@ import { importOhlqAnnualSalesCsv, parseOhlqAnnualSalesByWholesaleCsv } from '..
 const vendor = 'Z90399001';
 const start = '2019-09-01';
 const end = '2026-11-21';
-// Both native wholesale export scopes lack required identifiers on this date.
-// Keep it in the verification query and retry it when OHLQ supplies corrected evidence.
-const deferredSourceDates = new Set(['2025-04-12', '2024-12-19']);
+// Both native wholesale export scopes lacked required identifiers on these dates.
+// Keep them in the verification query until corrected evidence is available.
+const deferredSourceDates = new Set(['2025-04-12', '2024-12-19', '2022-12-02']);
 const wholesaleId = 'dea7572c-2ea4-45bb-bbbc-29600bd326cc';
 let day: string | undefined;
 let stage = 'target';
