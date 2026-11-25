@@ -1,5 +1,9 @@
 # Database migrations
 
+## Current Echo bottle KPI reporting — November 25, 2026
+
+Owner-authorized main-only migration `20261125184000_echo_item_sales_current_kpis` adds one security-barrier aggregate view for current-month and Monday–Sunday current-week bottle cards. Exact SQL was rehearsed on a disposable production-derived branch, then applied with its ledger entry and a SELECT-only grant to the existing reporting login. Certified-prefix, zero-sales, signed-return, month/year-boundary and restricted-reader checks pass. Existing facts, receipts and monthly views are unchanged. See [verification and activation](../releases/echo-current-bottle-kpis-2026-11-25.md).
+
 Production Supplies adds `20261112010000_production_supplies` with 19 normalized tables and composite tenant relations. The guarded `scripts/production-supplies-setup.ts` accepts only explicitly identified rehearsal/TST targets and a reviewed normalized-SQL checksum. Its isolated rehearsal passes 20 persisted scenarios; seven additional owner-reviewed invoice checks pass. Shared-TST application and Echo activation completed after explicit owner approval, with matching migration checksum. No existing records or historical migration ledger entries are removed. See [validation](../releases/production-supplies-validation.md).
 
 Audit baseline: TST `5faee9df930bd76b5e56b669f58a57210527f7d5`, inspected 2026-10-10.

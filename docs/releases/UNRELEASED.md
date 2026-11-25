@@ -1,5 +1,9 @@
 # Unreleased
 
+## Current bottle KPI cards — November 25, 2026
+
+Owner-authorized production reporting now exposes certified retail/wholesale month-to-date and Monday-based week-to-date bottle totals for four Sales Stats cards. A separate fixed-Echo security-barrier view preserves signed sales and all three item exclusions, stops each period before a missing or invalid daily receipt, and supplies an accurate as-of label. The existing reader receives SELECT on this aggregate only. Main database/reader readback and six date/coverage boundary fixtures pass; Looker card acceptance is tracked separately. See [scope and verification](echo-current-bottle-kpis-2026-11-25.md).
+
 ## Echo reporting history — November 25, 2026
 
 The owner-authorized 0.15.18 hotfix extends the existing production Echo reporting horizon to January 1, 2019. Already certified older months become available automatically; partial months and incomplete YTD comparisons remain gated. Existing vendor/tenant scope, reader grants, imports, retention, schedules and source facts remain unchanged. See [release notes](0.15.18.md) and [validation](0.15.18-validation.md). Production deployment and dashboard acceptance are tracked separately; this entry is not a completion claim.
