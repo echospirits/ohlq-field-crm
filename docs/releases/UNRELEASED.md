@@ -1,5 +1,9 @@
 # Unreleased
 
+## Account search by address — November 25, 2026
+
+Find Retail and Restaurant accounts by street address, city, county, state, ZIP, or combined address details in Account Search, the account directories, and Log Visit and scheduling account pickers. See [0.15.19](0.15.19.md).
+
 ## Current bottle KPI cards — November 25, 2026
 
 Owner-authorized production reporting now exposes certified retail/wholesale month-to-date and Monday-based week-to-date bottle totals for four Sales Stats cards. A separate fixed-Echo security-barrier view preserves signed sales and all three item exclusions, stops each period before a missing or invalid daily receipt, and supplies an accurate as-of label. The existing reader receives SELECT on this aggregate only. Main database/reader readback and six date/coverage boundary fixtures pass; Looker card acceptance is tracked separately. See [scope and verification](echo-current-bottle-kpis-2026-11-25.md).

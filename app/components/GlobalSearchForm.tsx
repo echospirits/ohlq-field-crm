@@ -16,7 +16,7 @@ export function GlobalSearchForm({ compact = false, defaultValue = '' }: { compa
         defaultValue={defaultValue}
         id={compact ? 'global-search-sidebar' : 'global-search-page'}
         name="q"
-        placeholder={compact ? 'Search everything...' : 'Account, ID, city, contact, or task'}
+        placeholder={compact ? 'Search everything...' : 'Account, address, ZIP, contact, or task'}
         type="search"
       />
       <button aria-label="Search" className="secondary" type="submit">Search</button>

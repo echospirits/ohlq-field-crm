@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { buildPageMetadata } from '../../lib/appBrand';
+import { accountAddressSearchClauses } from '../../lib/accountAddressSearch';
 import { requireEchoAdmin, requireUser } from '../../lib/auth';
 import { AGENCY_CSV_MAX_BYTES, AgencyCsvValidationError, importAgencyCsv } from '../../lib/agencyCsvImport';
 import { getDirectionsHref } from '../../lib/crmActionContext';
@@ -67,7 +68,7 @@ export default async function AgenciesPage({
       ? {
           OR: [
             { name: { contains: q, mode: 'insensitive' } },
-            { address: { contains: q, mode: 'insensitive' } },
+            ...accountAddressSearchClauses(q),
             { primaryContact: { contains: q, mode: 'insensitive' } },
             { primaryContactPhone: { contains: q, mode: 'insensitive' } },
             { phone: { contains: q, mode: 'insensitive' } },
@@ -119,7 +120,7 @@ export default async function AgenciesPage({
       <AccountViewNavigation active="agencies" />
       <LiveFilterForm className="filter-form narrow-filter" label="Filter retail accounts">
         <label className="sr-only" htmlFor="retail-search">Search retail accounts</label>
-        <input id="retail-search" name="q" type="search" defaultValue={q} placeholder="Name, retail ID, address, or phone" />
+        <input id="retail-search" name="q" type="search" defaultValue={q} placeholder="Name, address, city, ZIP, ID, or phone" />
         <input name="page" type="hidden" value="1" />
       </LiveFilterForm>
       {!q ? <NearbyAccountsSection type="agency" /> : null}
@@ -153,7 +154,7 @@ export default async function AgenciesPage({
                   {targetedIds.has(agency.id) ? <TargetAccountMarker /> : null}
                   <small className="directory-record-id">Retail {agency.agencyId}</small>
                 </td>
-                <td className="account-directory-secondary-cell directory-location-cell" data-label="Location"><AddressLink address={address}>{[agency.address, agency.city, agency.state].filter(Boolean).join(', ') || 'Location unavailable'}</AddressLink></td>
+                <td className="account-directory-secondary-cell directory-location-cell" data-label="Location"><AddressLink address={address}>{address || 'Location unavailable'}</AddressLink></td>
                 <td className="account-directory-secondary-cell" data-label="Contact"><span>{agency.primaryContact || 'No primary contact'}</span>{phone ? <PhoneLink phone={phone} /> : null}{agency.primaryContactPhone && agency.phone && agency.primaryContactPhone !== agency.phone ? <small>Retail: <PhoneLink phone={agency.phone} /></small> : null}</td>
                 <td className="account-directory-secondary-cell" data-label="Visits"><span>{stats.lastVisitAt ? formatEasternDate(stats.lastVisitAt) : 'No recorded visit'}</span><small>{stats.count} logged</small></td>
                 <td className="account-directory-secondary-cell" data-label="Tags">

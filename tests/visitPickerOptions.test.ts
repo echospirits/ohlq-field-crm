@@ -169,7 +169,7 @@ describe('visit picker services', () => {
     assert.equal(result[1].lastVisitAt, null);
   });
 
-  it('searches the full agency table by name, ID, address, city, county, or phone', async () => {
+  it('searches the full agency table by name, ID, address fields, or phone', async () => {
     let findManyArgs: Record<string, unknown> | undefined;
     const db = {
       agency: {
@@ -185,7 +185,9 @@ describe('visit picker services', () => {
 
     assert.equal(result[0].id, 'agency-999');
     assert.equal(findManyArgs?.take, 50);
-    assert.equal((findManyArgs?.where as { OR: unknown[] }).OR.length, 6);
+    const { OR: clauses } = findManyArgs?.where as { OR: unknown[] };
+    assert.ok(clauses.some((clause) => Reflect.has(clause as object, 'name')));
+    assert.ok(clauses.some((clause) => Reflect.has(clause as object, 'zip')));
   });
 
   it('searches all active wholesale accounts including alternate Licensee IDs', async () => {
@@ -214,7 +216,9 @@ describe('visit picker services', () => {
     assert.equal(result[0].id, 'wholesale-999');
     assert.equal(findManyArgs?.take, 50);
     assert.equal((findManyArgs?.where as { isActive: boolean }).isActive, true);
-    assert.equal((findManyArgs?.where as { OR: unknown[] }).OR.length, 8);
+    const { OR: clauses } = findManyArgs?.where as { OR: unknown[] };
+    assert.ok(clauses.some((clause) => Reflect.has(clause as object, 'licenseeIds')));
+    assert.ok(clauses.some((clause) => Reflect.has(clause as object, 'zip')));
   });
 
   it('keeps a name match visible when city and address matches fill the candidate limit', async () => {

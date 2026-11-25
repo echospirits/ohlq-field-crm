@@ -6,6 +6,7 @@ export const runtime = 'nodejs';
 import { OpportunityStatus, WorklistStatus } from '@prisma/client';
 import Link from 'next/link';
 import { buildPageMetadata } from '../../lib/appBrand';
+import { accountAddressSearchClauses } from '../../lib/accountAddressSearch';
 import { requireUser } from '../../lib/auth';
 import { formatWorklistDue } from '../../lib/dateTime';
 import { prisma } from '../../lib/prisma';
@@ -34,13 +35,12 @@ export default async function SearchPage({ searchParams }: { searchParams?: Prom
             OR: [
               { name: { contains: query, mode: 'insensitive' } },
               { agencyId: { contains: query, mode: 'insensitive' } },
-              { address: { contains: query, mode: 'insensitive' } },
-              { city: { contains: query, mode: 'insensitive' } },
+              ...accountAddressSearchClauses(query),
               { primaryContact: { contains: query, mode: 'insensitive' } },
             ],
           },
           orderBy: [{ name: 'asc' }],
-          select: { id: true, agencyId: true, name: true, address: true, city: true },
+          select: { id: true, agencyId: true, name: true, address: true, city: true, state: true, zip: true },
         }),
         prisma.wholesaleAccount.findMany({
           take: resultLimit,
@@ -51,8 +51,7 @@ export default async function SearchPage({ searchParams }: { searchParams?: Prom
               { name: { contains: query, mode: 'insensitive' } },
               { licenseeId: { contains: query, mode: 'insensitive' } },
               { agencyId: { contains: query, mode: 'insensitive' } },
-              { address: { contains: query, mode: 'insensitive' } },
-              { city: { contains: query, mode: 'insensitive' } },
+              ...accountAddressSearchClauses(query),
               { ownership: { contains: query, mode: 'insensitive' } },
               { licenseeIds: { some: { licenseeId: { contains: query, mode: 'insensitive' } } } },
               ...(hasWholesaleOpportunities ? [
@@ -70,6 +69,8 @@ export default async function SearchPage({ searchParams }: { searchParams?: Prom
             name: true,
             address: true,
             city: true,
+            state: true,
+            zip: true,
             currentAssessments: {
               where: { organizationId },
               take: 1,
@@ -112,7 +113,7 @@ export default async function SearchPage({ searchParams }: { searchParams?: Prom
       {!canSearch ? (
         <section className="card search-empty-state">
           <h2>Search across Neat</h2>
-          <p className="muted">Enter at least two characters: account, ID, city, contact or task.</p>
+          <p className="muted">Enter at least two characters. Search by account name, ID, address, city, ZIP, contact, or task.</p>
         </section>
       ) : totalResults === 0 ? (
         <section className="card search-empty-state">
@@ -132,7 +133,7 @@ export default async function SearchPage({ searchParams }: { searchParams?: Prom
               <div className="search-result-list">
                 {agencies.map((agency) => (
                   <Link className="search-result-row" href={`/agencies/${agency.id}`} key={agency.id}>
-                    <span><strong>{agency.name}</strong><small>{[agency.address, agency.city].filter(Boolean).join(', ') || 'No address'}</small></span>
+                    <span><strong>{agency.name}</strong><small>{[agency.address, agency.city, [agency.state, agency.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ') || 'No address'}</small></span>
                     <span><small>Retail</small><strong>{agency.agencyId}</strong></span>
                   </Link>
                 ))}
@@ -146,7 +147,7 @@ export default async function SearchPage({ searchParams }: { searchParams?: Prom
               <div className="search-result-list">
                 {wholesaleAccounts.map((account) => (
                   <Link className="search-result-row" href={`/wholesale/${account.id}`} key={account.id}>
-                    <span><strong>{account.name}</strong><small>{[account.address, account.city].filter(Boolean).join(', ') || 'No address'}</small></span>
+                    <span><strong>{account.name}</strong><small>{[account.address, account.city, [account.state, account.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ') || 'No address'}</small></span>
                     <span>
                       {hasWholesaleOpportunities ? <span><CommercialOpportunityStars rating={account.currentAssessments[0]?.rating} status={account.currentAssessments[0]?.assessmentStatus ?? 'PENDING'} pending={Boolean(account.currentAssessments[0]?.refreshRequestedAt)} stale={Boolean(account.currentAssessments[0] && Date.now() - account.currentAssessments[0].calculatedAt.getTime() > 48 * 3_600_000)} />{account.currentAssessments[0] ? <small>{evidenceModeLabel[account.currentAssessments[0].evidenceMode as EvidenceMode]}</small> : null}</span> : <small>Restaurants</small>}
                       <strong>{account.licenseeId}</strong>

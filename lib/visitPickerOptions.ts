@@ -1,4 +1,5 @@
 import type { PrismaClient } from '@prisma/client';
+import { accountAddressSearchClauses } from './accountAddressSearch';
 import { prisma } from './prisma';
 import { formatWholesaleLicenseeIds } from './wholesaleAccounts';
 import { getDistanceMiles, isValidCoordinates, type Coordinates } from './location/distance';
@@ -314,9 +315,7 @@ export async function searchAgenciesForVisitPicker({
       OR: [
         { name: { contains: search, mode: 'insensitive' } },
         { agencyId: { contains: search, mode: 'insensitive' } },
-        { address: { contains: search, mode: 'insensitive' } },
-        { city: { contains: search, mode: 'insensitive' } },
-        { county: { contains: search, mode: 'insensitive' } },
+        ...accountAddressSearchClauses(search),
         { phone: { contains: search, mode: 'insensitive' } },
       ],
     },
@@ -426,9 +425,7 @@ export async function searchWholesaleAccountsForVisitPicker({
         { licenseeId: { contains: search, mode: 'insensitive' } },
         { licenseeIds: { some: { licenseeId: { contains: search, mode: 'insensitive' } } } },
         { agencyId: { contains: search, mode: 'insensitive' } },
-        { address: { contains: search, mode: 'insensitive' } },
-        { city: { contains: search, mode: 'insensitive' } },
-        { county: { contains: search, mode: 'insensitive' } },
+        ...accountAddressSearchClauses(search),
         { phone: { contains: search, mode: 'insensitive' } },
       ],
     },
