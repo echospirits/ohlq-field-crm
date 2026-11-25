@@ -1,5 +1,9 @@
 # Unreleased
 
+## Echo reporting history — November 25, 2026
+
+The owner-authorized 0.15.18 hotfix extends the existing production Echo reporting horizon to January 1, 2019. Already certified older months become available automatically; partial months and incomplete YTD comparisons remain gated. Existing vendor/tenant scope, reader grants, imports, retention, schedules and source facts remain unchanged. See [release notes](0.15.18.md) and [validation](0.15.18-validation.md). Production deployment and dashboard acceptance are tracked separately; this entry is not a completion claim.
+
 ## Supplies freight and recent email — November 25, 2026
 
 Supplies checks recent watched-order replies and freight notices every 15 minutes in production. Old mail stays on its six-hour schedule. Authenticated vendor messages and their matching bills of lading enrich one shipment. Ward freight tracking is available for a configured tenant with approved API credentials. See [0.15.17](0.15.17.md).

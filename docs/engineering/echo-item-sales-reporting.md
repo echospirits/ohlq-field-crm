@@ -1,10 +1,6 @@
 # Echo bottle sales: direct reporting contract
 
-The 0.15.2 correction replaces the contiguous publication gate described in the
-historical adapter notes below. Each closed month now publishes independently
-after every day reconciles. The latest such month defines the reporting period,
-and the current and prior matched YTD flags are independently derived. See the
-[current preview handoff](echo-monthly-preview-handoff.md) for consumer changes.
+The reporting horizon begins **January 1, 2019**, the owner-confirmed earliest possible source date. Release **0.15.18** widens the two existing coverage/status views with an additive migration; it does not reimport data or alter the backfill. Each closed month publishes independently after every day reconciles. The latest such month defines the reporting period, and current/prior matched YTD readiness is calculated for those specific periods. Gaps in earlier years remain visible in coverage diagnostics but do not hide later complete months. See the [current preview handoff](echo-monthly-preview-handoff.md) for consumer changes and the [0.15.18 validation](../releases/0.15.18-validation.md) for the migration rehearsal.
 
 ## Current operating target: main / production
 
@@ -20,7 +16,7 @@ This additive adapter prepares the existing Looker Studio dashboard to read Echo
 
 The exact migration is `20261120020000_echo_item_sales_reporting`. It adds one Prisma model/table and three PostgreSQL views. No application version, existing table, historical migration, product rule, retention rule or source status changes. The adapter uses the native PostgreSQL `sha256(bytea)` function and needs no extension. It adds no index: the expected Echo-only reporting volume is small, and performance must be measured before introducing another statewide-table index.
 
-The dashboard history boundary is **January 1, 2025**, matching the existing Item Sales dashboard. The receipt table also accepts earlier real dates without extending that reporting boundary. The source is the daily `OhlqAnnualSalesRow` dataset restricted to the exact vendor **`Z90399001`**. `OhlqAnnualSalesByWholesaleRow` contains additional wholesale customer detail and must never be added to the first table's wholesale quantities. The existing permanent Echo retention policy is a prerequisite; this adapter does not change it.
+The dashboard history boundary is **January 1, 2019**. The receipt table also accepts earlier real dates without extending that reporting boundary. The source is the daily `OhlqAnnualSalesRow` dataset restricted to the exact vendor **`Z90399001`**. `OhlqAnnualSalesByWholesaleRow` contains additional wholesale customer detail and must never be added to the first table's wholesale quantities. The existing permanent Echo retention policy is a prerequisite; this adapter does not change it.
 
 ## Published views and types
 
@@ -37,9 +33,9 @@ The dashboard history boundary is **January 1, 2025**, matching the existing Ite
 | `Category` | `text`, nullable | Current Brand Master category; unknown stays null |
 | `Retail_Bottles_Sold` | `bigint` | Signed monthly retail sum |
 | `Wholesale_Bottles_Sold` | `bigint` | Signed monthly wholesale sum |
-| `Reporting_Month` | `date` | The same last contiguous, certified closed month on every row |
+| `Reporting_Month` | `date` | The same latest independently certified closed month on every row |
 
-The following metadata fields follow those ten: `Coverage_Status`, `History_Start`, `Reporting_Through`, `Comparison_Ready`, `Latest_Import_Completed_At`, and `Latest_Known_Source_Acquired_At`. Timestamps presented to Looker are local timestamp values in **America/New_York**. Import completion is not renamed or inferred to be source acquisition. The acquisition field remains null when no actual acquisition time is known; when populated it is the latest known acquisition among certified closed days, which can be earlier than the latest import completion.
+The following metadata fields follow those ten: `Coverage_Status`, `History_Start`, `Reporting_Through`, `Comparison_Ready`, `Latest_Import_Completed_At`, and `Latest_Known_Source_Acquired_At`, followed by `Current_YTD_Ready` and `Prior_YTD_Ready` (integer 0/1). Timestamps presented to Looker are local timestamp values in **America/New_York**. Import completion is not renamed or inferred to be source acquisition. The acquisition field remains null when no actual acquisition time is known; when populated it is the latest known acquisition among certified closed days, which can be earlier than the latest import completion.
 
 Labels are **current dimensions**, not reconstructed historical labels. Both dimension joins are left joins on the unique source code, so unknown, discontinued and distillery records remain in the quantities. Do not add active-product filters, an inner join, identifier-to-number casts, absolute values or positive-quantity predicates.
 
@@ -50,7 +46,7 @@ The following two A3A fallback mappings were independently verified against the 
 | `90285` | `ECHO SPIRITS POWELL` | `GPT` |
 | `90399` | `ECHO SPIRITS DISTILLING CO` | `GPT` |
 
-All Echo brands and signed/zero quantities remain in this view. Preserve the existing dashboard exclusions for `3150B` and `3750B` and its existing product-label CASE separately; reporting does not discard those underlying facts.
+All Echo brands and signed/zero quantities remain in this view. Preserve the existing dashboard exclusions for `3150B`, `3750B` and `4359B` and its existing product-label CASE separately; reporting does not discard those underlying facts.
 
 The six existing Looker calculations and their live field IDs are captured in [the Looker field contract](echo-item-sales-looker-fields.json). Preserve these exact Product and matched-YTD definitions and their identifiers when rebinding the copied report; chart-specific metrics using old raw source IDs require their own verified remapping.
 
@@ -94,13 +90,13 @@ Both published views return no rows for an inactive, suspended, cancelled or non
 
 ## Completeness and month selection
 
-`public.echo_item_sales_day_coverage` is a private validation view, not a reporting-login grant target. Its horizon is January 1, 2025 through the last closed month; earlier receipts and facts are not returned or certified by this view. It recomputes each in-horizon day's Echo row count, both signed totals and a deterministic fingerprint, then compares all four with the explicit success receipt. Changed, added or deleted facts invalidate the day even when a row count or net total remains unchanged. Missing receipts are never complete. A known zero-sales day requires a validated empty-source receipt with zero count/totals and the fingerprint of `[]`.
+`public.echo_item_sales_day_coverage` is a private validation view, not a reporting-login grant target. Its horizon is January 1, 2019 through the last closed month; earlier receipts and facts are not returned or certified by this view. It recomputes each in-horizon day's Echo row count, both signed totals and a deterministic fingerprint, then compares all four with the explicit success receipt. Changed, added or deleted facts invalidate the day even when a row count or net total remains unchanged. Missing receipts are never complete. A known zero-sales day requires a validated empty-source receipt with zero count/totals and the fingerprint of `[]`.
 
-The status view generates every calendar day from January 1, 2025 through the last closed Eastern calendar month. A month is publishable only when every day is certified. The first uncertified day blocks that whole month and all later months from advancing `Reporting_Month`; a later successful import cannot jump the gap. The current partial month is always excluded.
+The status view generates every calendar day from January 1, 2019 through the last closed Eastern calendar month. A month is publishable only when every day is certified. `echo_item_sales_complete_month` evaluates months independently; `Reporting_Month` is the latest complete month. An earlier missing day excludes its own month and remains visible in `First_Uncertified_Date`, but it does not block unrelated complete months. The current partial calendar month is always excluded.
 
-The main view additionally requires `Reporting_Month >= 2026-01-01`. Before then it emits no rows, rather than presenting a current/prior-year comparison with missing history as zero. Once this gate opens, it emits **all** monthly facts from January 2025 through the cutoff, retaining both comparison periods for the existing calculated fields. A cutoff earlier than the latest closed month can still provide a truthful matched comparison, with status `PARTIAL_HISTORY` and an explicitly earlier reporting-through label.
+The main view publishes all independently certified months in that horizon. `Current_YTD_Ready` requires every day from the reporting year's January 1 through the reporting month end. `Prior_YTD_Ready` independently requires the equivalent prior-year range. Current YTD can first be ready in 2019; prior YTD can first be ready in 2020, so absent 2018 calendar days cannot falsely satisfy a comparison. Consumers must retain the readiness guards and show an unavailable value rather than zero when a comparison period is incomplete.
 
-Status values are `AWAITING_CERTIFIED_HISTORY`, `PRIOR_YEAR_HISTORY_INCOMPLETE`, `PARTIAL_HISTORY`, and `READY`. `READY` means every calendar day in the required closed-month history is certified. It does not certify provider truth beyond the validation and provenance of the received source export. A valid all-zero month has no synthetic agency/product sales rows; the status view still certifies its days and cutoff. Consumers must not invent a fake agency/product to create a zero row.
+Status values are `AWAITING_CERTIFIED_HISTORY`, `PRIOR_YEAR_HISTORY_INCOMPLETE`, `PARTIAL_HISTORY`, and `READY`. `READY` means the latest closed month and its required current/prior YTD periods are certified; it does not assert that every day since 2019 is loaded. A valid all-zero month has no synthetic agency/product sales rows; the status view still certifies its days and availability. Consumers must not invent a fake agency/product to create a zero row.
 
 No evidence is inferred from the existing statewide `OhlqReportImportStatus`, current physical row counts, a maximum sales date, or the previous monthly spreadsheet. The adapter never creates success receipts for existing data. A regular importer that changes old Echo facts without refreshing their receipt will cause that day to fail validation until the integration publishes a new validated receipt.
 
@@ -112,7 +108,7 @@ The external backfill/daily-ingestion implementation owns source acquisition, st
 
 | Fields | Required evidence |
 | --- | --- |
-| `reportDate`, `vendor` | Real date on/after 0001-01-01 and before 9999-12-31; vendor exactly `Z90399001`; the dashboard still begins January 2025 |
+| `reportDate`, `vendor` | Real date on/after 0001-01-01 and before 9999-12-31; vendor exactly `Z90399001`; the dashboard begins January 2019 |
 | `sourceReportIdentity` | Native Annual Sales Summary report `9781fc23-73de-4ee8-b0b8-77ae6f9b7c4e` |
 | `sourceScope` | `VENDOR_FILTERED` for the exact Echo vendor, or `COMPLETE_STATEWIDE` for the complete all-vendor source |
 | `requestedFrom`, `requestedTo` | Actual validated report parameters, both equal to `reportDate`; never a month/range assigned to one day |
