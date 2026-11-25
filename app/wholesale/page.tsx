@@ -14,6 +14,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { AccountType, OpportunityStatus, Prisma } from '@prisma/client';
 import { buildPageMetadata } from '../../lib/appBrand';
+import { accountAddressSearchClauses } from '../../lib/accountAddressSearch';
 import { requireUser } from '../../lib/auth';
 import { getDirectionsHref } from '../../lib/crmActionContext';
 import { formatEasternDate } from '../../lib/dateTime';
@@ -391,9 +392,7 @@ const wholesaleSearchWhere = (q: string, organizationId: string, includeIntellig
     { name: { contains: q, mode: 'insensitive' } },
     ...getWholesaleLicenseeIdTextSearchWhere(q),
     { agencyId: { contains: q, mode: 'insensitive' } },
-    { address: { contains: q, mode: 'insensitive' } },
-    { city: { contains: q, mode: 'insensitive' } },
-    { state: { equals: normalizeUsState(q) ?? q, mode: 'insensitive' } },
+    ...accountAddressSearchClauses(q),
     { phone: { contains: q, mode: 'insensitive' } },
     { tags: { some: { organizationId, tag: { name: { contains: q, mode: 'insensitive' } } } } },
     { menuPlacements: { some: { organizationId, product: { contains: q, mode: 'insensitive' } } } },
@@ -521,7 +520,7 @@ export default async function WholesalePage({
       <AccountViewNavigation active="wholesale" />
       <LiveFilterForm className="filter-form directory-filter" label="Filter restaurant accounts">
         <label className="sr-only" htmlFor="restaurant-search">Search restaurants</label>
-        <input id="restaurant-search" name="q" type="search" defaultValue={q} placeholder="Name, licensee ID, city, or phone" />
+        <input id="restaurant-search" name="q" type="search" defaultValue={q} placeholder="Name, address, city, ZIP, ID, or phone" />
         <input name="page" type="hidden" value="1" />
         <details className="directory-sort"><summary>Sort: {visibleSortColumns.find(column => column.key === sortKey)?.label}</summary>
         <label htmlFor="restaurant-sort">Sort by</label>
