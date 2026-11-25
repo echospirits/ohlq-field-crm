@@ -1,5 +1,9 @@
 # Unreleased
 
+## Faster Board KPI bottle queries — November 25, 2026
+
+The production reporting status query now reuses each live daily certification and complete-month calculation within the same query. This removes repeated full-history validation while preserving all existing counts, coverage/YTD flags, source clocks, security barriers and reader permissions. The change is one SQL view replacement; no cache refresh job, compute upgrade or application version change is included. See [measurements and verification](echo-dashboard-performance-2026-11-25.md).
+
 ## Account search by address — November 25, 2026
 
 Find Retail and Restaurant accounts by street address, city, county, state, ZIP, or combined address details in Account Search, the account directories, and Log Visit and scheduling account pickers. See [0.15.19](0.15.19.md).
