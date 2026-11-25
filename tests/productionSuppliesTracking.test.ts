@@ -3,6 +3,8 @@ import { createHmac } from 'node:crypto';
 import { test } from 'node:test';
 import type { PrismaClient } from '@prisma/client';
 import { getTrackingConfiguration, handleSupplyTrackingWebhook, lookupEasyPostTracking, nextTrackingCheck, parseEasyPostObservation, persistSupplyTrackingObservation, refreshSupplyShipmentTracking, SupplyTrackingError, verifyEasyPostWebhook } from '../lib/productionSupplies/tracking';
+import { buildSupplyStatusCard, type StatusOrder } from '../lib/productionSupplies/statusDomain';
+import { isWardTrackingConfigured, lookupWardTracking } from '../lib/productionSupplies/wardTracking';
 
 const now = new Date('2026-11-12T16:00:00Z');
 const testEnv = { SUPPLY_TRACKING_MODE: 'test', EASYPOST_TEST_API_KEY: 'test-key', EASYPOST_WEBHOOK_SECRET: 'webhook-secret' };
@@ -114,10 +116,11 @@ test('webhook HMAC v2 authenticates exact body, path and fresh timestamp', () =>
   assert.throws(() => verifyEasyPostWebhook(body, new Headers(), path, testEnv, now), /authentication failed/);
 });
 
-function fakeDb(initial: Record<string, unknown> = {}) {
+function fakeDb(initial: Record<string, unknown> = {}, ward: { sources?: Array<{ source: { id: string; extractedFacts: unknown } }>; audit?: unknown } = {}) {
   let watched = true;
   const shipment = { id: 'shipment-one', organizationId: 'tenant-one', ...reference, orderId: 'order-one', status: 'IN_TRANSIT', statusEventAt: new Date('2026-11-11T10:00:00Z'), lastCheckedAt: null as Date | null, failureCount: 0,
-    leaseId: null as string | null, leaseUntil: null, providerTrackingId: null, providerMode: null, returnedAt: null, deliveredAt: null, arrivalEstimates: [] as Record<string, unknown>[], ...initial };
+    leaseId: null as string | null, leaseUntil: null, provider: null as string | null, providerTrackingId: null as string | null, providerMode: null as string | null, returnedAt: null as Date | null,
+    deliveredAt: null as Date | null, lastSuccessfulCheckAt: null as Date | null, checkError: null as string | null, arrivalEstimates: [] as Record<string, unknown>[], ...initial };
   const observations: Record<string, unknown>[] = [];
   const estimates: Record<string, unknown>[] = [];
   const notifications: Record<string, unknown>[] = [];
@@ -129,6 +132,16 @@ function fakeDb(initial: Record<string, unknown> = {}) {
     supplyClassificationRule: { findMany: async () => [] },
     supplyCatalogItem: { findMany: async () => [{ id: 'catalog-one', name: 'Fixture material', confirmed: true, sharedUse: false, departments: ['PRODUCTION'], aliases: [], rules: [] }] },
     supplyOrder: { findFirst: async ({ where }: { where: { organizationId: string; id: string } }) => where.organizationId === shipment.organizationId && where.id === shipment.orderId ? { id: shipment.orderId, supplier: 'Fixture supplier', destination: null, ignored: false, lines: [{ description: 'Fixture material', catalogItemId: 'catalog-one', ignored: false, unit: 'ea', allocations: [{ needId: 'need-one' }] }] } : null },
+    supplyOrderSource: { findMany: async ({ where }: { where: Record<string, unknown> }) => {
+      assert.equal(where.organizationId, shipment.organizationId);
+      assert.equal(where.orderId, shipment.orderId);
+      return ward.sources ?? [];
+    } },
+    supplyAudit: { findFirst: async ({ where }: { where: Record<string, unknown> }) => {
+      assert.equal(where.organizationId, shipment.organizationId);
+      assert.equal(where.orderId, shipment.orderId);
+      return ward.audit ? { detail: ward.audit } : null;
+    } },
     $executeRaw: async () => 1,
     supplyShipment: {
       findFirst: async ({ where }: { where: Record<string, unknown> }) => matches(where) ? shipment : null,
@@ -236,4 +249,112 @@ test('polling reduces after delivery, stops returns/cancellation and backs off o
   assert.equal(nextTrackingCheck('DELIVERED', 0, now)?.getTime(), now.getTime() + 24 * 60 * 60_000);
   assert.equal(nextTrackingCheck('OUT_FOR_DELIVERY', 0, now)?.getTime(), now.getTime() + 60 * 60_000);
   assert.equal(nextTrackingCheck('IN_TRANSIT', 10, now)?.getTime(), now.getTime() + 24 * 60 * 60_000);
+});
+
+const wardEnv = { SUPPLY_WARD_TRACKING_ENABLED: 'true', SUPPLY_WARD_TRACKING_ORGANIZATION_ID: 'tenant-one', SUPPLY_WARD_TRACKING_USERNAME: 'fixture-user', SUPPLY_WARD_TRACKING_PASSWORD: 'fixture-password' };
+const wardPro = '099-0102030', wardBol = 'TEST-890', wardOrigin = '08801', wardDestination = '43299';
+const destination = `17 Test Way, Columbus, OH ${wardDestination}`;
+const wardReference = { referenceType: 'BILL_OF_LADING', reference: wardBol, carrier: 'WARD TRUCKING LLC (WARD)', timezone: 'America/New_York', originPostalCode: wardOrigin, destinationPostalCode: wardDestination };
+const wardDate = '11/24/2026';
+const wardDeliveredAt = new Date('2026-11-24T16:28:00Z');
+const wardObservedAt = new Date('2026-11-24T17:00:00Z');
+const outForDelivery = { ref: wardPro, date: wardDate, time: '11:15 AM', action: 'Out for delivery.', zip: wardDestination };
+const delivery = { ref: wardPro, date: wardDate, time: '11:28 AM', action: 'Delivered.', zip: wardDestination };
+const receipt = { ref: wardPro, date: wardDate, time: '11:54 AM', action: 'Received by Fixture Recipient.', zip: wardDestination };
+
+function wardPayload(status = 'Delivered', movements = [receipt, delivery, outForDelivery], header = {}) {
+  return { result: 'Success', Reference: [{ referenceNumber: wardBol, wardPro, status, shipperZip: wardOrigin, consigneeZip: wardDestination, dueDate: wardDate, deliveryDate: status === 'Delivered' ? wardDate : '', ...header }, ...movements] };
+}
+
+function linkedWardBol(freight: Record<string, unknown> | null = { originPostalCode: wardOrigin }, provenance = {}) {
+  return { source: { id: 'ward-bol-source', extractedFacts: { kind: 'SHIPMENT', destination, shipments: [{ ...wardReference, freight }],
+    _provenance: { evidenceContext: 'ATTACHMENT', contentVersion: 'SUPPLY_CURRENT_V1', direction: 'RECEIVED', senderAuthenticated: true, productionTeamAuthorized: true, ...provenance } } } };
+}
+
+test('Ward sends only documented read-only trace requests for the configured tenant and validated reference', async () => {
+  const requests: Array<{ url: string; init?: RequestInit }> = [];
+  const fetchImpl: typeof fetch = async (url, init) => {
+    requests.push({ url: String(url), init });
+    return Response.json(wardPayload());
+  };
+  assert.equal(isWardTrackingConfigured('tenant-one', {}), false);
+  assert.equal(isWardTrackingConfigured('tenant-two', wardEnv), false);
+  await assert.rejects(lookupWardTracking('tenant-two', wardReference, { env: wardEnv, fetchImpl }), /not configured/);
+  await assert.rejects(lookupWardTracking('tenant-one', { ...wardReference, originPostalCode: null }, { env: wardEnv, fetchImpl }), /verified BOL and origin ZIP/);
+  await assert.rejects(lookupWardTracking('tenant-one', { ...wardReference, reference: 'https://unexpected.example/freight' }, { env: wardEnv, fetchImpl }), /valid PRO/);
+  assert.equal(requests.length, 0);
+  const result = await lookupWardTracking('tenant-one', wardReference, { env: wardEnv, fetchImpl, observedAt: wardObservedAt });
+  assert.equal(result.deliveredAt?.toISOString(), wardDeliveredAt.toISOString());
+  assert.equal(result.providerTrackingId, wardPro);
+  assert.equal(result.trackingCode, wardBol);
+  assert.equal(requests[0].url, 'https://wardtlctools.com/wardtrucking/webservices/traceshipmentv3');
+  assert.equal(requests[0].init?.method, 'POST');
+  assert.equal(requests[0].init?.redirect, 'error');
+  assert.equal(new Headers(requests[0].init?.headers).get('authorization'), `Basic ${Buffer.from('fixture-user:fixture-password').toString('base64')}`);
+  assert.deepEqual(JSON.parse(requests[0].init?.body as string), { body: { request: { freightBill: '', freightBillType: '', bopoNumber: wardBol, bopoNumberType: 'BO', oZip: wardOrigin } } });
+});
+
+test('Ward rejects unrelated reference, origin or destination and cannot prove delivery from another ZIP or date alone', async () => {
+  const lookup = (payload: unknown) => lookupWardTracking('tenant-one', wardReference, { env: wardEnv, observedAt: wardObservedAt, fetchImpl: async () => Response.json(payload) });
+  await assert.rejects(lookup(wardPayload('Delivered', [delivery], { referenceNumber: 'WRONG' })), /different shipment reference/);
+  await assert.rejects(lookup(wardPayload('Delivered', [delivery], { shipperZip: '19999' })), /different shipment reference/);
+  await assert.rejects(lookup(wardPayload('Delivered', [delivery], { consigneeZip: '43999' })), /different destination ZIP/);
+  const elsewhere = await lookup(wardPayload('Delivered', [{ ...delivery, zip: '43999' }]));
+  assert.equal(elsewhere.deliveredAt, null);
+  assert.equal(elsewhere.eventTimeKnown, false);
+  assert.equal((await lookup(wardPayload('Delivered', []))).deliveredAt, null);
+  const returned = await lookup(wardPayload('Delivered', [delivery, { ...receipt, action: 'Returned to shipper.' }]));
+  assert.equal(returned.status, 'RETURNED');
+  assert.equal(returned.deliveredAt, null);
+});
+
+test('verified Ward BOL import tracks the carrier timeline, saves one dated delivery and closes only covered material', async () => {
+  const warningAt = new Date('2026-11-22T23:08:00Z');
+  const fake = fakeDb({ ...wardReference, destination, status: 'UNKNOWN', statusEventAt: new Date('2026-11-23T18:15:00Z') }, { sources: [linkedWardBol()] });
+  const card = (quantity: number) => {
+    const order: StatusOrder = { id: 'order-one', supplier: 'Fixture supplier', orderReference: 'FIXTURE-PURCHASE', destination, status: 'ORDERED', ignored: false,
+      historicalOutcomeUnknown: false, ownerName: null, orderedAt: warningAt, createdAt: warningAt, lastEvidenceAt: warningAt, completeDeliveryEvidence: [],
+      lines: [{ id: 'bottle-line', description: 'Fixture material', catalogItemId: 'catalog-one', quantity: 3, unit: 'pallets', department: 'PRODUCTION', ignored: false, backorderedQuantity: null }],
+      shipments: [{ ...fake.shipment, arrivalEstimates: [], lines: [{ lineId: 'bottle-line', quantity }] }] };
+    return buildSupplyStatusCard({ key: 'fixture', material: 'Fixture material', location: destination, unit: 'pallets', catalogItemId: 'catalog-one', aliases: [], vendorRefs: [], needIds: ['need-one'], latestWarningAt: warningAt, sharedUse: false },
+      { firstWarningAt: warningAt, latestWarningAt: warningAt, warningCount: 1, reportedQuantity: 1, reportedThreshold: 3, orders: [order], dismissals: [] });
+  };
+  const early = new Date('2026-11-24T16:20:00Z');
+  const active = await refreshSupplyShipmentTracking('tenant-one', 'shipment-one', fake.db, { now: early, env: wardEnv, fetchImpl: async () => Response.json(wardPayload('Out for delivery', [outForDelivery])) });
+  assert.equal(active.status, 'updated');
+  assert.equal(fake.shipment.reference, wardBol);
+  assert.equal(fake.shipment.status, 'OUT_FOR_DELIVERY');
+  assert.equal(fake.shipment.providerTrackingId, wardPro);
+  assert.equal(card(3)?.statusLabel, 'Incoming');
+
+  const fetchDelivered: typeof fetch = async (_url, init) => {
+    assert.equal(JSON.parse(init?.body as string).body.request.freightBill, wardPro);
+    return Response.json(wardPayload('Delivered', [receipt, delivery, outForDelivery], { referenceNumber: wardPro }));
+  };
+  const delivered = await refreshSupplyShipmentTracking('tenant-one', 'shipment-one', fake.db, { now: wardObservedAt, env: wardEnv, fetchImpl: fetchDelivered });
+  assert.equal(delivered.status, 'updated');
+  assert.equal(fake.shipment.deliveredAt?.toISOString(), wardDeliveredAt.toISOString());
+  assert.equal(card(3), null);
+  assert.equal(card(2)?.statusLabel, 'Delivery needs checking');
+  assert.equal((await refreshSupplyShipmentTracking('tenant-one', 'shipment-one', fake.db, { now: wardObservedAt, env: wardEnv, fetchImpl: fetchDelivered })).status, 'duplicate');
+  assert.equal(fake.observations.length, 2);
+  assert.doesNotMatch(JSON.stringify(fake.observations), /Fixture Recipient|Test Way|fixture-password/);
+});
+
+test('legacy Ward audit supplies the PRO only for the verified same-order authenticated attachment', async () => {
+  const audit = { version: 1, shipmentId: 'shipment-one', bolSourceId: 'ward-bol-source', bol: wardBol, originPostalCode: wardOrigin, proNumber: wardPro };
+  const shipment = { ...wardReference, destination, provider: 'WARD_PUBLIC_TRACE', status: 'DELIVERED', statusEventAt: wardDeliveredAt, deliveredAt: wardDeliveredAt };
+  const fake = fakeDb(shipment, { sources: [linkedWardBol(null)], audit });
+  const fetchImpl: typeof fetch = async (_url, init) => {
+    assert.equal(JSON.parse(init?.body as string).body.request.freightBill, wardPro);
+    return Response.json(wardPayload('Delivered', [delivery], { referenceNumber: wardPro }));
+  };
+  assert.equal((await refreshSupplyShipmentTracking('tenant-one', 'shipment-one', fake.db, { manual: true, now: wardObservedAt, env: wardEnv, fetchImpl })).status, 'updated');
+  assert.equal(fake.shipment.provider, 'WARD');
+  for (const options of [{ sources: [linkedWardBol(null, { senderAuthenticated: false })], audit }, { sources: [linkedWardBol(null)], audit: { ...audit, bolSourceId: 'wrong-source' } }]) {
+    const unverified = fakeDb(shipment, options);
+    const result = await refreshSupplyShipmentTracking('tenant-one', 'shipment-one', unverified.db, { now: wardObservedAt, env: wardEnv, fetchImpl: async () => assert.fail('No unverified BOL may reach the carrier') });
+    assert.equal(result.status, 'failed');
+    assert.equal(unverified.observations.length, 0);
+  }
 });

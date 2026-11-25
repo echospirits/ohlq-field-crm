@@ -5,7 +5,7 @@ import { productionMemberIds } from './config';
 import type { ValidatedSupplyEvidence, ValidatedSupplySource } from './service';
 import type {TrustedDx5WarningIdentity} from './dx5WarningIdentity';
 
-export type SupplySourceProvenance = Pick<ValidatedSupplySource, 'threadId'|'evidenceContext'|'contentVersion'|'direction'|'fromEmail'|'senderAuthenticated'|'attachmentPartId'|'attachmentMimePath'|'attachmentProviderId'|'internetMessageId'|'internetReferences'> & { productionTeamAuthorized?: boolean; confirmationValidated?: boolean; correlatedSourceIds?: string[];dx5WarningIdentity?:TrustedDx5WarningIdentity; replyLifecycleChecked?: true; lifecycleOnly?: true };
+export type SupplySourceProvenance = Pick<ValidatedSupplySource, 'threadId'|'evidenceContext'|'contentVersion'|'direction'|'fromEmail'|'senderAuthenticated'|'attachmentPartId'|'attachmentMimePath'|'attachmentProviderId'|'internetMessageId'|'internetReferences'> & { productionTeamAuthorized?: boolean; confirmationValidated?: boolean; correlatedSourceIds?: string[];dx5WarningIdentity?:TrustedDx5WarningIdentity; replyLifecycleChecked?: true; lifecycleOnly?: true; freightDocumentOnly?: true };
 export function readSupplySourceProvenance(value: unknown): SupplySourceProvenance {
   const raw = (value as { _provenance?: SupplySourceProvenance } | null)?._provenance;
   return raw && typeof raw === 'object' ? raw : {};
@@ -21,6 +21,7 @@ export function mergeSupplySourceProvenance(previousFacts:unknown,incoming:Suppl
     internetReferences:previous.internetReferences ?? incoming.internetReferences,
     ...(previous.replyLifecycleChecked ? { replyLifecycleChecked: true } : {}),
     ...(previous.lifecycleOnly ? { lifecycleOnly: true } : {}),
+    ...(previous.freightDocumentOnly ? { freightDocumentOnly: true } : {}),
     ...(incoming.dx5WarningIdentity || previous.dx5WarningIdentity ? { dx5WarningIdentity: incoming.dx5WarningIdentity || previous.dx5WarningIdentity } : {})};
 }
 

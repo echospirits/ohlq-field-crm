@@ -3,6 +3,12 @@ import { readAccountConfiguration } from '../crm/accountConfiguration';
 import { isSideEffectEnabled, parseBooleanEnvironmentValue } from '../appEnvironment';
 
 export const SUPPLY_POLL_MINUTES = 6 * 60;
+export const SUPPLY_FRESH_MAIL_MS = 15 * 60_000;
+export const SUPPLY_FRESH_MAILBOX_LIMIT = 3;
+
+export function nextSupplyFreshMailSlot(now: number) {
+  return (Math.floor(now / SUPPLY_FRESH_MAIL_MS) + 1) * SUPPLY_FRESH_MAIL_MS;
+}
 
 // Explicit TST opt-in affects this feature only; it never enables unrelated jobs.
 export function supplyJobsEnabled(env: NodeJS.ProcessEnv = process.env) {

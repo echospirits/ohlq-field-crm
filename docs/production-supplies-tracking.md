@@ -1,8 +1,10 @@
 # Production Supplies tracking operations
 
-The November 12 owner revision limits operational tracking to **Dx5-alerted materials**. Known alerted materials remain eligible for later order/delivery evidence even after dismissal, so a fresh post-delivery alert can start another cycle. Unrelated purchases do not register trackers. The dashboard has no manual tracking editor, refresh button, receipt confirmation or history flow; only Dismiss. Retained domain records and provider observations are preserved.
+Operational tracking covers materials watched because of a **Dx5 alert or confirmed Production replenishment order**. Watched materials remain eligible for later evidence after dismissal, so a fresh post-delivery alert can start another cycle. The dashboard provides Dismiss and retains the underlying records and provider observations.
 
 Production Supplies uses a small EasyPost adapter for standalone **parcel** tracking. It creates a tracker from a supplier's tracking number, reads its stored carrier observations, and accepts authenticated updates. It never buys a shipping label. EasyPost supports tracking labels purchased elsewhere and maintains those trackers in the background. Some carriers require additional carrier credentials; account access must be verified against a real authorized shipment. [Official tracker reference](https://docs.easypost.com/docs/trackers).
+
+Ward Trucking freight uses the credentialed Ward movement API. Neat looks up a matching Ward PRO or uses a bill of lading and verified origin ZIP. A bill of lading sent with an authenticated, matching supplier notice can enrich an existing shipment. The actual delivery event and sufficient matched material quantity are required for automatic closure. A one-time public trace of the bottle load verified the real carrier events. A sanitized replay checked the application path using the carrier's documented response format. The authenticated API path requires Ward-issued access. [Ward API documentation](https://tools.wardtlc.com/wardtrucking/apirequest/create).
 
 ## Selection and live-verification limits
 
@@ -29,6 +31,9 @@ Set these only in the intended environment, with credentials kept server-side:
 | `EASYPOST_WEBHOOK_SECRET` | Shared HMAC secret configured on the EasyPost webhook |
 | `SUPPLY_TRACKING_ACTIVE_MINUTES` | Active reconciliation interval, default 240; allowed 15–1440 |
 | `SUPPLY_TRACKING_DUE_MINUTES` | Due-soon/out-for-delivery reconciliation interval, default 60; allowed 15–1440 |
+| `SUPPLY_WARD_TRACKING_ENABLED` | Enables authenticated Ward freight lookup when explicitly true |
+| `SUPPLY_WARD_TRACKING_ORGANIZATION_ID` | Limits the Ward credential to the authorized tenant |
+| `SUPPLY_WARD_TRACKING_USERNAME` and `SUPPLY_WARD_TRACKING_PASSWORD` | Ward-issued API credentials, stored as server secrets |
 
 EasyPost currently lists basic Tracking API fees of $0.01–$0.03 per shipment. Confirm account pricing and charges with the account owner before enabling live registration. No new account, paid plan, subscription or tracker was created during implementation. [Official pricing](https://www.easypost.com/pricing/).
 
@@ -38,7 +43,7 @@ Enable the tenant's `PRODUCTION_SUPPLIES` entitlement separately. The scheduled 
 
 Configure `https://<this-environment-host>/api/production-supplies/tracking/webhook` in the matching EasyPost account mode after deploying the route. The application verifies HMAC v2 using `x-timestamp`, `x-path`, `x-hmac-signature-v2` and the exact raw body. Requests older than one minute or over 30 seconds in the future are rejected. Only stored provider-tracker mappings select tenants; payload-supplied organization identifiers are ignored. Test events cannot change a live-mode registration. [Official HMAC specification](https://support.easypost.com/hc/en-us/articles/39826034964237-Webhook-HMAC-Validation).
 
-All outbound tracking traffic uses the fixed `https://api.easypost.com/v2` origin, bounded timeouts/retries and rejected redirects. Links in emails and arbitrary tracking-page URLs are never fetched. Provider authorization failures explain the missing account/carrier access without storing response bodies or secrets.
+Outbound tracking uses the fixed EasyPost and Ward API origins, bounded timeouts and rejected redirects. Email links supply context for a human lookup. They never select an automated request destination. Provider authorization failures are recorded without saving response bodies or secrets.
 
 ## Arrival, outages and receipt
 
