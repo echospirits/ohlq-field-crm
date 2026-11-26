@@ -33,7 +33,8 @@
   "git": {
     "deploymentEnabled": {
       "codex/echo-history-2019-backfill": false,
-      "codex/echo-wholesale-duplicate-diagnostic-2020": false
+      "codex/echo-wholesale-duplicate-diagnostic-2020": false,
+      "codex/echo-nov07-duplicate-source-audit": false
     }
   }
 }

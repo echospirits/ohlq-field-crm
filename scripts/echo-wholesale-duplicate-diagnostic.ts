@@ -6,13 +6,14 @@ const key = "-----BEGIN PUBLIC KEY-----\nMIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigK
 const date = '2020-11-07';
 const echo = 'Z90399001';
 type Csv = { data: Record<string, string>[]; errors: unknown[]; meta: { fields?: string[] } };
-function nativeRows(bytes: Buffer, fields: string[]) {
+function nativeRows(bytes: Buffer, fields: string[], vendorColumn: string) {
   const p = Papa.parse(bytes.toString('utf8'), { header: true, skipEmptyLines: true, transformHeader: (h: string) => h.trim().replace(/^\uFEFF/, '') }) as Csv;
   if (p.errors.length || fields.some(f => !p.meta.fields?.includes(f))) throw Error('Invalid native CSV shape.');
-  return p.data.filter(r => r.DimVendor_VendorNumber_?.trim() === echo);
+  return p.data.filter(r => r[vendorColumn]?.trim() === echo);
 }
 function qty(raw: string) {
-  const text = raw.trim();
+  const text = raw?.trim();
+  if (!text) return 0;
   if (!/^-?(?:\d+|\d{1,3}(?:,\d{3})+)$/.test(text)) throw Error('Invalid quantity.');
   const n = Number(text.replaceAll(',', ''));
   if (!Number.isSafeInteger(n)) throw Error('Invalid quantity.');
@@ -20,7 +21,7 @@ function qty(raw: string) {
 }
 async function main() {
   if (process.env.GITHUB_REPOSITORY !== 'echospirits/ohlq-field-crm' ||
-      process.env.GITHUB_REF !== 'refs/heads/codex/echo-wholesale-duplicate-diagnostic-2020') throw Error('Invalid diagnostic context.');
+      process.env.GITHUB_REF !== 'refs/heads/codex/echo-nov07-duplicate-source-audit') throw Error('Invalid diagnostic context.');
   await downloadOhlqEchoSalesPairs([date], { headless: true, logger: { log() {}, error() {} } }, () => {}, async (summary, wholesale) => {
     const p = wholesale.echoWholesaleExport;
     const s = summary.summaryNativeExport;
@@ -28,9 +29,9 @@ async function main() {
         !s || s.requestedFrom !== date || s.requestedTo !== date || !summary.csvBuffer?.length ||
         summary.csvBuffer.length !== summary.sizeBytes || !wholesale.csvBuffer?.length ||
         wholesale.csvBuffer.length !== wholesale.sizeBytes) throw Error('Incomplete native export evidence.');
-    const fields = ['Agency_Id', 'Brand', 'DimVendor_VendorNumber_', 'Wholesale_Bottles_Sold'];
-    const gross = nativeRows(summary.csvBuffer, fields);
-    const details = nativeRows(wholesale.csvBuffer, [...fields, 'Permit_Number']);
+    const fields = ['Agency_Id', 'Brand', 'Wholesale_Bottles_Sold'];
+    const gross = nativeRows(summary.csvBuffer, [...fields, 'Vendor'], 'Vendor');
+    const details = nativeRows(wholesale.csvBuffer, [...fields, 'DimVendor_VendorNumber_', 'Permit_Number'], 'DimVendor_VendorNumber_');
     const groups = new Map<string, Record<string, string>[]>();
     for (const row of details) {
       const k = JSON.stringify([row.Agency_Id.trim(), row.Brand.trim(), row.Permit_Number.trim()]);

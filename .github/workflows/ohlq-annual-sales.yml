@@ -8,7 +8,7 @@ permissions:
 
 jobs:
   worker:
-    if: github.repository == 'echospirits/ohlq-field-crm' && github.ref == 'refs/heads/codex/echo-wholesale-duplicate-diagnostic-2020' && github.event.ref_type == 'branch'
+    if: github.repository == 'echospirits/ohlq-field-crm' && github.ref == 'refs/heads/codex/echo-nov07-duplicate-source-audit' && github.event.ref_type == 'branch'
     concurrency:
       group: ohlq-annual-sales-sync-production
       queue: max
