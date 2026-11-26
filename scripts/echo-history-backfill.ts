@@ -78,8 +78,12 @@ function wholesaleRows(result: OhlqAnnualSalesDownloadResult, date: string, line
   const columns = input.meta.fields ?? [];
   if (input.errors.length) throw Error('Wholesale CSV did not parse.');
   if (Object.keys(input.meta.renamedHeaders ?? {}).length) throw Error('Wholesale CSV has duplicate headers.');
-  if (!columns.includes('Wholesale_Bottles_Sold')) throw Error('Wholesale quantity column is missing.');
-  if (input.data.some(row => !/^-?(?:\d+|\d{1,3}(?:,\d{3})+)$/.test(row.Wholesale_Bottles_Sold?.trim() ?? '') &&
+  const sourceKeys = ['Agency_Id', 'DimVendor_VendorNumber_', 'Brand', 'Permit_Number', 'Wholesale_Bottles_Sold'];
+  if (sourceKeys.some(key => !columns.includes(key))) throw Error('Wholesale source columns are missing.');
+  if (input.data.some(row => !row.DimVendor_VendorNumber_?.trim())) throw Error('Wholesale source contains an unknown vendor.');
+  const scoped = e.statewide ? input.data.filter(row => row.DimVendor_VendorNumber_.trim() === vendor) : input.data;
+  if (!scoped.length && e.statewide) return { rows: [], csvHash: sha(bytes), lineageRows: 0 };
+  if (scoped.some(row => !/^-?(?:\d+|\d{1,3}(?:,\d{3})+)$/.test(row.Wholesale_Bottles_Sold?.trim() ?? '') &&
       row.Wholesale_Bottles_Sold?.trim() !== '')) throw Error('Wholesale quantity syntax is invalid.');
   const lineageRows = lineagePermit && !e.statewide && columns.includes('Doing_Business_As') && columns.includes('Permit_Number')
     ? input.data.filter(row => row.DimVendor_VendorNumber_?.trim() === vendor && !row.Permit_Number?.trim() &&
@@ -87,21 +91,20 @@ function wholesaleRows(result: OhlqAnnualSalesDownloadResult, date: string, line
         row.Agency_Id?.trim() && row.Brand?.trim() && row.Wholesale_Bottles_Sold?.trim())
     : [];
   if (lineagePermit) for (const row of lineageRows) row.Permit_Number = lineagePermit;
-  const corrected = lineageRows.length ? Papa.unparse(input.data, { columns }) : bytes;
+  const corrected = lineageRows.length || e.statewide ? Papa.unparse(scoped, { columns }) : bytes;
   const parsed = parseOhlqAnnualSalesByWholesaleCsv(corrected, date);
   if (parsed.skippedRows) {
-    const observed = e.statewide ? input.data.filter(row => row.DimVendor_VendorNumber_?.trim() === vendor) : input.data;
     const missing = Object.fromEntries(['Agency_Id', 'DimVendor_VendorNumber_', 'Brand', 'Permit_Number']
-      .map(key => [key, observed.filter(row => !row[key]?.trim()).length]));
+      .map(key => [key, scoped.filter(row => !row[key]?.trim()).length]));
     console.log(JSON.stringify({ date, scope: e.statewide ? 'statewide' : 'echo', sourceRowsMissingKeys: parsed.skippedRows, echoMissingByField: missing }));
     throw Error('Wholesale rows are missing key identifiers.');
   }
-  if (input.data.length !== parsed.rows.length) throw Error('Wholesale CSV has repeated row keys.');
+  if (scoped.length !== parsed.rows.length) throw Error('Wholesale CSV has repeated row keys.');
   if (!e.statewide && parsed.rows.some(row => row.vendor !== vendor)) throw Error('Wholesale rows are outside the Echo scope.');
   if (parsed.rows.some(row => row.wholesaleBottlesSold! < -2147483648 || row.wholesaleBottlesSold! > 2147483647)) {
     throw Error('Wholesale quantity is outside the supported integer range.');
   }
-  return { rows: e.statewide ? parsed.rows.filter(row => row.vendor === vendor) : parsed.rows, csvHash: sha(bytes), lineageRows: lineageRows.length };
+  return { rows: parsed.rows, csvHash: sha(bytes), lineageRows: lineageRows.length };
 }
 
 async function attachDetail(tx: Prisma.TransactionClient, date: string, input: ReturnType<typeof wholesaleRows>) {
@@ -178,7 +181,11 @@ async function main() {
         try {
           detail = wholesaleRows(wholesale, summary.reportDate, lineagePermit);
         } catch (error) {
-          if (!(error instanceof Error) || error.message !== 'Wholesale rows are missing key identifiers.') throw error;
+          if (!(error instanceof Error) || !(
+            error.message === 'Wholesale rows are missing key identifiers.' ||
+            error.message === 'Wholesale CSV has repeated row keys.' ||
+            error.message.startsWith('OHLQ wholesale CSV contains conflicting duplicate rows')
+          )) throw error;
           console.log(JSON.stringify({ date: summary.reportDate, fallback: 'statewide-wholesale' }));
           const statewide = await acquireStatewideWholesale();
           stage = 'validate-statewide-wholesale-source';
