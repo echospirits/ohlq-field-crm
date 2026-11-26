@@ -1,5 +1,5 @@
 name: Echo Spirits daily sales history backfill
-run-name: Echo Spirits production history · ${{ github.event_name }} · reconcile alternate wholesale source
+run-name: Echo Spirits production history · ${{ github.event_name }} · continue past confirmed November duplicate keys
 
 on:
   create:
