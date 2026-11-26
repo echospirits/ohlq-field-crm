@@ -32,7 +32,8 @@
   ],
   "git": {
     "deploymentEnabled": {
-      "codex/echo-history-2019-backfill": false
+      "codex/echo-history-2019-backfill": false,
+      "codex/echo-blank-permit-diagnostics-2021": false
     }
   }
 }
