@@ -7,8 +7,8 @@ import { downloadOhlqEchoSalesPairs, type OhlqAnnualSalesDownloadResult } from '
 import { importOhlqAnnualSalesCsv, parseOhlqAnnualSalesByWholesaleCsv } from '../lib/ohlqAnnualSalesImport';
 
 const vendor = 'Z90399001';
-const start = '2021-08-25';
-const end = start;
+const datedBlanks = new Map([['2021-08-06', 2], ['2021-07-21', 1]]);
+const [end, start] = [...datedBlanks.keys()];
 const approvedPermitHash = 'ec5011cb0d29c3cdc9b0d0230312c10256ddf0bcb99a85946f36ed64c1928c34';
 const wholesaleId = 'dea7572c-2ea4-45bb-bbbc-29600bd326cc';
 let day: string | undefined;
@@ -35,7 +35,7 @@ const emptyHash = '4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b
 async function remaining() {
   return prisma.$queryRaw<{ date: string }[]>`
     WITH summary AS (${summarySignatures}), detail AS (${detailSignatures}),
-    dates AS (SELECT d::date AS day FROM generate_series(${start}::date,${end}::date,interval '1 day') d)
+    dates(day) AS (VALUES (${end}::date), (${start}::date))
     SELECT to_char(day,'YYYY-MM-DD') AS date
     FROM dates LEFT JOIN "EchoBottleSalesDayCoverage" c ON c."reportDate"=day
     LEFT JOIN summary s ON s."reportDate"=day LEFT JOIN detail w ON w."reportDate"=day
@@ -60,7 +60,7 @@ function wholesaleRows(result: OhlqAnnualSalesDownloadResult, date: string, perm
   if (!e || e.reportIdentity !== wholesaleId || e.date !== date || result.reportDate !== date) {
     throw Error('Invalid wholesale source evidence.');
   }
-  if (e.verifiedEmpty || e.statewide || date !== start) throw Error('Expected the nonempty vendor filtered wholesale export.');
+  if (e.verifiedEmpty || e.statewide || !datedBlanks.has(date)) throw Error('Expected the nonempty vendor filtered wholesale export.');
   const bytes = result.csvBuffer;
   if (!bytes || !bytes.length || bytes.length !== result.sizeBytes) throw Error('Incomplete wholesale bytes.');
   const input = Papa.parse(bytes.toString('utf8'), { header: true, skipEmptyLines: true }) as {
@@ -77,11 +77,13 @@ function wholesaleRows(result: OhlqAnnualSalesDownloadResult, date: string, perm
   if (input.data.some(row => !/^-?(?:\d+|\d{1,3}(?:,\d{3})+)$/.test(row.Wholesale_Bottles_Sold?.trim() ?? '') &&
       row.Wholesale_Bottles_Sold?.trim() !== '')) throw Error('Wholesale quantity syntax is invalid.');
   const missingPermit = input.data.filter(row => !row.Permit_Number?.trim());
-  if (missingPermit.length !== 1 || missingPermit[0].DimVendor_VendorNumber_?.trim() !== vendor ||
-      !missingPermit[0].Agency_Id?.trim() || !missingPermit[0].Brand?.trim()) {
-    throw Error('The export does not contain one matching missing permit.');
+  if (missingPermit.length !== datedBlanks.get(date) || missingPermit.some(row =>
+      row.DimVendor_VendorNumber_?.trim() !== vendor || !row.Agency_Id?.trim() || !row.Brand?.trim())) {
+    throw Error('The export does not contain the expected missing permits.');
   }
-  missingPermit[0].Permit_Number = permit;
+  for (const row of missingPermit) row.Permit_Number = permit;
+  console.log(JSON.stringify({ date, correctedRows: missingPermit.length,
+    rowsMatchingApprovedDba: missingPermit.filter(row => row.Doing_Business_As?.trim().toUpperCase() === 'LINEAGE BREWING').length }));
   const repaired = Papa.unparse(input.data, { columns });
   const parsed = parseOhlqAnnualSalesByWholesaleCsv(repaired, date);
   if (parsed.skippedRows) throw Error('Wholesale rows are missing key identifiers.');
@@ -129,7 +131,7 @@ async function main() {
     WHERE encode(sha256(convert_to("licenseeId",'UTF8')),'hex')=${approvedPermitHash}
   `;
   if (permits.length !== 1) throw Error('Could not validate the approved permit.');
-  console.log(JSON.stringify({ from: start, missing: batch.length, singleDate: true }));
+  console.log(JSON.stringify({ repairDates: batch, missing: batch.length }));
   let committed = 0;
   let attempts = 0;
 
@@ -180,7 +182,7 @@ async function main() {
     }
   }
   if ((await remaining()).length) throw Error('The corrected day did not reconcile.');
-  console.log(JSON.stringify({ date: start, verifiedCorrection: true }));
+  console.log(JSON.stringify({ repairDates: batch, verifiedCorrection: true }));
 }
 main().catch((e:unknown)=>{
   const code=e && typeof e==='object' && 'code' in e && /^P\d{4}$/.test(String(e.code)) ? String(e.code):undefined;

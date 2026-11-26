@@ -1,4 +1,4 @@
-name: Echo August 25, 2021 production permit correction
+name: Echo August 6 and July 21, 2021 production permit correction
 
 on:
   create:
@@ -11,7 +11,7 @@ jobs:
   worker:
     if: >-
       github.repository == 'echospirits/ohlq-field-crm' &&
-      github.ref == 'refs/heads/codex/echo-august-25-2021-permit-correction' &&
+      github.ref == 'refs/heads/codex/echo-august-july-2021-permit-corrections' &&
       (github.event_name == 'workflow_dispatch' || (github.event_name == 'create' && github.event.ref_type == 'branch'))
     concurrency:
       group: ohlq-annual-sales-sync-production
@@ -30,12 +30,12 @@ jobs:
           cache: npm
       - name: Install locked dependencies
         run: node scripts/retry-ohlq-command.cjs -- npm ci
-      - name: Validate the single date correction
+      - name: Typecheck the scoped permit corrections
         if: github.event_name != 'workflow_dispatch'
         run: npm run typecheck
       - name: Install the existing loader's Chromium
         run: node scripts/retry-ohlq-command.cjs -- npx --no-install playwright install --with-deps chromium
-      - name: Validate and reconcile August 25, 2021 only
+      - name: Validate and reconcile August 6 and July 21, 2021 only
         id: backfill
         env:
           APP_ENV: production
