@@ -1,29 +1,14 @@
-name: Echo Spirits daily sales history backfill
-run-name: Echo Spirits production history · ${{ github.event_name }} · reconcile alternate wholesale source
+name: Echo November duplicate evidence
 
 on:
   create:
-  workflow_dispatch:
-  push:
-    branches: [codex/echo-history-2019-backfill]
-    paths: [.github/workflows/ohlq-annual-sales.yml]
 
 permissions:
   contents: read
 
-concurrency:
-  group: echo-history-backfill-production
-  queue: max
-  cancel-in-progress: false
-
 jobs:
   worker:
-    if: >-
-      github.repository == 'echospirits/ohlq-field-crm' &&
-      github.ref == 'refs/heads/codex/echo-history-2019-backfill' &&
-      (github.event_name == 'workflow_dispatch' ||
-       (github.event_name == 'create' && github.event.ref_type == 'branch') ||
-       (github.event_name == 'push' && !github.event.created))
+    if: github.repository == 'echospirits/ohlq-field-crm' && github.ref == 'refs/heads/codex/echo-wholesale-duplicate-diagnostic-2020' && github.event.ref_type == 'branch'
     concurrency:
       group: ohlq-annual-sales-sync-production
       queue: max
@@ -31,8 +16,6 @@ jobs:
     environment: production
     runs-on: ubuntu-24.04
     timeout-minutes: 150
-    outputs:
-      remaining: ${{ steps.backfill.outputs.remaining }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -43,19 +26,14 @@ jobs:
           cache: npm
       - name: Install locked dependencies
         run: node scripts/retry-ohlq-command.cjs -- npm ci
-      - name: Validate first batch candidate
+      - name: Typecheck the source diagnostic
         if: github.event_name != 'workflow_dispatch'
         run: npm run typecheck
       - name: Install the existing loader's Chromium
         run: node scripts/retry-ohlq-command.cjs -- npx --no-install playwright install --with-deps chromium
-      - name: Validate and commit Echo dates in descending order
+      - name: Read and reconcile exact-date duplicate evidence
         id: backfill
         env:
-          APP_ENV: production
-          DATABASE_ENVIRONMENT: production
-          DATABASE_TARGET_ID: ${{ vars.DATABASE_TARGET_ID }}
-          EXPECTED_DATABASE_HOST: ${{ vars.EXPECTED_DATABASE_HOST }}
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
           OHLQ_OPS_USERNAME: ${{ secrets.OHLQ_OPS_USERNAME }}
           OHLQ_OPS_PASSWORD: ${{ secrets.OHLQ_OPS_PASSWORD }}
           OHLQ_MICROSOFT_USERNAME: ${{ secrets.OHLQ_MICROSOFT_USERNAME }}
@@ -64,19 +42,4 @@ jobs:
           OHLQ_HEADLESS: '1'
           OHLQ_USE_PERSISTENT_BROWSER_CONTEXT: '1'
           OHLQ_USE_SERVERLESS_CHROMIUM: '0'
-        run: node --import tsx scripts/echo-history-backfill.ts
-
-  continue:
-    needs: worker
-    if: needs.worker.outputs.remaining != '0' && needs.worker.outputs.remaining != ''
-    runs-on: ubuntu-24.04
-    permissions:
-      actions: write
-    steps:
-      - name: Queue one successor using the same durable checkpoints
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REMAINING: ${{ needs.worker.outputs.remaining }}
-        run: |
-          [[ "$REMAINING" =~ ^[1-9][0-9]*$ ]]
-          gh workflow run ohlq-annual-sales.yml --repo echospirits/ohlq-field-crm --ref codex/echo-history-2019-backfill
+        run: node --import tsx scripts/echo-wholesale-duplicate-diagnostic.ts
