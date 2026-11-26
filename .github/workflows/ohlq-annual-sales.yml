@@ -1,4 +1,4 @@
-name: Echo November duplicate evidence
+name: Echo August duplicate evidence
 
 on:
   create:
@@ -8,7 +8,7 @@ permissions:
 
 jobs:
   worker:
-    if: github.repository == 'echospirits/ohlq-field-crm' && github.ref == 'refs/heads/codex/echo-nov07-duplicate-source-audit' && github.event.ref_type == 'branch'
+    if: github.repository == 'echospirits/ohlq-field-crm' && github.ref == 'refs/heads/codex/echo-aug20-duplicate-source-audit' && github.event.ref_type == 'branch'
     concurrency:
       group: ohlq-annual-sales-sync-production
       queue: max

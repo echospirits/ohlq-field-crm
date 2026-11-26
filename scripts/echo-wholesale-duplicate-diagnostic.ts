@@ -3,7 +3,7 @@ import Papa from 'papaparse';
 import { downloadOhlqEchoSalesPairs } from '../lib/ohlqAnnualSalesReport';
 
 const key = "-----BEGIN PUBLIC KEY-----\nMIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAqo38I1f724I28BcX71uM\nXHNsBG1r65zYTXYzdRbVboedNsoqriGlM/lnbIYxcQrDKWAZHVQOoyq1oq922/4v\nGdzeaSpsyBqfXWxmsGb+rYl/tsp+sTzMcfm3/L+1Wod2Vn8hg66aF7A0OTtbxHWE\nE9S9AfROl6f4DYigzADwdwpxgQAFmtYZC1VL0I9EkktBo15s4Xl9EFLPfrXqFy+e\nfFhy3o1c/4W5NAvnkPowct00vi/NIL7vfPMYiqP0mK1GFJhNkntvTUL/0Ip2JY8X\nozoOQ5mUv/bNvPBgW8TqMsvM+JuObbRy0SN/JOZ4aQA1N6eftjVd0luh2Trtw7V8\nuV4h1JGGP1CtBomO4umMbygnHQaEUwyZ5FV9mQGtp8hSudlSJ5mel7yOgcyjs5IE\nsJdzxXghO69gAlbPz7hLYhel9FWVGtvBhjIaPLLr73Zvsjz4DTXkg0cE5zXuZXb4\nUnFP8PCAlYh+RHg2b9Mc508v7dPly06I+SdGi26OfYmfAgMBAAE=\n-----END PUBLIC KEY-----\n";
-const date = '2020-11-07';
+const date = '2020-08-20';
 const echo = 'Z90399001';
 type Csv = { data: Record<string, string>[]; errors: unknown[]; meta: { fields?: string[] } };
 function nativeRows(bytes: Buffer, fields: string[], vendorColumn: string) {
@@ -21,7 +21,7 @@ function qty(raw: string) {
 }
 async function main() {
   if (process.env.GITHUB_REPOSITORY !== 'echospirits/ohlq-field-crm' ||
-      process.env.GITHUB_REF !== 'refs/heads/codex/echo-nov07-duplicate-source-audit') throw Error('Invalid diagnostic context.');
+      process.env.GITHUB_REF !== 'refs/heads/codex/echo-aug20-duplicate-source-audit') throw Error('Invalid diagnostic context.');
   await downloadOhlqEchoSalesPairs([date], { headless: true, logger: { log() {}, error() {} } }, () => {}, async (summary, wholesale) => {
     const p = wholesale.echoWholesaleExport;
     const s = summary.summaryNativeExport;
