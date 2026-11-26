@@ -12,7 +12,7 @@ const start = '2019-09-01';
 const end = '2026-11-21';
 // Both native wholesale export scopes lacked required identifiers on these dates.
 // Keep them in the verification query until corrected evidence is available.
-const deferredSourceDates = new Set(['2025-04-12', '2024-12-19', '2022-12-02', '2022-11-17', '2022-11-02', '2021-10-16', '2021-08-25', '2021-08-06', '2021-07-21', '2020-11-07']);
+const deferredSourceDates = new Set(['2025-04-12', '2024-12-19', '2022-12-02', '2022-11-17', '2022-11-02', '2021-10-16', '2021-08-25', '2021-08-06', '2021-07-21', '2020-11-07', '2020-08-20']);
 const lineagePermitHash = 'ec5011cb0d29c3cdc9b0d0230312c10256ddf0bcb99a85946f36ed64c1928c34';
 const wholesaleId = 'dea7572c-2ea4-45bb-bbbc-29600bd326cc';
 let day: string | undefined;
