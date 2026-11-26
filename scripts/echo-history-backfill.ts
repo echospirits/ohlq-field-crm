@@ -13,6 +13,7 @@ const end = '2026-11-21';
 // Both native wholesale export scopes lacked required identifiers on these dates.
 // Keep them in the verification query until corrected evidence is available.
 const deferredSourceDates = new Set(['2025-04-12', '2024-12-19', '2022-12-02', '2022-11-17', '2022-11-02', '2021-10-16', '2021-08-25', '2021-08-06', '2021-07-21']);
+const lineagePermitHash = 'ec5011cb0d29c3cdc9b0d0230312c10256ddf0bcb99a85946f36ed64c1928c34';
 const wholesaleId = 'dea7572c-2ea4-45bb-bbbc-29600bd326cc';
 let day: string | undefined;
 let stage = 'target';
@@ -58,18 +59,17 @@ async function remaining() {
     ORDER BY day DESC`;
 }
 
-function wholesaleRows(result: OhlqAnnualSalesDownloadResult, date: string) {
+function wholesaleRows(result: OhlqAnnualSalesDownloadResult, date: string, lineagePermit: string | undefined) {
   const e = result.echoWholesaleExport;
   if (!e || e.reportIdentity !== wholesaleId || e.date !== date || result.reportDate !== date) {
     throw Error('Invalid wholesale source evidence.');
   }
   if (e.verifiedEmpty) {
     if (e.statewide || result.csvBuffer || result.sizeBytes) throw Error('Inconsistent wholesale empty export.');
-    return { rows: [], csvHash: 'provider-empty' };
+    return { rows: [], csvHash: 'provider-empty', lineageRows: 0 };
   }
   const bytes = result.csvBuffer;
   if (!bytes || !bytes.length || bytes.length !== result.sizeBytes) throw Error('Incomplete wholesale bytes.');
-  const parsed = parseOhlqAnnualSalesByWholesaleCsv(bytes, date);
   const input = Papa.parse(bytes.toString('utf8'), { header: true, skipEmptyLines: true }) as {
     data: Record<string, string>[];
     errors: unknown[];
@@ -81,6 +81,14 @@ function wholesaleRows(result: OhlqAnnualSalesDownloadResult, date: string) {
   if (!columns.includes('Wholesale_Bottles_Sold')) throw Error('Wholesale quantity column is missing.');
   if (input.data.some(row => !/^-?(?:\d+|\d{1,3}(?:,\d{3})+)$/.test(row.Wholesale_Bottles_Sold?.trim() ?? '') &&
       row.Wholesale_Bottles_Sold?.trim() !== '')) throw Error('Wholesale quantity syntax is invalid.');
+  const lineageRows = lineagePermit && !e.statewide && columns.includes('Doing_Business_As') && columns.includes('Permit_Number')
+    ? input.data.filter(row => row.DimVendor_VendorNumber_?.trim() === vendor && !row.Permit_Number?.trim() &&
+        row.Doing_Business_As?.trim().toUpperCase() === 'LINEAGE BREWING' &&
+        row.Agency_Id?.trim() && row.Brand?.trim() && row.Wholesale_Bottles_Sold?.trim())
+    : [];
+  if (lineagePermit) for (const row of lineageRows) row.Permit_Number = lineagePermit;
+  const corrected = lineageRows.length ? Papa.unparse(input.data, { columns }) : bytes;
+  const parsed = parseOhlqAnnualSalesByWholesaleCsv(corrected, date);
   if (parsed.skippedRows) {
     const observed = e.statewide ? input.data.filter(row => row.DimVendor_VendorNumber_?.trim() === vendor) : input.data;
     const missing = Object.fromEntries(['Agency_Id', 'DimVendor_VendorNumber_', 'Brand', 'Permit_Number']
@@ -93,7 +101,7 @@ function wholesaleRows(result: OhlqAnnualSalesDownloadResult, date: string) {
   if (parsed.rows.some(row => row.wholesaleBottlesSold! < -2147483648 || row.wholesaleBottlesSold! > 2147483647)) {
     throw Error('Wholesale quantity is outside the supported integer range.');
   }
-  return { rows: e.statewide ? parsed.rows.filter(row => row.vendor === vendor) : parsed.rows, csvHash: sha(bytes) };
+  return { rows: e.statewide ? parsed.rows.filter(row => row.vendor === vendor) : parsed.rows, csvHash: sha(bytes), lineageRows: lineageRows.length };
 }
 
 async function attachDetail(tx: Prisma.TransactionClient, date: string, input: ReturnType<typeof wholesaleRows>) {
@@ -113,7 +121,8 @@ async function attachDetail(tx: Prisma.TransactionClient, date: string, input: R
   const [actual] = await tx.$queryRaw<{ n: number; sha: string }[]>(digest(Prisma.sql`
     (SELECT * FROM "OhlqAnnualSalesByWholesaleRow" WHERE vendor=${vendor} AND "reportDate"=${date}::date) x`));
   if (expected.n !== actual.n || expected.sha !== actual.sha) throw Error('Persisted wholesale differs from verified source.');
-  return 'echo-pair:' + process.env.GITHUB_RUN_ID + ':' + actual.sha + ':' + input.csvHash;
+  return 'echo-pair:' + process.env.GITHUB_RUN_ID + ':' + actual.sha + ':' + input.csvHash +
+    (input.lineageRows ? ':user-confirmed-lineage-dba' : '');
 }
 
 async function main() {
@@ -125,6 +134,11 @@ async function main() {
   const [target] = await prisma.$queryRaw<{db:string;schema:string;isPrimary:boolean}[]>`
     SELECT current_database() db,current_schema() schema,NOT pg_is_in_recovery() AS "isPrimary"`;
   if (target?.db !== 'neondb' || target.schema !== 'public' || !target.isPrimary) throw Error('Invalid database session.');
+  const permits = await prisma.$queryRaw<{ permit: string }[]>`
+    SELECT DISTINCT "licenseeId" AS permit FROM "WholesaleLicenseeId"
+    WHERE encode(sha256(convert_to("licenseeId",'UTF8')),'hex')=${lineagePermitHash}
+  `;
+  const lineagePermit = permits.length === 1 ? permits[0].permit : undefined;
   const unconfirmed = await remaining();
   const pending = unconfirmed.filter(row => !deferredSourceDates.has(row.date));
   const deferred = unconfirmed.filter(row => deferredSourceDates.has(row.date)).map(row => row.date);
@@ -162,14 +176,14 @@ async function main() {
         stage = 'validate-wholesale-source';
         let detail: ReturnType<typeof wholesaleRows>;
         try {
-          detail = wholesaleRows(wholesale, summary.reportDate);
+          detail = wholesaleRows(wholesale, summary.reportDate, lineagePermit);
         } catch (error) {
           if (!(error instanceof Error) || error.message !== 'Wholesale rows are missing key identifiers.') throw error;
           console.log(JSON.stringify({ date: summary.reportDate, fallback: 'statewide-wholesale' }));
           const statewide = await acquireStatewideWholesale();
           stage = 'validate-statewide-wholesale-source';
           try {
-            detail = wholesaleRows(statewide, summary.reportDate);
+            detail = wholesaleRows(statewide, summary.reportDate, lineagePermit);
           } catch (fallbackError) {
             if (!reprobe.includes(summary.reportDate) || !(fallbackError instanceof Error) ||
                 fallbackError.message !== 'Wholesale rows are missing key identifiers.') throw fallbackError;
@@ -192,7 +206,7 @@ async function main() {
         });
         processed += 1;
         attempts = 0;
-        console.log(JSON.stringify({ date: summary.reportDate, summary: result.importedRows, wholesale: detail.rows.length, committed: true }));
+        console.log(JSON.stringify({ date: summary.reportDate, summary: result.importedRows, wholesale: detail.rows.length, lineagePermitRows: detail.lineageRows, committed: true }));
       });
     } catch (error) {
       if (!(error instanceof Error) || error.name !== 'TimeoutError' || ++attempts >= 3) throw error;
