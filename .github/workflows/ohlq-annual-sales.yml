@@ -1,5 +1,5 @@
 name: Echo Spirits daily sales history backfill
-run-name: Echo Spirits production history · ${{ github.event_name }} · continue around confirmed July 2021 source gap
+run-name: Echo Spirits production history · ${{ github.event_name }} · confirmed Lineage permit
 
 on:
   create:
